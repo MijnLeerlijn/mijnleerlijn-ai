@@ -11,8 +11,9 @@ import { adminOnly } from "../access/roles";
 //
 // Tokens staan uitsluitend versleuteld op (lib/gmail/encryption.ts,
 // AES-256-GCM) — ook een beheerder ziet in het beheerscherm nooit meer dan
-// de ciphertext. Er wordt in deze stap nog niets geïmporteerd (geen
-// e-mail-sync) — dat is een latere, aparte stap.
+// de ciphertext. De "Test synchronisatie"-knop hieronder roept
+// POST /api/gmail/sync aan (lib/gmail/sync.ts) — zie payload/collections/
+// SupportThreads.ts voor waar de geïmporteerde threads terechtkomen.
 export const GmailConnection: GlobalConfig = {
   slug: "gmail-connection",
   admin: {
@@ -30,6 +31,16 @@ export const GmailConnection: GlobalConfig = {
       type: "email",
       label: "Gekoppeld Gmail-adres",
       admin: { readOnly: true, description: "Succesvol gekoppeld helpdesk-adres." },
+    },
+    {
+      name: "syncAction",
+      type: "ui",
+      label: "Synchronisatie",
+      admin: {
+        components: {
+          Field: "@/payload/components/GmailSyncButton#GmailSyncButton",
+        },
+      },
     },
     {
       name: "encryptedAccessToken",
@@ -68,7 +79,7 @@ export const GmailConnection: GlobalConfig = {
       label: "Laatst gesynchroniseerd op",
       admin: {
         readOnly: true,
-        description: "Blijft leeg totdat e-mailimport (latere stap) daadwerkelijk bestaat.",
+        description: "Wordt gezet door elke synchronisatieronde, ongeacht het resultaat per thread.",
       },
     },
   ],

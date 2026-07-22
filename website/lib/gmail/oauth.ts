@@ -75,6 +75,40 @@ export async function exchangeCodeForTokens(code: string): Promise<GoogleTokenRe
   return (await response.json()) as GoogleTokenResponse;
 }
 
+export interface GoogleRefreshResponse {
+  access_token: string;
+  expires_in: number;
+  scope: string;
+  token_type: string;
+}
+
+/**
+ * Vernieuwt een verlopen access token met de refresh token — Google geeft
+ * bij een refresh normaal GEEN nieuwe refresh_token terug (de bestaande
+ * blijft geldig), dus die wordt hier niet verwacht/overschreven. Gebruikt
+ * door de sync-route (app/api/gmail/sync) vlak vóór elke synchronisatie.
+ */
+export async function refreshAccessToken(refreshToken: string): Promise<GoogleRefreshResponse> {
+  const { clientId, clientSecret } = gmailEnv();
+  const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  if (!response.ok) {
+    const tekst = await response.text().catch(() => "");
+    throw new Error(`Google token-vernieuwing mislukt (${response.status}): ${tekst}`);
+  }
+
+  return (await response.json()) as GoogleRefreshResponse;
+}
+
 /** Haalt het gekoppelde Gmail-adres op — leestoegang via de gmail.readonly-scope, geen extra scope nodig. */
 export async function fetchGmailAddress(accessToken: string): Promise<string> {
   const response = await fetch(GMAIL_PROFILE_ENDPOINT, {
