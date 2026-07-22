@@ -1,5 +1,5 @@
 import { del, issueSignedToken, presignUrl, put } from "@vercel/blob";
-import { requireEnv } from "@/config/env";
+import { optionalEnv } from "@/config/env";
 
 // Privé bijlage-opslag voor het contactformulier — zie
 // docs/SECURITY-AND-PRIVACY.md §Opslag & toegang bijlagen. Gebruikt Vercel
@@ -8,10 +8,16 @@ import { requireEnv } from "@/config/env";
 // zie payload/collections/ContactSubmissions.ts voor de motivatie: Payload's
 // vercelBlobStorage-plugin ondersteunt op dit moment alleen 'public'-toegang).
 //
-// Bewust géén development-fallback zonder token: in tegenstelling tot
-// media-afbeeldingen (die via Payload's plugin terugvallen op lokale schijf)
-// is dit privacygevoelig — nooit stilzwijgend minder veilig opslaan. Maak
-// lokaal een (gratis) Vercel Blob-store aan voor development.
+// Authenticatie: @vercel/blob (2.6.1+) ondersteunt naast een los
+// BLOB_READ_WRITE_TOKEN ook Vercel's OIDC-koppeling — wanneer de Blob store
+// via het Vercel-project is gekoppeld, injecteert Vercel zelf BLOB_STORE_ID
+// en (tijdens runtime) VERCEL_OIDC_TOKEN, en herkent de SDK dit automatisch
+// zodra er géén `token`-optie wordt meegegeven. We geven dus alleen expliciet
+// een token mee wanneer BLOB_READ_WRITE_TOKEN daadwerkelijk gezet is (bv.
+// lokale ontwikkeling); anders laten we de SDK's eigen omgevingsresolutie
+// (env BLOB_READ_WRITE_TOKEN, anders OIDC) haar werk doen. Geen fallback naar
+// minder veilige opslag: zonder geldige auth (token óf OIDC) faalt de
+// aanroep gewoon met een duidelijke fout van de SDK zelf.
 
 export interface GeuploadBestand {
   storageKey: string;
@@ -23,17 +29,18 @@ export interface GeuploadBestand {
 const ATTACHMENT_PREFIX = "contact-attachments";
 const DOWNLOAD_URL_GELDIGHEID_MS = 5 * 60 * 1000; // 5 minuten
 
-function blobToken(): string {
-  return requireEnv("BLOB_READ_WRITE_TOKEN");
+/** Alleen een `token`-property wanneer die expliciet gezet is — anders leeg object, zodat de SDK's eigen (OIDC-)resolutie geldt. */
+function blobAuthOptions(): { token: string } | Record<string, never> {
+  const token = optionalEnv("BLOB_READ_WRITE_TOKEN");
+  return token ? { token } : {};
 }
 
 export async function uploadBijlage(bestand: File): Promise<GeuploadBestand> {
-  const token = blobToken();
   const storageKey = `${ATTACHMENT_PREFIX}/${crypto.randomUUID()}-${bestand.name}`;
 
   await put(storageKey, bestand, {
     access: "private",
-    token,
+    ...blobAuthOptions(),
     addRandomSuffix: false,
     contentType: bestand.type || "application/octet-stream",
   });
@@ -48,12 +55,11 @@ export async function uploadBijlage(bestand: File): Promise<GeuploadBestand> {
 
 /** Kortlevende signed download-URL — pas genereren op het moment dat een melding daadwerkelijk geopend wordt. */
 export async function genereerDownloadUrl(storageKey: string): Promise<string> {
-  const token = blobToken();
   const signedToken = await issueSignedToken({
     pathname: storageKey,
     operations: ["get"],
     validUntil: Date.now() + DOWNLOAD_URL_GELDIGHEID_MS,
-    token,
+    ...blobAuthOptions(),
   });
 
   const { presignedUrl } = await presignUrl(signedToken, {
@@ -68,6 +74,5 @@ export async function genereerDownloadUrl(storageKey: string): Promise<string> {
 
 /** Verwijdert een bijlage direct en definitief — gebruikt bij bewaartermijn-verval en "verwijderen op verzoek". */
 export async function verwijderBijlage(storageKey: string): Promise<void> {
-  const token = blobToken();
-  await del(storageKey, { token });
+  await del(storageKey, { ...blobAuthOptions() });
 }
