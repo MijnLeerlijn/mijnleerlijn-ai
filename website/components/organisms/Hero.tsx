@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import PlaceholderFoto from "@/components/atoms/PlaceholderFoto";
 import GradientAccent from "@/components/atoms/GradientAccent";
 import SearchPanel from "@/components/organisms/SearchPanel";
 import { vindVariant } from "@/lib/data/variants";
@@ -63,9 +62,13 @@ export default function Hero({ welkomTerug = false }: HeroProps) {
           <div className="mt-10 lg:mt-0 lg:ml-auto lg:w-[38%] lg:shrink-0">
             <div className="relative h-[240px] lg:h-[420px]">
               <div className="absolute top-0 h-2 w-full bg-groen lg:hidden" />
-              <PlaceholderFoto
-                label="Leerkracht die een leerling helpt"
-                className="h-full w-full lg:rounded-none"
+              <Image
+                src="/brand/images/mijn-leerlijn-jongen-met-boeken-op-hoofd-1-1.png"
+                alt="Jongen met boeken op zijn hoofd"
+                fill
+                sizes="(min-width: 1024px) 38vw, 100vw"
+                className="object-cover lg:rounded-none"
+                priority
               />
               <Image
                 src="/brand/beeldmerk-kleur.png"
