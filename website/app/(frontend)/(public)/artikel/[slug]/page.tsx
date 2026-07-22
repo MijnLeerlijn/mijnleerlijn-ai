@@ -5,7 +5,9 @@ import ArticleHeader from "@/components/organisms/ArticleHeader";
 import ArticleContent from "@/components/organisms/ArticleContent";
 import RelatedArticles from "@/components/organisms/RelatedArticles";
 import FeedbackControl from "@/components/molecules/FeedbackControl";
-import { getArticleBySlug, getRelatedArticles } from "@/services/payload";
+import { getRelatedArticles } from "@/services/payload";
+import { getMergedArticleBySlug } from "@/lib/content/get-merged-article";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 import { formatDatumNL } from "@/lib/format/date";
 import { slugify } from "@/utils/slugify";
 
@@ -15,19 +17,31 @@ interface ArtikelPaginaProps {
 
 export async function generateMetadata({ params }: ArtikelPaginaProps): Promise<Metadata> {
   const { slug } = await params;
-  const artikel = await getArticleBySlug(slug);
-  return { title: artikel ? `${artikel.title} — MijnLeerlijn` : "Artikel niet gevonden — MijnLeerlijn" };
+  const variant = await getActiveVariant();
+  const artikel = await getMergedArticleBySlug(slug, variant);
+  return {
+    title: artikel ? `${artikel.article.title} — MijnLeerlijn` : "Artikel niet gevonden — MijnLeerlijn",
+  };
 }
 
-// Koppelt aan Payload via services/payload.ts (zie Fase 4 Stap 7) — onbekende
-// of niet-gepubliceerde slug toont de echte 404-pagina, geen stille fallback
-// (getArticleBySlug respecteert publishedOrEditor-toegang, zie
-// payload/access/roles.ts). Wordt in Fase 5 verder uitgebreid met de gedeelde
-// samenvoegfunctie voor variant-overrides (lib/content/merge.ts).
+// Koppelt aan Payload via services/payload.ts (zie Fase 4 Stap 7) en past
+// daarna de gedeelde samenvoegfunctie toe (lib/content/get-merged-article.ts
+// → lib/content/merge.ts) — dezelfde functie die de zoeklaag gebruikt
+// (services/retrieval.ts), zodat een bezoeker op de pagina nooit iets anders
+// ziet dan wat de zoeklaag citeert. Onbekende/niet-gepubliceerde slug of een
+// artikel dat voor deze variant volledig verborgen is (action "verbergen" op
+// artikelniveau) toont de echte 404-pagina, geen stille fallback.
 export default async function ArtikelPagina({ params }: ArtikelPaginaProps) {
   const { slug } = await params;
-  const artikel = await getArticleBySlug(slug);
-  if (!artikel) notFound();
+  const variant = await getActiveVariant();
+  const samengesteld = await getMergedArticleBySlug(slug, variant);
+  if (!samengesteld) notFound();
+  const artikel = {
+    ...samengesteld.article,
+    categorySlug: samengesteld.categorySlug,
+    categoryTitle: samengesteld.categoryTitle,
+    sections: samengesteld.secties.map((s) => ({ ...s.sectie, blocks: s.blokken })),
+  };
 
   const gerelateerd = await getRelatedArticles(artikel.id, artikel.categorySlug);
 

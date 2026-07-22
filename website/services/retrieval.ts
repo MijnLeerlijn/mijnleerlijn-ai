@@ -1,7 +1,7 @@
-import { getAllArticles, getVariantOverrides } from "./payload";
-import { samenvoegContent } from "@/lib/content/merge";
+import { getAllArticles } from "./payload";
+import { mergeArticleForVariant } from "@/lib/content/get-merged-article";
 import type { Variant } from "@/types/variant";
-import type { Section, ContentBlock } from "@/types/content";
+import type { ContentBlock } from "@/types/content";
 
 // Eenvoudige (niet-vectorgebaseerde) zoeklaag — zie docs/AI-KNOWLEDGE-STRATEGY.md
 // en het Fase 5 livegang-opleveringsrapport: een echte pgvector/embeddings-
@@ -122,12 +122,7 @@ export async function zoek(query: string, variant: Variant): Promise<RetrievedCh
   const kandidaten: RetrievedChunk[] = [];
 
   for (const artikel of artikelen) {
-    const overrides = await getVariantOverrides(artikel.id, variant.id);
-    const secties: Array<{ sectie: Section; blokken: ContentBlock[] }> = artikel.sections.map((s) => ({
-      sectie: { id: s.id, articleId: s.articleId, order: s.order, title: s.title },
-      blokken: s.blocks,
-    }));
-    const samengesteld = samenvoegContent(artikel, secties, overrides, variant.terminologyDictionary);
+    const samengesteld = await mergeArticleForVariant(artikel, variant);
     if (!samengesteld) continue; // verbergen voor deze variant
 
     const titelMatches = matchendeWoorden(queryWoorden, samengesteld.article.title);
