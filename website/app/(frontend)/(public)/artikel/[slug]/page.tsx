@@ -1,0 +1,88 @@
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import KnowledgeLayout from "@/components/layouts/KnowledgeLayout";
+import ArticleHeader from "@/components/organisms/ArticleHeader";
+import ArticleContent from "@/components/organisms/ArticleContent";
+import RelatedArticles from "@/components/organisms/RelatedArticles";
+import Button from "@/components/atoms/Button";
+import { getArticleBySlug, getRelatedArticles } from "@/services/payload";
+import { formatDatumNL } from "@/lib/format/date";
+import { slugify } from "@/utils/slugify";
+
+interface ArtikelPaginaProps {
+  params: Promise<{ slug: string }>;
+}
+
+export async function generateMetadata({ params }: ArtikelPaginaProps): Promise<Metadata> {
+  const { slug } = await params;
+  const artikel = await getArticleBySlug(slug);
+  return { title: artikel ? `${artikel.title} — MijnLeerlijn` : "Artikel niet gevonden — MijnLeerlijn" };
+}
+
+// Koppelt aan Payload via services/payload.ts (zie Fase 4 Stap 7) — onbekende
+// of niet-gepubliceerde slug toont de echte 404-pagina, geen stille fallback
+// (getArticleBySlug respecteert publishedOrEditor-toegang, zie
+// payload/access/roles.ts). Wordt in Fase 5 verder uitgebreid met de gedeelde
+// samenvoegfunctie voor variant-overrides (lib/content/merge.ts).
+export default async function ArtikelPagina({ params }: ArtikelPaginaProps) {
+  const { slug } = await params;
+  const artikel = await getArticleBySlug(slug);
+  if (!artikel) notFound();
+
+  const gerelateerd = await getRelatedArticles(artikel.id, artikel.categorySlug);
+
+  const sidebar = (
+    <>
+      <p className="text-xs font-medium uppercase tracking-[0.04em] text-grijs-600">Inhoud</p>
+      <ul className="mt-3 flex flex-col gap-2 border-l border-grijs-200 pl-3">
+        {artikel.sections.map((sectie) => (
+          <li key={sectie.id}>
+            <a href={`#${slugify(sectie.title)}`} className="text-sm text-grijs-600 hover:text-blauw">
+              {sectie.title}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+
+  return (
+    <KnowledgeLayout
+      breadcrumb={[
+        { label: "Home", href: "/" },
+        { label: artikel.categoryTitle, href: `/categorie/${artikel.categorySlug}` },
+        { label: artikel.title },
+      ]}
+      sidebar={sidebar}
+    >
+      <article className="max-w-[680px]">
+        <ArticleHeader
+          titel={artikel.title}
+          categorie={artikel.categoryTitle}
+          laatstBijgewerkt={formatDatumNL(artikel.lastContentUpdate)}
+        />
+
+        <ArticleContent secties={artikel.sections} />
+
+        <div className="mt-12 flex items-center gap-4 border-t border-grijs-100 pt-6">
+          <p className="text-sm font-medium text-grijs-900">Was dit artikel nuttig?</p>
+          <Button variant="secondary" size="compact">
+            Ja
+          </Button>
+          <Button variant="secondary" size="compact">
+            Nee
+          </Button>
+        </div>
+
+        <RelatedArticles
+          artikelen={gerelateerd.map((a) => ({
+            titel: a.title,
+            sectie: a.sections[0]?.title ?? "",
+            laatstBijgewerkt: formatDatumNL(a.lastContentUpdate),
+            href: `/artikel/${a.slug}`,
+          }))}
+        />
+      </article>
+    </KnowledgeLayout>
+  );
+}
