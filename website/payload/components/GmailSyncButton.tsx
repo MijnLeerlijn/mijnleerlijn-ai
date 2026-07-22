@@ -18,6 +18,13 @@ type Status = "stil" | "bezig" | "klaar" | "fout";
 // POST /api/gmail/sync aan (admin-only, zie die route) en toont het
 // resultaat. Puur presentationeel `type: "ui"`-veld, geen eigen dataveld —
 // zie payload/globals/GmailConnection.ts.
+//
+// `credentials: "include"` is bewust expliciet, niet het fetch-standaard-
+// gedrag: exact hetzelfde patroon dat @payloadcms/ui zelf overal gebruikt
+// voor eigen interne aanvragen vanuit het beheerscherm (bevestigd door de
+// hele pakketbroncode na te lopen — geen enkele interne fetch() daar
+// vertrouwt op de default). Zonder dit werd de sessiecookie niet
+// meegestuurd, waardoor de route (terecht) een niet-beheerder zag.
 export function GmailSyncButton() {
   const [status, setStatus] = useState<Status>("stil");
   const [resultaat, setResultaat] = useState<SyncResultaat | null>(null);
@@ -27,7 +34,7 @@ export function GmailSyncButton() {
     setStatus("bezig");
     setFoutmelding("");
     try {
-      const response = await fetch("/api/gmail/sync", { method: "POST" });
+      const response = await fetch("/api/gmail/sync", { method: "POST", credentials: "include" });
       const data = (await response.json()) as SyncResultaat | { error: string };
       if (!response.ok || "error" in data) {
         setFoutmelding("error" in data ? data.error : "Synchronisatie mislukt.");

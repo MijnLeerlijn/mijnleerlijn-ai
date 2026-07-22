@@ -9,12 +9,40 @@ import { syncGmailThreads } from "@/lib/gmail/sync";
 // is dit een GEWONE same-origin aanvraag (de "Test synchronisatie"-knop in
 // Payload's admin-UI doet een fetch() vanuit /admin zelf), dus de normale
 // payload.auth()-sessiecontrole werkt hier gewoon correct — zie het
-// commentaar in de callback-route voor waarom dat daar niet kan.
+// commentaar in de callback-route voor waarom dat daar niet kan. Deze route
+// blijft daarom ECHT admin-only: geen state-cookie-achtige workaround zoals
+// bij de callback, die hoort hier niet (er is geen cross-site-redirect-
+// probleem dat dat zou rechtvaardigen).
+//
+// BEKENDE OORZAAK van "Alleen beheerders..." met een echt ingelogde
+// beheerder: Payload's eigen admin-UI stuurt élke interne fetch() met
+// expliciet `credentials: 'include'` (bevestigd door de hele
+// @payloadcms/ui-broncode na te lopen — geen enkele plek daar vertrouwt op
+// het fetch-standaardgedrag). payload/components/GmailSyncButton.tsx deed
+// dat aanvankelijk niet, waardoor de sessiecookie niet werd meegestuurd en
+// payload.auth() hier terecht `user: null` teruggaf. Gefixt door exact
+// hetzelfde patroon te volgen — zie dat bestand.
 export async function POST(request: NextRequest) {
   const payload = await getPayload({ config });
   const { user } = await payload.auth({ headers: request.headers });
+  const authUser = user as AuthUser | null;
+  const adminCheck = isAdmin(authUser);
 
-  if (!isAdmin(user as AuthUser | null)) {
+  // Tijdelijke diagnostische logging — uitsluitend structuur, nooit inhoud:
+  // geen e-mail, tokens, cookies of overige persoonsgegevens. Bedoeld om te
+  // bevestigen dat de fix hierboven het echte probleem oplost; verwijderen
+  // zodra dat bevestigd is.
+  payload.logger.info(
+    {
+      userAanwezig: Boolean(user),
+      userCollection: (user as { collection?: string } | null)?.collection ?? null,
+      userVeldnamen: user ? Object.keys(user) : [],
+      adminCheckUitkomst: adminCheck,
+    },
+    "[api/gmail/sync] diagnose authenticatie"
+  );
+
+  if (!adminCheck) {
     return NextResponse.json(
       { error: "Alleen beheerders mogen een synchronisatie starten." },
       { status: 403 }
