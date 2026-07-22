@@ -7,7 +7,7 @@ import SearchInput from "@/components/molecules/SearchInput";
 import AnswerPanel from "@/components/organisms/AnswerPanel";
 import NoAnswerState from "@/components/organisms/NoAnswerState";
 import ErrorMessage from "@/components/molecules/ErrorMessage";
-import { simuleerZoekopdracht, type ZoekResultaat } from "@/lib/search/simulate";
+import { zoekEcht, type ZoekResultaat } from "@/lib/search/zoek-echt";
 import { voorbeeldvragen } from "@/lib/data/popular-questions";
 import { formatDatumNL } from "@/lib/format/date";
 
@@ -35,11 +35,16 @@ export default function SearchPanel({ initieleVraag, onStatusChange }: SearchPan
 
   useEffect(() => {
     if (status !== "laden") return;
-    const timer = setTimeout(() => {
-      setResultaat(simuleerZoekopdracht(vraag));
-      setStatus("resultaat");
-    }, 550);
-    return () => clearTimeout(timer);
+    let actief = true;
+    zoekEcht(vraag).then((r) => {
+      if (actief) {
+        setResultaat(r);
+        setStatus("resultaat");
+      }
+    });
+    return () => {
+      actief = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- vraag verandert alleen via zoek(), niet tijdens het laden
   }, [status]);
 
