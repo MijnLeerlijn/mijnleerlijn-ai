@@ -8,12 +8,14 @@ export interface AnswerPanelProps {
   bronnen: SourceCardProps[];
   /** Bij een ambigue vraag: "Bedoelde je ook…"-links. Geen los "MultipleAnswers"-component — zie IMPLEMENTATION-PLAN.md. */
   suggesties?: string[];
+  /** De oorspronkelijke vraag — aanwezig zodra dit een echt (niet-gesimuleerd) antwoord is, geeft de Ja/Nee-feedback context om echt op te slaan. */
+  vraag?: string;
 }
 
 // Eén samenhangend antwoord, met één of meerdere bronnen — zie
 // docs/HOMEPAGE-SPEC.md §Gebruiker krijgt meerdere antwoorden. Nooit een
 // lijst losse "resultaten".
-export default function AnswerPanel({ tekst, bronnen, suggesties }: AnswerPanelProps) {
+export default function AnswerPanel({ tekst, bronnen, suggesties, vraag }: AnswerPanelProps) {
   return (
     <div className="mt-6 max-w-[560px] animate-[fade-in_200ms_ease-out] rounded-xl bg-white p-6 shadow-lg sm:p-8">
       <p className="text-lg leading-7 text-grijs-900">{tekst}</p>
@@ -40,7 +42,19 @@ export default function AnswerPanel({ tekst, bronnen, suggesties }: AnswerPanelP
       )}
 
       <div className="mt-6">
-        <FeedbackControl />
+        <FeedbackControl
+          context={
+            vraag
+              ? {
+                  vraag,
+                  antwoordTekst: tekst,
+                  bronArtikelSlugs: bronnen
+                    .map((b) => b.href?.split("/artikel/")[1])
+                    .filter((slug): slug is string => Boolean(slug)),
+                }
+              : undefined
+          }
+        />
       </div>
     </div>
   );

@@ -440,3 +440,45 @@ export async function createContactSubmission(input: NieuweContactSubmission): P
 
   return { id: String(doc.id) };
 }
+
+// --- Antwoordfeedback (Ja/Nee onder AI-antwoorden) -----------------------
+
+export interface NieuweAnswerFeedback {
+  vraag: string;
+  antwoordTekst: string;
+  bronArtikelSlugs: string[];
+  variantSlug?: string;
+  rating: "nuttig" | "niet_nuttig";
+  pageUrl?: string;
+}
+
+/**
+ * Zelfde patroon als createContactSubmission: schrijven gebeurt met
+ * `overrideAccess: true` omdat de collection zelf `create` dichthoudt voor de
+ * publieke API — uitsluitend app/api/feedback/route.ts (met rate limiting)
+ * mag dit aanroepen.
+ */
+export async function createAnswerFeedback(input: NieuweAnswerFeedback): Promise<{ id: string }> {
+  const payload = await getClient();
+  let variant: number | undefined;
+  if (input.variantSlug) {
+    const found = await getVariantBySlug(input.variantSlug);
+    variant = found ? Number(found.id) : undefined;
+  }
+
+  const doc = await payload.create({
+    collection: "answer-feedback",
+    overrideAccess: true,
+    data: {
+      vraag: input.vraag,
+      antwoordTekst: input.antwoordTekst,
+      bronArtikelSlugs: input.bronArtikelSlugs,
+      variant,
+      rating: input.rating,
+      pageUrl: input.pageUrl,
+      createdAt: new Date().toISOString(),
+    },
+  });
+
+  return { id: String(doc.id) };
+}

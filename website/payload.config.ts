@@ -16,6 +16,7 @@ import { Sources } from "./payload/collections/Sources";
 import { Media } from "./payload/collections/Media";
 import { Updates } from "./payload/collections/Updates";
 import { ContactSubmissions } from "./payload/collections/ContactSubmissions";
+import { AnswerFeedback } from "./payload/collections/AnswerFeedback";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -55,6 +56,7 @@ export default buildConfig({
     Media,
     Updates,
     ContactSubmissions,
+    AnswerFeedback,
   ],
   editor: lexicalEditor(),
   db: postgresAdapter({

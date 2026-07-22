@@ -101,6 +101,7 @@ export default function ZoekenClient({ initieleVraag, forceerFout = false }: Zoe
                 href: `/artikel/${b.artikelSlug}`,
               }))}
               suggesties={resultaat.suggesties}
+              vraag={resultaat.vraag}
             />
           )}
         </div>

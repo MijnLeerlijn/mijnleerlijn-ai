@@ -13,53 +13,53 @@
  * via the `definition` "supportedTimezones".
  */
 export type SupportedTimezones =
-  | 'Pacific/Midway'
-  | 'Pacific/Niue'
-  | 'Pacific/Honolulu'
-  | 'Pacific/Rarotonga'
-  | 'America/Anchorage'
-  | 'Pacific/Gambier'
-  | 'America/Los_Angeles'
-  | 'America/Tijuana'
-  | 'America/Denver'
-  | 'America/Phoenix'
-  | 'America/Chicago'
-  | 'America/Guatemala'
-  | 'America/New_York'
-  | 'America/Bogota'
-  | 'America/Caracas'
-  | 'America/Santiago'
-  | 'America/Buenos_Aires'
-  | 'America/Sao_Paulo'
-  | 'Atlantic/South_Georgia'
-  | 'Atlantic/Azores'
-  | 'Atlantic/Cape_Verde'
-  | 'Europe/London'
-  | 'Europe/Berlin'
-  | 'Africa/Lagos'
-  | 'Europe/Athens'
-  | 'Africa/Cairo'
-  | 'Europe/Moscow'
-  | 'Asia/Riyadh'
-  | 'Asia/Dubai'
-  | 'Asia/Baku'
-  | 'Asia/Karachi'
-  | 'Asia/Tashkent'
-  | 'Asia/Calcutta'
-  | 'Asia/Dhaka'
-  | 'Asia/Almaty'
-  | 'Asia/Jakarta'
-  | 'Asia/Bangkok'
-  | 'Asia/Shanghai'
-  | 'Asia/Singapore'
-  | 'Asia/Tokyo'
-  | 'Asia/Seoul'
-  | 'Australia/Brisbane'
-  | 'Australia/Sydney'
-  | 'Pacific/Guam'
-  | 'Pacific/Noumea'
-  | 'Pacific/Auckland'
-  | 'Pacific/Fiji';
+  | "Pacific/Midway"
+  | "Pacific/Niue"
+  | "Pacific/Honolulu"
+  | "Pacific/Rarotonga"
+  | "America/Anchorage"
+  | "Pacific/Gambier"
+  | "America/Los_Angeles"
+  | "America/Tijuana"
+  | "America/Denver"
+  | "America/Phoenix"
+  | "America/Chicago"
+  | "America/Guatemala"
+  | "America/New_York"
+  | "America/Bogota"
+  | "America/Caracas"
+  | "America/Santiago"
+  | "America/Buenos_Aires"
+  | "America/Sao_Paulo"
+  | "Atlantic/South_Georgia"
+  | "Atlantic/Azores"
+  | "Atlantic/Cape_Verde"
+  | "Europe/London"
+  | "Europe/Berlin"
+  | "Africa/Lagos"
+  | "Europe/Athens"
+  | "Africa/Cairo"
+  | "Europe/Moscow"
+  | "Asia/Riyadh"
+  | "Asia/Dubai"
+  | "Asia/Baku"
+  | "Asia/Karachi"
+  | "Asia/Tashkent"
+  | "Asia/Calcutta"
+  | "Asia/Dhaka"
+  | "Asia/Almaty"
+  | "Asia/Jakarta"
+  | "Asia/Bangkok"
+  | "Asia/Shanghai"
+  | "Asia/Singapore"
+  | "Asia/Tokyo"
+  | "Asia/Seoul"
+  | "Australia/Brisbane"
+  | "Australia/Sydney"
+  | "Pacific/Guam"
+  | "Pacific/Noumea"
+  | "Pacific/Auckland"
+  | "Pacific/Fiji";
 
 export interface Config {
   auth: {
@@ -71,16 +71,17 @@ export interface Config {
     variants: Variant;
     categories: Category;
     articles: Article;
-    'variant-overrides': VariantOverride;
+    "variant-overrides": VariantOverride;
     sources: Source;
     media: Media;
     updates: Update;
-    'contact-submissions': ContactSubmission;
-    'payload-kv': PayloadKv;
-    'payload-jobs': PayloadJob;
-    'payload-locked-documents': PayloadLockedDocument;
-    'payload-preferences': PayloadPreference;
-    'payload-migrations': PayloadMigration;
+    "contact-submissions": ContactSubmission;
+    "answer-feedback": AnswerFeedback;
+    "payload-kv": PayloadKv;
+    "payload-jobs": PayloadJob;
+    "payload-locked-documents": PayloadLockedDocument;
+    "payload-preferences": PayloadPreference;
+    "payload-migrations": PayloadMigration;
   };
   collectionsJoins: {};
   collectionsSelect: {
@@ -88,16 +89,17 @@ export interface Config {
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
-    'variant-overrides': VariantOverridesSelect<false> | VariantOverridesSelect<true>;
+    "variant-overrides": VariantOverridesSelect<false> | VariantOverridesSelect<true>;
     sources: SourcesSelect<false> | SourcesSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     updates: UpdatesSelect<false> | UpdatesSelect<true>;
-    'contact-submissions': ContactSubmissionsSelect<false> | ContactSubmissionsSelect<true>;
-    'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
-    'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
-    'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
-    'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
-    'payload-migrations': PayloadMigrationsSelect<false> | PayloadMigrationsSelect<true>;
+    "contact-submissions": ContactSubmissionsSelect<false> | ContactSubmissionsSelect<true>;
+    "answer-feedback": AnswerFeedbackSelect<false> | AnswerFeedbackSelect<true>;
+    "payload-kv": PayloadKvSelect<false> | PayloadKvSelect<true>;
+    "payload-jobs": PayloadJobsSelect<false> | PayloadJobsSelect<true>;
+    "payload-locked-documents": PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
+    "payload-preferences": PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
+    "payload-migrations": PayloadMigrationsSelect<false> | PayloadMigrationsSelect<true>;
   };
   db: {
     defaultIDType: number;
@@ -151,7 +153,7 @@ export interface User {
   /**
    * Beheerder kan alles inclusief varianten, rollen en AI-goedkeuring. Redacteur is beperkter.
    */
-  role: 'admin' | 'editor';
+  role: "admin" | "editor";
   /**
    * Leeg = centrale redacteur (mag centrale artikelen schrijven). Ingevuld = variant-redacteur (mag uitsluitend afwijkingen voor déze variant schrijven, nooit de centrale boom). Zie docs/CONTENT-MODEL.md.
    */
@@ -173,7 +175,7 @@ export interface User {
       }[]
     | null;
   password?: string | null;
-  collection: 'users';
+  collection: "users";
 }
 /**
  * Elke onderwijsvariant (MijnLeerlijn, MijnMonti, MijnD, …) — branding, domein en terminologie.
@@ -191,15 +193,15 @@ export interface Variant {
    * Gebruikt in de pad-gebaseerde fallback-route, bijv. 'mijnmonti'.
    */
   slug: string;
-  status: 'concept' | 'actief' | 'gearchiveerd';
+  status: "concept" | "actief" | "gearchiveerd";
   /**
    * Bijv. 'algemeen', 'montessori', 'dalton', 'vrijeschool'.
    */
   educationType: string;
   domain: {
-    type: 'custom_domain' | 'subdomain' | 'slug_path';
+    type: "custom_domain" | "subdomain" | "slug_path";
     value: string;
-    domainStatus: 'slug_path' | 'subdomain' | 'custom_domain';
+    domainStatus: "slug_path" | "subdomain" | "custom_domain";
   };
   branding: {
     logo?: (number | null) | Media;
@@ -242,7 +244,7 @@ export interface Media {
    * Verplicht voor toegankelijkheid — beschrijft de afbeelding, nooit leeg.
    */
   altText: string;
-  mediaType: 'afbeelding' | 'video' | 'download';
+  mediaType: "afbeelding" | "video" | "download";
   updatedAt: string;
   createdAt: string;
   url?: string | null;
@@ -285,7 +287,7 @@ export interface Category {
    * Naam van een Lucide-icoon, bijv. 'Target'.
    */
   icon: string;
-  color: 'blauw' | 'groen' | 'oranje' | 'geel' | 'rood';
+  color: "blauw" | "groen" | "oranje" | "geel" | "rood";
   description: string;
   updatedAt: string;
   createdAt: string;
@@ -307,16 +309,16 @@ export interface Article {
    * Leeg = relevant voor alle varianten (standaard). Ingevuld = dit centrale artikel is uitsluitend zichtbaar binnen deze variant(en) — geen kopie, alleen een zichtbaarheidsbeperking.
    */
   variantContext?: (number | Variant)[] | null;
-  knowledgeType: 'product' | 'pedagogisch';
-  articleStatus: 'concept' | 'in_review' | 'gepland' | 'gepubliceerd' | 'gearchiveerd';
+  knowledgeType: "product" | "pedagogisch";
+  articleStatus: "concept" | "in_review" | "gepland" | "gepubliceerd" | "gearchiveerd";
   /**
    * Verplicht 'Goedgekeurd' voordat pedagogische content in de AI-index mag — uitsluitend door een beheerder te zetten. Zie docs/CONTENT-MODEL.md §Twee soorten kennis.
    */
-  aiApprovalStatus: 'n.v.t.' | 'in_afwachting' | 'goedgekeurd';
+  aiApprovalStatus: "n.v.t." | "in_afwachting" | "goedgekeurd";
   /**
    * Systeemveld voor de indexeerpijplijn — Fase 6.
    */
-  embeddingStatus: 'pending' | 'indexed' | 'stale';
+  embeddingStatus: "pending" | "indexed" | "stale";
   publishedAt?: string | null;
   /**
    * Datum van laatste inhoudelijke wijziging — verplicht getoond bij bronvermelding.
@@ -338,8 +340,8 @@ export interface Article {
                     version: number;
                     [k: string]: unknown;
                   }[];
-                  direction: ('ltr' | 'rtl') | null;
-                  format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+                  direction: ("ltr" | "rtl") | null;
+                  format: "left" | "start" | "center" | "right" | "end" | "justify" | "";
                   indent: number;
                   version: number;
                 };
@@ -347,53 +349,53 @@ export interface Article {
               };
               id?: string | null;
               blockName?: string | null;
-              blockType: 'tekst';
+              blockType: "tekst";
             }
           | {
               body: string;
               id?: string | null;
               blockName?: string | null;
-              blockType: 'genummerde_stap';
+              blockType: "genummerde_stap";
             }
           | {
               media: number | Media;
               caption?: string | null;
               id?: string | null;
               blockName?: string | null;
-              blockType: 'afbeelding';
+              blockType: "afbeelding";
             }
           | {
               body: string;
               id?: string | null;
               blockName?: string | null;
-              blockType: 'waarschuwing';
+              blockType: "waarschuwing";
             }
           | {
               body: string;
               id?: string | null;
               blockName?: string | null;
-              blockType: 'tip';
+              blockType: "tip";
             }
           | {
               url: string;
               caption?: string | null;
               id?: string | null;
               blockName?: string | null;
-              blockType: 'video';
+              blockType: "video";
             }
           | {
               media: number | Media;
               label: string;
               id?: string | null;
               blockName?: string | null;
-              blockType: 'download';
+              blockType: "download";
             }
           | {
               body: string;
               prefilledSubject?: string | null;
               id?: string | null;
               blockName?: string | null;
-              blockType: 'contact_doorverwijzing';
+              blockType: "contact_doorverwijzing";
             }
         )[]
       | null;
@@ -403,7 +405,7 @@ export interface Article {
   metaDescription?: string | null;
   updatedAt: string;
   createdAt: string;
-  _status?: ('draft' | 'published') | null;
+  _status?: ("draft" | "published") | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -412,7 +414,7 @@ export interface Article {
 export interface Source {
   id: number;
   title: string;
-  type: 'interne_handleiding' | 'externe_link' | 'document' | 'onderzoek' | 'overig';
+  type: "interne_handleiding" | "externe_link" | "document" | "onderzoek" | "overig";
   /**
    * Voor een externe link of online publicatie.
    */
@@ -423,13 +425,13 @@ export interface Source {
   file?: (number | null) | Media;
   publisher?: string | null;
   publishedDate?: string | null;
-  reliability: 'hoog' | 'gemiddeld' | 'laag';
+  reliability: "hoog" | "gemiddeld" | "laag";
   /**
    * Leeg = relevant voor alle varianten. Ingevuld = alleen relevant binnen deze variant(en).
    */
   variantContext?: (number | Variant)[] | null;
   usageRights?: string | null;
-  internalStatus: 'concept' | 'goedgekeurd' | 'verouderd';
+  internalStatus: "concept" | "goedgekeurd" | "verouderd";
   updatedAt: string;
   createdAt: string;
 }
@@ -446,12 +448,19 @@ export interface VariantOverride {
    * Het centrale artikel waarbinnen dit inhaakt.
    */
   targetArticle: number | Article;
-  targetType: 'article' | 'section' | 'block';
+  targetType: "article" | "section" | "block";
   /**
    * Gelijk aan targetArticle's ID wanneer Niveau = Artikel; anders de ID van de specifieke sectie of het specifieke blok binnen dat artikel.
    */
   targetId: string;
-  action: 'onveranderd' | 'aanvullen' | 'vervangen' | 'verbergen' | 'ander_medium' | 'invoegen_voor' | 'invoegen_na';
+  action:
+    | "onveranderd"
+    | "aanvullen"
+    | "vervangen"
+    | "verbergen"
+    | "ander_medium"
+    | "invoegen_voor"
+    | "invoegen_na";
   /**
    * Vervangende/aanvullende/ingevoegde blokinhoud, of een media-referentie bij 'Ander medium'. Leeg bij 'Onveranderd' of 'Verbergen'.
    */
@@ -468,7 +477,7 @@ export interface VariantOverride {
    * Standaard aan. Uitzetten wanneer dit element al de juiste variant-terminologie bevat.
    */
   termOverridesApplied?: boolean | null;
-  status: 'concept' | 'gepubliceerd';
+  status: "concept" | "gepubliceerd";
   editedBy?: (number | null) | User;
   updatedAt: string;
   createdAt: string;
@@ -482,7 +491,7 @@ export interface VariantOverride {
 export interface Update {
   id: number;
   article: number | Article;
-  badge: 'Nieuw' | 'Bijgewerkt';
+  badge: "Nieuw" | "Bijgewerkt";
   date: string;
   updatedAt: string;
   createdAt: string;
@@ -511,7 +520,7 @@ export interface ContactSubmission {
    * Alleen een grove categorie (bv. 'Chrome op desktop') — nooit een volledige user-agent.
    */
   deviceInfo?: string | null;
-  status: 'nieuw' | 'in_behandeling' | 'afgehandeld';
+  status: "nieuw" | "in_behandeling" | "afgehandeld";
   /**
    * Bestanden staan privé in Vercel Blob. Downloaden genereert een kortlevende signed URL.
    */
@@ -527,6 +536,23 @@ export interface ContactSubmission {
     | null;
   updatedAt: string;
   createdAt: string;
+}
+/**
+ * Ja/nee-feedback van bezoekers op AI-antwoorden. Aanmaken kan alleen via de eigen API-route.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "answer-feedback".
+ */
+export interface AnswerFeedback {
+  id: number;
+  vraag: string;
+  antwoordTekst: string;
+  bronArtikelSlugs?: string[] | null;
+  variant?: (number | null) | Variant;
+  rating: "nuttig" | "niet_nuttig";
+  pageUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -597,7 +623,7 @@ export interface PayloadJob {
     | {
         executedAt: string;
         completedAt: string;
-        taskSlug: 'inline' | 'schedulePublish';
+        taskSlug: "inline" | "schedulePublish";
         taskID: string;
         input?:
           | {
@@ -617,7 +643,7 @@ export interface PayloadJob {
           | number
           | boolean
           | null;
-        state: 'failed' | 'succeeded';
+        state: "failed" | "succeeded";
         error?:
           | {
               [k: string]: unknown;
@@ -630,7 +656,7 @@ export interface PayloadJob {
         id?: string | null;
       }[]
     | null;
-  taskSlug?: ('inline' | 'schedulePublish') | null;
+  taskSlug?: ("inline" | "schedulePublish") | null;
   queue?: string | null;
   waitUntil?: string | null;
   processing?: boolean | null;
@@ -645,44 +671,48 @@ export interface PayloadLockedDocument {
   id: number;
   document?:
     | ({
-        relationTo: 'users';
+        relationTo: "users";
         value: number | User;
       } | null)
     | ({
-        relationTo: 'variants';
+        relationTo: "variants";
         value: number | Variant;
       } | null)
     | ({
-        relationTo: 'categories';
+        relationTo: "categories";
         value: number | Category;
       } | null)
     | ({
-        relationTo: 'articles';
+        relationTo: "articles";
         value: number | Article;
       } | null)
     | ({
-        relationTo: 'variant-overrides';
+        relationTo: "variant-overrides";
         value: number | VariantOverride;
       } | null)
     | ({
-        relationTo: 'sources';
+        relationTo: "sources";
         value: number | Source;
       } | null)
     | ({
-        relationTo: 'media';
+        relationTo: "media";
         value: number | Media;
       } | null)
     | ({
-        relationTo: 'updates';
+        relationTo: "updates";
         value: number | Update;
       } | null)
     | ({
-        relationTo: 'contact-submissions';
+        relationTo: "contact-submissions";
         value: number | ContactSubmission;
+      } | null)
+    | ({
+        relationTo: "answer-feedback";
+        value: number | AnswerFeedback;
       } | null);
   globalSlug?: string | null;
   user: {
-    relationTo: 'users';
+    relationTo: "users";
     value: number | User;
   };
   updatedAt: string;
@@ -695,7 +725,7 @@ export interface PayloadLockedDocument {
 export interface PayloadPreference {
   id: number;
   user: {
-    relationTo: 'users';
+    relationTo: "users";
     value: number | User;
   };
   key?: string | null;
@@ -1016,6 +1046,20 @@ export interface ContactSubmissionsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "answer-feedback_select".
+ */
+export interface AnswerFeedbackSelect<T extends boolean = true> {
+  vraag?: T;
+  antwoordTekst?: T;
+  bronArtikelSlugs?: T;
+  variant?: T;
+  rating?: T;
+  pageUrl?: T;
+  createdAt?: T;
+  updatedAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv_select".
  */
 export interface PayloadKvSelect<T extends boolean = true> {
@@ -1093,7 +1137,7 @@ export interface CollectionsWidget {
   data?: {
     [k: string]: unknown;
   };
-  width: 'full';
+  width: "full";
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1101,10 +1145,10 @@ export interface CollectionsWidget {
  */
 export interface TaskSchedulePublish {
   input: {
-    type?: ('publish' | 'unpublish') | null;
+    type?: ("publish" | "unpublish") | null;
     locale?: string | null;
     doc?: {
-      relationTo: 'articles';
+      relationTo: "articles";
       value: number | Article;
     } | null;
     global?: string | null;
@@ -1120,7 +1164,6 @@ export interface Auth {
   [k: string]: unknown;
 }
 
-
-declare module 'payload' {
+declare module "payload" {
   export interface GeneratedTypes extends Config {}
 }

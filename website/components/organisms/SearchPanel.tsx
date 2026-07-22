@@ -103,6 +103,7 @@ export default function SearchPanel({ initieleVraag, onStatusChange }: SearchPan
                 href: `/artikel/${b.artikelSlug}`,
               }))}
               suggesties={resultaat.suggesties}
+              vraag={resultaat.vraag}
             />
           )}
           <button

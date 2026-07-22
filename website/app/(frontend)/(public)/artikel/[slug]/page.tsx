@@ -4,7 +4,7 @@ import KnowledgeLayout from "@/components/layouts/KnowledgeLayout";
 import ArticleHeader from "@/components/organisms/ArticleHeader";
 import ArticleContent from "@/components/organisms/ArticleContent";
 import RelatedArticles from "@/components/organisms/RelatedArticles";
-import Button from "@/components/atoms/Button";
+import FeedbackControl from "@/components/molecules/FeedbackControl";
 import { getArticleBySlug, getRelatedArticles } from "@/services/payload";
 import { formatDatumNL } from "@/lib/format/date";
 import { slugify } from "@/utils/slugify";
@@ -66,12 +66,13 @@ export default async function ArtikelPagina({ params }: ArtikelPaginaProps) {
 
         <div className="mt-12 flex items-center gap-4 border-t border-grijs-100 pt-6">
           <p className="text-sm font-medium text-grijs-900">Was dit artikel nuttig?</p>
-          <Button variant="secondary" size="compact">
-            Ja
-          </Button>
-          <Button variant="secondary" size="compact">
-            Nee
-          </Button>
+          <FeedbackControl
+            context={{
+              vraag: `Was dit artikel nuttig? — ${artikel.title}`,
+              antwoordTekst: artikel.summary,
+              bronArtikelSlugs: [artikel.slug],
+            }}
+          />
         </div>
 
         <RelatedArticles
