@@ -17,6 +17,7 @@ import { Media } from "./payload/collections/Media";
 import { Updates } from "./payload/collections/Updates";
 import { ContactSubmissions } from "./payload/collections/ContactSubmissions";
 import { AnswerFeedback } from "./payload/collections/AnswerFeedback";
+import { GmailConnection } from "./payload/globals/GmailConnection";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,6 +70,7 @@ export default buildConfig({
     ContactSubmissions,
     AnswerFeedback,
   ],
+  globals: [GmailConnection],
   editor: lexicalEditor(),
   db: postgresAdapter({
     pool: { connectionString: requireEnv("DATABASE_URI") },

@@ -7,3 +7,7 @@ import "@testing-library/jest-dom/vitest";
 // geheimen.
 process.env.DATABASE_URI ??= "postgres://test:test@localhost:5432/test";
 process.env.PAYLOAD_SECRET ??= "test-secret-niet-voor-productie";
+process.env.GMAIL_TOKEN_ENCRYPTION_KEY ??= "test-gmail-encryptiesleutel-niet-voor-productie";
+process.env.GMAIL_CLIENT_ID ??= "test-gmail-client-id";
+process.env.GMAIL_CLIENT_SECRET ??= "test-gmail-client-secret";
+process.env.GMAIL_REDIRECT_URI ??= "http://localhost:3000/api/gmail/oauth/callback";

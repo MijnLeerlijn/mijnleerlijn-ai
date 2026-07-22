@@ -105,8 +105,12 @@ export interface Config {
     defaultIDType: number;
   };
   fallbackLocale: null;
-  globals: {};
-  globalsSelect: {};
+  globals: {
+    "gmail-connection": GmailConnection;
+  };
+  globalsSelect: {
+    "gmail-connection": GmailConnectionSelect<false> | GmailConnectionSelect<true>;
+  };
   locale: null;
   widgets: {
     collections: CollectionsWidget;
@@ -1128,6 +1132,52 @@ export interface PayloadMigrationsSelect<T extends boolean = true> {
   batch?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * Gmail-helpdeskkoppeling (alleen-lezen toegang). Koppelen/herkoppelen: log in op /admin en open /api/gmail/oauth/start in dezelfde browser.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "gmail-connection".
+ */
+export interface GmailConnection {
+  id: number;
+  /**
+   * Succesvol gekoppeld helpdesk-adres.
+   */
+  emailAddress?: string | null;
+  /**
+   * AES-256-GCM-ciphertext — nooit de platte token.
+   */
+  encryptedAccessToken?: string | null;
+  /**
+   * AES-256-GCM-ciphertext — nooit de platte token.
+   */
+  encryptedRefreshToken?: string | null;
+  tokenExpiresAt?: string | null;
+  scopes?: string[] | null;
+  connectedAt?: string | null;
+  /**
+   * Blijft leeg totdat e-mailimport (latere stap) daadwerkelijk bestaat.
+   */
+  lastSyncAt?: string | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "gmail-connection_select".
+ */
+export interface GmailConnectionSelect<T extends boolean = true> {
+  emailAddress?: T;
+  encryptedAccessToken?: T;
+  encryptedRefreshToken?: T;
+  tokenExpiresAt?: T;
+  scopes?: T;
+  connectedAt?: T;
+  lastSyncAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
