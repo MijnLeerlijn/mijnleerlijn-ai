@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# MijnLeerlijn AI Kennisplatform
 
-## Getting Started
+Next.js-app (App Router) + Payload CMS 3 (Postgres-adapter) op één database. Zie de architectuurdocumentatie in [`docs/`](../docs/) voor de volledige context; dit bestand is het praktische opstart- en deployrunboek.
 
-First, run the development server:
+## Lokale ontwikkeling
+
+**Vereist**: Node.js **22 LTS** (niet nieuwer — zie `docs/TODO.md` Fase 4B voor waarom dit ooit ten onrechte aan Node zelf werd toegeschreven; de echte fix zit in `"type": "module"` in `package.json`) en een echte lokale PostgreSQL 16+.
 
 ```bash
+cp .env.example .env   # vul minstens DATABASE_URI en PAYLOAD_SECRET in
+npm install
+npm run migrate
+npm run seed            # fictieve Fase 3-demo-content, handig voor lokale UI-checks
+npm run import:handleidingen   # de 22 echte handleidingen (payload/import-handleidingen/data/)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Beheeromgeving: `http://localhost:3000/admin`. Standaard seed-beheerder: `beheerder@mijnleerlijn.nl` — wachtwoord via `SEED_ADMIN_PASSWORD` (env) of de fallback in `payload/seed/index.ts`, **wijzig dit vóór elk gedeeld gebruik**.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Omgevingsvariabelen
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Zie `.env.example` voor de volledige, becommentarieerde lijst. Samengevat:
 
-## Learn More
+| Variabele                              | Verplicht                  | Gedrag zonder                                                                                     |
+| -------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------- |
+| `DATABASE_URI`                         | Altijd                     | App start niet                                                                                    |
+| `PAYLOAD_SECRET`                       | Altijd                     | App start niet                                                                                    |
+| `NEXT_PUBLIC_SERVER_URL`               | Aanbevolen                 | Valt terug op `http://localhost:3000`                                                             |
+| `BLOB_READ_WRITE_TOKEN`                | **Verplicht in productie** | Dev: lokale schijfopslag. Productie: harde crash bij opstarten (bewust — zie `payload.config.ts`) |
+| `RESEND_API_KEY`, `CONTACT_FROM_EMAIL` | **Verplicht in productie** | Dev: console-e-mailadapter (verstuurt niets echt)                                                 |
+| `CONTACT_NOTIFICATION_EMAIL`           | Aanbevolen                 | Geen interne notificatiemail bij een contactinzending                                             |
+| `CRON_SECRET`                          | Optioneel                  | Alleen relevant zodra geplande taken via Vercel Cron draaien                                      |
 
-To learn more about Next.js, take a look at the following resources:
+Er is (nog) geen AI-provider-API-key (`ANTHROPIC_API_KEY` e.d.): `services/ai.ts` geeft tot die tijd bewust een extractief antwoord (de best gevonden tekst, geen taalmodel-generatie) — zie de motivatie in dat bestand.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Productie-/preview-deploy (Vercel)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. **Accounts/resources vooraf nodig**: Vercel-project, een Postgres-database die ook `pgvector` kan (bv. Neon/Supabase — nog geen pgvector-tabellen in gebruik, maar dezelfde database is de bedoeling, zie `docs/ARCHITECTURE.md`), Vercel Blob store, Resend-account + geverifieerd verzendadres, een domein/subdomein.
+2. **Vercel-omgevingsvariabelen instellen** (Project Settings → Environment Variables): alle variabelen uit `.env.example`, met echte waarden. `NEXT_PUBLIC_SERVER_URL` = de echte preview-/productie-URL.
+3. **Migraties tegen de productie-/preview-database**:
+   ```bash
+   DATABASE_URI=<echte-connection-string> PAYLOAD_SECRET=<zelfde-secret-als-productie> npm run migrate
+   ```
+4. **Productie-seed — GEEN fictieve demo-content**:
+   ```bash
+   DATABASE_URI=<...> PAYLOAD_SECRET=<...> SEED_INCLUDE_DEMO_ARTICLES=false npm run seed
+   DATABASE_URI=<...> PAYLOAD_SECRET=<...> npm run import:handleidingen
+   ```
+   `SEED_INCLUDE_DEMO_ARTICLES=false` slaat de 75 fictieve Fase 3-artikelen/bronnen/updates over — varianten en categorieën (wél echt, zie code-commentaar in `lib/data/categories.ts`) worden nog steeds gezaaid. Zonder deze vlag staan fictieve demo-artikelen naast de echte handleidingen in productie, wat het "AI verzint niets"-principe van dit project ondermijnt.
+5. **Deploy** (`vercel --prod` of via Git-integratie).
+6. **Smoke-check na deploy**: `/admin` (inloggen), `/` (zoeken op een bestaande handleiding, bv. "hoofdprofiel aanmaken"), een artikelpagina, `/contact` (test-inzending), Ja/Nee-feedback onder een antwoord.
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Commando                                         | Doel                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------ |
+| `npm run dev` / `build` / `start`                | Next.js                                                      |
+| `npm run typecheck` / `lint` / `format` / `test` | Kwaliteitscontrole                                           |
+| `npm run generate:types` / `generate:importmap`  | Payload-codegen na collection-wijzigingen                    |
+| `npm run migrate` / `migrate:create`             | Payload/Drizzle-migraties                                    |
+| `npm run seed`                                   | Fictieve Fase 3-demo-content (lokale ontwikkeling)           |
+| `npm run import:handleidingen`                   | Echte handleidingen uit `payload/import-handleidingen/data/` |
