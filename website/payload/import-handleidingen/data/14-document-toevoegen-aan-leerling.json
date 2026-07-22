@@ -1,0 +1,49 @@
+{
+  "sourcePdf": "Voeg-een-document-toe-aan-een-leerling.pdf",
+  "slug": "voeg-een-document-toe-aan-een-leerling",
+  "title": "Voeg een document toe aan een leerling",
+  "summary": "In deze handleiding leggen we uit hoe je een document aan een leerling kan koppelen.",
+  "categorySlug": "documenten-media",
+  "tags": ["document", "leerling", "delen met leraren", "sjabloon"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "Intro. In deze handleiding leggen we uit hoe je een document aan een leerling kan koppelen."
+        },
+        { "type": "genummerde_stap", "body": "Voeg toe. Kies voeg toe." },
+        {
+          "type": "genummerde_stap",
+          "body": "Leerling. Selecteer de leerling aan wie je het document wilt koppelen."
+        },
+        { "type": "genummerde_stap", "body": "Volgende. Kies volgende." },
+        { "type": "genummerde_stap", "body": "Naam. Geef het document een naam." },
+        {
+          "type": "genummerde_stap",
+          "body": "Delen met leraren. Wanneer je het document met een andere leerkracht wilt delen, kan je hier de leerkracht selecteren."
+        },
+        { "type": "genummerde_stap", "body": "Kies leerkracht(en). Kies hier de leerkracht(en)." },
+        {
+          "type": "genummerde_stap",
+          "body": "Inzien. Kies \"inzien\" als de leerkracht enkel het document mag inzien."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Inzien en wijzigen. Kies \"inzien en wijzigen\" als de leerkracht ook het document mag wijzigen."
+        },
+        { "type": "genummerde_stap", "body": "Volgende. Kies volgende." },
+        {
+          "type": "genummerde_stap",
+          "body": "Sjabloon. Maak een nieuw document of werk vanuit een sjabloon."
+        },
+        { "type": "genummerde_stap", "body": "Kies sjabloon. Selecteer het sjabloon." },
+        {
+          "type": "genummerde_stap",
+          "body": "Document opslaan. Pas het document aan en kies aan het einde opslaan. Kijk bij de handleiding van documenten hoe deze aan te passen zijn."
+        }
+      ]
+    }
+  ]
+}

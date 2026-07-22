@@ -1,0 +1,39 @@
+{
+  "sourcePdf": "Doelenset-koppelen-aan-leerlingen.pdf",
+  "slug": "doelenset-koppelen-aan-leerlingen",
+  "title": "Doelenset koppelen aan leerling(en)",
+  "summary": "In deze handleiding leggen we uit hoe je een doelenset aan één of meerdere leerlingen kan koppelen.",
+  "categorySlug": "doelen-planning",
+  "tags": ["doelenset", "leerlingen", "koppelen"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        { "type": "genummerde_stap", "body": "Intro." },
+        {
+          "type": "genummerde_stap",
+          "body": "Leerlingenoverzichten: ga naar je groep en kies \"Leerlingenoverzicht\"."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer leerlingen: kies de leerlingen aan wie je een doelenset wilt koppelen. Kies deze knop om iedereen te selecteren. Je kan in de volgende stap nog steeds selecteren bij wie je welke doelenset wilt koppelen."
+        },
+        { "type": "genummerde_stap", "body": "Beheer doelenset: kies beheer doelenset." },
+        {
+          "type": "genummerde_stap",
+          "body": "Pas aan: kies het potloodje links boven om in één keer voor iedereen een set te selecteren, of doe het per leerling door rechts het potloodje of het plusje te kiezen."
+        },
+        { "type": "genummerde_stap", "body": "Selecteer een doelenset." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies de doelenset(s): selecteer de doelenset(s) die je wilt koppelen."
+        },
+        { "type": "genummerde_stap", "body": "Opslaan: kies opslaan." },
+        {
+          "type": "genummerde_stap",
+          "body": "Sluiten: kies sluiten. De doelenset is nu aan de leerling(en) gekoppeld. De doelen in de set staan op nieuw."
+        }
+      ]
+    }
+  ]
+}

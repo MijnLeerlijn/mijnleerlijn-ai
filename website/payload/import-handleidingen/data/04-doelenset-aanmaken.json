@@ -1,0 +1,50 @@
+{
+  "sourcePdf": "Doelenset-aanmaken.pdf",
+  "slug": "doelenset-aanmaken",
+  "title": "Doelenset aanmaken",
+  "summary": "In deze handleiding laten we zien hoe je een doelenset aanmaakt en daar leerdoelen aan koppelt.",
+  "categorySlug": "doelen-planning",
+  "tags": ["doelenset", "leerdoelen", "curriculum"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        { "type": "genummerde_stap", "body": "Intro." },
+        { "type": "genummerde_stap", "body": "Extra menu: open het extra menu." },
+        { "type": "genummerde_stap", "body": "MijnDoelensets: kies \"Mijn doelensets\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Doelenset mapje: open een doelenset mapje. Als je deze nog niet hebt, maak deze dan rechtsboven aan. Je kan doelensets in mappen stoppen."
+        },
+        { "type": "genummerde_stap", "body": "Doelenset toevoegen: kies \"Doelenset toevoegen\"." },
+        { "type": "genummerde_stap", "body": "Naam: geef de doelenset een naam." },
+        { "type": "genummerde_stap", "body": "Voorbeeldset: schrijf de naam hier." },
+        { "type": "genummerde_stap", "body": "Volgende: kies volgende." },
+        { "type": "genummerde_stap", "body": "Filter: je kan de doelen filteren op niveau." },
+        { "type": "genummerde_stap", "body": "Kies niveau: selecteer de optie \"Niveau 5\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Filter: je kan ze ook filteren op periode en ernaast op tags."
+        },
+        { "type": "genummerde_stap", "body": "Kies periode: navigeer naar de sectie \"Periode 3\"." },
+        { "type": "genummerde_stap", "body": "Kies hoofdgebied: klik op de geselecteerde locatie." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies leerdoelen: open het deelgebied of kies het vakje om alle doelen in het deelgebied te selecteren."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer leerdoel: kies de doelen die je in de set wilt hebben."
+        },
+        { "type": "genummerde_stap", "body": "Selecteer leerdoel: navigeer naar deze sectie." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies ander hoofdgebied: je kan vanuit meerdere hoofd- en deelgebieden doelen kiezen."
+        },
+        { "type": "genummerde_stap", "body": "Selecteer leerdoel: selecteer deze optie." },
+        { "type": "genummerde_stap", "body": "Volgende: kies volgende." },
+        { "type": "genummerde_stap", "body": "Doelenset aanmaken: kies \"Doelenset aanmaken\"." }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "sourcePdf": "Leerkrachten-en-leerlingen-toevoegen-aan-een-groep.pdf",
+  "slug": "leerkrachten-en-leerlingen-toevoegen-aan-een-groep",
+  "title": "Leerkrachten en leerlingen toevoegen aan een groep",
+  "summary": "In de handleiding leggen we uit hoe je leerlingen en/of leerkrachten kan toevoegen aan een groep. Let op: bij Parnassys-groepen werkt dit niet, dat moet je in Parnassys doen.",
+  "categorySlug": "leerlingen-groepen",
+  "tags": ["groep", "leerlingen toevoegen", "leerkrachten toevoegen", "groepsprofiel"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "Intro. In de handleiding leggen we uit hoe je leerlingen en/of leerkrachten kan toevoegen aan een groep. Let op: bij Parnassysgroepen werkt dit niet. Dan moet je dit in Parnassys doen."
+        },
+        { "type": "genummerde_stap", "body": "Groepsprofiel. Kies groepsprofiel." },
+        {
+          "type": "genummerde_stap",
+          "body": "Leerlingen toevoegen. Kies leerlingen toevoegen of de blauwe knop erboven \"leerkrachten toevoegen\"."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Zoeken. Zoek de leerling door de eerste drie letters van de naam te typen."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies de leerling. Selecteer de leerling. Je kan bij een volgende leerling weer drie letters intypen en de volgende leerling selecteren. Aan het eind zie je iedereen die je geselecteerd hebt."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Leerlingen toevoegen. Wanneer je iedereen geselecteerd hebt, kies je \"leerlingen toevoegen\"."
+        }
+      ]
+    }
+  ]
+}

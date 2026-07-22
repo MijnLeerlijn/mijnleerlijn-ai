@@ -1,0 +1,53 @@
+{
+  "sourcePdf": "screencapture-mijnleerlijn-nl-acties-genereren-2026-07-20-09_27_44.pdf",
+  "slug": "acties-genereren",
+  "title": "Acties: Genereren",
+  "summary": "Onder het blokje 'Genereren' binnen Acties vind je twee belangrijke acties om leerdoelen bij te werken wanneer deze niet automatisch zijn klaargezet: Genereren PLP en Synchroniseer doelensets.",
+  "categorySlug": "acties-downloads",
+  "tags": ["acties", "genereren", "plp", "doelenset"],
+  "sections": [
+    {
+      "title": "Acties: Genereren",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Bij elke groep in MijnLeerlijn vind je het blokje 'Acties'. Vanuit dit menu kun je snel en eenvoudig verschillende handelingen uitvoeren voor de hele groep of een selectie leerlingen."
+        },
+        {
+          "type": "tekst",
+          "body": "Onder het blokje 'Genereren' vind je twee belangrijke acties om leerdoelen bij te werken wanneer deze niet automatisch zijn klaargezet:"
+        }
+      ]
+    },
+    {
+      "title": "1. Genereren PLP",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "In principe zou deze knop niet nodig moeten zijn. Maar wanneer je het niveau of de periode van een leerling hebt aangepast en de leerdoelen worden niet automatisch gegenereerd, kun je deze knop gebruiken."
+        },
+        {
+          "type": "tip",
+          "body": "Let op: Als de doelen daarna nog steeds niet verschijnen, is de kans groot dat er iets anders speelt. Controleer dan het Persoonlijk LeerdoelenPlan (PLP) van de leerling. Filter op het juiste niveau en periode, en zet alle kleuren/statussen open. Mogelijk zijn de doelen al eerder gekoppeld en hebben ze al een (afgesloten) status gehad."
+        }
+      ]
+    },
+    {
+      "title": "2. Synchroniseer doelensets",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Heb je een doelenset gekoppeld, maar zie je de doelen niet terug bij de leerling? Gebruik dan deze knop."
+        },
+        {
+          "type": "tekst",
+          "body": "Ook wanneer je nieuwe doelen toevoegt aan een bestaande doelenset die al aan leerlingen gekoppeld was, kun je hiermee de set opnieuw synchroniseren zodat de nieuwe doelen zichtbaar worden bij de leerlingen."
+        },
+        {
+          "type": "tekst",
+          "body": "Met deze acties houd je grip op het leerdoelenaanbod — ook wanneer iets afwijkt van het automatische proces."
+        }
+      ]
+    }
+  ]
+}

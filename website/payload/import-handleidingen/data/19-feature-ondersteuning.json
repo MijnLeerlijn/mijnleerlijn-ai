@@ -1,0 +1,78 @@
+{
+  "sourcePdf": "Feature-Ondersteuning-1.pdf",
+  "slug": "feature-notities-per-leerling-per-vakgebied",
+  "title": "Feature | Notities per leerling per vakgebied",
+  "summary": "Bij Ondersteuning in MijnLeerlijn kun je informatie noteren over de leerling of informatie die nodig is voor optimaal onderwijs aan het kind, zoals stimulerende of belemmerende factoren en behoeftes.",
+  "categorySlug": "beheer-instellingen",
+  "tags": ["ondersteuning", "hoofdgebieden", "leerdoelenoverzicht", "groepsprofiel"],
+  "sections": [
+    {
+      "title": "Ondersteuning in MijnLeerlijn",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Ga naar Ondersteuning om informatie te noteren over de leerling of om informatie te noteren die nodig is voor optimaal onderwijs aan het kind. In de praktijk wordt er dan vaak gesproken over stimulerende of belemmerende factoren of behoeftes."
+        },
+        {
+          "type": "tekst",
+          "body": "De school krijgt veel mogelijkheden om de ondersteuning naar eigen wens en inzicht in te richten. Dit kan met een beheerdersaccount via MijnInstellingen > School instellingen > Instellingen. Klik op het potlood-icoon om de benaming aan te passen."
+        },
+        {
+          "type": "tekst",
+          "body": "Het is mogelijk om voor de hoofdgebieden aparte tekstvakken in de ondersteuning op te nemen. Daarvoor moeten deze geactiveerd worden via MijnInstellingen > School instellingen > Analyse instellingen. Activeer het hoofdgebied via de schakelaar. Deze worden weergegeven bij de ondersteuning."
+        }
+      ]
+    },
+    {
+      "title": "Opbouw van de ondersteuning",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "De ondersteuning in MijnLeerlijn bestaat uit twee gedeeltes (indien de hoofdgebieden zijn geactiveerd)."
+        },
+        {
+          "type": "tekst",
+          "body": "Het bovenste deel kan gebruikt worden in combinatie met de gekleurde bollen. Deze komen terug in de Leerdoeloverzichten, GroepsProfielen en bij de individuele leerling. Op schoolniveau krijgen de gekleurde bollen een label. Wanneer er informatie is toegevoegd, passend bij het thema van de gekleurde bol, dan wordt deze geactiveerd. Vervolgens is deze bol zichtbaar en kan de leerkracht de pop-up met informatie openen."
+        },
+        {
+          "type": "tekst",
+          "body": "Het onderste deel is op basis van de hoofdgebieden uit het curriculum. Vakspecifieke informatie kan hier genoteerd worden."
+        },
+        {
+          "type": "tekst",
+          "body": "Deze informatie is ook zichtbaar in de features Leerling > Analyses en Groep > GroepsAnalyse."
+        }
+      ]
+    },
+    {
+      "title": "Toevoegen / inzien van ondersteuning",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "De ondersteuning kan op verschillende plekken toegevoegd en ingezien worden. Dit kan bij de leerling via Leerling > Ondersteuning. Vaker zal dit gebeuren in een Leerdoelenoverzicht of in een Groep."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Klik in het Leerdoelenoverzicht of GroepsProfiel in een groep onder de naam van de leerling op 'voeg ondersteuning toe' of op een gekleurde bol. Vervolgens wordt de pop-up met informatie geopend."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "De tekst en gekleurde bollen kunnen aangepast worden in de pop-up. Klik vervolgens op Opslaan."
+        },
+        {
+          "type": "tekst",
+          "body": "Het is ook mogelijk om de teksten aan te passen in de leerling-analyse en GroepsAnalyse."
+        }
+      ]
+    },
+    {
+      "title": "Ondersteuning toevoegen aan documenten",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "De ondersteuning kan ook toegevoegd worden aan Documenten wanneer deze worden ingezet. Kijk hiervoor in de handleiding: Feature | Documenten (leerling en groep)."
+        }
+      ]
+    }
+  ]
+}

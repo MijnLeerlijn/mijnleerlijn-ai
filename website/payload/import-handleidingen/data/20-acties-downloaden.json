@@ -1,0 +1,61 @@
+{
+  "sourcePdf": "screencapture-mijnleerlijn-nl-acties-downloaden-2026-07-20-09_28_36.pdf",
+  "slug": "acties-downloaden",
+  "title": "Acties: Downloaden",
+  "summary": "Bij elke groep in MijnLeerlijn vind je het blokje 'Acties'. Via het tabblad 'Downloaden' kun je twee waardevolle documenten genereren voor één of meerdere leerlingen: het leerdoelenboekje en de 'dit ben ik'-pagina.",
+  "categorySlug": "acties-downloads",
+  "tags": ["acties", "downloaden", "leerdoelenboekje", "dit ben ik"],
+  "sections": [
+    {
+      "title": "Acties: Downloaden",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Bij elke groep in MijnLeerlijn vind je het blokje 'Acties'. Vanuit dit menu kun je snel en eenvoudig verschillende handelingen uitvoeren voor de hele groep of een selectie leerlingen."
+        },
+        {
+          "type": "tekst",
+          "body": "Via het tabblad 'Downloaden' kun je twee waardevolle documenten genereren voor één of meerdere leerlingen."
+        }
+      ]
+    },
+    {
+      "title": "1. Leerdoelenboekjes downloaden",
+      "blocks": [
+        { "type": "tekst", "body": "Zo werkt het:" },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer de leerlingen van wie je het doelenboekje wilt downloaden of de hele groep."
+        },
+        { "type": "genummerde_stap", "body": "Kies de hoofdgebieden die je wilt meenemen." },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer de kleuren (statussen) die je wilt tonen (bijvoorbeeld alleen behaalde doelen = groen)."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Geef per hoofdgebied aan of je ook de stappenplannen wilt meenemen."
+        },
+        {
+          "type": "tip",
+          "body": "Wil je alleen een beknopt overzicht van behaalde doelen? Kies dan alleen de kleur groen en schakel stappenplannen uit."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Let op: de boekjes worden verzonden naar het e-mailadres dat gekoppeld is aan jouw profiel."
+        }
+      ]
+    },
+    {
+      "title": "2. 'Dit ben ik'-pagina downloaden",
+      "blocks": [
+        { "type": "genummerde_stap", "body": "Selecteer eerst de leerlingen of de hele groep." },
+        { "type": "genummerde_stap", "body": "Geef de pagina een naam (bijv. 'Periode 1 2024-2025')." },
+        {
+          "type": "tekst",
+          "body": "De documenten komen in het archief van de leerling te staan op de 'dit ben ik'-pagina."
+        }
+      ]
+    }
+  ]
+}

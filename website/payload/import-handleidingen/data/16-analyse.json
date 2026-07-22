@@ -1,0 +1,48 @@
+{
+  "sourcePdf": "Analyse.pdf",
+  "slug": "eerste-groepsanalyse-groepsoverzicht-statussen",
+  "title": "Eerste groepsanalyse: inzicht via het groepsoverzicht statussen",
+  "summary": "Wil je snel en overzichtelijk zien hoe jouw leerlingen ervoor staan in een bepaald vakgebied? Gebruik dan het groepsoverzicht statussen in MijnLeerlijn. Dit overzicht helpt je om te analyseren hoeveel leerdoelen leerlingen al behaald hebben, en waar mogelijk nog hiaten zitten.",
+  "categorySlug": "analyse-rapportage",
+  "tags": ["groepsanalyse", "groepsoverzicht statussen", "toetsresultaten", "LVS"],
+  "sections": [
+    {
+      "title": "Analyse in stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "Stap 1: ga naar het groepsoverzicht statussen. Ga naar je groep in het menu en klik op 'Groepsoverzicht statussen'. Je ziet nu alle leerlingen onder elkaar, met per leerling het aantal doelen per statuskleur (bijv. blauw = nieuw, groen = behaald)."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Stap 2: filter op vakgebied. Gebruik de filter bovenin om te kiezen voor één specifiek hoofdgebied (bijv. Rekenen). Zo maak je de analyse overzichtelijk en gericht."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Stap 3: ordenen en vergelijken. Boven de kolommen met aantallen staat een sorteerpijltje, hiermee sorteer je bijvoorbeeld op wie de meeste of minste doelen heeft behaald. In het filter kun je ook één of twee leerlingen selecteren om hun gegevens direct naast elkaar te leggen."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Stap 4: koppel de toetsresultaten aan je analyse. Zodra je een vakgebied hebt gekozen, verschijnt er rechts in de filterbalk een extra optie: 'Huidige toets'. Kies hier bijvoorbeeld M5, en vul handmatig de toetsresultaten in. Zo kun je toetsen of de behaalde leerdoelen overeenkomen met de LVS-score."
+        }
+      ]
+    },
+    {
+      "title": "Reflectie en extra analyse per leerling",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Voorbeeld: je ziet dat een leerling bijna alle doelen heeft behaald in 'getalbegrip', maar scoort op de M-toets toch opvallend laag. Tijd voor reflectie: zijn de succescriteria te laag? Is het doel wel getoetst? Sluit de toets wel aan?"
+        },
+        {
+          "type": "tekst",
+          "body": "Achter elke leerling staat een uitklapmenu. Open dit om een gedetailleerd overzicht te zien van alle leerdoelen van die leerling. Je kunt hier ook direct doelen bekijken of statussen aanpassen."
+        },
+        {
+          "type": "tip",
+          "body": "Let op signalen zoals: een leerling in groep 8 met nog veel 1S-doelen open. Waarom staat die nog niet op 1F? Past het profiel wel?"
+        }
+      ]
+    }
+  ]
+}

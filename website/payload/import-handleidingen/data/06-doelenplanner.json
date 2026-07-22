@@ -1,0 +1,110 @@
+{
+  "sourcePdf": "Handleiding-Doelenplanner-1.pdf",
+  "slug": "periodeplanner",
+  "title": "MijnLeerlijn Periodeplanner",
+  "summary": "Met de Periodeplanner van MijnLeerlijn plan je leerdoelen overzichtelijk in dag- of weeksjablonen die je aan je groep koppelt. In één oogopslag zie je welke leerdoelen nog openstaan en sleep je ze naar het juiste moment in de planning.",
+  "categorySlug": "doelen-planning",
+  "tags": ["periodeplanner", "sjablonen", "planning", "leerdoelen"],
+  "sections": [
+    {
+      "title": "Periodeplanner",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Met de Periodeplanner van MijnLeerlijn wordt het plannen van leerdoelen overzichtelijk, efficiënt én flexibel. Als leerkracht maak je eenvoudig een dag- of weeksjabloon die je koppelt aan je groep. In één oogopslag zie je welke leerdoelen nog openstaan voor je leerlingen en sleep je ze direct naar het juiste moment in de planning. Zo werk je doelgericht én houd je grip op je aanbod."
+        },
+        {
+          "type": "tekst",
+          "body": "Hoe koppel jij je doelen aan de Periodeplanner? In de Periodeplanner kun je kiezen uit twee manieren om je doelen te bekijken:\n- Actieve doelen: je ziet alleen de leerdoelen waaraan nog leerlingen zijn gekoppeld (status blauw, geel, paars of oranje). Elk leerdoel dat je koppelt aan een tijdblok verdwijnt automatisch uit de lijst. Heb je de les gegeven en is het doel nog actief voor minimaal één leerling? Dan verschijnt het doel opnieuw in je overzicht.\n- Alle gekoppelde doelen: gebruik dit overzicht als je een leerdoel meerdere keren in je planning wilt zetten. Leerdoelen blijven zichtbaar, ook als ze al eerder zijn gekoppeld.\nMet het infobolletje bij elk leerdoel zie je precies hoeveel leerlingen welke status hebben. Zo weet je meteen voor wie je het leerdoel moet inplannen."
+        },
+        {
+          "type": "tekst",
+          "body": "Slimme functies voor meer gemak:\n- Statussen bijwerken in één klik: vanuit elk tijdblok kun je met één druk op de knop de statussen van gekoppelde leerdoelen aanpassen. Zo houd je de voortgang eenvoudig bij.\n- Verjaardagen in beeld: omdat het systeem weet wanneer je leerlingen jarig zijn, zie je dit automatisch in de dagweergave.\n- Dagnotities voor jezelf of je duo: voeg eenvoudig notities toe voor de dag, bijvoorbeeld als reminder voor jezelf of overdracht aan je duo. Kies of de notitie eenmalig is of wekelijks terugkomt.\n- Print je weekoverzicht: met één klik download je je hele weekplanning, inclusief geplande leerdoelen, verjaardagen en notities. Ideaal voor overleg, naslag of gewoon op je bureau."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Houd je statussen bij: de Periodeplanner werkt optimaal als je de statussen van leerdoelen actueel houdt. Alleen dan blijft je overzicht helder en werkbaar. Gelukkig kun je vanuit elk gepland leerdoel snel naar het bijbehorende statusscherm om dit eenvoudig bij te werken. Zo houd je grip op je aanbod én zorg je voor overzicht in jouw korte cyclus."
+        }
+      ]
+    },
+    {
+      "title": "Sjablonen maken",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Ga links in het 'extra menu' naar Periodeplanner en kies 'Sjablonen'. Kies dan 'Voeg Periodeplanner sjabloon toe' om een sjabloon te maken. Of kies een bestaand sjabloon dat je zelf hebt gemaakt om aan te passen. Je kan iedere sjabloon bekijken en kopiëren (om aan te passen); je kan je eigen sjabloon direct aanpassen en/of verwijderen."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Je kan ieder sjabloon koppelen aan je groep. Dat hoeft dus niet een sjabloon te zijn die je zelf hebt gemaakt."
+        },
+        {
+          "type": "tekst",
+          "body": "Na het kiezen voor een nieuw sjabloon geef je een naam op en maak je een keuze tussen een week- of dagsjabloon. Je hebt dan een overzicht van een week (of dag)."
+        },
+        {
+          "type": "tekst",
+          "body": "Maak een tijdblok aan door in de agenda te slepen: klik op de begintijd en sleep naar de eindtijd. Je krijgt dan een pop-up. Hier kan je het blok een naam geven en kiezen of deze ook op andere dagen gezet moet worden. Zo kan je een week- of dagschema maken."
+        }
+      ]
+    },
+    {
+      "title": "Sjablonen koppelen aan je groep",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Ga naar je groep en kies 'Periodeplanner'. Kies of je een week- of dagsjabloon wilt toevoegen."
+        },
+        {
+          "type": "tekst",
+          "body": "Kies uit je eigen sjablonen of die van collega's. Selecteer vervolgens voor welke weken je het sjabloon wilt klaarzetten."
+        }
+      ]
+    },
+    {
+      "title": "Hoe werkt het",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "In het overzicht zie je de doelen die gekoppeld zijn aan de leerlingen; dus minimaal 1 leerling heeft het doel actief (blauw/geel/paars/oranje). Je kan deze makkelijk filteren."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Je ziet in het overzicht alleen de actieve doelen die gekoppeld zijn aan de leerlingen in je groep."
+        },
+        {
+          "type": "tekst",
+          "body": "Je weekrooster is direct te zien en je kunt makkelijk schakelen tussen de weken en tussen de dag- en weekweergave. Met de downloadknop download je je weekrooster. Bij elk hoofdgebied en deelgebied zie je in één oogopslag het aantal doelen; met het infobolletje zie je snel om hoeveel leerlingen het gaat."
+        },
+        {
+          "type": "tekst",
+          "body": "Sleep een doel naar het tijdslot wanneer je het wilt aanbieden. Het tijdblok wordt dan groen. Dat betekent niet dat je geen meerdere doelen kunt koppelen aan hetzelfde tijdblok."
+        },
+        {
+          "type": "tekst",
+          "body": "Wanneer je het doel naar een tijdblok sleept, verdwijnt het uit je overzicht en gaat het aantal doelen met één omlaag. Zo zie je makkelijk of je alle openstaande doelen een keer aan bod laat komen. Wil je een doel meerdere keren inplannen? Zet dan de switch aan om alle actieve doelen te blijven zien."
+        },
+        {
+          "type": "tekst",
+          "body": "Klik op een tijdblok om te zien welke doelen er gekoppeld zijn. Met het infobolletje zie je hoeveel leerlingen welke status hebben. Met de knop 'doelenoverzicht' ga je naar het doelenoverzicht met enkel deze doelen en de leerlingen in je groep. Wil je een doel loskoppelen? Kies dan het prullenbakje naast het doel."
+        },
+        {
+          "type": "tekst",
+          "body": "Open je tijdblok en klik op 'doelenoverzicht'. Er opent dan een pagina met enkel de doelen uit het tijdblok en de leerlingen in de groep. Klik bovenin weer op Periodeplanner om terug te gaan naar je overzicht."
+        },
+        {
+          "type": "tekst",
+          "body": "Kies de dagweergave om ook de verjaardagen en je notities te zien. Is er een leerling jarig in je groep? Dan verschijnt dit automatisch bij 'Verjaardagen'."
+        },
+        {
+          "type": "tekst",
+          "body": "Bekijk de notities van de dag, maak een nieuwe notitie of bewerk of verwijder een bestaande notitie. Bij het toevoegen van een notitie kies je uit leerlingen in de groep en schrijf je je notitie. Als de notitie herhaald moet worden, geef je aan op welke dag(en) en tot wanneer."
+        },
+        {
+          "type": "tip",
+          "body": "Zet de Periodeplanner bij je favorieten, zodat je er altijd snel bij kunt."
+        }
+      ]
+    }
+  ]
+}

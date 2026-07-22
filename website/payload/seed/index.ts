@@ -186,6 +186,19 @@ async function run() {
   }
   console.log(`${categorieen.length} categorieën gezaaid.`);
 
+  // Fictieve Fase 3-demo-artikelen (+ bijbehorende bronnen/updates) zijn
+  // handig voor lokale ontwikkeling/QA, maar horen niet thuis in een echte
+  // productie-/preview-database naast de echte handleidingen (payload/
+  // import-handleidingen/) — dat zou fictieve content laten doorgaan voor
+  // echte MijnLeerlijn-documentatie. Standaard aan (ongewijzigd
+  // dev-gedrag); expliciet uitzetten met SEED_INCLUDE_DEMO_ARTICLES=false
+  // vóór een productie-/preview-seed.
+  if (process.env.SEED_INCLUDE_DEMO_ARTICLES === "false") {
+    console.log("SEED_INCLUDE_DEMO_ARTICLES=false — fictieve demo-artikelen/bronnen/updates overgeslagen.");
+    console.log("Seed voltooid.");
+    process.exit(0);
+  }
+
   // 3. Bronnen (per artikelslug gegroepeerd, zodat artikelen ze kunnen koppelen)
   const sourceIdsByArticleSlug = new Map<string, number[]>();
   for (const b of bronnen) {

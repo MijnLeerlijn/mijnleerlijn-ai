@@ -1,0 +1,70 @@
+{
+  "sourcePdf": "screencapture-mijnleerlijn-nl-acties-toevoegen-2026-07-20-09_28_06.pdf",
+  "slug": "acties-toevoegen",
+  "title": "Acties: Toevoeg",
+  "summary": "Onder het kopje 'Toevoegen' binnen het acties-menu van een groep kun je vier verschillende handelingen uitvoeren voor één of meerdere leerlingen: leerdoelen toevoegen aan het PLP, een vaardighedenset toevoegen, en documenten toevoegen aan leerling of groep.",
+  "categorySlug": "acties-downloads",
+  "tags": ["acties", "toevoegen", "plp", "vaardighedenset"],
+  "sections": [
+    {
+      "title": "Acties: Toevoeg",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Bij elke groep in MijnLeerlijn vind je het blokje 'Acties'. Vanuit dit menu kun je snel en eenvoudig verschillende handelingen uitvoeren voor de hele groep of een selectie leerlingen."
+        },
+        {
+          "type": "tekst",
+          "body": "Onder het kopje 'Toevoegen' binnen het acties-menu kun je vier verschillende handelingen uitvoeren voor één of meerdere leerlingen. Dit bespaart tijd en geeft je maximale flexibiliteit in het werken met MijnLeerlijn."
+        }
+      ]
+    },
+    {
+      "title": "1. Voeg leerdoelen toe aan PLP",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Wil je handmatig leerdoelen toevoegen aan het Persoonlijk LeerdoelenPlan van een leerling? Gebruik dan deze functie."
+        },
+        { "type": "tekst", "body": "Bekijk de handleiding voor stapsgewijze uitleg." }
+      ]
+    },
+    {
+      "title": "2. Voeg vaardighedenset toe",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Als je vaardighedensets hebt aangemaakt op schoolniveau, kun je die hier eenvoudig koppelen aan geselecteerde leerlingen."
+        },
+        {
+          "type": "tekst",
+          "body": "Zie de handleiding voor het aanmaken van vaardighedensets. Zie de handleiding voor het toevoegen van vaardighedensets."
+        }
+      ]
+    },
+    {
+      "title": "3. Voeg document toe aan leerling",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Maak direct een individueel document aan voor een leerling. Kies uit een bestaand sjabloon of begin met een leeg document."
+        },
+        { "type": "tekst", "body": "Bekijk de handleiding toevoegen van leerlingdocumenten." }
+      ]
+    },
+    {
+      "title": "4. Voeg document toe aan groep",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Ook voor een groep kun je snel een document aanmaken — handig voor groepsplannen of gezamenlijke observaties. Kies wederom uit een sjabloon of start blanco."
+        },
+        { "type": "tekst", "body": "Voor groepen werkt dit hetzelfde als bij leerlingen." },
+        {
+          "type": "tekst",
+          "body": "Met deze vier functies werk je efficiënt, gepersonaliseerd en altijd passend bij jouw onderwijspraktijk."
+        }
+      ]
+    }
+  ]
+}

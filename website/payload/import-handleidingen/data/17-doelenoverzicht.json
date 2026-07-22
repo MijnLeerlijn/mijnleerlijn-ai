@@ -1,0 +1,41 @@
+{
+  "sourcePdf": "Doelenoverzicht.pdf",
+  "slug": "doelenoverzicht",
+  "title": "Doelenoverzicht",
+  "summary": "Uitleg doelenoverzicht en statussen aanpassen.",
+  "categorySlug": "analyse-rapportage",
+  "tags": ["doelenoverzicht", "statussen aanpassen", "groep", "leerdoelen"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        { "type": "genummerde_stap", "body": "Introduction. Ga naar MijnGroepen." },
+        { "type": "genummerde_stap", "body": "Kies \"Groep 5\". Kies één van je groepen." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies \"Groepsoverzicht statussen\". Kies groepsoverzicht statussen."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies \"Genereer hoofdgebied overzicht\". In het gele blok zie je hoeveel doelen er in je groep openstaan. Je kan bovenin filteren om nog specifiekere informatie te zien. Kies \"Genereer hoofdgebied overzicht\" om alle doelen te zien."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Haal filter weg. Gebruik de filter om enkel de doelen en/of leerlingen te zien die je wilt zien. Via deze knop kan je de filter inklappen om meer overzicht te krijgen."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies bolletje. Als je iedereen die de blauwe status heeft wilt selecteren, dan druk je op het blauwe bolletje (dit kan met iedere kleur)."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Leerling deselecteren. Wanneer je een enkele leerling wilt selecteren of juist deselecteren, dan klik je op de status."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Verander status. Kies hieronder naar welke kleur/status je de geselecteerde leerlingen wilt veranderen. Let op: als iedereen in de klas op behaald (groen) en/of gesloten (rood) wordt gezet, dan zie je het doel niet meer in dit overzicht omdat niemand hem meer actief heeft. In de filter kan je de groene/rode knop toevoegen, dan zie je deze wel weer."
+        }
+      ]
+    }
+  ]
+}

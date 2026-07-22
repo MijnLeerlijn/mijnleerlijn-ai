@@ -1,0 +1,30 @@
+{
+  "sourcePdf": "Vaardighedensets-aanmaken.pdf",
+  "slug": "vaardighedensets-aanmaken",
+  "title": "Vaardighedensets aanmaken",
+  "summary": "In deze handleiding leggen we uit hoe je een vaardighedenset kan aanmaken.",
+  "categorySlug": "vaardigheden",
+  "tags": ["vaardighedenset", "vaardigheid toevoegen", "Dit ben ik", "curriculum"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "In deze handleiding leggen we uit hoe je een vaardighedenset kan aanmaken."
+        },
+        { "type": "genummerde_stap", "body": "Klik op \"Extra menu\"." },
+        { "type": "genummerde_stap", "body": "Kies \"Dit ben ik / Vaardigheden\"." },
+        { "type": "genummerde_stap", "body": "Kies aanmaken." },
+        { "type": "genummerde_stap", "body": "Geef de vaardighedenset een naam." },
+        { "type": "genummerde_stap", "body": "Kies voeg toe." },
+        { "type": "genummerde_stap", "body": "Kies \"Vaardigheid toevoegen\"." },
+        { "type": "genummerde_stap", "body": "Schrijf hier het doel: bijvoorbeeld ik kan goed samenwerken." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies voeg toe. Je kan deze stap zo vaak herhalen als je wilt. Zo kan je meerdere vaardigheden aan een set koppelen."
+        }
+      ]
+    }
+  ]
+}

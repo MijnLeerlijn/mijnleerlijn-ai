@@ -1,0 +1,71 @@
+{
+  "sourcePdf": "Automatisch-doelen-koppelen-aan-leerlingen.pdf",
+  "slug": "automatisch-doelen-koppelen-aan-leerlingen",
+  "title": "Automatisch doelen koppelen aan leerlingen",
+  "summary": "In deze handleiding leggen we uit hoe je leerlingen aan je curriculum kan koppelen zodat iedere periode automatisch leerdoelen klaar gezet worden, via een hoofdgebiedprofiel. Wanneer je een leerling aan het profiel koppelt, staan automatisch de juiste deelgebieden aan; je kan daarna altijd nog handmatig een extra gebied aan of uit zetten.",
+  "categorySlug": "doelen-planning",
+  "tags": ["hoofdgebiedprofiel", "deelgebieden", "niveau en periode", "leerlingenoverzicht"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "In deze handleiding leggen we uit hoe je leerlingen aan je curriculum kan koppelen zodat iedere periode automatisch leerdoelen klaar gezet worden. Door een hoofdgebied profiel aan te maken kies je de deelgebieden die bij het profiel passen. Wanneer je een leerling aan het profiel koppelt, staan automatisch de juiste deelgebieden aan. Je kan daarna altijd nog handmatig een extra gebied aan of uit zetten."
+        },
+        { "type": "genummerde_stap", "body": "Kies leerlingenoverzicht." },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer alle leerlingen, of kies enkel de leerlingen die je nodig hebt. Kies bijvoorbeeld alle 1F leerlingen en zet deze goed, doe daarna hetzelfde voor de 1S leerlingen."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies \"Beheer hoofdgebiedprofielen\". Zorg wel dat er hoofdgebiedprofielen voor het hoofdgebied zijn aangemaakt. Zorg anders eerst dat dit is gedaan. De admin van de school kan dit doen."
+        },
+        { "type": "genummerde_stap", "body": "Kies het hoofdgebied wat je wilt koppelen." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies het hoofdgebied waar je een profiel aan wilt koppelen bij de leerling(en)."
+        },
+        { "type": "genummerde_stap", "body": "Open dit tabblad." },
+        {
+          "type": "genummerde_stap",
+          "body": "Gebruik het potloodje bovenaan om voor iedereen hetzelfde hoofdgebiedprofiel te koppelen. Tip: wanneer je onderscheid hebt tussen de 1F en 1S leerlingen, selecteer dan eerst enkel de 1F leerlingen en zet het klaar, en doe het daarna opnieuw voor de 1S leerlingen."
+        },
+        { "type": "genummerde_stap", "body": "Kies het hoofdgebiedprofiel." },
+        { "type": "genummerde_stap", "body": "Kies het hoofdgebiedprofiel." },
+        {
+          "type": "genummerde_stap",
+          "body": "Na het koppelen van de juiste deelgebieden heb je de keuze of je de doelen die nog openstaan bij andere deelgebieden, wilt behouden of uitschakelen."
+        },
+        { "type": "genummerde_stap", "body": "Kies opslaan." },
+        { "type": "genummerde_stap", "body": "Kies sluiten." },
+        {
+          "type": "genummerde_stap",
+          "body": "Je kan nu het niveau en periode goed zetten voor de leerlingen. Wanneer je bijvoorbeeld midden in het jaar enkel het niveau en periode wilt aanpassen dan kan dat direct via deze knop. Wanneer je de 1F en 1S leerlingen via de vorige stappen hebt gekoppeld aan het juiste hoofdgebiedprofiel dan kan je nu wel iedereen selecteren om deze stap maar 1x te hoeven doen."
+        },
+        { "type": "genummerde_stap", "body": "Kies het hoofdgebied." },
+        { "type": "genummerde_stap", "body": "Kies het hoofdgebied." },
+        { "type": "genummerde_stap", "body": "Kies \"Wijzig niveau en/of periode\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Je ziet nu de deelgebieden die aan staan bij de leerlingen. Door op het potloodje achter een leerling te drukken, kan je voor 1 leerling het niveau en periode wijzigen."
+        },
+        { "type": "genummerde_stap", "body": "Kies niveau." },
+        { "type": "genummerde_stap", "body": "Selecteer niveau." },
+        { "type": "genummerde_stap", "body": "Kies periode." },
+        { "type": "genummerde_stap", "body": "Selecteer periode." },
+        { "type": "genummerde_stap", "body": "Kies \"Opslaan\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies het potloodje links boven om voor iedereen in 1x het niveau en periode te wijzigen."
+        },
+        { "type": "genummerde_stap", "body": "Kies niveau." },
+        { "type": "genummerde_stap", "body": "Selecteer niveau." },
+        { "type": "genummerde_stap", "body": "Kies periode." },
+        { "type": "genummerde_stap", "body": "Selecteer periode." },
+        { "type": "genummerde_stap", "body": "Kies \"Opslaan\"." }
+      ]
+    }
+  ]
+}

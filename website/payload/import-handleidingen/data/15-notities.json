@@ -1,0 +1,55 @@
+{
+  "sourcePdf": "Notities-binnen-MijnLeerlijn-1.pdf",
+  "slug": "notities-binnen-mijnleerlijn",
+  "title": "Notities binnen MijnLeerlijn",
+  "summary": "Er zijn op dit moment drie plekken waar je notities kunt bijhouden in MijnLeerlijn: de periodeplanner, per leerdoel en bij de ondersteuning van een leerling.",
+  "categorySlug": "notities",
+  "tags": ["notities", "leerdoel", "periodeplanner", "ondersteuning"],
+  "sections": [
+    {
+      "title": "Drie plekken voor notities",
+      "blocks": [
+        { "type": "tekst", "body": "Er zijn op dit moment 3 plekken waar je notities kunt bijhouden in ML." }
+      ]
+    },
+    {
+      "title": "1: Periodeplanner",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Hier kan je notities koppelen aan een dag. Let op: deze notitie is gekoppeld aan de periodeplanner van een groep. Iedereen die deze periodeplanner open heeft, ziet de notitie staan. Je kan ook notities instellen die herhaald moeten worden."
+        }
+      ]
+    },
+    {
+      "title": "2: NIEUW: Per leerdoel",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Wanneer een leerling aan een doel werkt, kan je notities bijhouden van de voortgang. Let op: deze zijn enkel te zien bij het leerdoel. Dus als er iets belangrijks staat wat je vaker nodig hebt, zet dit dan ook bij de ondersteuning notities (dat is de derde plek waar je een notitie kan maken). Wanneer je in je doelenoverzicht bent, kies je de knop \"Bekijk notities\"."
+        },
+        {
+          "type": "tekst",
+          "body": "Je krijgt dan het volgende overzicht: de laatste notitie van de leerling bij dit leerdoel, de status van de leerling bij dit leerdoel, en de eerder gemaakte notities (door wie en wanneer genoteerd). Open de pop-up om alle notities van deze leerling te zien of een nieuwe te maken. En je kan nieuwe notities toevoegen."
+        },
+        {
+          "type": "tekst",
+          "body": "Je kan ook makkelijk notities plaatsen bij meerdere leerlingen en meerdere leerdoelen in 1x. Klik op de blokken die je wilt aanpassen (zoals je ook doet bij de statussen), of kies de knop \"Notitie toevoegen voor alle leerlingen\". Hij selecteert dan alle leerlingen in de groep; je kan hier leerlingen uitzetten. Let op: deze notities zijn dus enkel aan de leerdoelen gekoppeld. Je kan de leerdoelen selecteren (door te typen filtert hij tussen de doelen). De notitie wordt dan bij alle leerlingen die je gekozen hebt afzonderlijk geplaatst."
+        }
+      ]
+    },
+    {
+      "title": "3: Ondersteuning",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Waar je de leerling ook hebt in het systeem, kan je via een pop-up de ondersteuning notities makkelijk openen en bewerken. Dit doe je door op de gekleurde bolletjes of \"Voeg ondersteuning toe\" te klikken. De gekleurde bolletjes bovenin kan de admin een naam geven als dit nodig is. Je kan per blok notities toevoegen, deze is dus altijd en snel te zien. Ook bij de pagina \"Groepsoverzicht statussen\" kan je makkelijk de notities per leerdoel bekijken en aanpassen."
+        },
+        {
+          "type": "tip",
+          "body": "Zet altijd je initialen en datum neer voor je een notitie maakt. En zet je nieuwe notitie bovenaan."
+        }
+      ]
+    }
+  ]
+}

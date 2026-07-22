@@ -1,0 +1,42 @@
+{
+  "sourcePdf": "screencapture-mijnleerlijn-nl-klantenservice-2026-07-20-09_27_03.pdf",
+  "slug": "helpdesk",
+  "title": "Helpdesk",
+  "summary": "Heb je een vraag over het gebruik van MijnLeerlijn? Op de Helpdesk-pagina vind je handleidingen met stap-voor-stap instructies en kun je via een formulier een specifieke vraag stellen aan het team.",
+  "categorySlug": "beheer-instellingen",
+  "tags": ["helpdesk", "handleidingen", "klantenservice", "contactformulier"],
+  "waarschuwingVoorImport": "Deze pagina is een helpdesk-/overzichtspagina met alleen een korte inleiding, een verwijzing naar het contactformulier en een linkoverzicht naar andere handleidingen. Er staat geen zelfstandige instructie-inhoud in (de linkoverzichten zijn navigatie naar andere artikelen, geen artikeltekst); overweeg dit bestand over te slaan of alleen als contact-/verwijspagina te behandelen bij import.",
+  "sections": [
+    {
+      "title": "Helpdesk",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Heb je een vraag over het gebruik van MijnLeerlijn? Loop je ergens tegenaan of ben je op zoek naar een praktische uitleg? Op deze pagina vind je alles om snel weer verder te kunnen."
+        }
+      ]
+    },
+    {
+      "title": "Handleidingen",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Bekijk hier stap-voor-stap instructies voor het werken met MijnLeerlijn. Van het opzetten van je curriculum tot het bijhouden van doelen en het analyseren van je aanbod – je vindt hier heldere uitleg die je direct kunt toepassen in de klas of binnen het team."
+        }
+      ]
+    },
+    {
+      "title": "Stel je vraag",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Kom je er niet uit of heb je een specifieke vraag over jouw situatie? Vul dan onderaan deze pagina het formulier in. Ons team staat klaar om met je mee te denken. We reageren meestal binnen 1 werkdag."
+        },
+        {
+          "type": "tip",
+          "body": "Voeg zoveel mogelijk informatie toe aan de vraag (bijv. over het leerjaar, type school of een specifieke functie in MijnLeerlijn). Zo kunnen we je sneller en gerichter helpen."
+        }
+      ]
+    }
+  ]
+}

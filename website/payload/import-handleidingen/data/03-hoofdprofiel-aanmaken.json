@@ -1,0 +1,46 @@
+{
+  "sourcePdf": "Hoe-maak-je-een-hoofdprofiel-aan.pdf",
+  "slug": "hoofdprofiel-aanmaken",
+  "title": "Hoe maak je een hoofdprofiel aan",
+  "summary": "We leggen je stap voor stap uit hoe je een hoofdprofiel (hoofdgebiedprofiel) aanmaakt.",
+  "categorySlug": "starten",
+  "tags": ["hoofdgebiedprofiel", "curriculum", "instellingen"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "Kies \"Hoofdgebiedprofielen\": kies links in het menu \"Hoofdgebiedprofielen\"."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies \"Hoofdgebiedprofiel toevoegen\": kies rechtsboven de blauwe knop hoofdgebiedprofiel toevoegen."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Vul de naam in van het profiel: vul de naam in van het profiel, zorg dat deze duidelijk te herkennen is."
+        },
+        { "type": "genummerde_stap", "body": "Kies \"Volgende\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer het hoofdgebied waarvoor je het profiel aanmaakt: selecteer uit je curriculum het hoofdgebied dat je aan het profiel wilt koppelen."
+        },
+        { "type": "genummerde_stap", "body": "Kies \"Volgende\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer alle deelgebieden die aan moeten staan: selecteer alle deelgebieden die je bij dit profiel aan wilt hebben staan voor de leerling."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Controleer of alle deelgebieden geselecteerd zijn die aan moeten staan."
+        },
+        { "type": "genummerde_stap", "body": "Kies \"Volgende\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Controleer of het klopt en kies \"Opslaan\": controleer of alles klopt en kies opslaan. Je hoofdgebiedprofiel is nu aangemaakt."
+        }
+      ]
+    }
+  ]
+}

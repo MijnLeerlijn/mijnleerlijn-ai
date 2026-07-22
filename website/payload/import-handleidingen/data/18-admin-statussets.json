@@ -1,0 +1,43 @@
+{
+  "sourcePdf": "Admin-Statussets-1.pdf",
+  "slug": "admin-statussets",
+  "title": "Admin: Statussets",
+  "summary": "In deze handleiding geven we aan hoe de admin van de school nieuwe statussets kan maken en kan koppelen aan een hoofdgebied.",
+  "categorySlug": "beheer-instellingen",
+  "tags": ["admin", "statussets", "hoofdgebied", "schoolinstellingen"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "Intro. In deze handleiding geven we aan hoe de admin van de school nieuwe statussets kan maken en kan koppelen aan een hoofdgebied."
+        },
+        { "type": "genummerde_stap", "body": "Profiel. Ga naar je profiel." },
+        {
+          "type": "genummerde_stap",
+          "body": "Admin weergave. Kies \"admin weergave\". Als je dit niet hebt staan, vraag dan of je admin kan worden."
+        },
+        { "type": "genummerde_stap", "body": "Extra menu. Ga naar het extra menu." },
+        { "type": "genummerde_stap", "body": "School instellingen. Kies school instellingen." },
+        { "type": "genummerde_stap", "body": "Status sets. Kies de tab \"Status sets\"." },
+        { "type": "genummerde_stap", "body": "Status set aanmaken. Kies \"Status set aanmaken\"." },
+        { "type": "genummerde_stap", "body": "Naam. Geef de set een naam." },
+        { "type": "genummerde_stap", "body": "Volgende. Kies \"Volgende\"." },
+        { "type": "genummerde_stap", "body": "Kleuren. Geef iedere kleur een naam." },
+        { "type": "genummerde_stap", "body": "Volgende. Kies \"Volgende\"." },
+        { "type": "genummerde_stap", "body": "Opslaan. Kies \"Opslaan\"." },
+        { "type": "genummerde_stap", "body": "Curriculumoverzicht. Ga naar \"Curriculumoverzicht\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Hoofdgebied. Kies het hoofdgebied waar je de set aan wilt koppelen en kies \"pas aan\"."
+        },
+        { "type": "genummerde_stap", "body": "Naam. Selecteer de set die je wilt koppelen." },
+        {
+          "type": "genummerde_stap",
+          "body": "Opslaan. Kies \"opslaan\", de benaming van de set is nu in je overzichten bij dit hoofdgebied te vinden."
+        }
+      ]
+    }
+  ]
+}

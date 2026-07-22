@@ -1,0 +1,39 @@
+{
+  "sourcePdf": "Verwijder-doelen-bij-een-leerling-of-groep.pdf",
+  "slug": "verwijder-doelen-bij-een-leerling-of-groep",
+  "title": "Verwijder doelen bij één leerling of groep",
+  "summary": "In deze handleiding leggen we uit hoe je leerdoelen kan verwijderen bij één leerling of de groep.",
+  "categorySlug": "doelen-planning",
+  "tags": ["leerdoelen verwijderen", "PLP", "niveau en periode", "leerling of groep"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "In deze handleiding leggen we uit hoe je leerdoelen kan verwijderen bij één leerling of de groep."
+        },
+        { "type": "genummerde_stap", "body": "Kies verwijder." },
+        { "type": "genummerde_stap", "body": "Kies één leerling of de hele groep." },
+        { "type": "genummerde_stap", "body": "Kies volgende." },
+        {
+          "type": "genummerde_stap",
+          "body": "Per hoofdgebied zie je hier aan welke niveaus doelen gekoppeld zijn."
+        },
+        { "type": "genummerde_stap", "body": "Selecteer het niveau dat verwijderd mag worden." },
+        {
+          "type": "genummerde_stap",
+          "body": "Per hoofdgebied zie je hier aan welke niveaus er doelen in een periode gekoppeld zijn."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer de periodes die bij het niveau horen dat verwijderd mag worden."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies \"verwijder allen\" als alle doelen die je geselecteerd hebt verwijderd mogen worden, ongeacht de status (nooit behaald en gesloten). Wil je enkel de gele, blauwe of oranje doelen, kies dan die kleur."
+        }
+      ]
+    }
+  ]
+}

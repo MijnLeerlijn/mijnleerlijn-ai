@@ -1,0 +1,39 @@
+{
+  "sourcePdf": "Leerdoelen-tags-1.pdf",
+  "slug": "tag-categorieen-en-tags-aanmaken",
+  "title": "Tag categorieën en tags aanmaken",
+  "summary": "In deze handleiding leggen we uit hoe je \"Tag categorieën en tags\" aanmaakt.",
+  "categorySlug": "doelen-planning",
+  "tags": ["tag categorie", "leerdoel tag", "hoofdgebied", "curriculum"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "In deze handleiding leggen we uit hoe je \"Tag categorieën en tags\" aanmaakt."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Ga links in het menu naar tags en kies \"Tag categorie toevoegen\"."
+        },
+        { "type": "genummerde_stap", "body": "Geef de categorie een naam." },
+        { "type": "genummerde_stap", "body": "Kies \"Volgende\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies het hoofdgebied (of meerdere) waar je de tags voor wilt gebruiken."
+        },
+        { "type": "genummerde_stap", "body": "Kies \"Volgende\"." },
+        { "type": "genummerde_stap", "body": "Kies \"Opslaan\"." },
+        { "type": "genummerde_stap", "body": "Open de categorie." },
+        { "type": "genummerde_stap", "body": "Kies \"Leerdoel tag toevoegen\"." },
+        { "type": "genummerde_stap", "body": "Geef de tag een naam en kies volgende." },
+        { "type": "genummerde_stap", "body": "Kies \"Opslaan\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Wanneer je in een overzicht het hoofdgebied filtert, zie je enkel de tags die gekoppeld zijn aan het hoofdgebied."
+        }
+      ]
+    }
+  ]
+}

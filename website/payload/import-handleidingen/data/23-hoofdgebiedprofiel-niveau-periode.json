@@ -1,0 +1,24 @@
+{
+  "sourcePdf": "screencapture-mijnleerlijn-nl-beheer-hoofdgebiedprofiel-niveau-periode-2026-07-20-09_28_52.pdf",
+  "slug": "beheer-hoofdgebiedprofiel-niveau-periode",
+  "title": "Beheer hoofdgebiedrofiel / niveau en periode",
+  "summary": "Met MijnLeerlijn kun je leerdoelen eenvoudig per periode klaarzetten voor je leerlingen door ze te koppelen aan het juiste hoofdgebiedprofiel, zodat er automatisch een passend aanbod ontstaat, afgestemd op niveau en planning.",
+  "categorySlug": "beheer-instellingen",
+  "tags": ["hoofdgebiedprofiel", "niveau", "periode", "beheer"],
+  "waarschuwingVoorImport": "Deze pagina bevat alleen de inleidende tekst van het artikel; de daadwerkelijke stap-voor-stap uitleg zit in een ingesloten video en een los te downloaden pdf, die in deze screencapture niet als tekst beschikbaar zijn. Overweeg deze video/pdf apart te verwerken voor volledige instructie-inhoud.",
+  "sections": [
+    {
+      "title": "Beheer hoofdgebiedprofiel / niveau en periode",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Met MijnLeerlijn kun je leerdoelen eenvoudig per periode klaarzetten voor je leerlingen. In deze handleiding (én video) zie je stap voor stap hoe je leerlingen koppelt aan het juiste hoofdgebiedprofiel. Zo ontstaat automatisch een passend aanbod, afgestemd op het niveau en de planning van jouw groep."
+        },
+        {
+          "type": "tekst",
+          "body": "Gebruik je de functie voor het eerst? Of wil je even opfrissen hoe het ook alweer werkt? Bekijk dan de uitleg hieronder of download de visuele handleiding."
+        }
+      ]
+    }
+  ]
+}

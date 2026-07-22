@@ -1,0 +1,36 @@
+{
+  "sourcePdf": "Handmatig-leerdoelen-toevoegen-aan-leerlingen.pdf",
+  "slug": "handmatig-leerdoelen-toevoegen-aan-leerlingen",
+  "title": "Handmatig leerdoelen toevoegen aan leerlingen",
+  "summary": "In deze handleiding leggen we uit hoe je handmatig leerdoelen aan één of meerdere leerlingen kan koppelen.",
+  "categorySlug": "doelen-planning",
+  "tags": ["leerdoelen", "PLP", "deelgebied", "leerlingen"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        { "type": "genummerde_stap", "body": "Ga naar je groep en kies \"Acties\"." },
+        { "type": "genummerde_stap", "body": "Open het tabje \"toevoegen\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies de knop \"voeg toe\" bij \"Voeg leerdoelen toe aan PLP\"."
+        },
+        { "type": "genummerde_stap", "body": "Kies de leerling(en) aan wie je de doelen wilt koppelen." },
+        { "type": "genummerde_stap", "body": "Kies de leerlingen." },
+        { "type": "genummerde_stap", "body": "Kies \"Volgende\"." },
+        {
+          "type": "genummerde_stap",
+          "body": "Open een deelgebied, je kan bovenin de doelen filteren door een niveau en periode te kiezen."
+        },
+        { "type": "genummerde_stap", "body": "Selecteer de leerdoelen die je wilt toevoegen." },
+        { "type": "genummerde_stap", "body": "Selecteer de leerdoelen die je wilt toevoegen." },
+        { "type": "genummerde_stap", "body": "Kies volgende." },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies \"Huidig\" als je de doelen gelijk op nieuw wilt hebben staan of kies \"Komend PLP\" wanneer je deze na de periode wissel op nieuw wilt hebben staan."
+        },
+        { "type": "genummerde_stap", "body": "Kies voeg toe." }
+      ]
+    }
+  ]
+}

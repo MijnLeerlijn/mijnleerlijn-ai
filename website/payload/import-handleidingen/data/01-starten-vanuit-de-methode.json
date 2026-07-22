@@ -1,0 +1,474 @@
+{
+  "sourcePdf": "Aan-de-slag-met-MijnLeerlijn-Starten-vanuit-de-methode-2.pdf",
+  "slug": "starten-vanuit-de-methode",
+  "title": "Starten met MijnLeerlijn - Methode als basis",
+  "summary": "Handleiding voor teams die met MijnLeerlijn starten vanuit de methode: de leerdoelen uit de methode vormen het vertrekpunt binnen de leerdoelencyclus. Beschrijft de verplichte en optionele stappen, van leerlingen koppelen tot statussen bijhouden en analyseren.",
+  "categorySlug": "starten",
+  "tags": ["methode", "leerdoelencyclus", "statussen", "hoofdgebiedprofiel"],
+  "sections": [
+    {
+      "title": "Stappenplan",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Jullie hebben als team gekozen om te starten met MijnLeerlijn op basis van de methode. Dat betekent dat de leerdoelen die in de methode worden aangeboden, het vertrekpunt vormen binnen de leerdoelencyclus."
+        },
+        {
+          "type": "tekst",
+          "body": "Om dit goed en werkbaar te organiseren, zijn er een aantal vaste stappen die iedereen volgt, aangevuld met opties die jullie als team kunnen inzetten. Denk aan het bijhouden van statussen, analyseren aan het einde van een periode en - als jullie dat willen - het gebruiken van eigen succescriteria of extra statuskleuren."
+        },
+        {
+          "type": "tekst",
+          "body": "Deze pagina laat in één oogopslag zien:\n- Wat je sowieso moet doen om met de methode goed te starten;\n- Welke keuzes je hebt om het systeem aan te laten sluiten bij jullie werkwijze;\n- Welke vervolgstappen mogelijk zijn voor verdere verdieping of borging.\n\nBespreek met je MijnLeerlijn-adviseur hoe jullie dit als team willen inrichten. Zo leg je samen een stevige basis."
+        },
+        { "type": "tekst", "body": "Leerlingen koppelen: leerlingen gekoppeld aan leerjaar." },
+        {
+          "type": "tekst",
+          "body": "Verplichte stappen:\n- Bijhouden van statussen: 'nieuw' (blauw), 'mee bezig' (geel), 'behaald' (groen).\n- Methodetoets = behaald. Bij afwijking van de methodetoets: altijd noteren op de inhoudspagina waarom behaald.\n- Zorg voor een online logboek waarin je aantekent wat je opvalt of moet veranderen in de leerdoelen.\n- Voer aan het eind van iedere periode een analyse uit: welke doelen zijn niet behaald en waarom? Welke neem ik mee?"
+        },
+        {
+          "type": "tekst",
+          "body": "Optioneel:\n- Extra status 'paars' gebruiken: wanneer een leerling tijdens de les het lesdoel al behaalt.\n- Succescriteria eigen maken."
+        },
+        {
+          "type": "tekst",
+          "body": "Vervolg:\n- Gebruik tags zoals 'cruciaal' of 'aanbodsdoel' en koppel deze aan de leerdoelen.\n- Koppel leerdoelen aan instructies, materialen, toetsen en succescriteria.\n- Vergelijk LVS-resultaten met de voortgang in MijnLeerlijn om patronen te ontdekken."
+        }
+      ]
+    },
+    {
+      "title": "Nieuw account / wachtwoord vergeten",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Wanneer er een nieuw account is aangemaakt wordt er een e-mail verzonden (controleer ook de SPAM-map). Deze e-mail bevat het wachtwoord en de unieke link van de school om direct in te loggen."
+        },
+        {
+          "type": "tekst",
+          "body": "Wanneer het wachtwoord niet (meer) bekend is, kan er een nieuw wachtwoord aangevraagd worden:\n- Ga naar de MijnLeerlijn-omgeving van de school (let op dat deze klopt, want er komt altijd een inlogscherm i.v.m. de beveiliging).\n- Klik op 'Wachtwoord vergeten?'.\n- Vul het e-mailadres in.\n- In de e-mail (controleer ook SPAM) zit een link om een nieuw wachtwoord aan te maken."
+        },
+        {
+          "type": "tekst",
+          "body": "Het aanpassen van je wachtwoord:\n- Ga links in het menu naar leerkrachten.\n- Klik op je eigen naam.\n- Klik op het potloodje.\n- Scroll naar beneden.\n- Vul twee keer hetzelfde wachtwoord in.\n- Scroll naar boven en sla je wachtwoord op."
+        }
+      ]
+    },
+    {
+      "title": "MijnDashboard - Statussen",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "In MijnLeerlijn kunnen leerdoelen de volgende statussen hebben:\n- Nieuw: leerdoelen krijgen als eerste deze status; dit betekent dat er nog geen instructie is gegeven en/of de leerling er nog niet mee aan de slag is gegaan.\n- Mee bezig: na de instructie en/of als de leerling ermee aan de slag is gegaan.\n- Les behaald (optie): wanneer een leerling tijdens de les het lesdoel al behaalt.\n- N.t.b.: later in te zetten als extra status.\n- Inactief: wanneer een leerling niet aan een leerdoel is gekoppeld.\n- Gesloten: wanneer een leerling het leerdoel niet behaald heeft, maar je dit wel wilt afsluiten.\n- Behaald: wanneer een leerling een leerdoel heeft behaald.\n- Komend: een leerdoel dat in de volgende periode voor deze leerling klaarstaat."
+        }
+      ]
+    },
+    {
+      "title": "Favorieten aanmaken",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Op elke pagina staat een favorieten-icoon. Klik hierop om een favoriet aan te maken. Verzin een naam en klik op Opslaan. Je aangemaakte favoriet zie je vervolgens bij MijnFavorieten - je kunt dan rechtstreeks naar deze pagina."
+        }
+      ]
+    },
+    {
+      "title": "Curriculum",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "In het curriculumoverzicht kun je een specifiek leerdoel zoeken, filteren op groep/niveau, periode en tag, en het menu in- of uitklappen. Per periode zie je het aantal doelen. Via het icoontje open je de verdiepingspagina's van een leerdoel."
+        },
+        {
+          "type": "tekst",
+          "body": "Klik op het potloodje om een tag toe te voegen, het niveau/periode aan te passen of de naam van het leerdoel te wijzigen."
+        },
+        {
+          "type": "tekst",
+          "body": "De admin kan nieuwe tags toevoegen. Je kunt het curriculum dan makkelijk filteren op deze tags. Hierbij een paar voorbeelden/suggesties:\n\nCruciaal of Aanbodsdoel: geef bij elk leerdoel aan of het een cruciaal doel of een aanbodsdoel is. Dit helpt bij de analyse: zo weet je hoe belangrijk een doel is voor de ontwikkeling van de leerling. Een aanbodsdoel mag je - zodra het is aangeboden - direct op 'behaald' zetten. Voor cruciale doelen wil je juist zeker weten dat het doel echt beheerst wordt voordat je het als behaald markeert.\n\nIngevuld: wanneer je de inhoud van de verdiepingspagina hebt ingevuld, zie je snel welke doelen al ingevuld zijn.\n\nNotitie: wanneer je een notitie bij de inhoud hebt gezet om te bespreken met je collega's.\n\nM/E toets: zo zie je op welke M- of E-toets dit leerdoel aan bod komt."
+        },
+        {
+          "type": "tekst",
+          "body": "Bij sommige methodes staat op de verdiepingspagina van een leerdoel al de inhoud van de methode. Wanneer je een leerdoel op behaald zet buiten de methodetoets om, zet je hier wat de criteria waren om het doel op behaald te zetten."
+        }
+      ]
+    },
+    {
+      "title": "Tags",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "In MijnLeerlijn kun je bij elk leerdoel tags toevoegen. Tags zijn handige labels waarmee je leerdoelen kunt categoriseren, filteren en verrijken."
+        },
+        {
+          "type": "tekst",
+          "body": "Waarvoor kun je tags gebruiken? Tags helpen je om snel en overzichtelijk te werken. Je kunt ze bijvoorbeeld gebruiken om:\n- Aan te geven of een doel een aanbodsdoel of een cruciaal doel is.\n- Het thema toe te voegen waarin het doel wordt aangeboden (komt het thema terug? Dan zie je in één klik welke doelen erbij horen).\n- Je eigen succescriteria bij het leerdoel te noteren (wat verwacht je precies van leerlingen bij dit doel?)."
+        },
+        { "type": "genummerde_stap", "body": "Ga in het linker zijmenu naar 'Leerdoel tags'." },
+        {
+          "type": "genummerde_stap",
+          "body": "Maak een categorie aan, bijvoorbeeld: 'Doeltype', 'Thema's', of 'Succescriteria'."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Koppel de categorie aan een hoofdgebied. Zo kun je later makkelijk filteren per vakgebied (bijv. rekenen of taal)."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Voeg tags toe binnen de categorie. Bijvoorbeeld: bij categorie 'Doeltype': aanbod, cruciaal, verdieping; bij 'Thema's': Lente, Herfst, Dieren; bij 'Succescriteria': zonder hulp, automatiseren, toepassen in context."
+        },
+        {
+          "type": "tip",
+          "body": "Filter eerst op hoofdgebied, dan zie je alleen de tags die daarbij horen - dat werkt overzichtelijker."
+        },
+        { "type": "genummerde_stap", "body": "Ga naar je curriculum." },
+        { "type": "genummerde_stap", "body": "Klik op het potloodje achter het leerdoel." },
+        { "type": "genummerde_stap", "body": "Selecteer de juiste tags uit de lijst." },
+        {
+          "type": "tekst",
+          "body": "Tags toevoegen via Excel (voor admins): wanneer je een curriculum via Excel (XLS) inlaadt, worden de tags automatisch gekoppeld:\n- De tags komen in de juiste categorie terecht.\n- Ze worden direct aan de juiste leerdoelen gekoppeld."
+        },
+        {
+          "type": "tip",
+          "body": "Bij het bewerken van een bestaand curriculum: vraag je admin om een export van het curriculumbestand (.xlsx). Verwijder uit het bestand alle hoofdgebieden waar je niks mee gaat doen en laat de rest van het bestand exact zoals het is. Voeg in de kolom 'Tags' je gewenste tags toe - gescheiden met komma's (bijv. aanbod, lente) - en laat de admin het bestand opnieuw uploaden. Alle bestaande instellingen blijven bewaard, alleen de tags worden toegevoegd."
+        }
+      ]
+    },
+    {
+      "title": "Hoofdgebiedprofiel aanmaken",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Wat zijn hoofdgebiedprofielen? Om leerlingen goed te kunnen koppelen aan de juiste leerdoelen in MijnLeerlijn, is het belangrijk dat je vooraf bepaalt welke deelgebieden (bijvoorbeeld getallen, meten, spelling) actief moeten zijn binnen een bepaald hoofdgebied (zoals rekenen of taal). Dat doe je met hoofdgebiedprofielen."
+        },
+        {
+          "type": "tekst",
+          "body": "Wat doet een hoofdgebiedprofiel precies? Een hoofdgebiedprofiel is een soort profielinstelling per vakgebied waarin je vastlegt:\n- Welke deelgebieden aan moeten staan voor dit profiel;\n- Welke deelgebieden uit mogen blijven."
+        },
+        {
+          "type": "tekst",
+          "body": "Bijvoorbeeld: een school wil werken met het profiel \"Rekenen op 1F-niveau\". In dat profiel geeft de admin aan: bij dit profiel horen de deelgebieden \"getallen\", \"optellen & aftrekken\" en \"meten\". Andere deelgebieden zoals getallen 1S worden uitgezet, omdat die in dit profiel niet aan bod komen."
+        },
+        {
+          "type": "tekst",
+          "body": "Wat betekent dit voor de leerlingkoppeling? Als je vervolgens een leerling aan dit hoofdgebiedprofiel koppelt:\n- Worden automatisch de juiste deelgebieden aangezet;\n- Zijn alle andere deelgebieden uitgeschakeld;\n- En worden leerdoelen alleen klaargezet voor de actieve deelgebieden.\nZo werk je gericht en voorkom je dat leerlingen onnodig leerdoelen krijgen die niet passen bij hun niveau of leerroute."
+        },
+        {
+          "type": "tekst",
+          "body": "Wie beheert dit? Het instellen van hoofdgebiedprofielen gebeurt meestal door de schooladmin of jullie adviseur. Als school spreek je samen af welke profielen jullie gebruiken, zodat iedereen leerlingen op dezelfde manier koppelt."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "In de basis koppel je iedereen aan 1S/2F, tenzij anders is besloten voor de leerling."
+        }
+      ]
+    },
+    {
+      "title": "Leerlingen koppelen aan hoofdgebiedprofiel",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Nu de hoofdgebiedprofielen zijn ingesteld en de juiste deelgebieden voor de leerlingen zijn geactiveerd, is de volgende stap: leerlingen koppelen aan het juiste niveau en periode."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Als het hoofdgebiedprofiel al goed staat, hoef je dat niet opnieuw te koppelen. Je past dan alleen het niveau en/of de periode aan."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Ga terug naar het leerlingenoverzicht: ga weer naar jouw groep in het menu en klik op 'Leerlingenoverzicht'. Selecteer de leerlingen die je aan een niveau en periode wilt koppelen. Dit keer hoef je niet eerst onderscheid te maken tussen 1F- en 1S-leerlingen; het profiel is al gekoppeld."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies 'Beheer niveau en periode': klik in de pop-up onderin op 'Beheer niveau en periode'."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies het juiste hoofdgebied: je selecteert nu het hoofdgebied (bijv. rekenen, taal) waarvoor je een profiel wilt toewijzen. Let op: je kiest hier nog niet het profiel zelf, alleen het vakgebied. Selecteer eerst het hoofdgebied en druk daarna op de blauwe lijn om de leerlingen te zien."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Koppel het profiel: in het volgende scherm zie je alle geselecteerde leerlingen met daarachter of ze al aan een profiel zijn gekoppeld. Wil je in één keer een profiel toewijzen aan álle geselecteerde leerlingen? Klik dan links op het potloodicoontje. Kies het juiste profiel dat hoort bij dit hoofdgebied (bijvoorbeeld 'Rekenen 1F')."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Maak je keuze: actief houden of uitschakelen. Actief houden: eerdere actieve doelen van andere deelgebieden blijven behouden. Uitschakelen: eerdere doelen worden afgesloten - bijvoorbeeld als je een leerling omschakelt van hoofdgebiedprofiel 1S naar 1F, kun je ervoor kiezen om alle 1S-doelen die nog open stonden te sluiten. Maak je keuze en klik op 'Opslaan'."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Controle en afronden: het systeem slaat de koppeling op. Je ziet dat er nu bij alle leerlingen een profiel is ingevuld. Klik rechtsonder op 'Sluiten'. De juiste deelgebieden zijn nu automatisch aangezet voor de leerlingen."
+        },
+        { "type": "tekst", "body": "Klaar! Je leerlingen zijn nu gekoppeld aan het juiste profiel." }
+      ]
+    },
+    {
+      "title": "Leerlingen koppelen aan niveau en periode",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Nu de hoofdgebiedprofielen zijn ingesteld en de juiste deelgebieden voor de leerlingen zijn geactiveerd, is de volgende stap: leerlingen koppelen aan het juiste niveau en periode."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Als het hoofdgebiedprofiel al goed staat, hoef je dat niet opnieuw te koppelen. Je past dan alleen het niveau en/of de periode aan."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Ga terug naar het leerlingenoverzicht: ga weer naar jouw groep in het menu en klik op 'Leerlingenoverzicht'. Selecteer de leerlingen die je aan een niveau en periode wilt koppelen. Dit keer hoef je niet eerst onderscheid te maken tussen 1F- en 1S-leerlingen; het profiel is al gekoppeld."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies 'Beheer niveau en periode': klik in de pop-up onderin op 'Beheer niveau en periode'."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies het juiste hoofdgebied: je selecteert nu het hoofdgebied (bijv. rekenen, taal) waarvoor je het niveau en de periode aan wilt koppelen. Selecteer eerst het hoofdgebied en druk daarna op de blauwe lijn om de leerlingen te zien."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Bekijk het overzicht en pas aan: je ziet nu alle geselecteerde leerlingen, met per leerling het deelgebied (bijv. getallen, spelling) en het huidige niveau en periode waarop ze zijn gekoppeld. Dit overzicht wordt meestal voor het eerst gevuld op basis van ParnasSys of een handmatige invoer. Na elke periode of jaarwisseling schuift het systeem automatisch door, tenzij je handmatig bijstuurt. Je hebt drie manieren om aanpassingen te doen: (1) links bovenin het potloodje - pas het niveau én de periode aan voor alle deelgebieden van alle leerlingen in één keer; (2) per deelgebied het potloodje - pas één specifiek deelgebied aan voor alle leerlingen in de lijst; (3) achter een leerling het potloodje - pas alle deelgebieden aan voor één specifieke leerling. Bij elke optie: kies het gewenste niveau (bijv. groep 6), kies de juiste periode (bijv. periode 1) en klik op 'Opslaan'."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Kies actief houden of uitschakelen: na het opslaan verschijnt een pop-up met de vraag of je doelen van andere niveaus of periodes die nog aanstaan wilt behouden (actief houden) of uitschakelen. Voor de eerste keer instellen geldt: kies 'Uitschakelen'. Zo zorg je ervoor dat eventueel eerder gegenereerde doelen van het verkeerde niveau of periode worden overschreven en alleen de juiste doelen zichtbaar zijn."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Sla je wijzigingen op: klik rechtsonder op 'Opslaan' om alle aanpassingen definitief te maken."
+        },
+        {
+          "type": "tekst",
+          "body": "Klaar! De leerlingen zijn nu gekoppeld aan het juiste niveau en de juiste periode binnen hun profiel. De doelen die zij nu in hun leerdoelenplan krijgen, sluiten naadloos aan bij jullie aanbod."
+        }
+      ]
+    },
+    {
+      "title": "Statussen bijhouden",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Nu de leerdoelen gekoppeld zijn aan je leerlingen, is het tijd voor de volgende stap: inzicht krijgen in wie aan welke doelen werkt, en deze doelen actief bijhouden met statussen."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Ga naar het groepsoverzicht leerdoelen: ga naar je groep en klik op 'Groepsoverzicht leerdoelen'."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Bekijk het totaaloverzicht: je komt nu in een overzicht waarin je per hoofdgebied (bijv. rekenen) ziet welke deelgebieden actief zijn, hoeveel leerdoelen er gekoppeld zijn en bij hoeveel leerlingen deze doelen actief zijn."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Een leerdoel is 'actief' zolang het de status blauw (nieuw), geel, paars of oranje heeft."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Open de deelgebieden: klik op het pijltje naast het hoofdgebied om de deelgebieden te openen. Je ziet nu de individuele leerdoelen binnen dat deelgebied."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Inzicht per leerdoel: achter elk leerdoel staat een informatiebolletje (i). Klik hierop om te zien bij hoeveel leerlingen dit doel nog actief is. Wil je weten wie dat zijn en de status aanpassen? Klik dan op het oogje."
+        },
+        {
+          "type": "tekst",
+          "body": "Kleurenlegenda: blauw = nieuw leerdoel; geel, paars, oranje = actief/in behandeling; groen = behaald; rood = gesloten (niet behaald, wordt afgesloten)."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Ga naar het doelenoverzicht: in het groepsoverzicht kun je op twee manieren verder klikken om statussen te beheren. (1) Genereer hoofdgebiedoverzicht - hiermee haal je in één keer álle leerdoelen op binnen het gekozen hoofdgebied (bijvoorbeeld rekenen); let op: als er veel doelen openstaan, kan dit onoverzichtelijk worden. (2) Open een deelgebied afzonderlijk - klik op het pijltje naast een deelgebied (zoals 'Getallen') en klik rechts op het oogje; je komt dan in het statusoverzicht van alleen dit deelgebied, vaak handiger en overzichtelijker."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Gebruik de filters: boven in het statusscherm zie je filters waarmee je kunt bepalen welke statussen je in beeld wilt (bijvoorbeeld alleen 'Nieuw' of ook 'Behaald') en op welk niveau, leerjaar of periode je wilt filteren."
+        },
+        {
+          "type": "tip",
+          "body": "Standaard staan alleen actieve statussen geselecteerd (blauw, geel, paars, oranje). Als je ook 'Behaald' (groen) of 'Gesloten' (rood) wilt zien, vink deze aan in de filter."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Leerdoelen selecteren: klik op een gekleurde statusbol bij een leerling om dat doel te selecteren, of klik op het kleurenbolletje bovenin (bijv. het gele bolletje met cijfer) om alle leerlingen met die status in één keer te selecteren. Je kunt daarna per leerling alsnog selecties aan- of uitzetten."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Status aanpassen: zodra je één of meerdere doelen hebt geselecteerd, verschijnt er onderin beeld een pop-up. Hierin kies je de nieuwe statuskleur, bijvoorbeeld Mee bezig, Behaald of Gesloten. Kies de kleur, en de status wordt aangepast voor alle geselecteerde leerlingen."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Als je een doel voor alle leerlingen op behaald (groen) of gesloten (rood) zet, verdwijnt dit doel uit het actieve overzicht. Wil je het alsnog terugzien? Pas dan de filter rechtsboven aan en selecteer ook 'Behaald' of 'Gesloten'."
+        },
+        {
+          "type": "tekst",
+          "body": "Liever uitgeprint op je bureau? Wanneer je het overzicht hebt, klik dan rechtsboven op 'download overzicht'. Deze geprinte versie kun je op je bureau leggen en met de hand aanpassen."
+        },
+        {
+          "type": "tip",
+          "body": "Zorg dat op vrijdag alles in MijnLeerlijn is bijgewerkt. Dan kun je op maandag een nieuwe versie printen."
+        }
+      ]
+    },
+    {
+      "title": "Behaald",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Wanneer je werkt met een methode, is de methodetoets in de basis het uitgangspunt om te bepalen of een leerling een leerdoel heeft behaald. In MijnLeerlijn betekent dit: je zet het doel op 'Behaald' zodra de leerling de toets succesvol heeft afgerond."
+        },
+        {
+          "type": "tekst",
+          "body": "Maar soms gebruik je andere succescriteria dan de methodetoets, bijvoorbeeld:\n- Een observatie in de klas\n- Een zelfstandig gemaakte opdracht\n- Een project, presentatie of andere alternatieve toetsvorm\nIn dat geval is het belangrijk om vast te leggen waarom je het doel als behaald hebt gemarkeerd. Dit doe je op de inhoudspagina van het leerdoel."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Ga naar het statusscherm van een leerdoel (via het groepsoverzicht)."
+        },
+        { "type": "genummerde_stap", "body": "Klik bovenaan het leerdoel op het grijze mapje." },
+        { "type": "genummerde_stap", "body": "Er opent een pop-up met de inhoudspagina van het leerdoel." },
+        {
+          "type": "tekst",
+          "body": "Noteer je verantwoording. Op de inhoudspagina kun je vastleggen:\n- Waarom je het doel op behaald hebt gezet\n- Welk bewijs je hebt gebruikt (observatie, werk, gesprekje, etc.)\n- Welke criteria je hanteerde (indien anders dan de methode)"
+        },
+        {
+          "type": "tip",
+          "body": "Zet altijd je naam en datum bij je notitie. Zo blijft zichtbaar wie de keuze maakte, en wanneer."
+        }
+      ]
+    },
+    {
+      "title": "Online document",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Wanneer je werkt vanuit een methode, zijn de methode-doelen al opgenomen in MijnLeerlijn."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Dit zijn leerdoelen op het niveau van blokken of thema's - niet de lesdoelen uit de dagelijkse lesinstructie. Bijvoorbeeld: doel 3.2.4 betekent: groep 3, blok 2, doel 4."
+        },
+        {
+          "type": "tekst",
+          "body": "Wat doe je als het doel niet aansluit op de praktijk? Tijdens het werken met deze doelen kun je dingen tegenkomen die niet kloppen, onduidelijk zijn of anders zouden moeten. Het is belangrijk dat je die signalen structureel bijhoudt. Zo bouw je samen aan een leerlijn die écht past bij jouw school."
+        },
+        {
+          "type": "tekst",
+          "body": "Maak als school een gezamenlijk online document aan. Noteer hierin alles wat je tegenkomt, per groep en per doel. Bijvoorbeeld:\n- Verschil tussen doel en toets: bij het doel in MijnLeerlijn staat dat een leerling moet optellen én aftrekken, maar op de toets laat de leerling alleen optellen zien. Je kunt het doel dan niet op 'behaald' zetten en weet niet wat je ermee moet.\n- Doelen komen niet terug op de toets: het doel is wél aangeboden, maar wordt niet getoetst. Je mist een meetmoment om het doel af te ronden.\n- Praktijkervaring wijkt af: je merkt dat je sommige doelen in de praktijk altijd overslaat, toevoegt of juist eerder aanbiedt. Deze signalen zijn waardevol voor het herzien van het aanbod.\n- Doelen zijn te groot of onduidelijk: je wilt een doel kunnen opsplitsen of preciseren, bijvoorbeeld om beter formatief te kunnen evalueren."
+        },
+        {
+          "type": "tekst",
+          "body": "Werk samen en houd het gestructureerd:\n- Noteer je bevindingen per groep en per leerdoelnummer (zoals 3.2.4).\n- Voeg je naam en datum toe aan je opmerkingen.\n- Houd het document bij gedurende de periode."
+        },
+        {
+          "type": "tekst",
+          "body": "Wat gebeurt er daarna? In de periode-analyse bespreek je deze signalen met je team of adviseur. Waar nodig:\n- Wordt het curriculum in MijnLeerlijn aangepast\n- Worden overbodige, onduidelijke of ontbrekende doelen besproken\n- Pas je samen het aanbod aan voor de volgende periode\nZo maak je stap voor stap de methode eigen - en verandert MijnLeerlijn van een systeem naar een krachtig kompas voor jullie onderwijs."
+        },
+        {
+          "type": "tekst",
+          "body": "En daarna? In de volgende fase kun je:\n- Eigen materialen koppelen aan leerdoelen\n- Succescriteria of eigen toetsen toevoegen\n- Het aanbod en de behaalde doelen van leerlingen naast de LVS-resultaten leggen\nZo bouw je samen aan doelgericht, inzichtelijk én realistisch onderwijs."
+        }
+      ]
+    },
+    {
+      "title": "Eerste groepsanalyse: inzicht via het groepsoverzicht statussen",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Wil je snel en overzichtelijk zien hoe jouw leerlingen ervoor staan in een bepaald vakgebied? Gebruik dan het groepsoverzicht statussen in MijnLeerlijn. Dit overzicht helpt je om te analyseren hoeveel leerdoelen leerlingen al behaald hebben - en waar mogelijk nog hiaten zitten."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Ga naar het groepsoverzicht statussen: ga naar je groep in het menu en klik op 'Groepsoverzicht statussen'. Je ziet nu alle leerlingen onder elkaar, met per leerling het aantal doelen per statuskleur (bijv. blauw = nieuw, groen = behaald)."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Filter op vakgebied: gebruik de filter bovenin om te kiezen voor één specifiek hoofdgebied (bijv. Rekenen). Zo maak je de analyse overzichtelijk en gericht."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Ordenen en vergelijken: boven de kolommen met aantallen staat een sorteerpijltje, waarmee je bijvoorbeeld sorteert op wie de meeste of minste doelen heeft behaald. In het filter kun je ook één of twee leerlingen selecteren om hun gegevens direct naast elkaar te leggen."
+        },
+        {
+          "type": "genummerde_stap",
+          "body": "Koppel de toetsresultaten aan je analyse: zodra je een vakgebied hebt gekozen, verschijnt er rechts in de filterbalk een extra optie 'Huidige toets'. Kies hier bijvoorbeeld M5, en vul handmatig de toetsresultaten in. Zo kun je toetsen of de behaalde leerdoelen overeenkomen met de LVS-score."
+        },
+        {
+          "type": "tekst",
+          "body": "Voorbeeld: je ziet dat een leerling bijna alle doelen heeft behaald in 'getalbegrip', maar scoort op de M-toets toch opvallend laag. Tijd voor reflectie: zijn de succescriteria te laag? Is het doel wel getoetst? Sluit de toets wel aan?"
+        },
+        {
+          "type": "tekst",
+          "body": "Extra analyse per leerling: achter elke leerling staat een uitklapmenu. Open dit om een gedetailleerd overzicht te zien van alle leerdoelen van die leerling; je kunt hier ook direct doelen bekijken of statussen aanpassen."
+        },
+        {
+          "type": "tekst",
+          "body": "Let op signalen zoals: een leerling in groep 8 met nog veel 1S-doelen open. Waarom staat die nog niet op 1F? Past het profiel wel?"
+        }
+      ]
+    },
+    {
+      "title": "Admin",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Als school kun je ervoor kiezen om bepaalde leerkrachten adminrechten te geven. Met een adminrol krijg je toegang tot extra instellingen en beheermogelijkheden die niet beschikbaar zijn in de standaard leerkrachtweergave."
+        },
+        {
+          "type": "tekst",
+          "body": "Hoe word je admin? De eerste keer word je admin gemaakt door je MijnLeerlijn-adviseur. Vraag dit dus altijd via hen aan."
+        },
+        { "type": "genummerde_stap", "body": "Klik linksonder in het menu op je eigen naam." },
+        { "type": "genummerde_stap", "body": "Zet het schuifje 'Adminweergave inschakelen' aan." },
+        {
+          "type": "genummerde_stap",
+          "body": "MijnLeerlijn wordt kort opnieuw geladen, en je krijgt een uitgebreider menu. Je bent nu ingelogd als admin, onder je eigen account, en kunt meer onderdelen beheren dan in de gewone leerkrachtweergave."
+        },
+        {
+          "type": "tekst",
+          "body": "Andere leerkrachten admin maken. Wil je een collega adminrechten geven?"
+        },
+        { "type": "genummerde_stap", "body": "Klik links in het menu op 'Leerkrachten' of 'Leraren'." },
+        { "type": "genummerde_stap", "body": "Klik op de naam van de betreffende collega." },
+        {
+          "type": "genummerde_stap",
+          "body": "Zet het schuifje 'Heeft adminrechten?' aan. Deze collega heeft nu ook toegang tot de adminweergave."
+        },
+        {
+          "type": "waarschuwing",
+          "body": "Adminrechten geven veel mogelijkheden. Als admin kun je onder andere: instellingen wijzigen, hoofdgebiedprofielen aanmaken, leerdoelen of structuren aanpassen, curriculumgegevens verwijderen, benaming van statussen aanpassen en nog veel meer. Gebruik je adminrol daarom verantwoordelijk en alleen wanneer nodig."
+        },
+        {
+          "type": "tip",
+          "body": "Schakel de adminweergave weer uit zodra je klaar bent. Je doet dit op dezelfde plek via het schuifje bij je naam."
+        }
+      ]
+    },
+    {
+      "title": "Eenduidig taalgebruik",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Binnen MijnLeerlijn werken wij met begrippen als curriculum, leerlijn, leerdoel, lesdoel en succescriteria. Deze termen worden in het onderwijs vaak verschillend gebruikt, wat verwarring kan veroorzaken. Om goed met elkaar samen te kunnen werken is het belangrijk dat iedereen hetzelfde bedoelt met deze begrippen."
+        },
+        {
+          "type": "tekst",
+          "body": "Gebruik daarom de termenkaart wanneer nodig. De kaart geeft per term een heldere omschrijving, zodat je altijd kunt nagaan wat ermee bedoeld wordt - en hoe het in MijnLeerlijn toegepast wordt."
+        },
+        {
+          "type": "tekst",
+          "body": "Begrippenkader (termenkaart):\n- Kerndoelen: brede, landelijke leerdoelen per vakgebied (aanbodsdoelen, beheersingsdoelen, ervaringsdoelen).\n- Referentieniveaus: wat kinderen moeten kennen en kunnen op het gebied van taal en rekenen. 1F zou ieder kind minimaal moeten beheersen; 2F/1S is het streefniveau voor alle leerlingen.\n- SLO tussendoelen: bij de kerndoelen voor het primair onderwijs zijn tussendoelen geformuleerd waaruit je leerlijnen kunt afleiden, met uitgewerkte voorbeelden van de wettelijke doelen.\n- Leerlijnen: opbouw van leerdoelen binnen een vakgebied over meerdere leerjaren.\n- Leerdoelen: concrete doelen per leerjaar of periode binnen een vakgebied; niet in één les te behalen.\n- Lesdoelen: wat een leerling aan het einde van een les kan.\n- Curriculum: het totale onderwijsaanbod van een school met inhoud, afgestemd op kerndoelen, leerlijnen en leerlingpopulatie.\n- Jaar- en weekplanning: wanneer en hoe leerdoelen in een schooljaar worden aangeboden.\n- Leeractiviteiten: alle instructies, opdrachten en werkvormen om de leerdoelen te bereiken.\n- Succescriteria: criteria waarmee wordt vastgesteld of een leerling een leerdoel heeft behaald.\n- Formatief evalueren: door middel van observeren, toetsen of andere vormen van evaluatie vaststellen wat de volgende stap kan zijn."
+        },
+        {
+          "type": "tip",
+          "body": "Bespreek de termenkaart ook met je team. Zo voorkom je misverstanden en werk je vanuit een gedeeld begrip aan jullie onderwijs."
+        }
+      ]
+    },
+    {
+      "title": "Helpdesk",
+      "blocks": [
+        {
+          "type": "tekst",
+          "body": "Kom je er niet uit? Ga naar de Helpdesk. In de online helpdesk vind je meer informatie en uitleg; de pagina bevat ook filmpjes passend bij deze handleiding. Vind je niet wat je zoekt of heb je een andere vraag? Vul dan het formulier onderaan de pagina in."
+        }
+      ]
+    }
+  ]
+}

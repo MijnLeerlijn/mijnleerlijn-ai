@@ -1,0 +1,27 @@
+{
+  "sourcePdf": "Vaardighedensets-toevoegen.pdf",
+  "slug": "vaardighedensets-toevoegen",
+  "title": "Vaardighedensets toevoegen",
+  "summary": "In deze handleiding leggen we uit hoe je een vaardighedenset aan één of meerdere leerlingen toevoegt.",
+  "categorySlug": "vaardigheden",
+  "tags": ["vaardighedenset", "leerlingen", "PLP", "groep"],
+  "sections": [
+    {
+      "title": "Stappen",
+      "blocks": [
+        {
+          "type": "genummerde_stap",
+          "body": "In deze handleiding leggen we uit hoe je een vaardighedenset aan één of meerdere leerlingen toevoegt."
+        },
+        { "type": "genummerde_stap", "body": "Kies voeg toe." },
+        {
+          "type": "genummerde_stap",
+          "body": "Selecteer de leerling(en) waar je een vaardighedenset aan wilt koppelen."
+        },
+        { "type": "genummerde_stap", "body": "Kies \"Volgende\"." },
+        { "type": "genummerde_stap", "body": "Selecteer de vaardigheden die je wilt toevoegen." },
+        { "type": "genummerde_stap", "body": "Kies voeg toe." }
+      ]
+    }
+  ]
+}
