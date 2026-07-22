@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
-import { isAdmin, type AuthUser } from "@/payload/access/roles";
 import {
   exchangeCodeForTokens,
   fetchGmailAddress,
@@ -18,6 +17,25 @@ import { encrypt } from "@/lib/gmail/encryption";
 // e-mails — dat is een latere, aparte stap. Toont na afloop uitsluitend een
 // succesmelding + het gekoppelde adres, verder niets (geen tokens, geen
 // scopes) — zie de expliciete eis in de opdracht.
+//
+// BEWUST GEEN payload.auth()/isAdmin-hercontrole hier — dat lijkt de eerste
+// intuïtie ("controleer overal de beheerder"), maar is hier zowel overbodig
+// als kapot: Google's redirect terug naar deze route is voor de browser een
+// CROSS-SITE top-level navigatie (van accounts.google.com naar onze eigen
+// origin). Payload's eigen cookie-auth-extractie (extractJWT.js) verwerpt
+// de sessiecookie op zo'n aanvraag opzettelijk zodra er een csrf-allowlist
+// geconfigureerd is (Origin ontbreekt bij een gewone GET-navigatie, dus valt
+// terug op Sec-Fetch-Site — en dat is hier "cross-site", nooit "same-origin"
+// /"same-site"/"none") — dit is Payload's eigen CSRF-hardening, geen bug.
+// Een verse payload.auth()-aanroep hier geeft dus ALTIJD user: null, ook voor
+// een echt ingelogde beheerder in dezelfde browser. De autorisatie voor deze
+// route loopt daarom uitsluitend via de state-cookie hieronder: die wordt
+// alleen ooit gezet door /start ná een geslaagde isAdmin-controle
+// (gewone same-origin aanvraag, geen probleem daar), is httpOnly (niet
+// uitleesbaar/te forgen via JS), willekeurig (32 bytes), kortlevend (10 min)
+// en eenmalig (altijd opgeruimd na gebruik, ongeacht de uitkomst) — dat is
+// precies waar een OAuth-state-parameter voor bestaat, en is hier zowel de
+// CSRF- als de autorisatiewaarborg tegelijk.
 
 // `message` mag beperkte inline HTML bevatten (bv. <strong>) — dynamische
 // waarden (zoals het door Google teruggegeven `error`-queryparameter, direct
@@ -56,11 +74,6 @@ function htmlResponse(status: number, title: string, message: string): NextRespo
 
 export async function GET(request: NextRequest) {
   const payload = await getPayload({ config });
-  const { user } = await payload.auth({ headers: request.headers });
-
-  if (!isAdmin(user as AuthUser | null)) {
-    return htmlResponse(403, "Niet toegestaan", "Alleen beheerders mogen de Gmail-koppeling voltooien.");
-  }
 
   const { searchParams } = request.nextUrl;
   const googleError = searchParams.get("error");
