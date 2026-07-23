@@ -4,7 +4,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { list, put, del } from "@vercel/blob";
-import { blobAuthOptions } from "@/services/storage";
+import { requireEnv } from "@/config/env";
 import { HANDLEIDINGEN_BLOB_PREFIX, blobPathnameVoor } from "@/lib/knowledge/manuals-blob";
 
 // Eenmalig (en veilig herhaalbaar) importscript: uploadt ALLE bestanden uit
@@ -34,8 +34,26 @@ import { HANDLEIDINGEN_BLOB_PREFIX, blobPathnameVoor } from "@/lib/knowledge/man
 //
 // Gebruik: npm run upload:handleidingen
 //   (== node --env-file=.env node_modules/.bin/tsx payload/upload-manuals-to-blob/index.ts)
-// Vereist BLOB_READ_WRITE_TOKEN (of Vercel OIDC) in de omgeving — zie
-// services/storage.ts voor de auth-resolutie die dit script hergebruikt.
+//
+// Auth: UITSLUITEND BLOB_READ_WRITE_TOKEN, bewust NOOIT OIDC — anders dan
+// services/storage.ts (dat blobAuthOptions() gebruikt: token indien
+// aanwezig, anders Vercel OIDC als fallback, prima voor productiecode die
+// op Vercel zelf draait). Reden: @vercel/blob 2.6.1 probeert, wanneer er
+// geen `token`-optie wordt meegegeven, EERST Vercel OIDC — via het bundelde
+// @vercel/oidc-package, die het lokale Vercel CLI-projectkoppelbestand
+// (.vercel/project.json) rechtstreeks van schijf leest, VOORDAT
+// BLOB_READ_WRITE_TOKEN uit de omgeving ook maar bekeken wordt (zie
+// node_modules/@vercel/blob/dist/chunk-CIIQSN42.js: options.token → OIDC →
+// pas dan BLOB_READ_WRITE_TOKEN). Op een lokaal, aan Vercel gekoppeld
+// project (`vercel link`, hier al gebeurd) is er dus ALTIJD een OIDC-token
+// beschikbaar, ongeacht of BLOB_READ_WRITE_TOKEN ook gezet is — en dat
+// token faalt zodra OIDC voor de "development"-omgeving niet is ingeschakeld
+// in het Vercel-project. De enige manier om dit te omzeilen is een
+// EXPLICIETE `token`-optie meegeven (die heeft altijd voorrang, vóór OIDC
+// wordt geprobeerd) — vandaar BLOB_TOKEN_OPTIE hieronder, met requireEnv
+// (geen stille fallback: zonder BLOB_READ_WRITE_TOKEN stopt dit script
+// direct met een duidelijke fout, in plaats van via OIDC te proberen).
+const BLOB_TOKEN_OPTIE = { token: requireEnv("BLOB_READ_WRITE_TOKEN") };
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const HANDLEIDINGEN_DIR = path.resolve(dirname, "..", "..", "handleidingen");
@@ -114,7 +132,7 @@ async function bestaandeBlobsVoorPad(logicalPath: string): Promise<{ pathname: s
   const segmenten = logicalPath.split("/");
   const bestandsnaam = segmenten.pop();
   const dirPrefix = segmenten.length > 0 ? `${segmenten.join("/")}/` : "";
-  const { blobs } = await list({ prefix: dirPrefix, ...blobAuthOptions() });
+  const { blobs } = await list({ prefix: dirPrefix, ...BLOB_TOKEN_OPTIE });
 
   const resultaten: { pathname: string; hash: string }[] = [];
   for (const blob of blobs) {
@@ -166,14 +184,14 @@ async function run() {
         addRandomSuffix: false,
         contentType: mimeType(bestand.filename),
         multipart: true,
-        ...blobAuthOptions(),
+        ...BLOB_TOKEN_OPTIE,
       });
 
       const verouderd = bestaande.filter((b) => b.hash !== hash);
       if (verouderd.length > 0) {
         await del(
           verouderd.map((b) => b.pathname),
-          { ...blobAuthOptions() }
+          { ...BLOB_TOKEN_OPTIE }
         );
         bijgewerkt += 1;
       } else {
