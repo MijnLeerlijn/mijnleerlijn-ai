@@ -79,6 +79,7 @@ export interface Config {
     'answer-feedback': AnswerFeedback;
     'support-threads': SupportThread;
     'knowledge-drafts': KnowledgeDraft;
+    'knowledge-sources': KnowledgeSource;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
     'payload-locked-documents': PayloadLockedDocument;
@@ -99,6 +100,7 @@ export interface Config {
     'answer-feedback': AnswerFeedbackSelect<false> | AnswerFeedbackSelect<true>;
     'support-threads': SupportThreadsSelect<false> | SupportThreadsSelect<true>;
     'knowledge-drafts': KnowledgeDraftsSelect<false> | KnowledgeDraftsSelect<true>;
+    'knowledge-sources': KnowledgeSourcesSelect<false> | KnowledgeSourcesSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -638,6 +640,10 @@ export interface KnowledgeDraft {
    * Alle Gmail-threads die tot dit concept hebben bijgedragen.
    */
   sourceThreads?: (number | SupportThread)[] | null;
+  /**
+   * Handleidingen/video's/release notes/etc. die dit concept onderbouwen — automatisch, deterministisch gekoppeld op trefwoordoverlap (lib/knowledge/link-drafts.ts), nooit door de AI zelf 'besloten'.
+   */
+  knowledgeSources?: (number | KnowledgeSource)[] | null;
   confidenceScore: number;
   confidenceExplanation?: string | null;
   /**
@@ -656,6 +662,72 @@ export interface KnowledgeDraft {
    * Vrije notities van de beheerder bij het goed-/afkeuren.
    */
   reviewNotes?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Kennisbronnen voor de AI (PDF's, video's, websites, release notes, handleidingen, FAQ's, interne documenten). Toevoegen via 'Create new'; indexeren via de knop hierboven in de lijst.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "knowledge-sources".
+ */
+export interface KnowledgeSource {
+  id: number;
+  title: string;
+  type: 'pdf' | 'video' | 'website' | 'release_notes' | 'handleiding' | 'faq' | 'intern_document';
+  /**
+   * Verplicht voor type PDF — het document dat de AI uitleest.
+   */
+  file?: (number | null) | Media;
+  /**
+   * Voor alle typen behalve PDF: link naar de video, website, release notes, handleiding, FAQ of het interne document.
+   */
+  url?: string | null;
+  description?: string | null;
+  tags?: string[] | null;
+  /**
+   * Voor video's: handmatig plakken, of automatisch opgehaald als de video-URL rechtstreeks naar platte tekst/VTT/SRT verwijst (zie lib/knowledge/video.ts). Blijft leeg als ophalen niet eenvoudig mogelijk was.
+   */
+  transcript?: string | null;
+  /**
+   * Alleen voor PDF's — automatisch herkend en samengevat door de AI.
+   */
+  chapters?:
+    | {
+        title: string;
+        summary: string;
+        order: number;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * Wordt uitsluitend gezet door de indexeerroute — nooit handmatig aanpassen.
+   */
+  status: 'new' | 'indexing' | 'indexed' | 'error';
+  /**
+   * Alleen gevuld bij status 'Fout' — technische reden, nooit brontekst of persoonsgegevens.
+   */
+  indexError?: string | null;
+  aiSummary?: string | null;
+  aiKeywords?: string[] | null;
+  /**
+   * Vrije tekst, net als KnowledgeDrafts.category — nog geen koppeling aan de echte taxonomie.
+   */
+  aiCategory?: string | null;
+  aiModel?: string | null;
+  aiIndexedAt?: string | null;
+  /**
+   * Concepten die deze bron als onderbouwing gebruiken — automatisch gekoppeld bij het indexeren.
+   */
+  knowledgeDrafts?: (number | KnowledgeDraft)[] | null;
+  /**
+   * Voorbereiding voor een latere pgvector-koppeling (docs/AI-KNOWLEDGE-STRATEGY.md) — LET OP: dit is iets anders dan het veld 'Status' hierboven (dat gaat over AI-samenvatting, niet over vector-embeddings). In deze sprint wordt hier nergens naar geschreven; blijft op 'In afwachting' staan.
+   */
+  embeddingStatus: 'pending' | 'indexed' | 'stale';
+  /**
+   * Ongebruikt totdat de vectoropslag wordt gebouwd.
+   */
+  embeddingUpdatedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -822,6 +894,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'knowledge-drafts';
         value: number | KnowledgeDraft;
+      } | null)
+    | ({
+        relationTo: 'knowledge-sources';
+        value: number | KnowledgeSource;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -1224,6 +1300,7 @@ export interface KnowledgeDraftsSelect<T extends boolean = true> {
   category?: T;
   keywords?: T;
   sourceThreads?: T;
+  knowledgeSources?: T;
   confidenceScore?: T;
   confidenceExplanation?: T;
   isGeneralKnowledge?: T;
@@ -1233,6 +1310,39 @@ export interface KnowledgeDraftsSelect<T extends boolean = true> {
   aiModel?: T;
   aiAnalyzedAt?: T;
   reviewNotes?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "knowledge-sources_select".
+ */
+export interface KnowledgeSourcesSelect<T extends boolean = true> {
+  title?: T;
+  type?: T;
+  file?: T;
+  url?: T;
+  description?: T;
+  tags?: T;
+  transcript?: T;
+  chapters?:
+    | T
+    | {
+        title?: T;
+        summary?: T;
+        order?: T;
+        id?: T;
+      };
+  status?: T;
+  indexError?: T;
+  aiSummary?: T;
+  aiKeywords?: T;
+  aiCategory?: T;
+  aiModel?: T;
+  aiIndexedAt?: T;
+  knowledgeDrafts?: T;
+  embeddingStatus?: T;
+  embeddingUpdatedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

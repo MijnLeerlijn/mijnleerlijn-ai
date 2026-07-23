@@ -53,6 +53,28 @@ export const KnowledgeDrafts: CollectionConfig = {
       admin: { description: "Alle Gmail-threads die tot dit concept hebben bijgedragen." },
     },
     {
+      name: "knowledgeSources",
+      type: "relationship",
+      relationTo: "knowledge-sources",
+      hasMany: true,
+      label: "Kennisbronnen",
+      admin: {
+        readOnly: true,
+        description:
+          "Handleidingen/video's/release notes/etc. die dit concept onderbouwen — automatisch, deterministisch gekoppeld op trefwoordoverlap (lib/knowledge/link-drafts.ts), nooit door de AI zelf 'besloten'.",
+      },
+    },
+    {
+      name: "onderbouwdDoor",
+      type: "ui",
+      label: "Onderbouwd door",
+      admin: {
+        components: {
+          Field: "@/payload/components/OnderbouwdDoorSummary#OnderbouwdDoorSummary",
+        },
+      },
+    },
+    {
       name: "confidenceScore",
       type: "number",
       required: true,

@@ -55,6 +55,16 @@ Analyseert geïmporteerde Gmail-threads met AI tot conceptkennisartikelen (`know
 - Resultaten (concepten bekijken/goedkeuren/afkeuren): `/admin/collections/knowledge-drafts`.
 - Vereist `OPENAI_API_KEY` (zie hierboven); zonder deze variabele faalt de analyse per thread met een technische foutmelding, zonder de thread ten onrechte op "Geanalyseerd" te zetten.
 
+## Knowledge Sources (PDF's, video's, websites, release notes, handleidingen, FAQ's)
+
+Centrale invoer voor de AI-kennispijplijn naast Gmail-supportthreads — zie `lib/knowledge/` (index-source.ts voor de kerninhoudslogica, process-source.ts voor de Payload-orkestratie, link-drafts.ts voor de automatische koppeling aan `knowledge-drafts`) en `payload/collections/KnowledgeSources.ts` voor het datamodel. Geen chatbot, geen vectoropslag in deze fase — uitsluitend uitlezen, samenvatten, trefwoorden/categorie bepalen en (voor PDF's) hoofdstukken herkennen + per hoofdstuk samenvatten.
+
+- **Een PDF toevoegen**: `/admin/collections/knowledge-sources` → **Create new** → Type "PDF" → upload het bestand bij "Bestand" → opslaan.
+- **Een URL toevoegen** (video/website/release notes/handleiding/FAQ/intern document): zelfde scherm, Type naar keuze, vul "URL" in.
+- **Indexeren**: selecteer een of meer bronnen in de lijst → knop **"Indexeer geselecteerde bronnen"** bovenin. Dezelfde knop **herindexeert** een reeds geïndexeerde bron gewoon opnieuw (bv. na een fout, of om een bijgewerkt bestand opnieuw te laten uitlezen).
+- Resultaten (samenvatting, trefwoorden, categorie, hoofdstukken, gekoppelde conceptkennisartikelen): open de bron zelf in `/admin/collections/knowledge-sources`. Het "Onderbouwd door"-overzicht op elk knowledge-draft (`/admin/collections/knowledge-drafts`) toont hoeveel supportthreads/handleidingen/video's/etc. dat concept onderbouwen.
+- Vereist ook `OPENAI_API_KEY` (dezelfde centrale AI-client als hierboven) — zonder deze faalt het indexeren per bron met status "Fout" en een technische foutmelding, zonder de bron ten onrechte op "Geïndexeerd" te zetten. Geen nieuwe environment variables t.o.v. de AI-analyse van supportthreads.
+
 ## Productie-/preview-deploy (Vercel)
 
 1. **Accounts/resources vooraf nodig**: Vercel-project, een Postgres-database die ook `pgvector` kan (bv. Neon/Supabase — nog geen pgvector-tabellen in gebruik, maar dezelfde database is de bedoeling, zie `docs/ARCHITECTURE.md`), Vercel Blob store, Resend-account + geverifieerd verzendadres, een domein/subdomein.

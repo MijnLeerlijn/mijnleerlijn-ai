@@ -1,10 +1,10 @@
 import type { Payload } from "payload";
 
-// Minimale in-memory Payload-nabootsing, uitsluitend voor de tests van
-// analyze.ts/run-analysis.ts (zie de .test.ts-bestanden in deze map) — geen
-// echte database nodig om create/update/find/findByID-gedrag te verifiëren.
-// Bewust hier als losse module i.p.v. in elk testbestand gedupliceerd, want
-// zowel analyze.test.ts als run-analysis.test.ts hebben 'm nodig.
+// Minimale in-memory Payload-nabootsing — geen echte database nodig om
+// create/update/find/findByID-gedrag te verifiëren. Gedeeld door zowel
+// lib/support/*.test.ts (Gmail-analysesprint) als lib/knowledge/*.test.ts
+// (Knowledge Sources-sprint), vandaar de generieke collectienaam-typering
+// i.p.v. een vaste opsomming.
 
 interface FakeDoc {
   id: number;
@@ -16,20 +16,12 @@ export interface FakePayload {
   collection(naam: string): FakeDoc[];
 }
 
-export function maakFakePayload(seed: {
-  "support-threads"?: FakeDoc[];
-  "knowledge-drafts"?: FakeDoc[];
-  articles?: FakeDoc[];
-}): FakePayload {
-  const data: Record<string, FakeDoc[]> = {
-    "support-threads": seed["support-threads"] ?? [],
-    "knowledge-drafts": seed["knowledge-drafts"] ?? [],
-    articles: seed.articles ?? [],
-  };
+export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
+  const data: Record<string, FakeDoc[]> = { ...seed };
   let volgendId = 1000;
 
-  // data heeft altijd exact deze drie sleutels (hierboven ingevuld) — deze
-  // helper bestaat alleen om noUncheckedIndexedAccess tevreden te stellen.
+  // Onbekende collecties starten leeg — deze helper bestaat ook om
+  // noUncheckedIndexedAccess tevreden te stellen.
   function arr(naam: string): FakeDoc[] {
     return data[naam] ?? (data[naam] = []);
   }
@@ -56,10 +48,10 @@ export function maakFakePayload(seed: {
       limit?: number;
     }) => {
       let docs = arr(opts.collection).filter((d) => matchWaar(d, opts.where));
-      if (opts.sort === "-lastMessageAt") {
+      if (opts.sort?.startsWith("-")) {
+        const veld = opts.sort.slice(1);
         docs = [...docs].sort(
-          (a, b) =>
-            new Date(b.lastMessageAt as string).getTime() - new Date(a.lastMessageAt as string).getTime()
+          (a, b) => new Date(b[veld] as string).getTime() - new Date(a[veld] as string).getTime()
         );
       }
       if (opts.limit) docs = docs.slice(0, opts.limit);

@@ -22,6 +22,8 @@ import { UnderlineFeatureClient as UnderlineFeatureClient_e70f5e05f09f93e00b997e
 import { BoldFeatureClient as BoldFeatureClient_e70f5e05f09f93e00b997edb1ef0c864 } from "@payloadcms/richtext-lexical/client";
 import { ItalicFeatureClient as ItalicFeatureClient_e70f5e05f09f93e00b997edb1ef0c864 } from "@payloadcms/richtext-lexical/client";
 import { AnalyzeSelectedThreadsButton as AnalyzeSelectedThreadsButton_677091693245d0bf90c20429b272f9d1 } from "@/payload/components/AnalyzeSelectedThreadsButton";
+import { OnderbouwdDoorSummary as OnderbouwdDoorSummary_4021c60dec449f3f4dca6fbb6eb8b2c1 } from "@/payload/components/OnderbouwdDoorSummary";
+import { IndexSelectedSourcesButton as IndexSelectedSourcesButton_b5b69fec3c5edbf30832ffae2e98d786 } from "@/payload/components/IndexSelectedSourcesButton";
 import { GmailSyncButton as GmailSyncButton_9ca8d060c59b410164b116ec5b036204 } from "@/payload/components/GmailSyncButton";
 import { AnalyzeNewThreadsButton as AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd1df9de28668f } from "@/payload/components/AnalyzeNewThreadsButton";
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from "@payloadcms/next/rsc";
@@ -74,6 +76,10 @@ export const importMap = {
     ItalicFeatureClient_e70f5e05f09f93e00b997edb1ef0c864,
   "@/payload/components/AnalyzeSelectedThreadsButton#AnalyzeSelectedThreadsButton":
     AnalyzeSelectedThreadsButton_677091693245d0bf90c20429b272f9d1,
+  "@/payload/components/OnderbouwdDoorSummary#OnderbouwdDoorSummary":
+    OnderbouwdDoorSummary_4021c60dec449f3f4dca6fbb6eb8b2c1,
+  "@/payload/components/IndexSelectedSourcesButton#IndexSelectedSourcesButton":
+    IndexSelectedSourcesButton_b5b69fec3c5edbf30832ffae2e98d786,
   "@/payload/components/GmailSyncButton#GmailSyncButton": GmailSyncButton_9ca8d060c59b410164b116ec5b036204,
   "@/payload/components/AnalyzeNewThreadsButton#AnalyzeNewThreadsButton":
     AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd1df9de28668f,

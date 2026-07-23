@@ -19,6 +19,7 @@ import { ContactSubmissions } from "./payload/collections/ContactSubmissions";
 import { AnswerFeedback } from "./payload/collections/AnswerFeedback";
 import { SupportThreads } from "./payload/collections/SupportThreads";
 import { KnowledgeDrafts } from "./payload/collections/KnowledgeDrafts";
+import { KnowledgeSources } from "./payload/collections/KnowledgeSources";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -88,6 +89,7 @@ export default buildConfig({
     AnswerFeedback,
     SupportThreads,
     KnowledgeDrafts,
+    KnowledgeSources,
   ],
   globals: [GmailConnection],
   editor: lexicalEditor(),
