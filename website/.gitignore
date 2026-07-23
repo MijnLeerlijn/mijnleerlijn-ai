@@ -24,6 +24,12 @@
 .DS_Store
 *.pem
 
+# handleidingen (Sprint 6): opslag is Vercel Blob (payload/upload-manuals-to-blob/,
+# lib/knowledge/manuals-blob.ts), niet git — inmiddels 1,6+ GB, hoort niet in
+# de repository. Lokaal blijven de bestanden gewoon op schijf staan als bron
+# voor het eenmalige uploadscript, alleen niet meer getrackt.
+/handleidingen
+
 # debug
 npm-debug.log*
 yarn-debug.log*

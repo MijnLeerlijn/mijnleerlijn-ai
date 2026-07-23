@@ -29,8 +29,13 @@ export interface GeuploadBestand {
 const ATTACHMENT_PREFIX = "contact-attachments";
 const DOWNLOAD_URL_GELDIGHEID_MS = 5 * 60 * 1000; // 5 minuten
 
-/** Alleen een `token`-property wanneer die expliciet gezet is — anders leeg object, zodat de SDK's eigen (OIDC-)resolutie geldt. */
-function blobAuthOptions(): { token: string } | Record<string, never> {
+/**
+ * Alleen een `token`-property wanneer die expliciet gezet is — anders leeg
+ * object, zodat de SDK's eigen (OIDC-)resolutie geldt. Geëxporteerd zodat
+ * lib/knowledge/manuals-blob.ts (Sprint 6, handleidingen-opslag) dezelfde
+ * auth-resolutie hergebruikt i.p.v. een tweede kopie te onderhouden.
+ */
+export function blobAuthOptions(): { token: string } | Record<string, never> {
   const token = optionalEnv("BLOB_READ_WRITE_TOKEN");
   return token ? { token } : {};
 }

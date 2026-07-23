@@ -5,16 +5,22 @@ import { isAdmin } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { syncManuals, STANDAARD_LIMIET } from "@/lib/knowledge/sync-manuals";
 
-// Synchroniseert website/handleidingen/ met knowledge-sources — zie
-// lib/knowledge/sync-manuals.ts voor de volledige logica. Admin-only (niet
-// "elke ingelogde gebruiker" zoals /api/assistant/*: dit schrijft naar de
-// kennisbank zelf, niet alleen een gesprek) via dezelfde sessieverificatie
-// als de andere beheerroutes (lib/auth/verify-session.ts).
+// Synchroniseert Vercel Blob (prefix handleidingen/, zie lib/knowledge/
+// manuals-blob.ts) met knowledge-sources — zie lib/knowledge/sync-manuals.ts
+// voor de volledige logica. NIET het lokale bestandssysteem: website/
+// handleidingen/ bleek via .vercelignore alsnog buiten de Vercel-deploy te
+// vallen, en met de map inmiddels op 1,6 GB (video's/pptx erbij) is
+// "meebundelen in de serverless functie" sowieso geen houdbare aanpak.
+// Eenmalig uploaden naar Blob: payload/upload-manuals-to-blob/index.ts
+// (npm run upload:handleidingen). Admin-only (niet "elke ingelogde
+// gebruiker" zoals /api/assistant/*: dit schrijft naar de kennisbank zelf,
+// niet alleen een gesprek) via dezelfde sessieverificatie als de andere
+// beheerroutes (lib/auth/verify-session.ts).
 //
 // Body (optioneel): { limit?: number } — hoeveel NIEUWE/GEWIJZIGDE bestanden
-// dit verzoek maximaal (her)indexeert + (her)embedt (standaard 5, zie
-// lib/knowledge/sync-manuals.ts voor waarom). Scannen/hashen van de hele map
-// gebeurt altijd volledig, ongeacht deze limiet.
+// dit verzoek maximaal downloadt + (her)indexeert + (her)embedt (standaard
+// 5, zie lib/knowledge/sync-manuals.ts voor waarom). De Blob-listing zelf
+// (goedkoop, geen download) gebeurt altijd volledig, ongeacht deze limiet.
 export async function POST(request: NextRequest) {
   const payload = await getPayload({ config });
 
@@ -23,7 +29,10 @@ export async function POST(request: NextRequest) {
     request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value
   );
   if (!isAdmin(sessieControle.user)) {
-    return NextResponse.json({ error: "Alleen beheerders mogen handleidingen synchroniseren." }, { status: 403 });
+    return NextResponse.json(
+      { error: "Alleen beheerders mogen handleidingen synchroniseren." },
+      { status: 403 }
+    );
   }
 
   let body: unknown = {};

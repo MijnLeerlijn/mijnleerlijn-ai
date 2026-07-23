@@ -52,6 +52,10 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
   }
 
   const payload = {
+    // Sprint 6: lib/knowledge/sync-manuals.ts logt aantallen via
+    // payload.logger — een no-op stub is genoeg, tests controleren gedrag,
+    // niet logregels.
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
     find: async (opts: {
       collection: string;
       where?: Record<string, unknown>;

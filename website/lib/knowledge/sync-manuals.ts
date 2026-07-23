@@ -1,32 +1,37 @@
 import type { Payload } from "payload";
-import { scanManualsDirectory, readManualFile, titleFromFilename, type ManualFile } from "./manuals-scan";
+import { listManualBlobs, readManualBlob, titleFromFilename } from "./manuals-blob";
 import { processKnowledgeSource } from "./process-source";
 import { embedKnowledgeSource } from "@/lib/embeddings/process-embedding";
 
-// Synchroniseert website/handleidingen/ met de knowledge-sources-collectie —
-// zie app/api/knowledge/sync-manuals/route.ts (de enige aanroeper). Bouwt
-// GEEN nieuw indexeer-/embedsysteem: hergebruikt processKnowledgeSource
+// Synchroniseert Vercel Blob (prefix handleidingen/, zie lib/knowledge/
+// manuals-blob.ts) met de knowledge-sources-collectie — zie app/api/
+// knowledge/sync-manuals/route.ts (de enige aanroeper). Bouwt GEEN nieuw
+// indexeer-/embedsysteem: hergebruikt processKnowledgeSource
 // (lib/knowledge/process-source.ts, Sprint 3) en embedKnowledgeSource
 // (lib/embeddings/process-embedding.ts, Sprint 4) rechtstreeks, precies
 // zoals de opdracht vereist ("Bouw geen tweede parallel systeem").
 //
-// Idempotentie/dedup, in twee stappen per bestand:
+// Idempotentie/dedup, in twee stappen per bestand — de hash komt rechtstreeks
+// uit de Blob-bestandsnaam (ManualBlob.hash), er wordt dus NOOIT gedownload
+// om alleen maar te bepalen of iets ongewijzigd is:
 // 1. Bestaat er al een bron met exact dit sourceFilePath? Zo ja: vergelijk
-//    sourceFileHash — ongewijzigd → overslaan (geen AI-aanroep); gewijzigd
-//    → nieuw mediabestand + herindexeren + herembedden.
+//    sourceFileHash — ongewijzigd → overslaan (geen download, geen
+//    AI-aanroep); gewijzigd → downloaden + nieuw mediabestand + herindexeren
+//    + herembedden.
 // 2. Geen bron met dit pad: bestaat er een bron met exact deze
 //    sourceFileHash onder een ANDER pad? Zo ja: content-duplicaat (bv.
 //    "Analyse.pdf" vs. "Analyse (1).pdf") — nooit een tweede bron aanmaken,
 //    wél rapporteren, niets verwijderen.
-// 3. Anders: genuine nieuwe bron.
+// 3. Anders: genuine nieuwe bron — downloaden + verwerken.
 //
 // `limiet` begrenst uitsluitend hoeveel NIEUWE/GEWIJZIGDE bestanden dit
-// verzoek daadwerkelijk (her)indexeert + (her)embedt — scannen/hashen van
-// de hele map blijft altijd goedkoop en gebeurt altijd volledig. PDF-tekst
-// uitlezen + twee AI-aanroepen per bestand is zwaar genoeg (en Vercel-
-// functies hebben een tijdslimiet) dat één verzoek nooit alle bestanden
-// tegelijk mag proberen te verwerken — zelfde soort veiligheidscap als
-// STANDAARD_LIMIET/HARDE_MAX_LIMIET elders in lib/knowledge//lib/embeddings/.
+// verzoek daadwerkelijk downloadt + (her)indexeert + (her)embedt — de
+// Blob-listing zelf (goedkoop, geen download) gebeurt altijd volledig. PDF-
+// tekst uitlezen + twee AI-aanroepen per bestand is zwaar genoeg (en Vercel-
+// functies hebben een tijdslimiet, en sommige handleidingen zijn nu
+// honderden MB's) dat één verzoek nooit alle bestanden tegelijk mag
+// proberen te verwerken — zelfde soort veiligheidscap als STANDAARD_LIMIET/
+// HARDE_MAX_LIMIET elders in lib/knowledge//lib/embeddings/.
 
 export const STANDAARD_LIMIET = 5;
 const HARDE_MAX_LIMIET = 20;
@@ -43,17 +48,25 @@ export interface SyncManualsSamenvatting {
   fouten: string[];
 }
 
-async function maakMediaDoc(payload: Payload, bestand: ManualFile, buffer: Buffer, titel: string): Promise<number> {
+async function maakMediaDoc(
+  payload: Payload,
+  filename: string,
+  buffer: Buffer,
+  titel: string
+): Promise<number> {
   const media = await payload.create({
     collection: "media",
     overrideAccess: true,
     data: { altText: titel, mediaType: "download" },
-    file: { data: buffer, mimetype: "application/pdf", name: bestand.filename, size: buffer.length },
+    file: { data: buffer, mimetype: "application/pdf", name: filename, size: buffer.length },
   });
   return media.id;
 }
 
-export async function syncManuals(payload: Payload, opties: { limiet?: number } = {}): Promise<SyncManualsSamenvatting> {
+export async function syncManuals(
+  payload: Payload,
+  opties: { limiet?: number } = {}
+): Promise<SyncManualsSamenvatting> {
   const limiet = Math.min(opties.limiet ?? STANDAARD_LIMIET, HARDE_MAX_LIMIET);
 
   const samenvatting: SyncManualsSamenvatting = {
@@ -68,26 +81,18 @@ export async function syncManuals(payload: Payload, opties: { limiet?: number } 
     fouten: [],
   };
 
-  const bestanden = await scanManualsDirectory();
-  samenvatting.gevonden = bestanden.length;
+  const blobs = await listManualBlobs();
+  samenvatting.gevonden = blobs.length;
+  payload.logger.info(
+    `[sync-manuals] ${blobs.length} handleiding-PDF('s) gevonden in Blob (prefix handleidingen/).`
+  );
 
   let verwerktDitVerzoek = 0;
 
-  for (const bestand of bestanden) {
-    let buffer: Buffer;
-    let hash: string;
-    try {
-      ({ buffer, hash } = await readManualFile(bestand));
-    } catch (error) {
-      samenvatting.mislukt += 1;
-      const boodschap = error instanceof Error ? error.message : String(error);
-      samenvatting.fouten.push(`${bestand.relativePath}: kon bestand niet lezen — ${boodschap}`);
-      continue;
-    }
-
+  for (const blob of blobs) {
     const bestaandeVoorPad = await payload.find({
       collection: "knowledge-sources",
-      where: { sourceFilePath: { equals: bestand.relativePath } },
+      where: { sourceFilePath: { equals: blob.relativePath } },
       limit: 1,
       overrideAccess: true,
       depth: 0,
@@ -95,7 +100,7 @@ export async function syncManuals(payload: Payload, opties: { limiet?: number } 
     const bestaandeBron = bestaandeVoorPad.docs[0];
 
     if (bestaandeBron) {
-      if (bestaandeBron.sourceFileHash === hash) {
+      if (bestaandeBron.sourceFileHash === blob.hash) {
         samenvatting.ongewijzigdOvergeslagen += 1;
         continue;
       }
@@ -103,28 +108,30 @@ export async function syncManuals(payload: Payload, opties: { limiet?: number } 
       if (verwerktDitVerzoek >= limiet) continue; // bestand wacht tot een volgende ronde, telt niet mee als fout
 
       try {
-        const titel = bestaandeBron.title || titleFromFilename(bestand.filename);
-        const mediaId = await maakMediaDoc(payload, bestand, buffer, titel);
+        const filename = blob.relativePath.split("/").pop() ?? blob.relativePath;
+        const titel = bestaandeBron.title || titleFromFilename(filename);
+        const buffer = await readManualBlob(blob);
+        const mediaId = await maakMediaDoc(payload, filename, buffer, titel);
         await payload.update({
           collection: "knowledge-sources",
           id: bestaandeBron.id,
           overrideAccess: true,
-          data: { file: mediaId, sourceFileHash: hash, status: "new" },
+          data: { file: mediaId, sourceFileHash: blob.hash, status: "new" },
         });
         samenvatting.bijgewerkt += 1;
         verwerktDitVerzoek += 1;
-        await indexeerEnEmbed(payload, bestaandeBron.id, titel, mediaId, bestand.relativePath, samenvatting);
+        await indexeerEnEmbed(payload, bestaandeBron.id, titel, mediaId, blob.relativePath, samenvatting);
       } catch (error) {
         samenvatting.mislukt += 1;
         const boodschap = error instanceof Error ? error.message : String(error);
-        samenvatting.fouten.push(`${bestand.relativePath}: ${boodschap}`);
+        samenvatting.fouten.push(`${blob.relativePath}: ${boodschap}`);
       }
       continue;
     }
 
     const bestaandeVoorHash = await payload.find({
       collection: "knowledge-sources",
-      where: { sourceFileHash: { equals: hash } },
+      where: { sourceFileHash: { equals: blob.hash } },
       limit: 1,
       overrideAccess: true,
       depth: 0,
@@ -137,8 +144,10 @@ export async function syncManuals(payload: Payload, opties: { limiet?: number } 
     if (verwerktDitVerzoek >= limiet) continue;
 
     try {
-      const titel = titleFromFilename(bestand.filename);
-      const mediaId = await maakMediaDoc(payload, bestand, buffer, titel);
+      const filename = blob.relativePath.split("/").pop() ?? blob.relativePath;
+      const titel = titleFromFilename(filename);
+      const buffer = await readManualBlob(blob);
+      const mediaId = await maakMediaDoc(payload, filename, buffer, titel);
       const nieuweBron = await payload.create({
         collection: "knowledge-sources",
         overrideAccess: true,
@@ -146,21 +155,26 @@ export async function syncManuals(payload: Payload, opties: { limiet?: number } 
           title: titel,
           type: "pdf",
           file: mediaId,
-          sourceFilePath: bestand.relativePath,
-          sourceFileHash: hash,
+          sourceFilePath: blob.relativePath,
+          sourceFileHash: blob.hash,
           status: "new",
           embeddingStatus: "pending",
         },
       });
       samenvatting.nieuw += 1;
       verwerktDitVerzoek += 1;
-      await indexeerEnEmbed(payload, nieuweBron.id, titel, mediaId, bestand.relativePath, samenvatting);
+      await indexeerEnEmbed(payload, nieuweBron.id, titel, mediaId, blob.relativePath, samenvatting);
     } catch (error) {
       samenvatting.mislukt += 1;
       const boodschap = error instanceof Error ? error.message : String(error);
-      samenvatting.fouten.push(`${bestand.relativePath}: ${boodschap}`);
+      samenvatting.fouten.push(`${blob.relativePath}: ${boodschap}`);
     }
   }
+
+  const overgeslagen = samenvatting.ongewijzigdOvergeslagen + samenvatting.duplicaatOvergeslagen;
+  payload.logger.info(
+    `[sync-manuals] Blob: ${samenvatting.gevonden} · Nieuw: ${samenvatting.nieuw} · Bijgewerkt: ${samenvatting.bijgewerkt} · Overgeslagen: ${overgeslagen} (ongewijzigd: ${samenvatting.ongewijzigdOvergeslagen}, duplicaat: ${samenvatting.duplicaatOvergeslagen}) · Mislukt: ${samenvatting.mislukt}`
+  );
 
   return samenvatting;
 }
@@ -186,7 +200,10 @@ async function indexeerEnEmbed(
     title,
     type: "pdf",
     file: mediaId,
-  }).catch((error) => ({ type: "failed" as const, foutmelding: error instanceof Error ? error.message : String(error) }));
+  }).catch((error) => ({
+    type: "failed" as const,
+    foutmelding: error instanceof Error ? error.message : String(error),
+  }));
 
   if (indexUitkomst.type === "failed") {
     samenvatting.mislukt += 1;
