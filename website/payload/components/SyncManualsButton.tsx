@@ -57,8 +57,10 @@ export function SyncManualsButton() {
   }
 
   return (
-    <Button onClick={start} disabled={bezig} buttonStyle="secondary" size="small">
-      {bezig ? "Bezig met synchroniseren…" : "Synchroniseer handleidingen"}
-    </Button>
+    <div style={{ margin: "0 0 var(--base, 24px) 0" }}>
+      <Button onClick={start} disabled={bezig} buttonStyle="secondary" size="small">
+        {bezig ? "Bezig met synchroniseren…" : "Synchroniseer handleidingen"}
+      </Button>
+    </div>
   );
 }

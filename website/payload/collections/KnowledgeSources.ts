@@ -39,13 +39,25 @@ export const KnowledgeSources: CollectionConfig = {
     description:
       "Kennisbronnen voor de AI (PDF's, video's, websites, release notes, handleidingen, FAQ's, interne documenten). Toevoegen via 'Create new'; indexeren via de knop hierboven in de lijst.",
     components: {
+      // "Synchroniseer handleidingen" staat bewust NIET in listMenuItems
+      // hieronder: dat rendert alleen binnen het ingeklapte "⋮"-popupmenu
+      // van de lijst (zie node_modules/@payloadcms/ui/dist/elements/
+      // ListControls/index.js — listMenuItems wordt in een <Popup>/<Dots>
+      // gestopt), niet als direct zichtbare knop. Voor deze knop is dat
+      // niet duidelijk genoeg (opdracht: "duidelijke knop"), dus die
+      // gebruikt in plaats daarvan beforeListTable — een officieel
+      // ondersteund extensiepunt (CollectionAdminOptions['components'] in
+      // payload/dist/collections/config/types.d.ts) dat altijd direct
+      // zichtbaar boven de documententabel rendert, zie
+      // node_modules/@payloadcms/ui/dist/views/List/index.js.
+      beforeListTable: ["@/payload/components/SyncManualsButton#SyncManualsButton"],
       // "Indexeer geselecteerde bronnen" — dekt ook herindexeren: een reeds
       // geïndexeerde bron opnieuw selecteren en klikken verwerkt 'm gewoon
       // opnieuw, zie lib/knowledge/run-indexing.ts. "Maak embeddings" is de
       // Sprint 4-tegenhanger (zie lib/embeddings/) — hetzelfde knop-component
-      // wordt hergebruikt op knowledge-drafts en articles.
+      // wordt hergebruikt op knowledge-drafts en articles. Deze twee vereisen
+      // een selectie en horen daarom wél in het "⋮"-menu (secundaire acties).
       listMenuItems: [
-        "@/payload/components/SyncManualsButton#SyncManualsButton",
         "@/payload/components/IndexSelectedSourcesButton#IndexSelectedSourcesButton",
         "@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton",
       ],
