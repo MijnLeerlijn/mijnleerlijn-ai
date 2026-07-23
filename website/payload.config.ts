@@ -20,6 +20,7 @@ import { AnswerFeedback } from "./payload/collections/AnswerFeedback";
 import { SupportThreads } from "./payload/collections/SupportThreads";
 import { KnowledgeDrafts } from "./payload/collections/KnowledgeDrafts";
 import { KnowledgeSources } from "./payload/collections/KnowledgeSources";
+import { AssistantConversations } from "./payload/collections/AssistantConversations";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
 
@@ -91,6 +92,7 @@ export default buildConfig({
     SupportThreads,
     KnowledgeDrafts,
     KnowledgeSources,
+    AssistantConversations,
   ],
   globals: [GmailConnection, KnowledgeSearch],
   editor: lexicalEditor(),

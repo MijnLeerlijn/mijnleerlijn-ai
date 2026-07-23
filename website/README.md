@@ -76,6 +76,19 @@ Embeddings voor `knowledge-sources` (+ hun hoofdstukken), `knowledge-drafts` en 
 - Alleen gepubliceerde artikelen worden geëmbed; pedagogische content (`knowledgeType: pedagogisch`) pas na `aiApprovalStatus: goedgekeurd` — zelfde goedkeuringspoort als docs/CONTENT-MODEL.md §Twee soorten kennis.
 - Vereist `OPENAI_API_KEY` (zelfde centrale AI-client). Optioneel: `EMBEDDING_MODEL_ID` om het standaardmodel (`text-embedding-3-small`) te overschrijven.
 
+## MijnLeerlijn AI Assistant (Sprint 5, `/assistant`)
+
+Een echte RAG-chatassistent bovenop het semantisch zoeken hierboven — zie `lib/assistant/` (build-context.ts voor het opbouwen van de AI-context uit zoektreffers, answer.ts voor de antwoordlogica + harde "nooit antwoorden zonder bron"-regel, process-question.ts voor de Payload-orkestratie + logging) en `payload/collections/AssistantConversations.ts` voor het datamodel. Werking: vraag → embedding + semantische zoekopdracht (top 10, `lib/embeddings/similarity-search.ts`) → context → antwoord (`generateStructuredOutputWithUsage`, `services/ai-client.ts`) → bronvermelding.
+
+**Belangrijke, bewuste afwijking van eerdere documentatie** (met opzet, zie het commentaar bovenin `app/(frontend)/assistant/page.tsx`): eerdere architectuurdocumenten (`docs/SECURITY-AND-PRIVACY.md`, `docs/PLATFORM-FOUNDATION.md`) beschreven de AI-assistent als publiek/anoniem, zonder inlog. Deze sprint vraagt expliciet om een inlogmuur; omdat er geen apart publiek gebruikersaccount bestaat (alleen de CMS-`users`-collectie), betekent "ingelogd" hier noodzakelijkerwijs "ingelogd als MijnLeerlijn-beheerder of -redacteur" — dit is dus een intern test-/dogfooding-scherm, geen publieke lancering, consistent met hoe elke AI-functionaliteit in Sprint 2 t/m 4 al achter dezelfde login zat.
+
+- **Een eerste vraag stellen**: log in op `/admin` (zelfde sessie werkt overal), ga naar `/assistant`, typ een vraag en klik **"Verstuur"**.
+- **"AI mag nooit antwoorden geven zonder bron"** is een harde regel in code (`lib/assistant/answer.ts`), niet alleen een promptinstructie: zonder relevante bronnen (of bij een te lage overeenkomstscore) wordt het taalmodel niet eens aangeroepen — het antwoord is dan altijd letterlijk "Dat weet ik niet. Er is onvoldoende informatie in de kennisbank."
+- **Confidence** is altijd de retrieval-score van de best passende bron, nooit een zelfinschatting van het model — zelfde filosofie als de betrouwbaarheidsdrempel in `docs/AI-KNOWLEDGE-STRATEGY.md`.
+- **Elk gesprek wordt gelogd**: vraag, antwoord, bronnen, model, tokens, antwoordtijd, confidence en feedback — zie `/admin/collections/assistant-conversations` (alleen zichtbaar voor de eigen gesprekken, tenzij beheerder).
+- **Feedback**: 👍/👎 onder elk antwoord; bij 👎 volgt een optionele "Wat miste er?"-vraag, ook opgeslagen op het gesprek.
+- Vereist `OPENAI_API_KEY` (zelfde centrale AI-client als hierboven) — zonder deze faalt het stellen van een vraag met een nette foutmelding (geen gespreklogboek aangemaakt), nooit een crash. Geen nieuwe environment variables t.o.v. de vorige sprints.
+
 ## Productie-/preview-deploy (Vercel)
 
 1. **Accounts/resources vooraf nodig**: Vercel-project, een Postgres-database die ook `pgvector` kan (bv. Neon/Supabase — nog geen pgvector-tabellen in gebruik, maar dezelfde database is de bedoeling, zie `docs/ARCHITECTURE.md`), Vercel Blob store, Resend-account + geverifieerd verzendadres, een domein/subdomein.

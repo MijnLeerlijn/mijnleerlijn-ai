@@ -80,6 +80,7 @@ export interface Config {
     'support-threads': SupportThread;
     'knowledge-drafts': KnowledgeDraft;
     'knowledge-sources': KnowledgeSource;
+    'assistant-conversations': AssistantConversation;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
     'payload-locked-documents': PayloadLockedDocument;
@@ -101,6 +102,7 @@ export interface Config {
     'support-threads': SupportThreadsSelect<false> | SupportThreadsSelect<true>;
     'knowledge-drafts': KnowledgeDraftsSelect<false> | KnowledgeDraftsSelect<true>;
     'knowledge-sources': KnowledgeSourcesSelect<false> | KnowledgeSourcesSelect<true>;
+    'assistant-conversations': AssistantConversationsSelect<false> | AssistantConversationsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -789,6 +791,48 @@ export interface KnowledgeSource {
   createdAt: string;
 }
 /**
+ * Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant).
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assistant-conversations".
+ */
+export interface AssistantConversation {
+  id: number;
+  question: string;
+  /**
+   * False = 'Dat weet ik niet' — te weinig/geen betrouwbare bron gevonden.
+   */
+  hasAnswer: boolean;
+  answer: string;
+  reasoning?: string | null;
+  /**
+   * Retrieval-score van de beste bron — geen zelfinschatting van het model.
+   */
+  confidence: number;
+  sources?:
+    | {
+        label: string;
+        refCollection: string;
+        refId: number;
+        title: string;
+        chapterTitle?: string | null;
+        similarity: number;
+        url: string;
+        id?: string | null;
+      }[]
+    | null;
+  model?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  answerTimeMs?: number | null;
+  feedbackRating: 'geen' | 'nuttig' | 'niet_nuttig';
+  feedbackMissing?: string | null;
+  user: number | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -955,6 +999,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'knowledge-sources';
         value: number | KnowledgeSource;
+      } | null)
+    | ({
+        relationTo: 'assistant-conversations';
+        value: number | AssistantConversation;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -1414,6 +1462,39 @@ export interface KnowledgeSourcesSelect<T extends boolean = true> {
   embeddingModel?: T;
   embeddingTextHash?: T;
   embedding?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assistant-conversations_select".
+ */
+export interface AssistantConversationsSelect<T extends boolean = true> {
+  question?: T;
+  hasAnswer?: T;
+  answer?: T;
+  reasoning?: T;
+  confidence?: T;
+  sources?:
+    | T
+    | {
+        label?: T;
+        refCollection?: T;
+        refId?: T;
+        title?: T;
+        chapterTitle?: T;
+        similarity?: T;
+        url?: T;
+        id?: T;
+      };
+  model?: T;
+  inputTokens?: T;
+  outputTokens?: T;
+  totalTokens?: T;
+  answerTimeMs?: T;
+  feedbackRating?: T;
+  feedbackMissing?: T;
+  user?: T;
   updatedAt?: T;
   createdAt?: T;
 }

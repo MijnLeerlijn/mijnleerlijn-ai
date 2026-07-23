@@ -5,6 +5,7 @@ import * as migration_20260722_220528_add_support_threads from "./20260722_22052
 import * as migration_20260723_113031_add_knowledge_drafts from "./20260723_113031_add_knowledge_drafts";
 import * as migration_20260723_141018_add_knowledge_sources from "./20260723_141018_add_knowledge_sources";
 import * as migration_20260723_154646_add_embeddings from "./20260723_154646_add_embeddings";
+import * as migration_20260723_163206_add_assistant_conversations from "./20260723_163206_add_assistant_conversations";
 
 export const migrations = [
   {
@@ -41,5 +42,10 @@ export const migrations = [
     up: migration_20260723_154646_add_embeddings.up,
     down: migration_20260723_154646_add_embeddings.down,
     name: "20260723_154646_add_embeddings",
+  },
+  {
+    up: migration_20260723_163206_add_assistant_conversations.up,
+    down: migration_20260723_163206_add_assistant_conversations.down,
+    name: "20260723_163206_add_assistant_conversations",
   },
 ];

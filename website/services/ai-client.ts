@@ -10,13 +10,13 @@ import { requireEnv, optionalEnv } from "@/config/env";
 // heeft (op dit moment: lib/support/analyze.ts) hoort hier doorheen te
 // lopen — geen los, tweede providerclientje ernaast.
 //
-// services/ai.ts (zoekantwoorden) is bewust NIET omgebouwd om hierdoorheen
-// te lopen: dat bestand is momenteel extractief (geen taalmodel-aanroep,
-// zie de motivatie daar) omdat er tot nu toe geen AI-provider-sleutel
-// beschikbaar was. Dit bestand is de eerste plek die die sleutel
-// daadwerkelijk gebruikt; wanneer services/ai.ts ooit naar echte
-// taalmodel-generatie overgaat, hoort die ook via generateStructuredOutput()
-// hieronder te lopen, niet via een eigen client.
+// services/ai.ts (zoekantwoorden, publieke /api/antwoord-route) is BEWUST
+// NIET aangeraakt in Sprint 5: dat bestand/die route blijft de bestaande,
+// publieke, anonieme, keyword-gebaseerde zoekervaring (services/retrieval.ts)
+// — een apart, ouder systeem. lib/assistant/ (Sprint 5, /assistant, achter
+// login) is een NIEUWE, aparte pijplijn bovenop de echte semantische
+// zoekfunctie uit lib/embeddings/similarity-search.ts (Sprint 4). Beide
+// lopen door DEZE centrale client, nooit via een eigen providerclientje.
 //
 // Providerkeuze: OpenAI, via de Vercel AI SDK — tot 2026-07-23 stond hier
 // Anthropic; overgezet omdat er tijdelijk geen Anthropic-credits konden
@@ -59,6 +59,26 @@ export interface StructuredOutputArgs<T> {
  * doet zelf geen retries of fallbacks.
  */
 export async function generateStructuredOutput<T>(args: StructuredOutputArgs<T>): Promise<T> {
+  const { object } = await generateStructuredOutputWithUsage(args);
+  return object;
+}
+
+export interface StructuredOutputMetUsage<T> {
+  object: T;
+  usage: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null };
+}
+
+/**
+ * Zelfde als generateStructuredOutput(), maar geeft ook de tokenusage terug
+ * — nodig voor lib/assistant/ (Sprint 5), dat elke vraag/antwoord-uitwisseling
+ * logt (inclusief tokens) in de knowledge-drafts-achtige assistant-conversations-
+ * collectie. Aparte functie i.p.v. de returnwaarde van generateStructuredOutput()
+ * te wijzigen, om alle bestaande aanroepers (die alleen het object gebruiken)
+ * ongemoeid te laten.
+ */
+export async function generateStructuredOutputWithUsage<T>(
+  args: StructuredOutputArgs<T>
+): Promise<StructuredOutputMetUsage<T>> {
   const model = openaiClient()(getAiModelId());
   const result = await generateObject({
     model,
@@ -66,7 +86,14 @@ export async function generateStructuredOutput<T>(args: StructuredOutputArgs<T>)
     system: args.systemPrompt,
     prompt: args.userPrompt,
   });
-  return result.object;
+  return {
+    object: result.object,
+    usage: {
+      inputTokens: result.usage.inputTokens ?? null,
+      outputTokens: result.usage.outputTokens ?? null,
+      totalTokens: result.usage.totalTokens ?? null,
+    },
+  };
 }
 
 /**
