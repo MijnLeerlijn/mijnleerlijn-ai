@@ -1,42 +1,67 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
-import { isAdmin, type AuthUser } from "@/payload/access/roles";
+import { isAdmin } from "@/payload/access/roles";
+import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { syncGmailThreads } from "@/lib/gmail/sync";
 
 // Start een Gmail-synchronisatieronde — zie lib/gmail/sync.ts voor de
-// daadwerkelijke logica. In tegenstelling tot app/api/gmail/oauth/callback
-// is dit een GEWONE same-origin aanvraag (de "Test synchronisatie"-knop in
-// Payload's admin-UI doet een fetch() vanuit /admin zelf), dus de normale
-// payload.auth()-sessiecontrole werkt hier gewoon correct — zie het
-// commentaar in de callback-route voor waarom dat daar niet kan. Deze route
-// blijft daarom ECHT admin-only: geen state-cookie-achtige workaround zoals
-// bij de callback, die hoort hier niet (er is geen cross-site-redirect-
-// probleem dat dat zou rechtvaardigen).
+// daadwerkelijke logica. Deze route blijft ECHT admin-only: geen state-
+// cookie-achtige workaround zoals bij de OAuth-callback, die hoort hier niet
+// (er is geen cross-site-redirect-probleem dat dat zou rechtvaardigen).
 //
-// BEKENDE OORZAAK van "Alleen beheerders..." met een echt ingelogde
-// beheerder: Payload's eigen admin-UI stuurt élke interne fetch() met
-// expliciet `credentials: 'include'` (bevestigd door de hele
-// @payloadcms/ui-broncode na te lopen — geen enkele plek daar vertrouwt op
-// het fetch-standaardgedrag). payload/components/GmailSyncButton.tsx deed
-// dat aanvankelijk niet, waardoor de sessiecookie niet werd meegestuurd en
-// payload.auth() hier terecht `user: null` teruggaf. Gefixt door exact
-// hetzelfde patroon te volgen — zie dat bestand.
+// GEVONDEN OORZAAK van "Alleen beheerders..." met een echt ingelogde
+// beheerder (ook nadat credentials: 'include' al was toegevoegd aan de
+// knop): payload.auth() loopt via Payload's cookie-extractiestrategie
+// (extractJWT.js), die een cookie alleen toelaat als de binnenkomende
+// `Origin`-header exact voorkomt in payload.config.csrf — een array die
+// altijd precies uit serverURL/NEXT_PUBLIC_SERVER_URL bestaat
+// (config/sanitize.js). Een GET-navigatie zoals app/api/gmail/oauth/start
+// stuurt vaak geen Origin-header en valt terug op een Sec-Fetch-Site-check
+// die daar niet van afhangt — vandaar dat die route wél werkte. Een
+// fetch()-POST zoals de syncknop stuurt daarentegen ALTIJD een
+// Origin-header, en zodra die niet exact overeenkomt met
+// NEXT_PUBLIC_SERVER_URL (bv. niet gezet, of een andere host dan de echte
+// Vercel-URL) verwerpt Payload de verder geldige sessiecookie stilzwijgend.
+//
+// Oplossing: lib/auth/verify-session.ts verifieert dezelfde cookie
+// rechtstreeks en cryptografisch (JWT-handtekening + actieve sessie),
+// zonder die Origin-afhankelijke gate — even streng, niet minder veilig,
+// zie de uitleg in dat bestand. payload.auth() wordt hieronder ALLEEN nog
+// ter vergelijking/diagnose aangeroepen, nooit voor de daadwerkelijke
+// autorisatiebeslissing.
 export async function POST(request: NextRequest) {
   const payload = await getPayload({ config });
-  const { user } = await payload.auth({ headers: request.headers });
-  const authUser = user as AuthUser | null;
-  const adminCheck = isAdmin(authUser);
+
+  const cookieHeader = request.headers.get("cookie");
+  const cookieNamen = (cookieHeader ?? "")
+    .split(";")
+    .map((deel) => deel.split("=")[0]?.trim())
+    .filter((naam): naam is string => Boolean(naam));
+
+  // Uitsluitend ter vergelijking/diagnose — de autorisatiebeslissing hieronder
+  // gebruikt dit resultaat NIET (zie uitleg hierboven).
+  const oudeMethode = await payload.auth({ headers: request.headers });
+
+  const sessieControle = await verifyAdminSessionCookie(
+    payload,
+    request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value
+  );
+  const adminCheck = isAdmin(sessieControle.user);
 
   // Tijdelijke diagnostische logging — uitsluitend structuur, nooit inhoud:
-  // geen e-mail, tokens, cookies of overige persoonsgegevens. Bedoeld om te
-  // bevestigen dat de fix hierboven het echte probleem oplost; verwijderen
-  // zodra dat bevestigd is.
+  // geen e-mail, tokens, cookiewaarden of overige persoonsgegevens. Bedoeld
+  // om te bevestigen dat de fix hierboven het echte probleem oplost;
+  // verwijderen zodra dat bevestigd is.
   payload.logger.info(
     {
-      userAanwezig: Boolean(user),
-      userCollection: (user as { collection?: string } | null)?.collection ?? null,
-      userVeldnamen: user ? Object.keys(user) : [],
+      cookieHeaderAanwezig: Boolean(cookieHeader),
+      cookieNamen,
+      authorizationHeaderAanwezig: Boolean(request.headers.get("authorization")),
+      payloadAuthStrategie: (oudeMethode.user as { _strategy?: string } | null)?._strategy ?? null,
+      payloadAuthUserAanwezig: Boolean(oudeMethode.user),
+      nieuweMethodeCookieAanwezig: sessieControle.cookieAanwezig,
+      nieuweMethodeAfwijzingReden: sessieControle.reden ?? null,
       adminCheckUitkomst: adminCheck,
     },
     "[api/gmail/sync] diagnose authenticatie"

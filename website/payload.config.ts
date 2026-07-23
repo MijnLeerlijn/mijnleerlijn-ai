@@ -51,6 +51,21 @@ if (!blobToken) {
   );
 }
 
+// serverURL bepaalt (via Payload's config-sanitize.js) ALTIJD en uitsluitend
+// payload.config.csrf — de allowlist die Payload's eigen cookie-gebaseerde
+// sessieherkenning gebruikt zodra een aanvraag een Origin-header meestuurt
+// (elke fetch()-POST doet dat altijd, een gewone paginanavigatie vaak niet).
+// Staat NEXT_PUBLIC_SERVER_URL niet (of onjuist) in de omgeving, dan valt
+// serverURL terug op localhost:3000 — en verwerpt Payload in productie
+// stilzwijgend een verder volkomen geldige sessiecookie op elke eigen
+// fetch()-POST-route (ontdekt via app/api/gmail/sync, zie lib/auth/
+// verify-session.ts voor de volledige analyse en de work-around daar).
+if (!optionalEnv("NEXT_PUBLIC_SERVER_URL")) {
+  console.warn(
+    "[payload.config] NEXT_PUBLIC_SERVER_URL niet gezet — serverURL valt terug op http://localhost:3000, wat Payload's csrf-allowlist verkeerd vult. Eigen POST-routes die payload.auth() gebruiken (bv. app/api/gmail/sync) kunnen dan een echt ingelogde beheerder ten onrechte afwijzen. Zet deze variabele in productie op de exacte, echte URL (protocol + host, geen trailing slash)."
+  );
+}
+
 export default buildConfig({
   serverURL: optionalEnv("NEXT_PUBLIC_SERVER_URL") ?? "http://localhost:3000",
   secret: requireEnv("PAYLOAD_SECRET"),
