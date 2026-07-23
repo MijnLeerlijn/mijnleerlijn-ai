@@ -1,11 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { list } from "@vercel/blob";
+import { list, get } from "@vercel/blob";
 import { listManualBlobs, readManualBlob, blobPathnameVoor, titleFromFilename } from "./manuals-blob";
 
-vi.mock("@vercel/blob", () => ({ list: vi.fn() }));
+vi.mock("@vercel/blob", () => ({ list: vi.fn(), get: vi.fn() }));
 vi.mock("@/services/storage", () => ({ blobAuthOptions: () => ({}) }));
 
 const mockList = vi.mocked(list);
+const mockGet = vi.mocked(get);
+
+function streamVan(tekst: string): ReadableStream<Uint8Array> {
+  const bytes = new TextEncoder().encode(tekst);
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
 
 function maakBlob(pathname: string, size = 1234) {
   return {
@@ -20,6 +31,7 @@ function maakBlob(pathname: string, size = 1234) {
 
 beforeEach(() => {
   mockList.mockReset();
+  mockGet.mockReset();
 });
 
 describe("blobPathnameVoor", () => {
@@ -110,26 +122,39 @@ describe("listManualBlobs", () => {
 });
 
 describe("readManualBlob", () => {
-  it("downloadt de inhoud via de blob-url", async () => {
-    const inhoud = Buffer.from("%PDF-inhoud");
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => inhoud.buffer.slice(inhoud.byteOffset, inhoud.byteOffset + inhoud.byteLength),
-    }) as unknown as typeof fetch;
+  it("downloadt de inhoud via get() (private store — geen kale fetch(url))", async () => {
+    mockGet.mockResolvedValue({
+      statusCode: 200,
+      stream: streamVan("%PDF-inhoud"),
+      headers: new Headers(),
+      blob: {
+        url: "https://blob.example/analyse",
+        downloadUrl: "https://blob.example/analyse?download=1",
+        pathname: `handleidingen/${"a".repeat(64)}__Analyse.pdf`,
+        contentDisposition: "",
+        cacheControl: "",
+        uploadedAt: new Date(),
+        etag: "irrelevant",
+        contentType: "application/pdf",
+        size: 11,
+      },
+    } as never);
 
+    const blobPathname = `handleidingen/${"a".repeat(64)}__Analyse.pdf`;
     const buffer = await readManualBlob({
       relativePath: "handleidingen/Analyse.pdf",
       hash: "a".repeat(64),
-      blobPathname: `handleidingen/${"a".repeat(64)}__Analyse.pdf`,
+      blobPathname,
       url: "https://blob.example/analyse",
       size: 11,
     });
 
     expect(buffer.toString()).toBe("%PDF-inhoud");
+    expect(mockGet).toHaveBeenCalledWith(blobPathname, expect.objectContaining({ access: "private" }));
   });
 
-  it("gooit een duidelijke fout bij een mislukte download", async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 404 }) as unknown as typeof fetch;
+  it("gooit een duidelijke fout wanneer de blob niet (meer) bestaat", async () => {
+    mockGet.mockResolvedValue(null);
 
     await expect(
       readManualBlob({
@@ -139,7 +164,7 @@ describe("readManualBlob", () => {
         url: "https://blob.example/weg",
         size: 0,
       })
-    ).rejects.toThrow(/404/);
+    ).rejects.toThrow(/niet downloaden/);
   });
 });
 

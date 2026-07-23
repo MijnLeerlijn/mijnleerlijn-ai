@@ -1,13 +1,17 @@
-import { list } from "@vercel/blob";
+import { list, get } from "@vercel/blob";
 import { blobAuthOptions } from "@/services/storage";
 
 // Vervangt lib/knowledge/manuals-scan.ts (Vercel's Root Directory bevat wel
 // website/, maar `website/handleidingen/` bleek via .vercelignore alsnog
 // buiten de deploy te vallen — en met de map inmiddels op 1,6 GB is
 // "gewoon meebundelen in de serverless functie" sowieso geen houdbare
-// aanpak, los van .vercelignore). Handleidingen staan nu in Vercel Blob
-// (access: 'public' — productdocumentatie, geen persoonsgegevens; zie
-// services/storage.ts voor de private tegenhanger met bijlagen).
+// aanpak, los van .vercelignore). Handleidingen staan nu in Vercel Blob.
+//
+// De Blob store is bewust PRIVATE (net als de contactformulier-bijlagen in
+// services/storage.ts) — dus `blob.url`/`downloadUrl` uit list() zijn NIET
+// rechtstreeks publiek op te vragen. Lezen gaat daarom via @vercel/blob's
+// `get()` (geauthenticeerde server-side download op basis van de pathname),
+// niet via een kale `fetch(url)` — zie readManualBlob hieronder.
 //
 // SHA256-detectie ZONDER download: de hash wordt eenmalig, lokaal berekend
 // door het importscript (payload/upload-manuals-to-blob/index.ts) en in de
@@ -88,15 +92,18 @@ export async function listManualBlobs(): Promise<ManualBlob[]> {
   return resultaten.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
-/** Downloadt de daadwerkelijke bestandsinhoud — alleen aanroepen voor bestanden die echt (her)verwerkt gaan worden. */
+/**
+ * Downloadt de daadwerkelijke bestandsinhoud — alleen aanroepen voor
+ * bestanden die echt (her)verwerkt gaan worden. Gebruikt get() (niet
+ * fetch(blob.url)): de store is private, dus alleen een geauthenticeerde
+ * aanroep (token of Vercel OIDC, via blobAuthOptions()) kan de inhoud lezen.
+ */
 export async function readManualBlob(blob: ManualBlob): Promise<Buffer> {
-  const response = await fetch(blob.url);
-  if (!response.ok) {
-    throw new Error(
-      `Kon handleiding niet downloaden uit Blob (HTTP ${response.status}): ${blob.relativePath}`
-    );
+  const resultaat = await get(blob.blobPathname, { access: "private", ...blobAuthOptions() });
+  if (!resultaat || resultaat.statusCode !== 200) {
+    throw new Error(`Kon handleiding niet downloaden uit Blob: ${blob.relativePath}`);
   }
-  const arrayBuffer = await response.arrayBuffer();
+  const arrayBuffer = await new Response(resultaat.stream).arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
 

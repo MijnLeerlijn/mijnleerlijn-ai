@@ -8,8 +8,10 @@ import { requireEnv } from "@/config/env";
 import { HANDLEIDINGEN_BLOB_PREFIX, blobPathnameVoor } from "@/lib/knowledge/manuals-blob";
 
 // Eenmalig (en veilig herhaalbaar) importscript: uploadt ALLE bestanden uit
-// website/handleidingen/ naar Vercel Blob (access: 'public' — product-
-// documentatie, geen persoonsgegevens). Zie lib/knowledge/manuals-blob.ts
+// website/handleidingen/ naar Vercel Blob. access: 'private' — de store is
+// bewust private ingesteld; lib/knowledge/manuals-blob.ts's readManualBlob()
+// leest private blobs terug via een geauthenticeerde get()-aanroep, niet via
+// een publieke URL. Zie lib/knowledge/manuals-blob.ts
 // voor het naamgevingsschema (sha256 in de Blob-bestandsnaam, zodat
 // syncManuals() later zonder download kan bepalen wat nieuw/gewijzigd is)
 // en app/api/knowledge/sync-manuals/route.ts voor de echte synchronisatie
@@ -180,7 +182,7 @@ async function run() {
       console.log(`${voortgang} uploaden (${formatBytes(info.size)}): ${bestand.relativePath}`);
 
       await put(doelPathname, createReadStream(bestand.absolutePath), {
-        access: "public",
+        access: "private",
         addRandomSuffix: false,
         contentType: mimeType(bestand.filename),
         multipart: true,
