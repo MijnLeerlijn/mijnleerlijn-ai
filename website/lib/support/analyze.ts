@@ -245,6 +245,7 @@ export async function analyseThread(payload: Payload, thread: ThreadVoorAnalyse)
       status,
       aiModel: getAiModelId(),
       aiAnalyzedAt: new Date().toISOString(),
+      embeddingStatus: "pending",
     },
   });
 

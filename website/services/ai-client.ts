@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject } from "ai";
+import { generateObject, embed } from "ai";
 import type { z } from "zod";
 import { requireEnv, optionalEnv } from "@/config/env";
 
@@ -28,6 +28,7 @@ import { requireEnv, optionalEnv } from "@/config/env";
 // bestand.
 
 const DEFAULT_MODEL_ID = "gpt-4o";
+const DEFAULT_EMBEDDING_MODEL_ID = "text-embedding-3-small";
 
 function openaiClient() {
   return createOpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
@@ -36,6 +37,11 @@ function openaiClient() {
 /** Overschrijfbaar via AI_MODEL_ID (env) zonder codewijziging — zie .env.example. */
 export function getAiModelId(): string {
   return optionalEnv("AI_MODEL_ID") ?? DEFAULT_MODEL_ID;
+}
+
+/** Overschrijfbaar via EMBEDDING_MODEL_ID (env) zonder codewijziging — zie .env.example. */
+export function getEmbeddingModelId(): string {
+  return optionalEnv("EMBEDDING_MODEL_ID") ?? DEFAULT_EMBEDDING_MODEL_ID;
 }
 
 export interface StructuredOutputArgs<T> {
@@ -61,4 +67,18 @@ export async function generateStructuredOutput<T>(args: StructuredOutputArgs<T>)
     prompt: args.userPrompt,
   });
   return result.object;
+}
+
+/**
+ * Vraagt een embedding-vector op voor `text` — gebruikt door
+ * lib/embeddings/ (Knowledge Sources/Drafts/Articles) voor semantische
+ * zoekfunctionaliteit. Zelfde providerabstractie als generateStructuredOutput:
+ * de Vercel AI SDK's eigen `embed()`, geen los embeddings-SDK'tje ernaast.
+ * Gooit door bij een fout — aanroepers vangen dit zelf af (zie
+ * lib/embeddings/process-embedding.ts), zelfde conventie als hierboven.
+ */
+export async function generateEmbedding(text: string): Promise<number[]> {
+  const model = openaiClient().embedding(getEmbeddingModelId());
+  const result = await embed({ model, value: text });
+  return result.embedding;
 }

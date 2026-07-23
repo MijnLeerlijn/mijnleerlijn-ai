@@ -13,11 +13,17 @@ import { adminOnly } from "../access/roles";
 // artikel-bronvermelding) is dit een aparte, expliciet toegevoegde collectie
 // naast het canonieke model, met een ander doel: Sources.ts is redactionele
 // citatiemetadata, deze collectie is de INVOER voor de AI-indexeerpijplijn
-// (ruwe inhoud → samenvatting/trefwoorden/categorie/hoofdstukken). Nog geen
-// vectoropslag: `embeddingStatus`/`embeddingUpdatedAt` zijn puur
-// voorbereidende, ongebruikte velden voor een latere pgvector-koppeling (zie
-// docs/AI-KNOWLEDGE-STRATEGY.md §Vectoropslag) — er wordt in deze sprint
-// nergens naar geschreven.
+// (ruwe inhoud → samenvatting/trefwoorden/categorie/hoofdstukken).
+//
+// Sprint 4 (embeddings): `embedding` slaat TIJDELIJK de ruwe vector zelf op
+// (JSON-array, geen pgvector) — zie lib/embeddings/. Zodra een echte
+// vectorstore/pgvector-koppeling wordt gebouwd, is dit veld het enige dat
+// vervangen hoeft te worden; `embeddingStatus`/`embeddedAt`/`embeddingModel`/
+// `embeddingTextHash` blijven ongewijzigd bruikbaar. `embeddingTextHash` is
+// een sha256 van de exact geëmbedde tekst — lib/embeddings/process-embedding.ts
+// vergelijkt dit bij elke embed-aanroep met de actueel berekende hash om te
+// bepalen of een bron al up-to-date is (skip) of opnieuw geëmbed moet worden
+// (bv. na een gewijzigde PDF).
 //
 // Bewust volledig admin-only, zelfde reden als KnowledgeDrafts/SupportThreads:
 // dit kan onbeoordeelde, AI-gegenereerde inhoud bevatten. Aanmaken (nieuwe
@@ -35,8 +41,13 @@ export const KnowledgeSources: CollectionConfig = {
     components: {
       // "Indexeer geselecteerde bronnen" — dekt ook herindexeren: een reeds
       // geïndexeerde bron opnieuw selecteren en klikken verwerkt 'm gewoon
-      // opnieuw, zie lib/knowledge/run-indexing.ts.
-      listMenuItems: ["@/payload/components/IndexSelectedSourcesButton#IndexSelectedSourcesButton"],
+      // opnieuw, zie lib/knowledge/run-indexing.ts. "Maak embeddings" is de
+      // Sprint 4-tegenhanger (zie lib/embeddings/) — hetzelfde knop-component
+      // wordt hergebruikt op knowledge-drafts en articles.
+      listMenuItems: [
+        "@/payload/components/IndexSelectedSourcesButton#IndexSelectedSourcesButton",
+        "@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton",
+      ],
     },
   },
   access: {
@@ -109,6 +120,18 @@ export const KnowledgeSources: CollectionConfig = {
         { name: "title", type: "text", required: true, label: "Hoofdstuktitel" },
         { name: "summary", type: "textarea", required: true, label: "Samenvatting" },
         { name: "order", type: "number", required: true, label: "Volgorde" },
+        {
+          name: "embedding",
+          type: "json",
+          label: "Hoofdstuk-embedding (tijdelijk)",
+          admin: { readOnly: true, hidden: true },
+        },
+        {
+          name: "embeddingTextHash",
+          type: "text",
+          label: "Hash van geëmbede hoofdstuktekst",
+          admin: { readOnly: true, hidden: true },
+        },
       ],
     },
     {
@@ -178,14 +201,36 @@ export const KnowledgeSources: CollectionConfig = {
       admin: {
         readOnly: true,
         description:
-          "Voorbereiding voor een latere pgvector-koppeling (docs/AI-KNOWLEDGE-STRATEGY.md) — LET OP: dit is iets anders dan het veld 'Status' hierboven (dat gaat over AI-samenvatting, niet over vector-embeddings). In deze sprint wordt hier nergens naar geschreven; blijft op 'In afwachting' staan.",
+          "Wordt gezet door POST /api/knowledge/embed (lib/embeddings/process-embedding.ts) — LET OP: dit is iets anders dan het veld 'Status' hierboven (dat gaat over de AI-samenvatting uit Sprint 3, niet over embeddings).",
+      },
+    },
+    { name: "embeddedAt", type: "date", label: "Geëmbed op", admin: { readOnly: true } },
+    {
+      name: "embeddingModel",
+      type: "text",
+      label: "Embedding-model",
+      admin: { readOnly: true, description: "Bv. text-embedding-3-small — zie services/ai-client.ts." },
+    },
+    {
+      name: "embeddingTextHash",
+      type: "text",
+      label: "Hash van geëmbede tekst",
+      admin: {
+        readOnly: true,
+        hidden: true,
+        description: "Sha256 van titel+samenvatting+trefwoorden+categorie — bepaalt of herembedden nodig is.",
       },
     },
     {
-      name: "embeddingUpdatedAt",
-      type: "date",
-      label: "Embedding bijgewerkt op",
-      admin: { readOnly: true, description: "Ongebruikt totdat de vectoropslag wordt gebouwd." },
+      name: "embedding",
+      type: "json",
+      label: "Embedding-vector (tijdelijk)",
+      admin: {
+        readOnly: true,
+        hidden: true,
+        description:
+          "Tijdelijke ruwe vectoropslag (JSON-array) zolang er geen externe vectorstore/pgvector is — zie het commentaar bovenaan dit bestand. Nooit rechtstreeks tonen/bewerken in de admin-UI.",
+      },
     },
   ],
 };

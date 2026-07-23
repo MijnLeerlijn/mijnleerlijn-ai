@@ -20,6 +20,9 @@ export const KnowledgeDrafts: CollectionConfig = {
     group: "Beheer",
     description:
       "AI-conceptkennisartikelen uit Gmail-helpdeskthreads. Aanmaken kan alleen via de synchronisatieroute; hier uitsluitend bekijken, aanpassen, goedkeuren of afkeuren.",
+    components: {
+      listMenuItems: ["@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton"],
+    },
   },
   access: {
     read: adminOnly,
@@ -128,6 +131,39 @@ export const KnowledgeDrafts: CollectionConfig = {
       type: "textarea",
       label: "Beoordelingsnotities",
       admin: { description: "Vrije notities van de beheerder bij het goed-/afkeuren." },
+    },
+    // Sprint 4 (embeddings) — zie lib/embeddings/ en het commentaar bij de
+    // gelijknamige velden in payload/collections/KnowledgeSources.ts.
+    {
+      name: "embeddingStatus",
+      type: "select",
+      required: true,
+      defaultValue: "pending",
+      label: "Embedding-status",
+      options: [
+        { label: "In afwachting", value: "pending" },
+        { label: "Geïndexeerd (vector)", value: "indexed" },
+        { label: "Verouderd", value: "stale" },
+      ],
+      admin: { readOnly: true },
+    },
+    { name: "embeddedAt", type: "date", label: "Geëmbed op", admin: { readOnly: true } },
+    { name: "embeddingModel", type: "text", label: "Embedding-model", admin: { readOnly: true } },
+    {
+      name: "embeddingTextHash",
+      type: "text",
+      label: "Hash van geëmbede tekst",
+      admin: { readOnly: true, hidden: true },
+    },
+    {
+      name: "embedding",
+      type: "json",
+      label: "Embedding-vector (tijdelijk)",
+      admin: {
+        readOnly: true,
+        hidden: true,
+        description: "Tijdelijke ruwe vectoropslag — zie payload/collections/KnowledgeSources.ts.",
+      },
     },
   ],
 };

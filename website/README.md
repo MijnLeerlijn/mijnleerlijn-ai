@@ -57,13 +57,24 @@ Analyseert geïmporteerde Gmail-threads met AI tot conceptkennisartikelen (`know
 
 ## Knowledge Sources (PDF's, video's, websites, release notes, handleidingen, FAQ's)
 
-Centrale invoer voor de AI-kennispijplijn naast Gmail-supportthreads — zie `lib/knowledge/` (index-source.ts voor de kerninhoudslogica, process-source.ts voor de Payload-orkestratie, link-drafts.ts voor de automatische koppeling aan `knowledge-drafts`) en `payload/collections/KnowledgeSources.ts` voor het datamodel. Geen chatbot, geen vectoropslag in deze fase — uitsluitend uitlezen, samenvatten, trefwoorden/categorie bepalen en (voor PDF's) hoofdstukken herkennen + per hoofdstuk samenvatten.
+Centrale invoer voor de AI-kennispijplijn naast Gmail-supportthreads — zie `lib/knowledge/` (index-source.ts voor de kerninhoudslogica, process-source.ts voor de Payload-orkestratie, link-drafts.ts voor de automatische koppeling aan `knowledge-drafts`) en `payload/collections/KnowledgeSources.ts` voor het datamodel. Geen chatbot — uitsluitend uitlezen, samenvatten, trefwoorden/categorie bepalen en (voor PDF's) hoofdstukken herkennen + per hoofdstuk samenvatten. Vectoropslag/embeddings: zie de volgende sectie.
 
 - **Een PDF toevoegen**: `/admin/collections/knowledge-sources` → **Create new** → Type "PDF" → upload het bestand bij "Bestand" → opslaan.
 - **Een URL toevoegen** (video/website/release notes/handleiding/FAQ/intern document): zelfde scherm, Type naar keuze, vul "URL" in.
 - **Indexeren**: selecteer een of meer bronnen in de lijst → knop **"Indexeer geselecteerde bronnen"** bovenin. Dezelfde knop **herindexeert** een reeds geïndexeerde bron gewoon opnieuw (bv. na een fout, of om een bijgewerkt bestand opnieuw te laten uitlezen).
 - Resultaten (samenvatting, trefwoorden, categorie, hoofdstukken, gekoppelde conceptkennisartikelen): open de bron zelf in `/admin/collections/knowledge-sources`. Het "Onderbouwd door"-overzicht op elk knowledge-draft (`/admin/collections/knowledge-drafts`) toont hoeveel supportthreads/handleidingen/video's/etc. dat concept onderbouwen.
-- Vereist ook `OPENAI_API_KEY` (dezelfde centrale AI-client als hierboven) — zonder deze faalt het indexeren per bron met status "Fout" en een technische foutmelding, zonder de bron ten onrechte op "Geïndexeerd" te zetten. Geen nieuwe environment variables t.o.v. de AI-analyse van supportthreads.
+- Vereist ook `OPENAI_API_KEY` (dezelfde centrale AI-client als hierboven) — zonder deze faalt het indexeren per bron met status "Fout" en een technische foutmelding, zonder de bron ten onrechte op "Geïndexeerd" te zetten.
+
+## Semantisch zoeken & embeddings (Sprint 4)
+
+Embeddings voor `knowledge-sources` (+ hun hoofdstukken), `knowledge-drafts` en gepubliceerde `articles` — zie `lib/embeddings/` (embed-record.ts voor de kernbeslissing + AI-aanroep, process-embedding.ts voor de Payload-orkestratie per collectie, similarity-search.ts voor het zoeken zelf) en `services/ai-client.ts` (`generateEmbedding`, OpenAI's `text-embedding-3-small` via de Vercel AI SDK). Geen chatbot, geen gegenereerd antwoord — uitsluitend een gerangschikte lijst treffers met similarity-score.
+
+**Tijdelijke vectoropslag**: er is nog geen externe vectorstore/pgvector-koppeling — de vector zelf staat tijdelijk als JSON-array in het (verborgen) veld `embedding` op elk document, en similarity wordt in JS berekend (`cosineSimilarity` uit de Vercel AI SDK). Dit is bewust de enige plek die vervangen hoeft te worden zodra er een echte vectorstore komt; `embeddingStatus`/`embeddedAt`/`embeddingModel`/`embeddingTextHash` blijven dan ongewijzigd bruikbaar.
+
+- **Embeddings maken**: selecteer een of meer rijen in `/admin/collections/knowledge-sources`, `/admin/collections/knowledge-drafts` of `/admin/collections/articles` → knop **"Maak embeddings"** bovenin de lijst. Dezelfde knop **herembedt**: alleen documenten waarvan de tekst écht is gewijzigd (sha256-hashvergelijking) worden opnieuw naar OpenAI gestuurd, de rest wordt overgeslagen (geen onnodige API-kosten).
+- **Semantisch zoeken testen**: `/admin/globals/knowledge-search` → typ een zoekvraag → **"Zoek semantisch"**. Toont per treffer: type, titel (+ hoofdstuk indien van toepassing), similarity-score en een korte reden.
+- Alleen gepubliceerde artikelen worden geëmbed; pedagogische content (`knowledgeType: pedagogisch`) pas na `aiApprovalStatus: goedgekeurd` — zelfde goedkeuringspoort als docs/CONTENT-MODEL.md §Twee soorten kennis.
+- Vereist `OPENAI_API_KEY` (zelfde centrale AI-client). Optioneel: `EMBEDDING_MODEL_ID` om het standaardmodel (`text-embedding-3-small`) te overschrijven.
 
 ## Productie-/preview-deploy (Vercel)
 

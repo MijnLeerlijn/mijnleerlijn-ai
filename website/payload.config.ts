@@ -21,6 +21,7 @@ import { SupportThreads } from "./payload/collections/SupportThreads";
 import { KnowledgeDrafts } from "./payload/collections/KnowledgeDrafts";
 import { KnowledgeSources } from "./payload/collections/KnowledgeSources";
 import { GmailConnection } from "./payload/globals/GmailConnection";
+import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -91,7 +92,7 @@ export default buildConfig({
     KnowledgeDrafts,
     KnowledgeSources,
   ],
-  globals: [GmailConnection],
+  globals: [GmailConnection, KnowledgeSearch],
   editor: lexicalEditor(),
   db: postgresAdapter({
     pool: { connectionString: requireEnv("DATABASE_URI") },

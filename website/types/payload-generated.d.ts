@@ -113,9 +113,11 @@ export interface Config {
   fallbackLocale: null;
   globals: {
     'gmail-connection': GmailConnection;
+    'knowledge-search': KnowledgeSearch;
   };
   globalsSelect: {
     'gmail-connection': GmailConnectionSelect<false> | GmailConnectionSelect<true>;
+    'knowledge-search': KnowledgeSearchSelect<false> | KnowledgeSearchSelect<true>;
   };
   locale: null;
   widgets: {
@@ -325,10 +327,22 @@ export interface Article {
    * Verplicht 'Goedgekeurd' voordat pedagogische content in de AI-index mag — uitsluitend door een beheerder te zetten. Zie docs/CONTENT-MODEL.md §Twee soorten kennis.
    */
   aiApprovalStatus: 'n.v.t.' | 'in_afwachting' | 'goedgekeurd';
-  /**
-   * Systeemveld voor de indexeerpijplijn — Fase 6.
-   */
   embeddingStatus: 'pending' | 'indexed' | 'stale';
+  embeddedAt?: string | null;
+  embeddingModel?: string | null;
+  embeddingTextHash?: string | null;
+  /**
+   * Tijdelijke ruwe vectoropslag — zie payload/collections/KnowledgeSources.ts.
+   */
+  embedding?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   publishedAt?: string | null;
   /**
    * Datum van laatste inhoudelijke wijziging — verplicht getoond bij bronvermelding.
@@ -662,6 +676,22 @@ export interface KnowledgeDraft {
    * Vrije notities van de beheerder bij het goed-/afkeuren.
    */
   reviewNotes?: string | null;
+  embeddingStatus: 'pending' | 'indexed' | 'stale';
+  embeddedAt?: string | null;
+  embeddingModel?: string | null;
+  embeddingTextHash?: string | null;
+  /**
+   * Tijdelijke ruwe vectoropslag — zie payload/collections/KnowledgeSources.ts.
+   */
+  embedding?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -697,6 +727,16 @@ export interface KnowledgeSource {
         title: string;
         summary: string;
         order: number;
+        embedding?:
+          | {
+              [k: string]: unknown;
+            }
+          | unknown[]
+          | string
+          | number
+          | boolean
+          | null;
+        embeddingTextHash?: string | null;
         id?: string | null;
       }[]
     | null;
@@ -721,13 +761,30 @@ export interface KnowledgeSource {
    */
   knowledgeDrafts?: (number | KnowledgeDraft)[] | null;
   /**
-   * Voorbereiding voor een latere pgvector-koppeling (docs/AI-KNOWLEDGE-STRATEGY.md) — LET OP: dit is iets anders dan het veld 'Status' hierboven (dat gaat over AI-samenvatting, niet over vector-embeddings). In deze sprint wordt hier nergens naar geschreven; blijft op 'In afwachting' staan.
+   * Wordt gezet door POST /api/knowledge/embed (lib/embeddings/process-embedding.ts) — LET OP: dit is iets anders dan het veld 'Status' hierboven (dat gaat over de AI-samenvatting uit Sprint 3, niet over embeddings).
    */
   embeddingStatus: 'pending' | 'indexed' | 'stale';
+  embeddedAt?: string | null;
   /**
-   * Ongebruikt totdat de vectoropslag wordt gebouwd.
+   * Bv. text-embedding-3-small — zie services/ai-client.ts.
    */
-  embeddingUpdatedAt?: string | null;
+  embeddingModel?: string | null;
+  /**
+   * Sha256 van titel+samenvatting+trefwoorden+categorie — bepaalt of herembedden nodig is.
+   */
+  embeddingTextHash?: string | null;
+  /**
+   * Tijdelijke ruwe vectoropslag (JSON-array) zolang er geen externe vectorstore/pgvector is — zie het commentaar bovenaan dit bestand. Nooit rechtstreeks tonen/bewerken in de admin-UI.
+   */
+  embedding?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1031,6 +1088,10 @@ export interface ArticlesSelect<T extends boolean = true> {
   articleStatus?: T;
   aiApprovalStatus?: T;
   embeddingStatus?: T;
+  embeddedAt?: T;
+  embeddingModel?: T;
+  embeddingTextHash?: T;
+  embedding?: T;
   publishedAt?: T;
   lastContentUpdate?: T;
   author?: T;
@@ -1310,6 +1371,11 @@ export interface KnowledgeDraftsSelect<T extends boolean = true> {
   aiModel?: T;
   aiAnalyzedAt?: T;
   reviewNotes?: T;
+  embeddingStatus?: T;
+  embeddedAt?: T;
+  embeddingModel?: T;
+  embeddingTextHash?: T;
+  embedding?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1331,6 +1397,8 @@ export interface KnowledgeSourcesSelect<T extends boolean = true> {
         title?: T;
         summary?: T;
         order?: T;
+        embedding?: T;
+        embeddingTextHash?: T;
         id?: T;
       };
   status?: T;
@@ -1342,7 +1410,10 @@ export interface KnowledgeSourcesSelect<T extends boolean = true> {
   aiIndexedAt?: T;
   knowledgeDrafts?: T;
   embeddingStatus?: T;
-  embeddingUpdatedAt?: T;
+  embeddedAt?: T;
+  embeddingModel?: T;
+  embeddingTextHash?: T;
+  embedding?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1448,6 +1519,17 @@ export interface GmailConnection {
   createdAt?: string | null;
 }
 /**
+ * Test semantisch zoeken over kennisbronnen, conceptkennisartikelen en artikelen.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "knowledge-search".
+ */
+export interface KnowledgeSearch {
+  id: number;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "gmail-connection_select".
  */
@@ -1459,6 +1541,15 @@ export interface GmailConnectionSelect<T extends boolean = true> {
   scopes?: T;
   connectedAt?: T;
   lastSyncAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "knowledge-search_select".
+ */
+export interface KnowledgeSearchSelect<T extends boolean = true> {
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

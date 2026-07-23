@@ -4,6 +4,7 @@ import * as migration_20260722_122452_add_gmail_connection from "./20260722_1224
 import * as migration_20260722_220528_add_support_threads from "./20260722_220528_add_support_threads";
 import * as migration_20260723_113031_add_knowledge_drafts from "./20260723_113031_add_knowledge_drafts";
 import * as migration_20260723_141018_add_knowledge_sources from "./20260723_141018_add_knowledge_sources";
+import * as migration_20260723_154646_add_embeddings from "./20260723_154646_add_embeddings";
 
 export const migrations = [
   {
@@ -35,5 +36,10 @@ export const migrations = [
     up: migration_20260723_141018_add_knowledge_sources.up,
     down: migration_20260723_141018_add_knowledge_sources.down,
     name: "20260723_141018_add_knowledge_sources",
+  },
+  {
+    up: migration_20260723_154646_add_embeddings.up,
+    down: migration_20260723_154646_add_embeddings.down,
+    name: "20260723_154646_add_embeddings",
   },
 ];

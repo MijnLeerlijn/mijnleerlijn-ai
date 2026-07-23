@@ -23,6 +23,9 @@ export const Articles: CollectionConfig = {
     ],
     group: "Content",
     description: "De centrale, enige-bron-van-waarheid handleidingen. Nooit per variant gekopieerd.",
+    components: {
+      listMenuItems: ["@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton"],
+    },
   },
   access: {
     read: publishedOrEditor,
@@ -120,6 +123,13 @@ export const Articles: CollectionConfig = {
       ],
     },
     {
+      // Sprint 4: dit veld bestond al als voorbereidend Fase 6-systeemveld en
+      // wordt nu daadwerkelijk gevuld door lib/embeddings/ (POST
+      // /api/knowledge/embed) — alleen voor gepubliceerde artikelen, en voor
+      // knowledgeType "pedagogisch" pas ná aiApprovalStatus "goedgekeurd",
+      // zie docs/CONTENT-MODEL.md §Twee soorten kennis. embeddedAt/
+      // embeddingModel/embeddingTextHash/embedding zijn de bijbehorende
+      // velden, zelfde betekenis als op KnowledgeSources/KnowledgeDrafts.
       name: "embeddingStatus",
       type: "select",
       required: true,
@@ -129,13 +139,44 @@ export const Articles: CollectionConfig = {
       admin: {
         position: "sidebar",
         readOnly: true,
-        description: "Systeemveld voor de indexeerpijplijn — Fase 6.",
       },
       options: [
         { label: "In wachtrij", value: "pending" },
         { label: "Geïndexeerd", value: "indexed" },
         { label: "Verouderd", value: "stale" },
       ],
+    },
+    {
+      name: "embeddedAt",
+      type: "date",
+      label: "Geëmbed op",
+      access: { update: adminFieldOnly },
+      admin: { position: "sidebar", readOnly: true },
+    },
+    {
+      name: "embeddingModel",
+      type: "text",
+      label: "Embedding-model",
+      access: { update: adminFieldOnly },
+      admin: { position: "sidebar", readOnly: true },
+    },
+    {
+      name: "embeddingTextHash",
+      type: "text",
+      label: "Hash van geëmbede tekst",
+      access: { update: adminFieldOnly },
+      admin: { readOnly: true, hidden: true },
+    },
+    {
+      name: "embedding",
+      type: "json",
+      label: "Embedding-vector (tijdelijk)",
+      access: { update: adminFieldOnly },
+      admin: {
+        readOnly: true,
+        hidden: true,
+        description: "Tijdelijke ruwe vectoropslag — zie payload/collections/KnowledgeSources.ts.",
+      },
     },
     { name: "publishedAt", type: "date", label: "Publicatiedatum", admin: { position: "sidebar" } },
     {
