@@ -5,7 +5,7 @@ import { generateStructuredOutput } from "@/services/ai-client";
 
 vi.mock("@/services/ai-client", () => ({
   generateStructuredOutput: vi.fn(),
-  getAiModelId: () => "claude-sonnet-5-test",
+  getAiModelId: () => "gpt-4o-test",
 }));
 
 const mockGenerate = vi.mocked(generateStructuredOutput);

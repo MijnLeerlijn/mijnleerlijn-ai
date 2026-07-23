@@ -1,4 +1,4 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import type { z } from "zod";
 import { requireEnv, optionalEnv } from "@/config/env";
@@ -18,17 +18,19 @@ import { requireEnv, optionalEnv } from "@/config/env";
 // taalmodel-generatie overgaat, hoort die ook via generateStructuredOutput()
 // hieronder te lopen, niet via een eigen client.
 //
-// Providerkeuze: Anthropic (Claude), via de Vercel AI SDK. Er was geen
-// bestaande sleutel/keuze in het project vastgelegd (zie docs/TODO.md
-// beslissing 2, "open — fase 6, testen met echte NL-content") — Anthropic is
-// hier een redelijke, goed gemotiveerde standaardkeuze, maar geen
-// onomkeerbaar besluit: alleen dit bestand hoeft te wijzigen om over te
-// stappen op een andere Vercel-AI-SDK-provider.
+// Providerkeuze: OpenAI, via de Vercel AI SDK — tot 2026-07-23 stond hier
+// Anthropic; overgezet omdat er tijdelijk geen Anthropic-credits konden
+// worden aangeschaft (creditcardprobleem). Precies zo'n wissel is waarom
+// deze abstractielaag bestaat: alleen dit bestand is gewijzigd, lib/support/
+// analyze.ts en alle aanroepers van generateStructuredOutput() zijn
+// ongewijzigd. Nog steeds geen onomkeerbaar besluit — wisselen naar een
+// andere Vercel-AI-SDK-provider blijft een wijziging van uitsluitend dit
+// bestand.
 
-const DEFAULT_MODEL_ID = "claude-sonnet-5";
+const DEFAULT_MODEL_ID = "gpt-4o";
 
-function anthropicClient() {
-  return createAnthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
+function openaiClient() {
+  return createOpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
 }
 
 /** Overschrijfbaar via AI_MODEL_ID (env) zonder codewijziging — zie .env.example. */
@@ -51,7 +53,7 @@ export interface StructuredOutputArgs<T> {
  * doet zelf geen retries of fallbacks.
  */
 export async function generateStructuredOutput<T>(args: StructuredOutputArgs<T>): Promise<T> {
-  const model = anthropicClient()(getAiModelId());
+  const model = openaiClient()(getAiModelId());
   const result = await generateObject({
     model,
     schema: args.schema,

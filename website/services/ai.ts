@@ -10,10 +10,11 @@ import type { RetrievedChunk } from "./retrieval";
 // livegang-opleveringsrapport — dat is een van de openstaande "accounts en
 // sleutels"-taken ná livegang). Het antwoord is daarom letterlijk de best
 // scorende, echt opgehaalde tekst — nooit verzonnen, wel minder vloeiend dan
-// een taalmodel-antwoord zou zijn. Zodra ANTHROPIC_API_KEY (of een andere
-// providersleutel) beschikbaar is, vervangt dit bestand de extractie door een
-// echte taalmodel-aanroep die uitsluitend `context` mag samenvatten — de
-// aanroepers (app/api/antwoord/route.ts) hoeven niet te wijzigen.
+// een taalmodel-antwoord zou zijn. Zodra OPENAI_API_KEY (of een andere
+// providersleutel, zie services/ai-client.ts) beschikbaar is, vervangt dit
+// bestand de extractie door een echte taalmodel-aanroep die uitsluitend
+// `context` mag samenvatten — de aanroepers (app/api/antwoord/route.ts)
+// hoeven niet te wijzigen.
 
 export interface AntwoordResultaat {
   tekst: string;
