@@ -45,6 +45,7 @@ export const KnowledgeSources: CollectionConfig = {
       // Sprint 4-tegenhanger (zie lib/embeddings/) — hetzelfde knop-component
       // wordt hergebruikt op knowledge-drafts en articles.
       listMenuItems: [
+        "@/payload/components/SyncManualsButton#SyncManualsButton",
         "@/payload/components/IndexSelectedSourcesButton#IndexSelectedSourcesButton",
         "@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton",
       ],
@@ -94,6 +95,37 @@ export const KnowledgeSources: CollectionConfig = {
           "Voor alle typen behalve PDF: link naar de video, website, release notes, handleiding, FAQ of het interne document.",
         condition: (_d, s) => s?.type !== "pdf",
       },
+    },
+    {
+      // Sprint 6 (lib/knowledge/sync-manuals.ts, POST /api/knowledge/sync-manuals):
+      // repository-relatief pad (t.o.v. de website/-map, bv.
+      // "handleidingen/Analyse.pdf") van bronnen die automatisch uit de
+      // handleidingen/-map zijn gesynchroniseerd. Uniek zodat herhaald
+      // synchroniseren van hetzelfde bestand altijd dezelfde bron bijwerkt
+      // (nooit een duplicaat aanmaakt) — leeg/null voor handmatig
+      // aangemaakte bronnen (meerdere NULLs zijn toegestaan in een
+      // Postgres-unique-index, zelfde patroon als het veld `url` hierboven).
+      name: "sourceFilePath",
+      type: "text",
+      unique: true,
+      label: "Bestandspad (repository)",
+      admin: {
+        readOnly: true,
+        description: "Alleen voor automatisch gesynchroniseerde bronnen — zie lib/knowledge/sync-manuals.ts.",
+      },
+    },
+    {
+      // Sha256 van de ruwe bestandsinhoud (NIET van de AI-samenvatting —
+      // vergelijk embeddingTextHash verderop, dat is iets anders). Bepaalt
+      // of een bestand inhoudelijk gewijzigd is (herindexeren nodig) en
+      // detecteert content-duplicaten onder een andere bestandsnaam (bv.
+      // "Analyse.pdf" vs. "Analyse (1).pdf") — bij een hash-match op een
+      // ANDER bestandspad wordt nooit een nieuwe bron aangemaakt.
+      name: "sourceFileHash",
+      type: "text",
+      unique: true,
+      label: "Bestandshash (sha256)",
+      admin: { readOnly: true, hidden: true },
     },
     { name: "description", type: "textarea", label: "Omschrijving" },
     { name: "tags", type: "text", hasMany: true, label: "Tags" },

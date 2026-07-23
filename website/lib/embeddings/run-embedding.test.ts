@@ -80,7 +80,7 @@ describe("runKnowledgeEmbedding — zonder collection: alle drie verwerkt", () =
     mockArticle.mockResolvedValue({ type: "embedded" });
     const { payload } = maakFakePayload({
       "knowledge-sources": Array.from({ length: 3 }, (_, i) => maakBron(i + 1)),
-      "knowledge-drafts": Array.from({ length: 2 }, (_, i) => maakBron(i + 1)),
+      "knowledge-drafts": Array.from({ length: 2 }, (_, i) => maakBron(i + 1, { status: "approved" })),
       articles: [{ id: 1, title: "Artikel", articleStatus: "gepubliceerd", embeddingStatus: "pending" }],
     });
 

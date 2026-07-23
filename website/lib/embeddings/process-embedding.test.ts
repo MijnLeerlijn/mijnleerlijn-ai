@@ -100,7 +100,7 @@ describe("embedKnowledgeSource", () => {
 });
 
 describe("embedKnowledgeDraft", () => {
-  it("embedt een conceptkennisartikel", async () => {
+  it("embedt een goedgekeurd conceptkennisartikel (status 'approved')", async () => {
     const { payload, collection } = maakFakePayload({
       "knowledge-drafts": [
         {
@@ -108,6 +108,7 @@ describe("embedKnowledgeDraft", () => {
           title: "Wachtwoord resetten",
           question: "Hoe?",
           shortAnswer: "Zo.",
+          status: "approved",
           embeddingStatus: "pending",
         },
       ],
@@ -119,9 +120,30 @@ describe("embedKnowledgeDraft", () => {
     expect(collection("knowledge-drafts")[0]!.embeddingStatus).toBe("indexed");
   });
 
+  it("negeert een concept dat nog niet is goedgekeurd (Sprint 6: veilige standaard voor de assistent)", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-drafts": [{ id: 1, title: "Nieuw concept", question: "Vraag?", status: "new", embeddingStatus: "pending" }],
+    });
+
+    const uitkomst = await embedKnowledgeDraft(payload, 1);
+
+    expect(uitkomst).toMatchObject({ type: "ignored" });
+    expect(mockGenerateEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("negeert ook een concept dat al 'published' (tot artikel verwerkt) is — dat artikel wordt apart geëmbed", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-drafts": [{ id: 1, title: "Verwerkt concept", question: "Vraag?", status: "published", embeddingStatus: "pending" }],
+    });
+
+    const uitkomst = await embedKnowledgeDraft(payload, 1);
+
+    expect(uitkomst).toMatchObject({ type: "ignored" });
+  });
+
   it("slaat een ongewijzigd concept over bij herembedden", async () => {
     const { payload } = maakFakePayload({
-      "knowledge-drafts": [{ id: 1, title: "Concept", question: "Vraag?", embeddingStatus: "pending" }],
+      "knowledge-drafts": [{ id: 1, title: "Concept", question: "Vraag?", status: "approved", embeddingStatus: "pending" }],
     });
 
     await embedKnowledgeDraft(payload, 1);

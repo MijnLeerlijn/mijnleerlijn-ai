@@ -28,6 +28,24 @@ export interface SearchHit {
 const STANDAARD_ZOEKLIMIET = 10;
 const MAX_KANDIDATEN_PER_COLLECTIE = 500;
 
+// Sprint 6: veilige standaard voor welke knowledge-drafts de assistent als
+// bron mag gebruiken. Overwogen opties waren "new" meetellen (nee — dat is
+// onbeoordeelde, mogelijk onjuiste of nog niet op algemene bruikbaarheid
+// gecontroleerde AI-output uit Gmail-analyse, zie lib/support/analyze.ts),
+// "published" meetellen (ook nee — dat betekent juist dat het concept al
+// handmatig is omgezet naar een echt Article; dat Article wordt zelf al
+// apart geëmbed/geciteerd, dus een gepubliceerd concept ERNAAST laten
+// meezoeken zou dezelfde kennis dubbel en mogelijk verouderd laten
+// terugkomen), en "rejected" (vanzelfsprekend nooit). Uitkomst: uitsluitend
+// "approved" — een concept dat een beheerder heeft beoordeeld en akkoord
+// bevonden als algemeen bruikbare kennis, maar nog niet (of nooit) apart tot
+// artikel is verwerkt. Zelfde poort afgedwongen in
+// lib/embeddings/process-embedding.ts::embedKnowledgeDraft() (kan dus al
+// nooit een embedding krijgen) — dit filter hier is bewuste verdediging in
+// diepte, voor het geval een embedding van vóór deze wijziging nog bestaat
+// of een concept na het embedden alsnog afgekeurd wordt.
+const VEILIGE_DRAFT_STATUSSEN = ["approved"];
+
 const TYPE_LABEL: Record<SearchHitType, string> = {
   "knowledge-source": "deze kennisbron",
   "knowledge-source-chapter": "dit hoofdstuk",
@@ -89,7 +107,9 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
 
   const drafts = await payload.find({
     collection: "knowledge-drafts",
-    where: { embeddingStatus: { equals: "indexed" } },
+    where: {
+      and: [{ embeddingStatus: { equals: "indexed" } }, { status: { in: VEILIGE_DRAFT_STATUSSEN } }],
+    },
     limit: MAX_KANDIDATEN_PER_COLLECTIE,
     overrideAccess: true,
     depth: 0,

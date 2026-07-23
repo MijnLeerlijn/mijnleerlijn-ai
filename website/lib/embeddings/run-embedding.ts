@@ -62,6 +62,21 @@ async function selecteerIds(
     return resultaat.docs.map((d) => d.id);
   }
 
+  if (collectie === "knowledge-drafts") {
+    // Zelfde veilige standaard als de harde poort in embedKnowledgeDraft()
+    // (process-embedding.ts) — hier bovendien als efficiëntiewinst: een
+    // niet-goedgekeurd concept nooit eens selecteren voor een embed-poging
+    // die toch genegeerd zou worden.
+    const resultaat = await payload.find({
+      collection: "knowledge-drafts",
+      where: { and: [{ embeddingStatus: { in: ["pending", "stale"] } }, { status: { equals: "approved" } }] },
+      limit,
+      overrideAccess: true,
+      depth: 0,
+    });
+    return resultaat.docs.map((d) => d.id);
+  }
+
   const resultaat = await payload.find({
     collection: collectie,
     where: { embeddingStatus: { in: ["pending", "stale"] } },

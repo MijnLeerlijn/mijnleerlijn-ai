@@ -26,9 +26,20 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
     return data[naam] ?? (data[naam] = []);
   }
 
+  // `and`/`or` ondersteund als eigen geval (Sprint 6: lib/embeddings/
+  // similarity-search.ts en run-embedding.ts filteren knowledge-drafts/
+  // articles met `where: { and: [...] }`) — zonder dit werd zo'n clause
+  // stilzwijgend genegeerd (matchte alles), wat een test die deze filtering
+  // daadwerkelijk moet bewijzen ten onrechte zou laten slagen.
   function matchWaar(doc: FakeDoc, where: Record<string, unknown> | undefined): boolean {
     if (!where) return true;
     return Object.entries(where).every(([veld, voorwaarde]) => {
+      if (veld === "and" && Array.isArray(voorwaarde)) {
+        return (voorwaarde as Record<string, unknown>[]).every((sub) => matchWaar(doc, sub));
+      }
+      if (veld === "or" && Array.isArray(voorwaarde)) {
+        return (voorwaarde as Record<string, unknown>[]).some((sub) => matchWaar(doc, sub));
+      }
       const waarde = doc[veld];
       if (voorwaarde && typeof voorwaarde === "object" && "equals" in voorwaarde) {
         return waarde === (voorwaarde as { equals: unknown }).equals;

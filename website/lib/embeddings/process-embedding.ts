@@ -103,6 +103,15 @@ export async function embedKnowledgeSource(payload: Payload, id: number): Promis
   return chapterFout ? { type: "failed", foutmelding: chapterFout } : { type: "embedded" };
 }
 
+// Sprint 6: alleen 'approved' knowledge-drafts mogen geëmbed worden (en dus
+// door de assistent als bron gebruikt worden) — zie het uitgebreide
+// commentaar bij VEILIGE_DRAFT_STATUSSEN in lib/embeddings/similarity-search.ts
+// voor de volledige afweging. Zelfde hard-in-code-afgedwongen aanpak als
+// embedArticle() hieronder (articleStatus/aiApprovalStatus), i.p.v. alleen
+// op de auto-selectiequery in run-embedding.ts te vertrouwen — een
+// expliciete id-selectie mag deze poort nooit omzeilen.
+const VEILIGE_DRAFT_STATUSSEN = ["approved"];
+
 export async function embedKnowledgeDraft(payload: Payload, id: number): Promise<ProcesUitkomst> {
   const draft = await payload.findByID({
     collection: "knowledge-drafts",
@@ -110,6 +119,13 @@ export async function embedKnowledgeDraft(payload: Payload, id: number): Promise
     overrideAccess: true,
     depth: 0,
   });
+
+  if (!VEILIGE_DRAFT_STATUSSEN.includes(draft.status)) {
+    return {
+      type: "ignored",
+      reden: `Alleen goedgekeurde concepten (status 'approved') worden geëmbed — huidige status: '${draft.status}'.`,
+    };
+  }
 
   const tekst = buildKnowledgeDraftText({
     title: draft.title,

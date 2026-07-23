@@ -34,8 +34,8 @@ beforeEach(() => {
 describe("searchKnowledge — vergelijkbare formuleringen, synoniemen en typo's", () => {
   const seed = {
     "knowledge-drafts": [
-      { id: 1, title: "Wachtwoord resetten", embeddingStatus: "indexed", embedding: [1, 0, 0] },
-      { id: 2, title: "Factuur exporteren als PDF", embeddingStatus: "indexed", embedding: [0, 1, 0] },
+      { id: 1, title: "Wachtwoord resetten", status: "approved", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+      { id: 2, title: "Factuur exporteren als PDF", status: "approved", embeddingStatus: "indexed", embedding: [0, 1, 0] },
     ],
   };
 
@@ -124,9 +124,9 @@ describe("searchKnowledge — algemeen", () => {
   it("negeert documenten zonder embedding (nog niet geëmbed) en documenten met status anders dan 'indexed'", async () => {
     const { payload } = maakFakePayload({
       "knowledge-drafts": [
-        { id: 1, title: "Nog niet geëmbed", embeddingStatus: "pending" },
-        { id: 2, title: "Verouderd", embeddingStatus: "stale", embedding: [1, 0, 0] },
-        { id: 3, title: "Wel geëmbed", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+        { id: 1, title: "Nog niet geëmbed", status: "approved", embeddingStatus: "pending" },
+        { id: 2, title: "Verouderd", status: "approved", embeddingStatus: "stale", embedding: [1, 0, 0] },
+        { id: 3, title: "Wel geëmbed", status: "approved", embeddingStatus: "indexed", embedding: [1, 0, 0] },
       ],
     });
 
@@ -141,6 +141,7 @@ describe("searchKnowledge — algemeen", () => {
       "knowledge-drafts": Array.from({ length: 5 }, (_, i) => ({
         id: i + 1,
         title: `Concept ${i + 1}`,
+        status: "approved",
         embeddingStatus: "indexed",
         embedding: [1, 0, 0],
       })),
@@ -149,5 +150,63 @@ describe("searchKnowledge — algemeen", () => {
     const hits = await searchKnowledge(payload, { query: "wachtwoord", limiet: 2 });
 
     expect(hits).toHaveLength(2);
+  });
+});
+
+describe("searchKnowledge — Sprint 6: alleen goedgekeurde Knowledge Drafts", () => {
+  it("gebruikt een 'approved' concept als bron, maar niet een 'new' (nog niet beoordeeld) of 'rejected' concept", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-drafts": [
+        { id: 1, title: "Nieuw, onbeoordeeld concept", status: "new", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+        { id: 2, title: "Afgekeurd concept", status: "rejected", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+        { id: 3, title: "Goedgekeurd concept", status: "approved", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+      ],
+    });
+
+    const hits = await searchKnowledge(payload, { query: "wachtwoord" });
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ id: 3, type: "knowledge-draft" });
+  });
+
+  it("gebruikt ook een 'published' concept niet (dat is al apart als artikel geëmbed)", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-drafts": [{ id: 1, title: "Al tot artikel verwerkt", status: "published", embeddingStatus: "indexed", embedding: [1, 0, 0] }],
+    });
+
+    const hits = await searchKnowledge(payload, { query: "wachtwoord" });
+
+    expect(hits).toHaveLength(0);
+  });
+
+  it("vindt na synchronisatie zowel een relevante handleiding (knowledge-source) als een bruikbare Knowledge Draft samen, correct gerangschikt", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Handleiding: wachtwoord resetten",
+          type: "pdf",
+          embeddingStatus: "indexed",
+          embedding: [1, 0, 0],
+        },
+      ],
+      "knowledge-drafts": [
+        {
+          id: 2,
+          title: "Support-antwoord: wachtwoord vergeten",
+          status: "approved",
+          embeddingStatus: "indexed",
+          embedding: [0.9, 0.1, 0],
+        },
+      ],
+    });
+
+    const hits = await searchKnowledge(payload, { query: "wachtwoord" });
+
+    expect(hits).toHaveLength(2);
+    expect(hits.map((h) => h.type).sort()).toEqual(["knowledge-draft", "knowledge-source"]);
+    // De handleiding heeft de hogere similarity en staat dus vooraan.
+    expect(hits[0]).toMatchObject({ type: "knowledge-source", id: 1 });
+    expect(hits[1]).toMatchObject({ type: "knowledge-draft", id: 2 });
   });
 });

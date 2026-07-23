@@ -715,6 +715,11 @@ export interface KnowledgeSource {
    * Voor alle typen behalve PDF: link naar de video, website, release notes, handleiding, FAQ of het interne document.
    */
   url?: string | null;
+  /**
+   * Alleen voor automatisch gesynchroniseerde bronnen — zie lib/knowledge/sync-manuals.ts.
+   */
+  sourceFilePath?: string | null;
+  sourceFileHash?: string | null;
   description?: string | null;
   tags?: string[] | null;
   /**
@@ -1436,6 +1441,8 @@ export interface KnowledgeSourcesSelect<T extends boolean = true> {
   type?: T;
   file?: T;
   url?: T;
+  sourceFilePath?: T;
+  sourceFileHash?: T;
   description?: T;
   tags?: T;
   transcript?: T;
