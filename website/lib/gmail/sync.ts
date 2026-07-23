@@ -103,6 +103,7 @@ export async function syncGmailThreads(payload: Payload): Promise<SyncSamenvatti
             status: "new",
             importedAt: new Date().toISOString(),
             updatedFromGmailAt: new Date().toISOString(),
+            aiAnalysisStatus: "not-analyzed",
           },
         });
         resultaat.nieuw += 1;

@@ -43,6 +43,18 @@ export const GmailConnection: GlobalConfig = {
       },
     },
     {
+      // Analyseert tot 5 nog niet geanalyseerde threads met AI — zie
+      // payload/collections/KnowledgeDrafts.ts.
+      name: "analyzeAction",
+      type: "ui",
+      label: "AI-analyse",
+      admin: {
+        components: {
+          Field: "@/payload/components/AnalyzeNewThreadsButton#AnalyzeNewThreadsButton",
+        },
+      },
+    },
+    {
       name: "encryptedAccessToken",
       type: "text",
       label: "Access token (versleuteld)",

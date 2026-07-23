@@ -8,14 +8,28 @@ import { adminOnly } from "../access/roles";
 // zelfde patroon als ContactSubmissions/AnswerFeedback/GmailConnection) —
 // `create`/`update` staan hier dicht voor de normale API zodat een
 // synchronisatie nooit buiten de eigen route om kan worden aangeroepen.
-// Nog geen AI-analyse, geen automatische taak — uitsluitend de import zelf.
+// De aiAnalysis*-velden worden uitsluitend geschreven door lib/support/
+// analyze.ts (via app/api/support/analyze) — zie dat bestand voor de
+// volledige analyse-/privacylogica.
 export const SupportThreads: CollectionConfig = {
   slug: "support-threads",
   admin: {
     useAsTitle: "subject",
-    defaultColumns: ["subject", "participants", "messageCount", "status", "lastMessageAt"],
+    defaultColumns: [
+      "subject",
+      "participants",
+      "messageCount",
+      "status",
+      "aiAnalysisStatus",
+      "lastMessageAt",
+    ],
     group: "Beheer",
     description: "Geïmporteerde Gmail-helpdesk-threads (alleen-lezen buiten de synchronisatie om).",
+    components: {
+      // "Analyseer geselecteerde threads" — rendert binnen de SelectionProvider
+      // van de lijstweergave, zie payload/components/AnalyzeSelectedThreadsButton.tsx.
+      listMenuItems: ["@/payload/components/AnalyzeSelectedThreadsButton#AnalyzeSelectedThreadsButton"],
+    },
   },
   access: {
     read: adminOnly,
@@ -94,6 +108,49 @@ export const SupportThreads: CollectionConfig = {
       name: "updatedFromGmailAt",
       type: "date",
       label: "Laatst bijgewerkt vanuit Gmail",
+      admin: { readOnly: true },
+    },
+    {
+      name: "aiAnalysisStatus",
+      type: "select",
+      required: true,
+      defaultValue: "not-analyzed",
+      label: "AI-analysestatus",
+      options: [
+        { label: "Niet geanalyseerd", value: "not-analyzed" },
+        { label: "Bezig met analyseren", value: "analyzing" },
+        { label: "Geanalyseerd", value: "analyzed" },
+        { label: "Mislukt", value: "failed" },
+        { label: "Genegeerd", value: "ignored" },
+      ],
+      admin: {
+        readOnly: true,
+        description:
+          "'Genegeerd' = de AI vond de thread te specifiek, onduidelijk of onopgelost (reden in aiAnalysisError) — geen concept aangemaakt. 'Mislukt' = technische fout tijdens analyse, nooit ten onrechte op 'Geanalyseerd' gezet.",
+      },
+    },
+    {
+      name: "aiAnalysisError",
+      type: "textarea",
+      label: "Analysefout of reden voor negeren",
+      admin: {
+        readOnly: true,
+        description:
+          "Alleen technische foutmeldingen of AI-redenering — nooit berichtinhoud of persoonsgegevens.",
+      },
+    },
+    {
+      name: "knowledgeDrafts",
+      type: "relationship",
+      relationTo: "knowledge-drafts",
+      hasMany: true,
+      label: "Conceptkennisartikelen",
+      admin: { readOnly: true, description: "Concepten die (mede) uit deze thread zijn ontstaan." },
+    },
+    {
+      name: "analyzedAt",
+      type: "date",
+      label: "Geanalyseerd op",
       admin: { readOnly: true },
     },
   ],
