@@ -24,28 +24,55 @@ import { findSimilarArticle, findSimilarDraft } from "./dedup";
 //   een geldig, gevalideerd resultaat is verwerkt — elke fout (netwerk,
 //   ongeldige JSON, schemafout) resulteert in "failed" met de technische
 //   reden in aiAnalysisError, nooit stilzwijgend "analyzed".
+//
+// - AnalyseSchema (hieronder) is het schema dat NAAR de AI-provider gaat en
+//   moet daarom voldoen aan OpenAI's Structured Outputs-beperkingen
+//   (response_format: json_schema, strict: true — zie services/ai-client.ts
+//   en de OpenAI-documentatie "Some type-specific keywords are not yet
+//   supported"): GEEN minLength/maxLength/pattern/format op strings, GEEN
+//   minimum/maximum/multipleOf op getallen, GEEN minItems/maxItems/
+//   uniqueItems op arrays. Een schema met die keywords wordt door de OpenAI
+//   API hard afgewezen met "Invalid schema for response_format" — dit was
+//   precies de productiefout die hier is opgelost (2026-07-23). De
+//   bedrijfsregels die eerst in dit schema zaten (titel max 200 tekens,
+//   score 0-100, max 15 stappen, enz.) worden NA ontvangst apart
+//   afgedwongen door AnalyseValidatieSchema — dat schema gaat nooit naar de
+//   AI, dus daar gelden deze beperkingen niet.
 
 const AnalyseSchema = z.object({
-  title: z.string().min(1).max(200),
-  mainQuestion: z.string().min(1),
+  title: z.string(),
+  mainQuestion: z.string(),
   isResolved: z.boolean(),
   finalAnswer: z.string(),
   shortAnswer: z.string(),
   fullAnswer: z.string(),
-  steps: z
-    .array(z.object({ title: z.string().min(1), description: z.string().min(1) }))
-    .max(15)
-    .default([]),
-  category: z.string().min(1),
-  keywords: z.array(z.string()).max(10).default([]),
+  steps: z.array(z.object({ title: z.string(), description: z.string() })),
+  category: z.string(),
+  keywords: z.array(z.string()),
   isGeneralKnowledge: z.boolean(),
   containsPersonalData: z.boolean(),
-  personalDataExplanation: z.string().optional().default(""),
-  confidenceScore: z.number().min(0).max(100),
-  confidenceExplanation: z.string().min(1),
+  personalDataExplanation: z.string(),
+  confidenceScore: z.number(),
+  confidenceExplanation: z.string(),
 });
 
 type AnalyseOutput = z.infer<typeof AnalyseSchema>;
+
+// Bedrijfsregels-validatie NA ontvangst van de AI-output — zie de uitleg
+// hierboven bij AnalyseSchema. `.safeParse()` hierop (in analyseThread)
+// dekt hetzelfde "ongeldige AI-output"-scenario dat eerder door AnalyseSchema
+// zelf werd afgedwongen: een AI-respons die bijvoorbeeld een lege titel of
+// een score buiten 0-100 teruggeeft, resulteert alsnog in "failed", nooit in
+// een stilzwijgend geaccepteerd concept.
+const AnalyseValidatieSchema = z.object({
+  title: z.string().min(1).max(200),
+  mainQuestion: z.string().min(1),
+  category: z.string().min(1),
+  confidenceScore: z.number().min(0).max(100),
+  confidenceExplanation: z.string().min(1),
+  steps: z.array(z.object({ title: z.string().min(1), description: z.string().min(1) })).max(15),
+  keywords: z.array(z.string()).max(10),
+});
 
 // Onder dit percentage is de AI zelf te onzeker om iets te bewaren — zie
 // "onduidelijk" in de opdracht. Boven MIN maar onder REVIEW: wel bewaren,
@@ -64,7 +91,7 @@ STRIKTE REGELS, geen uitzonderingen:
 3. isGeneralKnowledge is alleen true als de kennis ook waarde heeft voor andere MijnLeerlijn-gebruikers, niet als het antwoord alleen relevant is voor dit specifieke, unieke geval van deze ene school/leerling.
 4. containsPersonalData geeft aan of de BRONTHREAD persoonsgegevens bevatte (ongeacht of je die al dan niet correct hebt weggelaten) — dit is puur informatief voor de menselijke beoordelaar, niet een reden om isGeneralKnowledge te veranderen.
 5. Wees eerlijk en conservatief in confidenceScore (0-100): hoog alleen als de oplossing expliciet en ondubbelzinnig in de thread staat.
-6. steps zijn optioneel — vul ze alleen als de oplossing uit duidelijke, volgbare stappen bestaat.
+6. steps en keywords zijn elk verplicht als veld, maar mogen een lege array ([]) zijn wanneer er geen duidelijke, volgbare stappen resp. geen goede trefwoorden zijn. personalDataExplanation is verplicht als veld, maar mag een lege string ("") zijn wanneer containsPersonalData false is. Laat nooit een veld weg.
 
 Antwoord uitsluitend met het gevraagde gestructureerde object.`;
 
@@ -114,6 +141,14 @@ export async function analyseThread(payload: Payload, thread: ThreadVoorAnalyse)
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);
     return { type: "failed", foutmelding: `AI-analyse mislukt: ${boodschap}` };
+  }
+
+  const validatie = AnalyseValidatieSchema.safeParse(ruweOutput);
+  if (!validatie.success) {
+    return {
+      type: "failed",
+      foutmelding: `AI-analyse mislukt: AI-output voldeed niet aan de vereisten (${validatie.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")})`,
+    };
   }
 
   if (

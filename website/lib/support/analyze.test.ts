@@ -179,4 +179,18 @@ describe("analyseThread", () => {
     if (uitkomst.type === "failed") expect(uitkomst.foutmelding).toContain("AI-analyse mislukt");
     expect(collection("knowledge-drafts")).toHaveLength(0);
   });
+
+  it("zet de thread op 'failed' bij structureel geldige maar buiten de bedrijfsregels vallende AI-output (bv. score buiten 0-100 of lege titel)", async () => {
+    mockGenerate.mockResolvedValue({ ...basisAiOutput, confidenceScore: 150, title: "" });
+    const { payload, collection } = maakFakePayload({});
+
+    const uitkomst = await analyseThread(payload, maakThread());
+
+    expect(uitkomst.type).toBe("failed");
+    if (uitkomst.type === "failed") {
+      expect(uitkomst.foutmelding).toContain("AI-analyse mislukt");
+      expect(uitkomst.foutmelding).toContain("voldeed niet aan de vereisten");
+    }
+    expect(collection("knowledge-drafts")).toHaveLength(0);
+  });
 });
