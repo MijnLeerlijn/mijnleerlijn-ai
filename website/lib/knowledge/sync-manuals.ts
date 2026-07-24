@@ -185,6 +185,7 @@ export async function syncManuals(
         data: {
           title: titel,
           type: "pdf",
+          priority: "core",
           file: mediaId,
           sourceFilePath: blob.relativePath,
           sourceFileHash: blob.hash,

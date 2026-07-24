@@ -708,6 +708,10 @@ export interface KnowledgeSource {
   title: string;
   type: 'pdf' | 'video' | 'website' | 'release_notes' | 'handleiding' | 'faq' | 'intern_document';
   /**
+   * Kerninhoud: belangrijkste handleidingen met praktische instructies. Aanvullende inhoud: uitsluitend als aanvulling. Achtergrondinformatie: laagste zoekprioriteit. Wordt nog niet gebruikt door de zoeklogica zelf.
+   */
+  priority: 'core' | 'secondary' | 'reference';
+  /**
    * Verplicht voor type PDF — het document dat de AI uitleest.
    */
   file?: (number | null) | Media;
@@ -1439,6 +1443,7 @@ export interface KnowledgeDraftsSelect<T extends boolean = true> {
 export interface KnowledgeSourcesSelect<T extends boolean = true> {
   title?: T;
   type?: T;
+  priority?: T;
   file?: T;
   url?: T;
   sourceFilePath?: T;

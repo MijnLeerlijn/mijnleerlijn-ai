@@ -7,6 +7,7 @@ import * as migration_20260723_141018_add_knowledge_sources from './20260723_141
 import * as migration_20260723_154646_add_embeddings from './20260723_154646_add_embeddings';
 import * as migration_20260723_163206_add_assistant_conversations from './20260723_163206_add_assistant_conversations';
 import * as migration_20260723_171526_add_manual_sync_fields from './20260723_171526_add_manual_sync_fields';
+import * as migration_20260724_122940_add_knowledge_source_priority from './20260724_122940_add_knowledge_source_priority';
 
 export const migrations = [
   {
@@ -52,6 +53,11 @@ export const migrations = [
   {
     up: migration_20260723_171526_add_manual_sync_fields.up,
     down: migration_20260723_171526_add_manual_sync_fields.down,
-    name: '20260723_171526_add_manual_sync_fields'
+    name: '20260723_171526_add_manual_sync_fields',
+  },
+  {
+    up: migration_20260724_122940_add_knowledge_source_priority.up,
+    down: migration_20260724_122940_add_knowledge_source_priority.down,
+    name: '20260724_122940_add_knowledge_source_priority'
   },
 ];

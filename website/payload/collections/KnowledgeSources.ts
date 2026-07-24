@@ -88,6 +88,30 @@ export const KnowledgeSources: CollectionConfig = {
       ],
     },
     {
+      // Prioriteit voor de AI-assistent's zoekresultaten — bepaalt NOG NIET
+      // het daadwerkelijke zoekgedrag (dat blijft lib/embeddings/
+      // similarity-search.ts, bewust ongewijzigd hier); dit veld legt
+      // uitsluitend de classificatie vast die een latere zoeklogica-wijziging
+      // kan gebruiken. Bestaande bronnen krijgen automatisch "core": de
+      // migratie zet de kolom met een DEFAULT 'core' NOT NULL neer, dus
+      // bestaande rijen worden bij het toevoegen van de kolom al met "core"
+      // gevuld — geen losse backfill-stap nodig.
+      name: "priority",
+      type: "select",
+      required: true,
+      defaultValue: "core",
+      label: "Prioriteit",
+      options: [
+        { label: "Kerninhoud", value: "core" },
+        { label: "Aanvullende inhoud", value: "secondary" },
+        { label: "Achtergrondinformatie", value: "reference" },
+      ],
+      admin: {
+        description:
+          "Kerninhoud: belangrijkste handleidingen met praktische instructies. Aanvullende inhoud: uitsluitend als aanvulling. Achtergrondinformatie: laagste zoekprioriteit. Wordt nog niet gebruikt door de zoeklogica zelf.",
+      },
+    },
+    {
       name: "file",
       type: "upload",
       relationTo: "media",
