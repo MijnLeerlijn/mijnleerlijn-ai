@@ -29,6 +29,7 @@ import { SyncManualsButton as SyncManualsButton_ad6e90d59b6285b626376eb981c3b037
 import { GmailSyncButton as GmailSyncButton_9ca8d060c59b410164b116ec5b036204 } from '@/payload/components/GmailSyncButton'
 import { AnalyzeNewThreadsButton as AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd1df9de28668f } from '@/payload/components/AnalyzeNewThreadsButton'
 import { SemanticSearchTester as SemanticSearchTester_1ddc55405c03875741beea8d02298f60 } from '@/payload/components/SemanticSearchTester'
+import { VercelBlobClientUploadHandler as VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e } from '@payloadcms/storage-vercel-blob/client'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -64,5 +65,6 @@ export const importMap = {
   "@/payload/components/GmailSyncButton#GmailSyncButton": GmailSyncButton_9ca8d060c59b410164b116ec5b036204,
   "@/payload/components/AnalyzeNewThreadsButton#AnalyzeNewThreadsButton": AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd1df9de28668f,
   "@/payload/components/SemanticSearchTester#SemanticSearchTester": SemanticSearchTester_1ddc55405c03875741beea8d02298f60,
+  "@payloadcms/storage-vercel-blob/client#VercelBlobClientUploadHandler": VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }
