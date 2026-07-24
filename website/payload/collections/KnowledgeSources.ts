@@ -50,7 +50,14 @@ export const KnowledgeSources: CollectionConfig = {
       // payload/dist/collections/config/types.d.ts) dat altijd direct
       // zichtbaar boven de documententabel rendert, zie
       // node_modules/@payloadcms/ui/dist/views/List/index.js.
-      beforeListTable: ["@/payload/components/SyncManualsButton#SyncManualsButton"],
+      beforeListTable: [
+        "@/payload/components/SyncManualsButton#SyncManualsButton",
+        // Zelfde reden om buiten listMenuItems te staan als hierboven — dit
+        // herstelt een storing (bv. de "Kon PDF niet ophalen (HTTP 403)"-
+        // fout van vóór een private-Blob-signing-fix) en moet dus direct
+        // zichtbaar zijn, niet weggestopt in het "⋮"-menu.
+        "@/payload/components/RepairFailedSourcesButton#RepairFailedSourcesButton",
+      ],
       // "Indexeer geselecteerde bronnen" — dekt ook herindexeren: een reeds
       // geïndexeerde bron opnieuw selecteren en klikken verwerkt 'm gewoon
       // opnieuw, zie lib/knowledge/run-indexing.ts. "Maak embeddings" is de
