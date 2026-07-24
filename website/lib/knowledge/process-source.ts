@@ -1,6 +1,7 @@
 import type { Payload } from "payload";
 import { optionalEnv } from "@/config/env";
 import { getAiModelId } from "@/services/ai-client";
+import { genereerDownloadUrl } from "@/services/storage";
 import { indexeerBron, type BronVoorIndexering } from "./index-source";
 import { findRelatedDraftIds } from "./link-drafts";
 
@@ -20,10 +21,36 @@ function isAbsoluteUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
 
+/**
+ * Handleidingen (Sprint 6) wijzen NIET naar een publiek geüpload media-
+ * bestand, maar rechtstreeks naar de al bestaande, private Blob (zie
+ * lib/knowledge/sync-manuals.ts's maakMediaDoc — geen tweede upload via de
+ * gedeelde vercelBlobStorage-plugin, die alleen publieke toegang ondersteunt
+ * en dus zou botsen met een private store). Zo'n opgeslagen URL is dus NIET
+ * rechtstreeks fetch()-baar; herkenbaar aan het `*.private.blob.vercel-
+ * storage.com`-hostnamepatroon dat @vercel/blob zelf gebruikt (zie
+ * constructBlobUrl in node_modules/@vercel/blob). In dat geval wordt hier,
+ * vlak voor gebruik, een kortlevende signed URL gegenereerd — dezelfde
+ * services/storage.ts-aanpak als contactformulierbijlagen — zodat ook
+ * herhaald herindexeren (dagen/maanden later) blijft werken, i.p.v. één keer
+ * een vaste maar op termijn verlopen signed URL op te slaan.
+ */
+function isPrivateBlobUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname.endsWith(".private.blob.vercel-storage.com");
+  } catch {
+    return false;
+  }
+}
+
 async function resolveerBestandsUrl(payload: Payload, mediaId: number): Promise<string | null> {
   const media = await payload.findByID({ collection: "media", id: mediaId, overrideAccess: true, depth: 0 });
   const url = media?.url;
   if (!url) return null;
+  if (isPrivateBlobUrl(url)) {
+    const pathname = new URL(url).pathname.replace(/^\//, "");
+    return genereerDownloadUrl(pathname);
+  }
   if (isAbsoluteUrl(url)) return url;
   const basis = optionalEnv("NEXT_PUBLIC_SERVER_URL") ?? "http://localhost:3000";
   return `${basis}${url}`;

@@ -30,6 +30,15 @@ export const Media: CollectionConfig = {
       { name: "thumbnail", width: 400, height: 300, position: "centre" },
       { name: "card", width: 800, height: 600, position: "centre" },
     ],
+    // Sprint 6 (handleidingen, private Blob store): lib/knowledge/sync-
+    // manuals.ts's maakMediaDoc() maakt media-documenten aan die rechtstreeks
+    // naar een al bestaande, private Blob wijzen (filename/mimeType/filesize/
+    // url handmatig gezet), zonder een echt `file` mee te sturen — dat zou de
+    // gedeelde vercelBlobStorage-plugin triggeren, die alleen 'public'
+    // ondersteunt. Zonder filesRequiredOnCreate: false weigert Payload elke
+    // create() zonder file, ook deze. Normale admin-uploads (met een echt
+    // bestand) zijn hierdoor niet beïnvloed.
+    filesRequiredOnCreate: false,
   },
   fields: [
     {

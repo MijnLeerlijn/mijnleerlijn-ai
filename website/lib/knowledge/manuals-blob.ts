@@ -9,9 +9,14 @@ import { blobAuthOptions } from "@/services/storage";
 //
 // De Blob store is bewust PRIVATE (net als de contactformulier-bijlagen in
 // services/storage.ts) — dus `blob.url`/`downloadUrl` uit list() zijn NIET
-// rechtstreeks publiek op te vragen. Lezen gaat daarom via @vercel/blob's
-// `get()` (geauthenticeerde server-side download op basis van de pathname),
-// niet via een kale `fetch(url)` — zie readManualBlob hieronder.
+// rechtstreeks publiek op te vragen. lib/knowledge/sync-manuals.ts wijst het
+// media-document daarom rechtstreeks naar blob.url (geen re-upload via de
+// gedeelde vercelBlobStorage-plugin, die alleen 'public' ondersteunt); voor
+// het daadwerkelijk (her)indexeren genereert lib/knowledge/process-source.ts
+// er pas op dat moment een kortlevende signed URL voor. readManualBlob
+// hieronder gebruikt @vercel/blob's `get()` (geauthenticeerde server-side
+// download) voor de zeldzamere gevallen waarin de ruwe bestandsinhoud zelf
+// nodig is, bv. handmatige verificatie — niet via een kale `fetch(url)`.
 //
 // SHA256-detectie ZONDER download: de hash wordt eenmalig, lokaal berekend
 // door het importscript (payload/upload-manuals-to-blob/index.ts) en in de
@@ -19,8 +24,7 @@ import { blobAuthOptions } from "@/services/storage";
 // syncManuals() met één (gepagineerde) list()-aanroep voor ALLE bestanden
 // bepalen of iets nieuw/gewijzigd/ongewijzigd is, zonder ook maar één byte
 // te downloaden — cruciaal nu er bestanden van honderden MB's tot >1 GB
-// tussen kunnen zitten. Er wordt uitsluitend gedownload (readManualBlob)
-// voor bestanden die daadwerkelijk (her)geïndexeerd gaan worden.
+// tussen kunnen zitten.
 
 export const HANDLEIDINGEN_BLOB_PREFIX = "handleidingen/";
 
@@ -60,6 +64,11 @@ function parseBlobPathname(pathname: string): { relativePath: string; hash: stri
  * doorlopen). Alleen bestandsnamen met het verwachte `<sha256>__naam.pdf`-
  * patroon worden meegenomen — bestanden die buiten het importscript om in
  * dezelfde map terechtkomen, worden genegeerd i.p.v. een crash te geven.
+ *
+ * Live geverifieerd tegen de echte (private) store: correcte storeId,
+ * prefix en paginatie — een eerdere "gevonden: 0" bleek dan ook geen bug
+ * hier, maar een ontbrekende BLOB_READ_WRITE_TOKEN in de omgeving waar dat
+ * werd getest (blobAuthOptions() valt dan terug op Vercel OIDC).
  */
 export async function listManualBlobs(): Promise<ManualBlob[]> {
   const resultaten: ManualBlob[] = [];

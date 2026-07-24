@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { processKnowledgeSource } from "./process-source";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import { indexeerBron } from "./index-source";
+import { genereerDownloadUrl } from "@/services/storage";
 
 vi.mock("./index-source", async (importOriginal) => {
   const echt = await importOriginal<typeof import("./index-source")>();
   return { ...echt, indexeerBron: vi.fn() };
 });
+vi.mock("@/services/storage", () => ({ genereerDownloadUrl: vi.fn() }));
 const mockIndexeerBron = vi.mocked(indexeerBron);
+const mockGenereerDownloadUrl = vi.mocked(genereerDownloadUrl);
 
 const basisIndexUitkomst = {
   type: "indexed" as const,
@@ -19,6 +22,7 @@ const basisIndexUitkomst = {
 
 beforeEach(() => {
   mockIndexeerBron.mockReset();
+  mockGenereerDownloadUrl.mockReset();
 });
 
 describe("processKnowledgeSource — PDF-bestandsresolutie", () => {
@@ -47,6 +51,32 @@ describe("processKnowledgeSource — PDF-bestandsresolutie", () => {
 
     expect(mockIndexeerBron).toHaveBeenCalledWith(
       expect.objectContaining({ fileUrl: "https://blob.vercel-storage.com/handleiding.pdf" })
+    );
+  });
+
+  it("genereert een kortlevende signed URL voor een private Blob-URL (Sprint 6: handleidingen) i.p.v. de opgeslagen URL rechtstreeks te gebruiken", async () => {
+    mockIndexeerBron.mockResolvedValue(basisIndexUitkomst);
+    mockGenereerDownloadUrl.mockResolvedValue(
+      "https://voorbeeld.private.blob.vercel-storage.com/handleidingen/abc__handleiding.pdf?token=signed"
+    );
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [{ id: 1, title: "Handleiding", type: "pdf" }],
+      media: [
+        {
+          id: 42,
+          url: "https://storeid123.private.blob.vercel-storage.com/handleidingen/abc123__handleiding.pdf",
+        },
+      ],
+    });
+
+    await processKnowledgeSource(payload, { id: 1, title: "Handleiding", type: "pdf", file: 42 });
+
+    expect(mockGenereerDownloadUrl).toHaveBeenCalledWith("handleidingen/abc123__handleiding.pdf");
+    expect(mockIndexeerBron).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileUrl:
+          "https://voorbeeld.private.blob.vercel-storage.com/handleidingen/abc__handleiding.pdf?token=signed",
+      })
     );
   });
 

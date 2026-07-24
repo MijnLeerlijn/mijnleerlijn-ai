@@ -1,5 +1,5 @@
 import type { Payload } from "payload";
-import { listManualBlobs, readManualBlob, titleFromFilename } from "./manuals-blob";
+import { listManualBlobs, titleFromFilename, type ManualBlob } from "./manuals-blob";
 import { processKnowledgeSource } from "./process-source";
 import { embedKnowledgeSource } from "@/lib/embeddings/process-embedding";
 
@@ -25,13 +25,24 @@ import { embedKnowledgeSource } from "@/lib/embeddings/process-embedding";
 // 3. Anders: genuine nieuwe bron — downloaden + verwerken.
 //
 // `limiet` begrenst uitsluitend hoeveel NIEUWE/GEWIJZIGDE bestanden dit
-// verzoek daadwerkelijk downloadt + (her)indexeert + (her)embedt — de
-// Blob-listing zelf (goedkoop, geen download) gebeurt altijd volledig. PDF-
-// tekst uitlezen + twee AI-aanroepen per bestand is zwaar genoeg (en Vercel-
-// functies hebben een tijdslimiet, en sommige handleidingen zijn nu
-// honderden MB's) dat één verzoek nooit alle bestanden tegelijk mag
-// proberen te verwerken — zelfde soort veiligheidscap als STANDAARD_LIMIET/
-// HARDE_MAX_LIMIET elders in lib/knowledge//lib/embeddings/.
+// verzoek daadwerkelijk (her)indexeert + (her)embedt — de Blob-listing zelf
+// (goedkoop, geen download) gebeurt altijd volledig. PDF-tekst uitlezen +
+// twee AI-aanroepen per bestand is zwaar genoeg (en Vercel-functies hebben
+// een tijdslimiet, en sommige handleidingen zijn nu honderden MB's) dat één
+// verzoek nooit alle bestanden tegelijk mag proberen te verwerken — zelfde
+// soort veiligheidscap als STANDAARD_LIMIET/HARDE_MAX_LIMIET elders in
+// lib/knowledge//lib/embeddings/.
+//
+// GEEN eigen download/re-upload hier: maakMediaDoc hieronder wijst het
+// media-document rechtstreeks naar de Blob die het uploadscript al heeft
+// geplaatst (blob.url) — geen tweede kopie. De Blob store is bewust private
+// (@payloadcms/storage-vercel-blob ondersteunt uitsluitend 'public'
+// toegang, zie de plugin-typedefinitie, dus de gedeelde media-collectie kan
+// hier niet voor gebruikt worden zonder de site-brede publieke afbeeldingen/
+// logo's mee te raken). lib/knowledge/process-source.ts's
+// resolveerBestandsUrl herkent deze private-Blob-URL's en genereert er, pas
+// op het moment van daadwerkelijk (her)indexeren, een kortlevende signed URL
+// voor — zie het commentaar daar.
 
 export const STANDAARD_LIMIET = 5;
 const HARDE_MAX_LIMIET = 20;
@@ -48,17 +59,39 @@ export interface SyncManualsSamenvatting {
   fouten: string[];
 }
 
-async function maakMediaDoc(
-  payload: Payload,
-  filename: string,
-  buffer: Buffer,
-  titel: string
-): Promise<number> {
+/**
+ * Maakt het media-document ZONDER `file:` — dat zou de gedeelde
+ * vercelBlobStorage-plugin triggeren, die alleen 'public' toegang
+ * ondersteunt en dus zou falen op de private store. In plaats daarvan
+ * verwijst dit document rechtstreeks naar de al bestaande Blob (uploadscript
+ * heeft 'm al geplaatst) — geen tweede upload, geen dubbele opslag.
+ *
+ * `focalX`/`focalY` moeten hier expliciet mee, ook al is dit geen
+ * afbeelding: Payload's generateFileData vergelijkt bij elke create() zonder
+ * `file` de meegegeven focalX/focalY met zijn eigen default (50/50) om te
+ * bepalen of het "externe URL" opnieuw opgehaald moet worden
+ * (shouldReupload, zie node_modules/payload/dist/uploads/
+ * generateFileData.js) — zonder exacte match probeert Payload de URL zelf
+ * te fetchen (getExternalFile), wat op de private Blob-URL altijd faalt.
+ * Vereist ook `filesRequiredOnCreate: false` op de collectie zelf (zie
+ * payload/collections/Media.ts), anders weigert Payload elke create()
+ * zonder `file` sowieso.
+ */
+async function maakMediaDoc(payload: Payload, blob: ManualBlob, titel: string): Promise<number> {
+  const filename = blob.relativePath.split("/").pop() ?? blob.relativePath;
   const media = await payload.create({
     collection: "media",
     overrideAccess: true,
-    data: { altText: titel, mediaType: "download" },
-    file: { data: buffer, mimetype: "application/pdf", name: filename, size: buffer.length },
+    data: {
+      altText: titel,
+      mediaType: "download",
+      filename,
+      mimeType: "application/pdf",
+      filesize: blob.size,
+      url: blob.url,
+      focalX: 50,
+      focalY: 50,
+    },
   });
   return media.id;
 }
@@ -110,8 +143,7 @@ export async function syncManuals(
       try {
         const filename = blob.relativePath.split("/").pop() ?? blob.relativePath;
         const titel = bestaandeBron.title || titleFromFilename(filename);
-        const buffer = await readManualBlob(blob);
-        const mediaId = await maakMediaDoc(payload, filename, buffer, titel);
+        const mediaId = await maakMediaDoc(payload, blob, titel);
         await payload.update({
           collection: "knowledge-sources",
           id: bestaandeBron.id,
@@ -146,8 +178,7 @@ export async function syncManuals(
     try {
       const filename = blob.relativePath.split("/").pop() ?? blob.relativePath;
       const titel = titleFromFilename(filename);
-      const buffer = await readManualBlob(blob);
-      const mediaId = await maakMediaDoc(payload, filename, buffer, titel);
+      const mediaId = await maakMediaDoc(payload, blob, titel);
       const nieuweBron = await payload.create({
         collection: "knowledge-sources",
         overrideAccess: true,
