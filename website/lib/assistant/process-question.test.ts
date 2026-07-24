@@ -3,15 +3,18 @@ import { processQuestion } from "./process-question";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import { searchKnowledge } from "@/lib/embeddings/similarity-search";
 import { generateStructuredOutputWithUsage } from "@/services/ai-client";
+import { rewriteSearchQuery } from "./rewrite-query";
 
 vi.mock("@/lib/embeddings/similarity-search", () => ({ searchKnowledge: vi.fn() }));
 vi.mock("@/services/ai-client", () => ({
   generateStructuredOutputWithUsage: vi.fn(),
   getAiModelId: () => "gpt-4o-test",
 }));
+vi.mock("./rewrite-query", () => ({ rewriteSearchQuery: vi.fn() }));
 
 const mockSearch = vi.mocked(searchKnowledge);
 const mockGenerate = vi.mocked(generateStructuredOutputWithUsage);
+const mockRewrite = vi.mocked(rewriteSearchQuery);
 const USAGE = { inputTokens: 100, outputTokens: 40, totalTokens: 140 };
 
 function maakSeed() {
@@ -43,6 +46,11 @@ function maakSeed() {
 beforeEach(() => {
   mockSearch.mockReset();
   mockGenerate.mockReset();
+  mockRewrite.mockReset();
+  // Standaard: doorgeven zoals het was (zelfde gedrag als vóór de query-
+  // rewriter) — tests die de herschrijving zelf willen testen zetten hun
+  // eigen mockResolvedValue.
+  mockRewrite.mockImplementation(async (question) => question);
 });
 
 describe("processQuestion — goede vraag", () => {
@@ -124,6 +132,34 @@ describe("processQuestion — typo", () => {
   });
 });
 
+describe("processQuestion — query-rewriter", () => {
+  it("zoekt met de herschreven zoekvraag, maar gebruikt de ORIGINELE vraag voor antwoordgeneratie en logging", async () => {
+    mockRewrite.mockResolvedValue("doelen toevoegen aan leerling");
+    mockSearch.mockResolvedValue([
+      { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
+    ]);
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Ga naar Doelen (Bron 1).", reasoning: "Gebaseerd op Bron 1." },
+      usage: USAGE,
+    });
+    const { payload, collection } = maakFakePayload(maakSeed());
+    const origineleVraag = "Hoe koppel ik een leerling aan leerdoelen?";
+
+    const uitkomst = await processQuestion(payload, { question: origineleVraag, userId: 42 });
+
+    expect(uitkomst.type).toBe("answered");
+    expect(mockRewrite).toHaveBeenCalledWith(origineleVraag);
+    expect(mockSearch).toHaveBeenCalledWith(payload, {
+      query: "doelen toevoegen aan leerling",
+      limiet: 10,
+    });
+    expect(mockGenerate).toHaveBeenCalledWith(
+      expect.objectContaining({ userPrompt: expect.stringContaining(origineleVraag) })
+    );
+    expect(collection("assistant-conversations")[0]!.question).toBe(origineleVraag);
+  });
+});
+
 describe("processQuestion — meerdere bronnen", () => {
   it("verzamelt en labelt treffers uit verschillende collecties correct", async () => {
     mockSearch.mockResolvedValue([
@@ -173,7 +209,10 @@ describe("processQuestion — fout bij AI", () => {
 
     const uitkomst = await processQuestion(payload, { question: "vraag", userId: 42 });
 
-    expect(uitkomst).toMatchObject({ type: "failed", foutmelding: expect.stringContaining("OPENAI_API_KEY") });
+    expect(uitkomst).toMatchObject({
+      type: "failed",
+      foutmelding: expect.stringContaining("OPENAI_API_KEY"),
+    });
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(collection("assistant-conversations")).toHaveLength(0);
   });

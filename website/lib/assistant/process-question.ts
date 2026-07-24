@@ -2,6 +2,7 @@ import type { Payload } from "payload";
 import { searchKnowledge } from "@/lib/embeddings/similarity-search";
 import { buildContext, type ContextItem } from "./build-context";
 import { genereerAssistentAntwoord } from "./answer";
+import { rewriteSearchQuery } from "./rewrite-query";
 
 // Payload-orkestratie van één vraag: embedding + semantische zoekopdracht
 // (lib/embeddings/similarity-search.ts — embedt de vraag zelf al intern),
@@ -54,6 +55,14 @@ export async function processQuestion(
 ): Promise<ProcessQuestionUitkomst> {
   const begin = Date.now();
 
+  // Query-rewriter (lib/assistant/rewrite-query.ts): herschrijft de vraag
+  // naar MijnLeerlijn-terminologie vóór het zoeken (synoniemen als
+  // "leerdoelen" → "doelen"), zodat semantic search minder gevoelig is voor
+  // woordkeuze. Valt bij een fout zelf al terug op de originele vraag —
+  // geen aparte try/catch hier nodig. Uitsluitend gebruikt als zoekvraag:
+  // de ORIGINELE vraag blijft naar answer.ts/de gebruiker/de logging gaan.
+  const zoekvraag = await rewriteSearchQuery(opties.question);
+
   // De embedding/zoekfase (searchKnowledge embedt de vraag zelf al intern)
   // kan om dezelfde reden mislukken als de antwoordfase (bv. ontbrekende
   // OPENAI_API_KEY) — hier expliciet afgevangen zodat zo'n fout hetzelfde
@@ -62,7 +71,7 @@ export async function processQuestion(
   let hits: Awaited<ReturnType<typeof searchKnowledge>>;
   let contextItems: ContextItem[];
   try {
-    hits = await searchKnowledge(payload, { query: opties.question, limiet: TOP_N });
+    hits = await searchKnowledge(payload, { query: zoekvraag, limiet: TOP_N });
     contextItems = await buildContext(payload, hits);
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);
