@@ -1,21 +1,41 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { processQuestion } from "./process-question";
 import { maakFakePayload } from "@/lib/support/fake-payload";
-import { searchKnowledge } from "@/lib/embeddings/similarity-search";
+import {
+  searchKnowledgePhased,
+  type SearchHit,
+  type PhasedSearchResultaat,
+} from "@/lib/embeddings/similarity-search";
 import { generateStructuredOutputWithUsage } from "@/services/ai-client";
 import { rewriteSearchQuery } from "./rewrite-query";
 
-vi.mock("@/lib/embeddings/similarity-search", () => ({ searchKnowledge: vi.fn() }));
+vi.mock("@/lib/embeddings/similarity-search", () => ({ searchKnowledgePhased: vi.fn() }));
 vi.mock("@/services/ai-client", () => ({
   generateStructuredOutputWithUsage: vi.fn(),
   getAiModelId: () => "gpt-4o-test",
 }));
 vi.mock("./rewrite-query", () => ({ rewriteSearchQuery: vi.fn() }));
 
-const mockSearch = vi.mocked(searchKnowledge);
+const mockSearch = vi.mocked(searchKnowledgePhased);
 const mockGenerate = vi.mocked(generateStructuredOutputWithUsage);
 const mockRewrite = vi.mocked(rewriteSearchQuery);
 const USAGE = { inputTokens: 100, outputTokens: 40, totalTokens: 140 };
+
+// process-question.ts vraagt alleen resultaat.hits daadwerkelijk op (buildContext)
+// en de aantallen/fase voor de dev-logging — de tellingen zijn voor deze tests
+// niet relevant, behalve waar een test dat expliciet controleert.
+function maakFaseResultaat(
+  hits: SearchHit[],
+  overrides: Partial<PhasedSearchResultaat> = {}
+): PhasedSearchResultaat {
+  return {
+    hits,
+    fase: "core",
+    aantalPerPrioriteit: { core: hits.length, secondary: 0, reference: 0 },
+    aantalVoldoendePerPrioriteit: { core: hits.length, secondary: 0, reference: 0 },
+    ...overrides,
+  };
+}
 
 function maakSeed() {
   return {
@@ -55,9 +75,11 @@ beforeEach(() => {
 
 describe("processQuestion — goede vraag", () => {
   it("geeft een antwoord en logt het gesprek met bronnen, model en tokens", async () => {
-    mockSearch.mockResolvedValue([
-      { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
-    ]);
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
+      ])
+    );
     mockGenerate.mockResolvedValue({
       object: {
         hasAnswer: true,
@@ -86,7 +108,7 @@ describe("processQuestion — goede vraag", () => {
 
 describe("processQuestion — geen bronnen / onbekende vraag", () => {
   it("logt een 'geen antwoord'-gesprek zonder de AI aan te roepen wanneer er geen treffers zijn", async () => {
-    mockSearch.mockResolvedValue([]);
+    mockSearch.mockResolvedValue(maakFaseResultaat([], { fase: "core+secondary+reference" }));
     const { payload, collection } = maakFakePayload(maakSeed());
 
     const uitkomst = await processQuestion(payload, {
@@ -102,9 +124,11 @@ describe("processQuestion — geen bronnen / onbekende vraag", () => {
   });
 
   it("logt een 'geen antwoord'-gesprek wanneer de treffers een te lage score hebben", async () => {
-    mockSearch.mockResolvedValue([
-      { type: "knowledge-draft", id: 2, title: "Wachtwoord resetten", similarity: 0.1, reason: "" },
-    ]);
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-draft", id: 2, title: "Wachtwoord resetten", similarity: 0.1, reason: "" },
+      ])
+    );
     const { payload } = maakFakePayload(maakSeed());
 
     const uitkomst = await processQuestion(payload, { question: "onduidelijke vraag", userId: 42 });
@@ -116,9 +140,11 @@ describe("processQuestion — geen bronnen / onbekende vraag", () => {
 
 describe("processQuestion — typo", () => {
   it("verwerkt een vraag met een typfout net zo goed (de semantische zoekfunctie is al typo-robuust, zie lib/embeddings/)", async () => {
-    mockSearch.mockResolvedValue([
-      { type: "knowledge-draft", id: 2, title: "Wachtwoord resetten", similarity: 0.9, reason: "" },
-    ]);
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-draft", id: 2, title: "Wachtwoord resetten", similarity: 0.9, reason: "" },
+      ])
+    );
     mockGenerate.mockResolvedValue({
       object: { hasAnswer: true, answer: "Ga naar Inloggen (Bron 1).", reasoning: "Gebaseerd op Bron 1." },
       usage: USAGE,
@@ -128,16 +154,22 @@ describe("processQuestion — typo", () => {
     const uitkomst = await processQuestion(payload, { question: "hoe reset ik mijn wagtwoord", userId: 42 });
 
     expect(uitkomst.type).toBe("answered");
-    expect(mockSearch).toHaveBeenCalledWith(payload, { query: "hoe reset ik mijn wagtwoord", limiet: 10 });
+    expect(mockSearch).toHaveBeenCalledWith(payload, {
+      query: "hoe reset ik mijn wagtwoord",
+      limiet: 10,
+      drempelVoorVoldoende: 0.5,
+    });
   });
 });
 
 describe("processQuestion — query-rewriter", () => {
   it("zoekt met de herschreven zoekvraag, maar gebruikt de ORIGINELE vraag voor antwoordgeneratie en logging", async () => {
     mockRewrite.mockResolvedValue("doelen toevoegen aan leerling");
-    mockSearch.mockResolvedValue([
-      { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
-    ]);
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
+      ])
+    );
     mockGenerate.mockResolvedValue({
       object: { hasAnswer: true, answer: "Ga naar Doelen (Bron 1).", reasoning: "Gebaseerd op Bron 1." },
       usage: USAGE,
@@ -152,6 +184,7 @@ describe("processQuestion — query-rewriter", () => {
     expect(mockSearch).toHaveBeenCalledWith(payload, {
       query: "doelen toevoegen aan leerling",
       limiet: 10,
+      drempelVoorVoldoende: 0.5,
     });
     expect(mockGenerate).toHaveBeenCalledWith(
       expect.objectContaining({ userPrompt: expect.stringContaining(origineleVraag) })
@@ -162,11 +195,13 @@ describe("processQuestion — query-rewriter", () => {
 
 describe("processQuestion — meerdere bronnen", () => {
   it("verzamelt en labelt treffers uit verschillende collecties correct", async () => {
-    mockSearch.mockResolvedValue([
-      { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
-      { type: "knowledge-draft", id: 2, title: "Wachtwoord resetten", similarity: 0.8, reason: "" },
-      { type: "article", id: 3, title: "Rapportage exporteren", similarity: 0.7, reason: "" },
-    ]);
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
+        { type: "knowledge-draft", id: 2, title: "Wachtwoord resetten", similarity: 0.8, reason: "" },
+        { type: "article", id: 3, title: "Rapportage exporteren", similarity: 0.7, reason: "" },
+      ])
+    );
     mockGenerate.mockResolvedValue({
       object: {
         hasAnswer: true,
@@ -191,9 +226,11 @@ describe("processQuestion — meerdere bronnen", () => {
 
 describe("processQuestion — fout bij AI", () => {
   it("maakt geen gespreklogboek aan wanneer de AI-aanroep mislukt", async () => {
-    mockSearch.mockResolvedValue([
-      { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
-    ]);
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
+      ])
+    );
     mockGenerate.mockRejectedValue(new Error("OpenAI: server error"));
     const { payload, collection } = maakFakePayload(maakSeed());
 

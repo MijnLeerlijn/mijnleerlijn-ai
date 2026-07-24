@@ -1,8 +1,9 @@
 import type { Payload } from "payload";
-import { searchKnowledge } from "@/lib/embeddings/similarity-search";
+import { searchKnowledgePhased } from "@/lib/embeddings/similarity-search";
 import { buildContext, type ContextItem } from "./build-context";
-import { genereerAssistentAntwoord } from "./answer";
+import { genereerAssistentAntwoord, MIN_SIMILARITY_VOOR_ANTWOORD } from "./answer";
 import { rewriteSearchQuery } from "./rewrite-query";
+import { isProduction } from "@/config/env";
 
 // Payload-orkestratie van één vraag: embedding + semantische zoekopdracht
 // (lib/embeddings/similarity-search.ts — embedt de vraag zelf al intern),
@@ -63,19 +64,43 @@ export async function processQuestion(
   // de ORIGINELE vraag blijft naar answer.ts/de gebruiker/de logging gaan.
   const zoekvraag = await rewriteSearchQuery(opties.question);
 
-  // De embedding/zoekfase (searchKnowledge embedt de vraag zelf al intern)
-  // kan om dezelfde reden mislukken als de antwoordfase (bv. ontbrekende
-  // OPENAI_API_KEY) — hier expliciet afgevangen zodat zo'n fout hetzelfde
-  // nette "failed"-pad volgt als een mislukte AI-aanroep in answer.ts, i.p.v.
-  // als onverwachte fout in de route te belanden.
-  let hits: Awaited<ReturnType<typeof searchKnowledge>>;
+  // De embedding/zoekfase (searchKnowledgePhased embedt de vraag zelf al
+  // intern) kan om dezelfde reden mislukken als de antwoordfase (bv.
+  // ontbrekende OPENAI_API_KEY) — hier expliciet afgevangen zodat zo'n fout
+  // hetzelfde nette "failed"-pad volgt als een mislukte AI-aanroep in
+  // answer.ts, i.p.v. als onverwachte fout in de route te belanden.
+  //
+  // searchKnowledgePhased (i.p.v. het gewone searchKnowledge): zoekt eerst
+  // uitsluitend in Knowledge Sources met priority "core", en breidt pas uit
+  // naar "secondary"/"reference" wanneer core onvoldoende bruikbare
+  // resultaten oplevert — zie het uitgebreide commentaar in
+  // lib/embeddings/similarity-search.ts. drempelVoorVoldoende: dezelfde
+  // MIN_SIMILARITY_VOOR_ANTWOORD die hieronder ook al bepaalt of er
+  // überhaupt geantwoord mag worden — geen nieuwe/tweede drempelwaarde.
+  let resultaat: Awaited<ReturnType<typeof searchKnowledgePhased>>;
   let contextItems: ContextItem[];
   try {
-    hits = await searchKnowledge(payload, { query: zoekvraag, limiet: TOP_N });
-    contextItems = await buildContext(payload, hits);
+    resultaat = await searchKnowledgePhased(payload, {
+      query: zoekvraag,
+      limiet: TOP_N,
+      drempelVoorVoldoende: MIN_SIMILARITY_VOOR_ANTWOORD,
+    });
+    contextItems = await buildContext(payload, resultaat.hits);
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);
     return { type: "failed", foutmelding: boodschap };
+  }
+
+  if (!isProduction()) {
+    console.log(
+      `[assistant:retrieval] originele vraag="${opties.question}" zoekvraag="${zoekvraag}"\n` +
+        `  uitgevoerde fase: ${resultaat.fase}\n` +
+        `  kandidaten per prioriteit: core=${resultaat.aantalPerPrioriteit.core} (${resultaat.aantalVoldoendePerPrioriteit.core} voldoende), ` +
+        `secondary=${resultaat.aantalPerPrioriteit.secondary} (${resultaat.aantalVoldoendePerPrioriteit.secondary} voldoende), ` +
+        `reference=${resultaat.aantalPerPrioriteit.reference} (${resultaat.aantalVoldoendePerPrioriteit.reference} voldoende)\n` +
+        `  geselecteerde resultaten (score): ${resultaat.hits.map((h) => `${h.type}#${h.id} "${h.title}"=${Math.round(h.similarity * 100)}%`).join(", ") || "geen"}\n` +
+        `  naar het antwoordmodel: ${contextItems.map((c) => `[Bron ${c.index}] ${c.label} "${c.title}"`).join(", ") || "geen"}`
+    );
   }
 
   const uitkomst = await genereerAssistentAntwoord(opties.question, contextItems);

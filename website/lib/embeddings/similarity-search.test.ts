@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { searchKnowledge } from "./similarity-search";
+import { searchKnowledge, searchKnowledgePhased } from "./similarity-search";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import { generateEmbedding } from "@/services/ai-client";
 
@@ -34,8 +34,20 @@ beforeEach(() => {
 describe("searchKnowledge — vergelijkbare formuleringen, synoniemen en typo's", () => {
   const seed = {
     "knowledge-drafts": [
-      { id: 1, title: "Wachtwoord resetten", status: "approved", embeddingStatus: "indexed", embedding: [1, 0, 0] },
-      { id: 2, title: "Factuur exporteren als PDF", status: "approved", embeddingStatus: "indexed", embedding: [0, 1, 0] },
+      {
+        id: 1,
+        title: "Wachtwoord resetten",
+        status: "approved",
+        embeddingStatus: "indexed",
+        embedding: [1, 0, 0],
+      },
+      {
+        id: 2,
+        title: "Factuur exporteren als PDF",
+        status: "approved",
+        embeddingStatus: "indexed",
+        embedding: [0, 1, 0],
+      },
     ],
   };
 
@@ -157,9 +169,27 @@ describe("searchKnowledge — Sprint 6: alleen goedgekeurde Knowledge Drafts", (
   it("gebruikt een 'approved' concept als bron, maar niet een 'new' (nog niet beoordeeld) of 'rejected' concept", async () => {
     const { payload } = maakFakePayload({
       "knowledge-drafts": [
-        { id: 1, title: "Nieuw, onbeoordeeld concept", status: "new", embeddingStatus: "indexed", embedding: [1, 0, 0] },
-        { id: 2, title: "Afgekeurd concept", status: "rejected", embeddingStatus: "indexed", embedding: [1, 0, 0] },
-        { id: 3, title: "Goedgekeurd concept", status: "approved", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+        {
+          id: 1,
+          title: "Nieuw, onbeoordeeld concept",
+          status: "new",
+          embeddingStatus: "indexed",
+          embedding: [1, 0, 0],
+        },
+        {
+          id: 2,
+          title: "Afgekeurd concept",
+          status: "rejected",
+          embeddingStatus: "indexed",
+          embedding: [1, 0, 0],
+        },
+        {
+          id: 3,
+          title: "Goedgekeurd concept",
+          status: "approved",
+          embeddingStatus: "indexed",
+          embedding: [1, 0, 0],
+        },
       ],
     });
 
@@ -171,7 +201,15 @@ describe("searchKnowledge — Sprint 6: alleen goedgekeurde Knowledge Drafts", (
 
   it("gebruikt ook een 'published' concept niet (dat is al apart als artikel geëmbed)", async () => {
     const { payload } = maakFakePayload({
-      "knowledge-drafts": [{ id: 1, title: "Al tot artikel verwerkt", status: "published", embeddingStatus: "indexed", embedding: [1, 0, 0] }],
+      "knowledge-drafts": [
+        {
+          id: 1,
+          title: "Al tot artikel verwerkt",
+          status: "published",
+          embeddingStatus: "indexed",
+          embedding: [1, 0, 0],
+        },
+      ],
     });
 
     const hits = await searchKnowledge(payload, { query: "wachtwoord" });
@@ -208,5 +246,284 @@ describe("searchKnowledge — Sprint 6: alleen goedgekeurde Knowledge Drafts", (
     // De handleiding heeft de hogere similarity en staat dus vooraan.
     expect(hits[0]).toMatchObject({ type: "knowledge-source", id: 1 });
     expect(hits[1]).toMatchObject({ type: "knowledge-draft", id: 2 });
+  });
+});
+
+describe("searchKnowledgePhased — gefaseerd zoeken op Knowledge Source-prioriteit", () => {
+  const DREMPEL = 0.5; // exact MIN_SIMILARITY_VOOR_ANTWOORD uit lib/assistant/answer.ts, hier als letterlijk getal om geen cross-import (zie similarity-search.ts) nodig te hebben.
+
+  // query = [1, 0, 0] (unit vector) — een kandidaat-embedding [x, sqrt(1-x²), 0]
+  // (ook unit-lengte) geeft dan cosineSimilarity === x, exact. Zo kunnen scores
+  // precies op de drempel/vergelijkbaarheid afgestemd worden zonder gokken.
+  function embeddingVoorScore(score: number): number[] {
+    return [score, Math.sqrt(1 - score * score), 0];
+  }
+
+  beforeEach(() => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0, 0]);
+  });
+
+  it("1. Voldoende goede core-resultaten: secondary en reference worden niet geselecteerd", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Core A",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.9),
+        },
+        {
+          id: 2,
+          title: "Core B",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.8),
+        },
+        {
+          id: 3,
+          title: "Secondary (hogere score dan beide core-resultaten)",
+          priority: "secondary",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.95),
+        },
+        {
+          id: 4,
+          title: "Reference (hoogste score van allemaal)",
+          priority: "reference",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.99),
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 2,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.fase).toBe("core");
+    expect(resultaat.hits.map((h) => h.id).sort()).toEqual([1, 2]);
+    expect(resultaat.hits.some((h) => h.id === 3 || h.id === 4)).toBe(false);
+    expect(resultaat.aantalVoldoendePerPrioriteit).toEqual({ core: 2, secondary: 1, reference: 1 });
+  });
+
+  it("2. Onvoldoende core-resultaten: secondary wordt toegevoegd, reference niet", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Core (enige)",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.9),
+        },
+        {
+          id: 2,
+          title: "Secondary A",
+          priority: "secondary",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.8),
+        },
+        {
+          id: 3,
+          title: "Secondary B",
+          priority: "secondary",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.7),
+        },
+        {
+          id: 4,
+          title: "Reference (zou ook meetellen als 'ie nodig was)",
+          priority: "reference",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.99),
+        },
+      ],
+    });
+
+    // limiet 3: core alleen (1 voldoende resultaat) is te weinig, core+secondary (1+2=3) is precies genoeg.
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 3,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.fase).toBe("core+secondary");
+    expect(resultaat.hits.map((h) => h.id).sort()).toEqual([1, 2, 3]);
+    expect(resultaat.hits.some((h) => h.id === 4)).toBe(false);
+  });
+
+  it("3. Onvoldoende core én secondary: reference wordt toegevoegd", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Core (enige)",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.9),
+        },
+        {
+          id: 2,
+          title: "Secondary (enige)",
+          priority: "secondary",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.8),
+        },
+        {
+          id: 3,
+          title: "Reference A",
+          priority: "reference",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.7),
+        },
+        {
+          id: 4,
+          title: "Reference B",
+          priority: "reference",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.6),
+        },
+      ],
+    });
+
+    // limiet 5: core (1) en core+secondary (2) zijn allebei te weinig, pas core+secondary+reference (4) is genoeg.
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 5,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.fase).toBe("core+secondary+reference");
+    expect(resultaat.hits.map((h) => h.id).sort()).toEqual([1, 2, 3, 4]);
+  });
+
+  it("4. Vergelijkbare scores: core wint van secondary, secondary wint van reference", async () => {
+    const gedeeldeScore = embeddingVoorScore(0.8); // exact dezelfde score voor alle drie
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Reference",
+          priority: "reference",
+          embeddingStatus: "indexed",
+          embedding: gedeeldeScore,
+        },
+        { id: 2, title: "Core", priority: "core", embeddingStatus: "indexed", embedding: gedeeldeScore },
+        {
+          id: 3,
+          title: "Secondary",
+          priority: "secondary",
+          embeddingStatus: "indexed",
+          embedding: gedeeldeScore,
+        },
+      ],
+    });
+
+    // limiet ruim hoger dan het totaal aantal kandidaten (3): dwingt volledige
+    // escalatie af (core+secondary+reference), zodat alle drie meedoen en de
+    // tie-break-sortering op prioriteit puur getest wordt, los van fasering.
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.fase).toBe("core+secondary+reference");
+    expect(resultaat.hits.map((h) => h.id)).toEqual([2, 3, 1]); // core (2) > secondary (3) > reference (1)
+  });
+
+  it("5. Geen regressie: Articles en Knowledge Drafts blijven vindbaar, ongeacht de fasering op Knowledge Sources", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Core A",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.9),
+        },
+        {
+          id: 2,
+          title: "Core B",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.8),
+        },
+      ],
+      "knowledge-drafts": [
+        {
+          id: 3,
+          title: "Support-antwoord",
+          status: "approved",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.6),
+        },
+      ],
+      articles: [
+        {
+          id: 4,
+          title: "Gepubliceerd artikel",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.55),
+        },
+      ],
+    });
+
+    // limiet 4 (= precies het totaal aantal kandidaten): niemand valt buiten
+    // de uiteindelijke top-N door afkappen — dit test specifiek dat drafts/
+    // articles nooit door de fase-logica zelf uit de kandidatenpool worden
+    // gefilterd (ze horen niet bij een prioriteitstier en doen dus ALTIJD
+    // mee, ongeacht welke fase op de knowledge-sources wordt gekozen).
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 4,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    const idsInResultaat = resultaat.hits.map((h) => h.id);
+    expect(idsInResultaat.sort()).toEqual([1, 2, 3, 4]);
+    expect(resultaat.hits.find((h) => h.id === 3)).toMatchObject({ type: "knowledge-draft" });
+    expect(resultaat.hits.find((h) => h.id === 4)).toMatchObject({ type: "article" });
+  });
+
+  it("negeert geen kandidaat en telt niets dubbel (deduplicatie): elke bron komt precies één keer voor", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Core",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.9),
+        },
+        {
+          id: 2,
+          title: "Secondary",
+          priority: "secondary",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.6),
+        },
+        {
+          id: 3,
+          title: "Reference",
+          priority: "reference",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.55),
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.fase).toBe("core+secondary+reference");
+    const ids = resultaat.hits.map((h) => h.id);
+    expect(ids).toHaveLength(new Set(ids).size);
   });
 });
