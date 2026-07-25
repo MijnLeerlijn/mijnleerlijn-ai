@@ -147,6 +147,18 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
         return { type: "failed", foutmelding: `Kon PDF niet ophalen (HTTP ${response.status}).` };
       }
       const buffer = await response.arrayBuffer();
+      console.log(`[index-source] PDF-inlezen ${bestandsnaam}: ${buffer.byteLength} bytes.`);
+      // Kopie NEMEN VÓÓR extractPdfText: unpdf/pdf.js "transfert" de
+      // ArrayBuffer die aan getDocument({data}) meegegeven wordt naar zijn
+      // (fake-)worker-context, zoals bij een echte Web Worker — de
+      // *originele* ArrayBuffer raakt daarbij gedetacht (byteLength wordt 0,
+      // een nieuwe Uint8Array erop bouwen gooit "Cannot perform Construct on
+      // a detached ArrayBuffer"). Zonder deze kopie zou de OCR-fallback
+      // hieronder daarop stuklopen zodra normale extractie te weinig tekst
+      // oplevert — precies de productiefout bij Canva-PDF's. slice(0) moet
+      // vóór extractPdfText() gebeuren: op een reeds gedetachte buffer gooit
+      // slice() zelf ook een TypeError.
+      const bufferVoorOcr = buffer.slice(0);
       let { totalPages, paginas, volledigeTekst } = await extractPdfText(buffer);
       const normaleTekenAantal = volledigeTekst.trim().length;
       console.log(
@@ -156,8 +168,10 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
       let ocrGestart = false;
       if (heeftOnvoldoendeTekst(volledigeTekst, totalPages)) {
         ocrGestart = true;
-        console.log(`[index-source] PDF-OCR ${bestandsnaam}: gestart (te weinig tekst uit normale extractie).`);
-        const ocrResultaat = await ocrPdfPaginas(buffer, totalPages);
+        console.log(
+          `[index-source] PDF-OCR ${bestandsnaam}: gestart (te weinig tekst uit normale extractie), eigen buffer-kopie van ${bufferVoorOcr.byteLength} bytes.`
+        );
+        const ocrResultaat = await ocrPdfPaginas(bufferVoorOcr, totalPages);
         const ocrTekenAantal = ocrResultaat.volledigeTekst.trim().length;
         console.log(`[index-source] PDF-OCR ${bestandsnaam}: ${ocrTekenAantal} tekens uit OCR.`);
         // Alleen OVERNEMEN, nooit optellen bij de normale extractie — anders

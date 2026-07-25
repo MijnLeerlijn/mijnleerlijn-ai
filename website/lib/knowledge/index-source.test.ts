@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { PDFDocument, StandardFonts } from "pdf-lib";
 import { indexeerBron } from "./index-source";
 import { generateStructuredOutput } from "@/services/ai-client";
 import { ocrPdfPaginas } from "./ocr";
+import { maakTestPdf } from "@/lib/support/test-pdf";
 
 vi.mock("@/services/ai-client", () => ({
   generateStructuredOutput: vi.fn(),
@@ -17,17 +17,6 @@ vi.mock("./ocr", () => ({ ocrPdfPaginas: vi.fn() }));
 
 const mockGenerate = vi.mocked(generateStructuredOutput);
 const mockOcr = vi.mocked(ocrPdfPaginas);
-
-async function maakTestPdf(paginas: string[][]): Promise<ArrayBuffer> {
-  const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  for (const regels of paginas) {
-    const pagina = doc.addPage();
-    regels.forEach((regel, i) => pagina.drawText(regel, { x: 50, y: 750 - i * 20, size: 12, font }));
-  }
-  const bytes = await doc.save();
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
 
 // De mock differentieert op het systeemprompt-type, zodat één generieke
 // generateStructuredOutput-mock zowel de hoofdstuk- als de
