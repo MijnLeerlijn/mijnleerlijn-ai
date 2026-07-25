@@ -192,6 +192,47 @@ describe("indexeerBron — website (en release notes/handleiding/faq/intern docu
     expect(uitkomst).toMatchObject({ type: "failed" });
     if (uitkomst.type === "failed") expect(uitkomst.foutmelding).toContain("Geen URL of directe inhoud");
   });
+
+  it("herkent hoofdstukken/secties in 'content' en vat elk apart samen — zelfde chunk-kwaliteit als PDF's (structurele fix 2026-07-25)", async () => {
+    const content = [
+      "1. De kernfilosofie: MijnLeerlijn is een middel, geen doel",
+      "Software alleen lost niets op.",
+      "2. De cyclus van MijnLeerlijn — het overkoepelende model",
+      "Curriculum, plannen, volgen, analyseren, bijstellen.",
+    ].join("\n");
+
+    const uitkomst = await indexeerBron({
+      title: "Kennisbasis MijnLeerlijn",
+      type: "intern_document",
+      content,
+    });
+
+    expect(uitkomst.type).toBe("indexed");
+    if (uitkomst.type !== "indexed") return;
+    expect(uitkomst.chapters).toHaveLength(2);
+    expect(uitkomst.chapters[0]).toMatchObject({
+      title: "1. De kernfilosofie: MijnLeerlijn is een middel, geen doel",
+      summary: "Korte hoofdstuksamenvatting.",
+      order: 1,
+    });
+    expect(uitkomst.chapters[1]).toMatchObject({
+      title: "2. De cyclus van MijnLeerlijn — het overkoepelende model",
+      order: 2,
+    });
+  });
+
+  it("valt terug op één hoofdstuk (documenttitel) als 'content' geen herkenbare secties bevat", async () => {
+    const uitkomst = await indexeerBron({
+      title: "Kort intern document",
+      type: "intern_document",
+      content: "Een enkele alinea zonder duidelijke sectiekoppen of nummering.",
+    });
+
+    expect(uitkomst.type).toBe("indexed");
+    if (uitkomst.type !== "indexed") return;
+    expect(uitkomst.chapters).toHaveLength(1);
+    expect(uitkomst.chapters[0]).toMatchObject({ title: "Kort intern document" });
+  });
 });
 
 describe("indexeerBron — video", () => {

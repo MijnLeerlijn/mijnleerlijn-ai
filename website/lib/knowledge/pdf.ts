@@ -52,6 +52,21 @@ const HOOFDSTUK_PATRONEN = [
   /^\d{1,2}(\.\d{1,2})?\s+[A-ZÀ-Ý][\w\s,'-]{2,80}$/,
 ];
 
+// Extra patronen, UITSLUITEND voor platte-tekstbronnen (lib/knowledge/
+// index-source.ts's `content`-veld — interne achtergronddocumenten e.d.,
+// geen PDF). Bewust NIET toegevoegd aan HOOFDSTUK_PATRONEN hierboven: veel
+// echte handleiding-PDF's bevatten genummerde stappenlijsten ("1. Klik op
+// de knop"), en de bredere "N. Titel"-vorm hieronder zou zo'n stap ten
+// onrechte als nieuw hoofdstuk aanzien. Tekstbronnen als het
+// achtergronddocument gebruiken juist geen PDF-achtige "Hoofdstuk N"/
+// decimale nummering, maar ofwel markdown-koppen (#/##/###) of doorlopend
+// genummerde secties ("1. Titel", "16. Titel") zonder stappenlijst-context
+// — vandaar een apart, breder patroon, alleen ingezet via
+// detecteerHoofdstukkenInTekst() hieronder.
+const MARKDOWN_KOP_PATROON = /^#{1,3}\s+(.+)$/;
+const GENUMMERDE_SECTIEKOP_PATROON = /^\d{1,2}\.\s+[A-ZÀ-Ý].{2,90}$/;
+const HOOFDSTUK_PATRONEN_TEKST = [...HOOFDSTUK_PATRONEN, MARKDOWN_KOP_PATROON, GENUMMERDE_SECTIEKOP_PATROON];
+
 const MAX_TITEL_LENGTE = 90;
 
 export interface RuwHoofdstuk {
@@ -59,37 +74,61 @@ export interface RuwHoofdstuk {
   text: string;
 }
 
-function isVermoedelijkeTitel(regel: string): boolean {
+function isVermoedelijkeTitel(regel: string, patronen: RegExp[]): boolean {
   const kandidaat = regel.trim();
   if (!kandidaat || kandidaat.length > MAX_TITEL_LENGTE) return false;
-  return HOOFDSTUK_PATRONEN.some((patroon) => patroon.test(kandidaat));
+  return patronen.some((patroon) => patroon.test(kandidaat));
+}
+
+/** Markdown-koptekens ('#'/'##'/'###') horen niet in de uiteindelijke titel. */
+function opschonenTitel(regel: string): string {
+  return regel.trim().replace(/^#{1,3}\s+/, "").slice(0, MAX_TITEL_LENGTE);
 }
 
 /**
- * Splitst de per-pagina tekst in vermoedelijke hoofdstukken. Begint elke
- * pagina bij een regel die op een hoofdstuktitel lijkt; alles ervoor hoort
- * bij het lopende hoofdstuk. Zonder herkende titels: één hoofdstuk met de
- * documenttitel.
+ * Gedeelde kernlogica achter zowel detecteerHoofdstukken() (PDF, per pagina)
+ * als detecteerHoofdstukkenInTekst() (platte tekst) hieronder: begint een
+ * nieuw hoofdstuk bij elke regel die op een titel lijkt volgens `patronen`;
+ * alles ervoor hoort bij het lopende hoofdstuk. Zonder herkende titels: één
+ * hoofdstuk met de documenttitel. Pagina-/regelgrenzen zelf spelen geen rol
+ * in de groepering — vandaar dat beide aanroepers hun invoer hier plat als
+ * regel-array aanleveren.
  */
-export function detecteerHoofdstukken(paginas: PdfPagina[], documentTitel: string): RuwHoofdstuk[] {
+function hoofdstukkenUitRegels(regels: string[], documentTitel: string, patronen: RegExp[]): RuwHoofdstuk[] {
   const hoofdstukken: RuwHoofdstuk[] = [];
   let huidig: RuwHoofdstuk | null = null;
 
-  for (const pagina of paginas) {
-    const regels = pagina.text.split("\n");
-    for (const regel of regels) {
-      if (isVermoedelijkeTitel(regel)) {
-        huidig = { title: regel.trim().slice(0, MAX_TITEL_LENGTE), text: "" };
-        hoofdstukken.push(huidig);
-        continue;
-      }
-      if (!huidig) {
-        huidig = { title: documentTitel, text: "" };
-        hoofdstukken.push(huidig);
-      }
-      huidig.text += `${regel}\n`;
+  for (const regel of regels) {
+    if (isVermoedelijkeTitel(regel, patronen)) {
+      huidig = { title: opschonenTitel(regel), text: "" };
+      hoofdstukken.push(huidig);
+      continue;
     }
+    if (!huidig) {
+      huidig = { title: documentTitel, text: "" };
+      hoofdstukken.push(huidig);
+    }
+    huidig.text += `${regel}\n`;
   }
 
   return hoofdstukken.map((h) => ({ title: h.title, text: h.text.trim() })).filter((h) => h.text.length > 0);
+}
+
+/** Splitst PDF-pagina's in vermoedelijke hoofdstukken — zie hoofdstukkenUitRegels(). */
+export function detecteerHoofdstukken(paginas: PdfPagina[], documentTitel: string): RuwHoofdstuk[] {
+  const regels = paginas.flatMap((pagina) => pagina.text.split("\n"));
+  return hoofdstukkenUitRegels(regels, documentTitel, HOOFDSTUK_PATRONEN);
+}
+
+/**
+ * Zelfde hoofdstukherkenning als detecteerHoofdstukken(), maar voor platte
+ * tekstbronnen (geen PDF) — met extra herkenning van markdown-koppen en
+ * doorlopend genummerde secties, zie HOOFDSTUK_PATRONEN_TEKST hierboven.
+ * lib/knowledge/index-source.ts gebruikt dit voor Knowledge Sources met
+ * direct ingevulde `content` (bv. het interne achtergronddocument voor de
+ * Helpdesk-AI), zodat zulke bronnen dezelfde chunk-per-sectie-kwaliteit
+ * krijgen als PDF's, i.p.v. één documentbrede embedding.
+ */
+export function detecteerHoofdstukkenInTekst(tekst: string, documentTitel: string): RuwHoofdstuk[] {
+  return hoofdstukkenUitRegels(tekst.split("\n"), documentTitel, HOOFDSTUK_PATRONEN_TEKST);
 }

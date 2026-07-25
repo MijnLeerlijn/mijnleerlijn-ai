@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { generateStructuredOutput } from "@/services/ai-client";
-import { extractPdfText, detecteerHoofdstukken } from "./pdf";
+import { extractPdfText, detecteerHoofdstukken, detecteerHoofdstukkenInTekst, type RuwHoofdstuk } from "./pdf";
 import { ocrPdfPaginas } from "./ocr";
 import { fetchWebsiteText } from "./website";
 import { fetchTranscriptIfEasy } from "./video";
@@ -93,6 +93,23 @@ async function hoofdstukSamenvatten(tekst: string): Promise<string> {
     );
   }
   return validatie.data.summary;
+}
+
+/**
+ * Zet ruwe, herkende hoofdstukken (lib/knowledge/pdf.ts, zowel PDF- als
+ * tekstbronnen) om naar het uiteindelijke chapters-resultaat: elk hoofdstuk
+ * apart samengevat. Gedeeld door zowel de PDF- als de content-tak van
+ * indexeerBron() hieronder, zodat beide bronnen exact dezelfde
+ * chunk-per-hoofdstuk-kwaliteit krijgen.
+ */
+async function bouwHoofdstukken(ruweHoofdstukken: RuwHoofdstuk[]): Promise<HoofdstukResultaat[]> {
+  return Promise.all(
+    ruweHoofdstukken.map(async (h, i) => ({
+      title: h.title,
+      summary: await hoofdstukSamenvatten(h.text),
+      order: i + 1,
+    }))
+  );
 }
 
 export interface BronVoorIndexering {
@@ -198,14 +215,7 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
       console.log(`[index-source] PDF-verwerking ${bestandsnaam}: geslaagd (OCR gestart: ${ocrGestart}).`);
       brontekst = volledigeTekst;
 
-      const ruweHoofdstukken = detecteerHoofdstukken(paginas, bron.title);
-      chapters = await Promise.all(
-        ruweHoofdstukken.map(async (h, i) => ({
-          title: h.title,
-          summary: await hoofdstukSamenvatten(h.text),
-          order: i + 1,
-        }))
-      );
+      chapters = await bouwHoofdstukken(detecteerHoofdstukken(paginas, bron.title));
     } else if (bron.type === "video") {
       transcript = bron.transcript?.trim() || undefined;
       if (!transcript && bron.url) {
@@ -223,7 +233,17 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
       // eventueel ingevulde URL — bedoeld voor bronnen die niet online staan
       // (bv. het interne achtergronddocument voor de helpdesk-AI). Geen
       // fetch nodig, dus ook geen URL-foutafhandeling hier.
+      //
+      // Zelfde hoofdstuk-chunking-kwaliteit als PDF's (structurele fix,
+      // 2026-07-25): zonder dit kreeg zo'n bron maar één documentbrede
+      // samenvatting/embedding, wat live-verificatie tegen de echte
+      // kennisbank liet zien als hoofdoorzaak van gemiste antwoorden — het
+      // taalmodel zag nooit de daadwerkelijke sectie-inhoud, alleen een
+      // korte AI-samenvatting van het hele document. detecteerHoofdstukkenInTekst()
+      // (lib/knowledge/pdf.ts) is dezelfde herkenningslogica als PDF's, met
+      // extra patronen voor markdown-koppen/doorlopend genummerde secties.
       brontekst = bron.content.trim();
+      chapters = await bouwHoofdstukken(detecteerHoofdstukkenInTekst(brontekst, bron.title));
     } else {
       if (!bron.url) {
         return { type: "failed", foutmelding: "Geen URL of directe inhoud ingevuld voor deze bron." };
