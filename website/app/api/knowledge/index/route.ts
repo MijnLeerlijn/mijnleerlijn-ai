@@ -5,6 +5,11 @@ import { isAdmin } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { runKnowledgeIndexing, STANDAARD_LIMIET } from "@/lib/knowledge/run-indexing";
 
+// Expliciet (was al de default) — zie de uitleg in
+// app/api/knowledge/repair-failed/route.ts: deze route roept dezelfde
+// PDF/OCR-pijplijn aan.
+export const runtime = "nodejs";
+
 // Start een indexeerronde over kennisbronnen — zie lib/knowledge/index-source.ts,
 // process-source.ts en run-indexing.ts voor de daadwerkelijke logica.
 // Admin-only via dezelfde sessieverificatie als app/api/support/analyze/route.ts

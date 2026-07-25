@@ -5,6 +5,11 @@ import { isAdmin } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { syncManuals, STANDAARD_LIMIET } from "@/lib/knowledge/sync-manuals";
 
+// Expliciet (was al de default) — zie de uitleg in
+// app/api/knowledge/repair-failed/route.ts: deze route roept dezelfde
+// PDF/OCR-pijplijn aan.
+export const runtime = "nodejs";
+
 // Synchroniseert Vercel Blob (prefix handleidingen/, zie lib/knowledge/
 // manuals-blob.ts) met knowledge-sources — zie lib/knowledge/sync-manuals.ts
 // voor de volledige logica. NIET het lokale bestandssysteem: website/

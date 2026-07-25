@@ -110,34 +110,49 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   return result.embedding;
 }
 
-const OcrPaginaSchema = z.object({ text: z.string() });
+const OcrPdfSchema = z.object({
+  paginas: z.array(z.object({ pageNumber: z.number(), text: z.string() })),
+});
 
 /**
  * OCR-fallback voor image-only PDF's (bv. Canva-exports zonder tekstlaag,
- * zie lib/knowledge/ocr.ts) — GEEN los OCR-pakket (tesseract.js e.d.):
- * hergebruikt dezelfde centrale client/hetzelfde model als de rest van dit
- * bestand (getAiModelId(), standaard "gpt-4o", visioncapabel) om de
- * getekende paginatekst rechtstreeks van een gerenderde pagina-afbeelding
- * af te lezen. Vereist dus geen nieuwe environment variable: dezelfde
- * OPENAI_API_KEY/AI_MODEL_ID als de rest van de indexeerpijplijn. Voor
- * Canva-achtige, sterk vormgegeven tekst (kleurrijke achtergronden,
- * afwijkende lettertypes) is een vision-taalmodel doorgaans minstens zo
- * betrouwbaar als traditionele OCR-engines, en dit voorkomt een tweede,
- * parallelle AI-integratie naast services/ai-client.ts.
+ * zie lib/knowledge/ocr.ts) — GEEN los OCR-pakket (tesseract.js e.d.) EN
+ * GEEN eigen paginarasterisatie (eerdere opzet met unpdf's renderPageAsImage
+ * + @napi-rs/canvas: dat native binary bleek op Vercel niet betrouwbaar te
+ * laden — "@napi-rs/canvas is not available in this environment",
+ * vermoedelijk doordat de per-platform binary van een napi-rs-package via
+ * een dynamisch berekende require() pas ten tijde van de eerste aanroep
+ * wordt opgehaald, wat Vercels file-tracing (@vercel/nft) kan missen; dit
+ * is buiten een echte Vercel-deploy niet waterdicht te verifiëren).
+ *
+ * In plaats daarvan: het hele PDF-bestand gaat rechtstreeks naar dezelfde
+ * centrale AI-client/hetzelfde model als de rest van dit bestand
+ * (getAiModelId(), standaard "gpt-4o") als bestandsonderdeel met
+ * mediaType "application/pdf" — dit is een door de Vercel AI SDK's OpenAI-
+ * provider (@ai-sdk/openai, geïnstalleerde versie) OFFICIEEL ondersteund
+ * inputtype (OpenAIResponsesLanguageModel.supportedUrls bevat
+ * "application/pdf"; convertToOpenAIResponsesInput() zet een file-part met
+ * mediaType "application/pdf" om naar een "input_file"-blok met base64
+ * file_data). Geen rasterisatiestap, geen native binary, dus geen Vercel-
+ * bundlingrisico. Vereist geen nieuwe environment variable: dezelfde
+ * OPENAI_API_KEY/AI_MODEL_ID als de rest van de indexeerpijplijn.
  */
-export async function generateTextFromImage(image: { data: ArrayBuffer; mediaType: string }): Promise<string> {
+export async function generateTextFromPdf(pdf: {
+  data: ArrayBuffer;
+  filename: string;
+  totalPages: number;
+}): Promise<{ pageNumber: number; text: string }[]> {
   const model = openaiClient()(getAiModelId());
   const result = await generateObject({
     model,
-    schema: OcrPaginaSchema,
-    system:
-      "Je bent een OCR-engine. Transcribeer LETTERLIJK alle leesbare tekst op deze afbeelding, in de volgorde waarin die voorkomt (boven naar beneden, links naar rechts). Vat niets samen, verzin niets, voeg geen eigen tekst toe. Staat er geen leesbare tekst op de afbeelding, geef dan een lege tekst terug.",
+    schema: OcrPdfSchema,
+    system: `Je bent een OCR-engine. Dit PDF-document heeft ${pdf.totalPages} pagina('s) en bevat geen (bruikbare) tekstlaag — waarschijnlijk bestaat elke pagina uit een afbeelding. Transcribeer LETTERLIJK alle leesbare tekst per pagina, in leesvolgorde (boven naar beneden, links naar rechts). Vat niets samen, verzin niets, voeg geen eigen tekst toe. Geef voor elke pagina (1 t/m ${pdf.totalPages}) exact één item terug in "paginas", met het juiste paginanummer. Staat er op een pagina geen leesbare tekst, geef voor die pagina dan een lege tekst terug.`,
     messages: [
       {
         role: "user",
-        content: [{ type: "file", data: image.data, mediaType: image.mediaType }],
+        content: [{ type: "file", data: pdf.data, mediaType: "application/pdf", filename: pdf.filename }],
       },
     ],
   });
-  return result.object.text;
+  return result.object.paginas;
 }

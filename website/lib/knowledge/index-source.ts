@@ -153,10 +153,11 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
       // (fake-)worker-context, zoals bij een echte Web Worker — de
       // *originele* ArrayBuffer raakt daarbij gedetacht (byteLength wordt 0,
       // een nieuwe Uint8Array erop bouwen gooit "Cannot perform Construct on
-      // a detached ArrayBuffer"). Zonder deze kopie zou de OCR-fallback
-      // hieronder daarop stuklopen zodra normale extractie te weinig tekst
-      // oplevert — precies de productiefout bij Canva-PDF's. slice(0) moet
-      // vóór extractPdfText() gebeuren: op een reeds gedetachte buffer gooit
+      // a detached ArrayBuffer"). De OCR-fallback hieronder stuurt het hele
+      // PDF-bestand naar het taalmodel (lib/knowledge/ocr.ts) — zonder deze
+      // kopie zou dat stuklopen op de al gedetachte buffer zodra normale
+      // extractie te weinig tekst oplevert. slice(0) moet vóór
+      // extractPdfText() gebeuren: op een reeds gedetachte buffer gooit
       // slice() zelf ook een TypeError.
       const bufferVoorOcr = buffer.slice(0);
       let { totalPages, paginas, volledigeTekst } = await extractPdfText(buffer);
@@ -171,7 +172,7 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
         console.log(
           `[index-source] PDF-OCR ${bestandsnaam}: gestart (te weinig tekst uit normale extractie), eigen buffer-kopie van ${bufferVoorOcr.byteLength} bytes.`
         );
-        const ocrResultaat = await ocrPdfPaginas(bufferVoorOcr, totalPages);
+        const ocrResultaat = await ocrPdfPaginas(bufferVoorOcr, totalPages, bestandsnaam);
         const ocrTekenAantal = ocrResultaat.volledigeTekst.trim().length;
         console.log(`[index-source] PDF-OCR ${bestandsnaam}: ${ocrTekenAantal} tekens uit OCR.`);
         // Alleen OVERNEMEN, nooit optellen bij de normale extractie — anders

@@ -1,15 +1,6 @@
-// @vitest-environment node
-//
-// Vitest draait standaard met environment "jsdom" (vitest.config.ts) — dat
-// zet een globale `window` neer, waardoor unpdf's eigen browser/Node-
-// detectie (isBrowser = typeof window !== "undefined") hier ten onrechte de
-// browser-canvas-route zou nemen i.p.v. de @napi-rs/canvas-route via
-// canvasImport (lib/knowledge/ocr.ts). Een echte Vercel-serverless-functie
-// heeft geen `window`, dus deze test forceert environment "node" om
-// daadwerkelijk hetzelfde codepad als productie te doorlopen.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { indexeerBron } from "./index-source";
-import { generateStructuredOutput, generateTextFromImage } from "@/services/ai-client";
+import { generateStructuredOutput, generateTextFromPdf } from "@/services/ai-client";
 import { maakTestPdf } from "@/lib/support/test-pdf";
 
 // Regressietest voor een productiefout bij Canva-PDF's (2026-07-25): "Cannot
@@ -23,15 +14,19 @@ import { maakTestPdf } from "@/lib/support/test-pdf";
 // NIET (in tegenstelling tot index-source.test.ts) — alleen zo loopt de
 // echte pdf.js/unpdf-buffertransfer daadwerkelijk mee, en zou deze test
 // zonder de buffer-kopie in index-source.ts (bufferVoorOcr = buffer.slice(0))
-// opnieuw stuklopen.
+// opnieuw stuklopen. Blijft relevant ook nu OCR geen paginarasterisatie meer
+// doet (zie lib/knowledge/ocr.ts): extractPdfText() detacht de originele
+// buffer nog altijd, en ocrPdfPaginas() stuurt de kopie als heel PDF-bestand
+// naar het taalmodel — een al gedetachte buffer zou daar net zo goed op
+// stuklopen (base64-encoderen van een gedetachte ArrayBuffer/Buffer faalt).
 vi.mock("@/services/ai-client", () => ({
   generateStructuredOutput: vi.fn(),
-  generateTextFromImage: vi.fn(),
+  generateTextFromPdf: vi.fn(),
   getAiModelId: () => "gpt-4o-test",
 }));
 
 const mockGenerate = vi.mocked(generateStructuredOutput);
-const mockOcrVision = vi.mocked(generateTextFromImage);
+const mockOcrVision = vi.mocked(generateTextFromPdf);
 
 beforeEach(() => {
   mockGenerate.mockReset();
@@ -42,7 +37,9 @@ beforeEach(() => {
     return { summary: "Documentsamenvatting.", keywords: ["kw1"], category: "profielen" };
   });
   mockOcrVision.mockReset();
-  mockOcrVision.mockResolvedValue("Hoofdstuk 1 Inleiding\nTekst die via OCR van de afbeelding is uitgelezen.");
+  mockOcrVision.mockResolvedValue([
+    { pageNumber: 1, text: "Hoofdstuk 1 Inleiding\nTekst die via OCR van het PDF-bestand is uitgelezen." },
+  ]);
 });
 
 afterEach(() => {

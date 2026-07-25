@@ -5,6 +5,15 @@ import { isAdmin } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { repairFailedKnowledgeSources, STANDAARD_LIMIET } from "@/lib/knowledge/repair-failed-sources";
 
+// Expliciet (was al de default): deze route roept uiteindelijk
+// lib/knowledge/index-source.ts aan, dat bij PDF's zonder tekstlaag de
+// OCR-fallback (lib/knowledge/ocr.ts) start — geen Edge-compatibele code
+// (Payload/Postgres sowieso al niet, en de OCR-aanroep stuurt een heel
+// PDF-bestand als base64 mee). Expliciet vastgelegd zodat een toekomstige
+// wijziging elders in de app dit niet per ongeluk naar "edge" laat
+// terugvallen.
+export const runtime = "nodejs";
+
 // Herstelt Knowledge Sources met status "error" (bv. "Kon PDF niet ophalen
 // (HTTP 403)" — de private-Blob-URL werd vóór een eerdere fix niet gesigned
 // vóór het fetchen, zie lib/knowledge/process-source.ts) — zie
