@@ -2,13 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { indexeerBron } from "./index-source";
 import { generateStructuredOutput } from "@/services/ai-client";
+import { ocrPdfPaginas } from "./ocr";
 
 vi.mock("@/services/ai-client", () => ({
   generateStructuredOutput: vi.fn(),
   getAiModelId: () => "gpt-4o-test",
 }));
 
+// OCR (lib/knowledge/ocr.ts) rendert pagina's naar afbeeldingen en roept de
+// AI-vision-functie aan — hier gemockt op modulegrens, net als
+// @/services/ai-client hierboven, zodat deze tests geen echte rendering/AI-
+// aanroep nodig hebben.
+vi.mock("./ocr", () => ({ ocrPdfPaginas: vi.fn() }));
+
 const mockGenerate = vi.mocked(generateStructuredOutput);
+const mockOcr = vi.mocked(ocrPdfPaginas);
 
 async function maakTestPdf(paginas: string[][]): Promise<ArrayBuffer> {
   const doc = await PDFDocument.create();
@@ -36,6 +44,8 @@ function stelAiAntwoordenIn() {
 beforeEach(() => {
   mockGenerate.mockReset();
   stelAiAntwoordenIn();
+  mockOcr.mockReset();
+  mockOcr.mockResolvedValue({ paginas: [], volledigeTekst: "" });
 });
 
 afterEach(() => {
@@ -71,14 +81,45 @@ describe("indexeerBron — pdf", () => {
       order: 1,
     });
     expect(uitkomst.chapters[1]).toMatchObject({ title: "Hoofdstuk 2 Aan de slag", order: 2 });
+    // PDF had al een goede tekstlaag — OCR mag dan niet gestart worden.
+    expect(mockOcr).not.toHaveBeenCalled();
   });
 
-  it("faalt netjes op een lege PDF (geen leesbare tekst) zonder de AI aan te roepen", async () => {
+  it("valt terug op OCR bij een (vermoedelijk) image-only PDF en gebruikt de OCR-tekst voor hoofdstukken en samenvatting", async () => {
+    // Een pagina zonder getekende tekstregels simuleert, net als bij een
+    // Canva-export, een PDF zonder bruikbare tekstlaag: unpdf haalt er dan
+    // (vrijwel) niets uit, ongeacht of dat komt door een lege pagina of door
+    // een pagina die uit een afbeelding bestaat.
     const pdf = await maakTestPdf([[]]);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => pdf })
     );
+    mockOcr.mockResolvedValue({
+      paginas: [{ pageNumber: 1, text: "Hoofdstuk 1 Inleiding\nDit is tekst die via OCR is uitgelezen." }],
+      volledigeTekst: "Hoofdstuk 1 Inleiding\nDit is tekst die via OCR is uitgelezen.",
+    });
+
+    const uitkomst = await indexeerBron({
+      title: "Canva-handleiding",
+      type: "pdf",
+      fileUrl: "https://blob.test/canva.pdf",
+    });
+
+    expect(mockOcr).toHaveBeenCalledTimes(1);
+    expect(uitkomst.type).toBe("indexed");
+    if (uitkomst.type !== "indexed") return;
+    expect(uitkomst.chapters).toHaveLength(1);
+    expect(uitkomst.chapters[0]).toMatchObject({ title: "Hoofdstuk 1 Inleiding", order: 1 });
+  });
+
+  it("faalt pas wanneer zowel normale extractie als OCR geen bruikbare tekst opleveren, zonder de AI aan te roepen", async () => {
+    const pdf = await maakTestPdf([[]]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => pdf })
+    );
+    // mockOcr geeft standaard (zie beforeEach) al lege tekst terug.
 
     const uitkomst = await indexeerBron({
       title: "Leeg document",
@@ -86,6 +127,7 @@ describe("indexeerBron — pdf", () => {
       fileUrl: "https://blob.test/leeg.pdf",
     });
 
+    expect(mockOcr).toHaveBeenCalledTimes(1);
     expect(uitkomst).toMatchObject({ type: "failed" });
     if (uitkomst.type === "failed") expect(uitkomst.foutmelding).toContain("geen leesbare tekst");
     expect(mockGenerate).not.toHaveBeenCalled();

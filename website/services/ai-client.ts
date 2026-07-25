@@ -1,6 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject, embed } from "ai";
-import type { z } from "zod";
+import { z } from "zod";
 import { requireEnv, optionalEnv } from "@/config/env";
 
 // DE centrale AI-provider-client — zie docs/ARCHITECTURE.md
@@ -108,4 +108,36 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const model = openaiClient().embedding(getEmbeddingModelId());
   const result = await embed({ model, value: text });
   return result.embedding;
+}
+
+const OcrPaginaSchema = z.object({ text: z.string() });
+
+/**
+ * OCR-fallback voor image-only PDF's (bv. Canva-exports zonder tekstlaag,
+ * zie lib/knowledge/ocr.ts) — GEEN los OCR-pakket (tesseract.js e.d.):
+ * hergebruikt dezelfde centrale client/hetzelfde model als de rest van dit
+ * bestand (getAiModelId(), standaard "gpt-4o", visioncapabel) om de
+ * getekende paginatekst rechtstreeks van een gerenderde pagina-afbeelding
+ * af te lezen. Vereist dus geen nieuwe environment variable: dezelfde
+ * OPENAI_API_KEY/AI_MODEL_ID als de rest van de indexeerpijplijn. Voor
+ * Canva-achtige, sterk vormgegeven tekst (kleurrijke achtergronden,
+ * afwijkende lettertypes) is een vision-taalmodel doorgaans minstens zo
+ * betrouwbaar als traditionele OCR-engines, en dit voorkomt een tweede,
+ * parallelle AI-integratie naast services/ai-client.ts.
+ */
+export async function generateTextFromImage(image: { data: ArrayBuffer; mediaType: string }): Promise<string> {
+  const model = openaiClient()(getAiModelId());
+  const result = await generateObject({
+    model,
+    schema: OcrPaginaSchema,
+    system:
+      "Je bent een OCR-engine. Transcribeer LETTERLIJK alle leesbare tekst op deze afbeelding, in de volgorde waarin die voorkomt (boven naar beneden, links naar rechts). Vat niets samen, verzin niets, voeg geen eigen tekst toe. Staat er geen leesbare tekst op de afbeelding, geef dan een lege tekst terug.",
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "file", data: image.data, mediaType: image.mediaType }],
+      },
+    ],
+  });
+  return result.object.text;
 }

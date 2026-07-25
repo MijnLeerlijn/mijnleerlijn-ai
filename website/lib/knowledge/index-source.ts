@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { generateStructuredOutput } from "@/services/ai-client";
 import { extractPdfText, detecteerHoofdstukken } from "./pdf";
+import { ocrPdfPaginas } from "./ocr";
 import { fetchWebsiteText } from "./website";
 import { fetchTranscriptIfEasy } from "./video";
 
@@ -18,6 +19,17 @@ import { fetchTranscriptIfEasy } from "./video";
 // bedrijfsregels worden apart, NA ontvangst gevalideerd.
 
 const MAX_PROMPT_CHARS = 15000;
+
+// Een pagina met een echte tekstlaag bevat normaliter honderden tekens; een
+// bewust lage vloer van 20 tekens/pagina onderscheidt "vrijwel geen tekst"
+// (image-only PDF — bv. een Canva-export — waarbij pdf.js soms nog een
+// paar losse tekens oppikt) van een PDF met een echte, bruikbare tekstlaag,
+// zonder OCR te starten op een PDF die al goed leesbaar is.
+const MIN_TEKENS_PER_PAGINA = 20;
+
+function heeftOnvoldoendeTekst(volledigeTekst: string, totalPages: number): boolean {
+  return volledigeTekst.trim().length < totalPages * MIN_TEKENS_PER_PAGINA;
+}
 
 function bouwPrompt(tekst: string): string {
   if (tekst.length <= MAX_PROMPT_CHARS) return tekst;
@@ -127,21 +139,46 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
       // moet in productie direct zichtbaar zijn welk pad geprobeerd werd en
       // welke HTTP-status er terugkwam, zonder dat er live meegekeken hoeft
       // te worden.
-      const fileUrlZonderQuery = bron.fileUrl.split("?")[0];
+      const fileUrlZonderQuery = bron.fileUrl.split("?")[0] ?? bron.fileUrl;
+      const bestandsnaam = fileUrlZonderQuery.split("/").pop() ?? fileUrlZonderQuery;
       const response = await fetch(bron.fileUrl);
       console.log(`[index-source] PDF-fetch ${fileUrlZonderQuery} -> HTTP ${response.status}`);
       if (!response.ok) {
         return { type: "failed", foutmelding: `Kon PDF niet ophalen (HTTP ${response.status}).` };
       }
       const buffer = await response.arrayBuffer();
-      const { paginas, volledigeTekst } = await extractPdfText(buffer);
+      let { totalPages, paginas, volledigeTekst } = await extractPdfText(buffer);
+      const normaleTekenAantal = volledigeTekst.trim().length;
+      console.log(
+        `[index-source] PDF-tekst ${bestandsnaam}: ${totalPages} pagina('s), ${normaleTekenAantal} tekens uit normale extractie.`
+      );
+
+      let ocrGestart = false;
+      if (heeftOnvoldoendeTekst(volledigeTekst, totalPages)) {
+        ocrGestart = true;
+        console.log(`[index-source] PDF-OCR ${bestandsnaam}: gestart (te weinig tekst uit normale extractie).`);
+        const ocrResultaat = await ocrPdfPaginas(buffer, totalPages);
+        const ocrTekenAantal = ocrResultaat.volledigeTekst.trim().length;
+        console.log(`[index-source] PDF-OCR ${bestandsnaam}: ${ocrTekenAantal} tekens uit OCR.`);
+        // Alleen OVERNEMEN, nooit optellen bij de normale extractie — anders
+        // wordt dezelfde pagina-inhoud dubbel verwerkt (dubbele tekst in
+        // chunks/embeddings). Alleen overnemen als OCR daadwerkelijk meer
+        // bruikbare tekst opleverde dan de normale extractie.
+        if (ocrTekenAantal > normaleTekenAantal) {
+          paginas = ocrResultaat.paginas;
+          volledigeTekst = ocrResultaat.volledigeTekst;
+        }
+      }
+
       if (!volledigeTekst.trim()) {
+        console.log(`[index-source] PDF-verwerking ${bestandsnaam}: mislukt, geen bruikbare tekst (OCR gestart: ${ocrGestart}).`);
         return {
           type: "failed",
           foutmelding:
             "PDF bevat geen leesbare tekst (mogelijk een scan zonder OCR-laag, of een leeg document).",
         };
       }
+      console.log(`[index-source] PDF-verwerking ${bestandsnaam}: geslaagd (OCR gestart: ${ocrGestart}).`);
       brontekst = volledigeTekst;
 
       const ruweHoofdstukken = detecteerHoofdstukken(paginas, bron.title);
