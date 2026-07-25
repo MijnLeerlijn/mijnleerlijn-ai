@@ -47,6 +47,7 @@ function naarBronRecord(doc: {
   url?: string | null;
   description?: string | null;
   transcript?: string | null;
+  content?: string | null;
 }): BronRecord {
   return {
     id: doc.id,
@@ -56,6 +57,7 @@ function naarBronRecord(doc: {
     url: doc.url,
     description: doc.description,
     transcript: doc.transcript,
+    content: doc.content,
   };
 }
 

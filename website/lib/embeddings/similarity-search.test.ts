@@ -249,6 +249,69 @@ describe("searchKnowledge — Sprint 6: alleen goedgekeurde Knowledge Drafts", (
   });
 });
 
+describe("searchKnowledge — bronrol (purpose), chatbot-evaluatieopdracht", () => {
+  it("leidt de bronrol af van `type` als `purpose` niet gezet is", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        { id: 1, title: "Een FAQ", type: "faq", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+      ],
+    });
+    const hits = await searchKnowledge(payload, { query: "wachtwoord" });
+    expect(hits[0]).toMatchObject({ bronrol: "faq" });
+  });
+
+  it("gebruikt het expliciete `purpose`-veld als dat gezet is, ook als dat afwijkt van de type-default", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Achtergronddocument met FAQ-achtige inhoud",
+          type: "intern_document",
+          purpose: "faq",
+          embeddingStatus: "indexed",
+          embedding: [1, 0, 0],
+        },
+      ],
+    });
+    const hits = await searchKnowledge(payload, { query: "wachtwoord" });
+    expect(hits[0]).toMatchObject({ bronrol: "faq" });
+  });
+
+  it("geeft een intern document zonder expliciete `purpose` de default bronrol 'background-model'", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "Kennisbasis (achtergrondverhaal)",
+          type: "intern_document",
+          embeddingStatus: "indexed",
+          embedding: [1, 0, 0],
+        },
+      ],
+    });
+    const hits = await searchKnowledge(payload, { query: "wachtwoord" });
+    expect(hits[0]).toMatchObject({ bronrol: "background-model" });
+  });
+
+  it("geeft knowledge-drafts altijd bronrol 'support' (nooit definitieve waarheid)", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-drafts": [
+        { id: 1, title: "Concept", status: "approved", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+      ],
+    });
+    const hits = await searchKnowledge(payload, { query: "wachtwoord" });
+    expect(hits[0]).toMatchObject({ bronrol: "support" });
+  });
+
+  it("geeft gepubliceerde artikelen altijd bronrol 'manual'", async () => {
+    const { payload } = maakFakePayload({
+      articles: [{ id: 1, title: "Artikel", embeddingStatus: "indexed", embedding: [1, 0, 0] }],
+    });
+    const hits = await searchKnowledge(payload, { query: "wachtwoord" });
+    expect(hits[0]).toMatchObject({ bronrol: "manual" });
+  });
+});
+
 describe("searchKnowledgePhased — gefaseerd zoeken op Knowledge Source-prioriteit", () => {
   const DREMPEL = 0.5; // exact MIN_SIMILARITY_VOOR_ANTWOORD uit lib/assistant/answer.ts, hier als letterlijk getal om geen cross-import (zie similarity-search.ts) nodig te hebben.
 
@@ -433,6 +496,61 @@ describe("searchKnowledgePhased — gefaseerd zoeken op Knowledge Source-priorit
 
     expect(resultaat.fase).toBe("core+secondary+reference");
     expect(resultaat.hits.map((h) => h.id)).toEqual([2, 3, 1]); // core (2) > secondary (3) > reference (1)
+  });
+
+  it("4b. Vergelijkbare scores, zelfde prioriteit: release note > handleiding > achtergrondmodel > FAQ > support (bronrol-tie-break)", async () => {
+    const gedeeldeScore = embeddingVoorScore(0.8);
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 1,
+          title: "FAQ",
+          type: "faq",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: gedeeldeScore,
+        },
+        {
+          id: 2,
+          title: "Release note",
+          type: "release_notes",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: gedeeldeScore,
+        },
+        {
+          id: 3,
+          title: "Handleiding",
+          type: "handleiding",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: gedeeldeScore,
+        },
+        {
+          id: 4,
+          title: "Achtergrondmodel",
+          type: "intern_document",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: gedeeldeScore,
+        },
+      ],
+      "knowledge-drafts": [
+        { id: 5, title: "Support", status: "approved", embeddingStatus: "indexed", embedding: gedeeldeScore },
+      ],
+    });
+
+    // limiet ruim hoger dan het totaal aantal kandidaten: dwingt volledige
+    // escalatie af, zodat alle vijf meedoen en de bronrol-tie-break puur
+    // getest wordt (alle vier Knowledge Sources hebben dezelfde prioriteit
+    // "core", dus die tie-break heeft hier geen effect — precies bedoeld).
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.hits.map((h) => h.id)).toEqual([2, 3, 4, 1, 5]);
   });
 
   it("5. Geen regressie: Articles en Knowledge Drafts blijven vindbaar, ongeacht de fasering op Knowledge Sources", async () => {

@@ -81,6 +81,7 @@ export interface BronRecord {
   url?: string | null;
   description?: string | null;
   transcript?: string | null;
+  content?: string | null;
 }
 
 export type ProcesUitkomst = { type: "indexed" } | { type: "failed"; foutmelding: string };
@@ -97,6 +98,7 @@ export async function processKnowledgeSource(payload: Payload, bron: BronRecord)
     description: bron.description,
     url: bron.url,
     transcript: bron.transcript,
+    content: bron.content,
     fileUrl,
   });
 

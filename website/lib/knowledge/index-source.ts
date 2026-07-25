@@ -101,6 +101,8 @@ export interface BronVoorIndexering {
   description?: string | null;
   url?: string | null;
   transcript?: string | null;
+  /** Directe tekstinhoud (KnowledgeSources.ts veld "content") — alleen relevant voor niet-pdf/video-typen, gaat vóór een eventuele url. */
+  content?: string | null;
   /** Vooraf opgeloste, absolute URL naar het geüploade bestand — alleen voor type "pdf". */
   fileUrl?: string | null;
 }
@@ -216,9 +218,15 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
           foutmelding: "Geen titel, omschrijving of transcript beschikbaar om te analyseren.",
         };
       }
+    } else if (bron.content?.trim()) {
+      // Directe inhoud (KnowledgeSources.ts veld "content") gaat vóór een
+      // eventueel ingevulde URL — bedoeld voor bronnen die niet online staan
+      // (bv. het interne achtergronddocument voor de helpdesk-AI). Geen
+      // fetch nodig, dus ook geen URL-foutafhandeling hier.
+      brontekst = bron.content.trim();
     } else {
       if (!bron.url) {
-        return { type: "failed", foutmelding: "Geen URL ingevuld voor deze bron." };
+        return { type: "failed", foutmelding: "Geen URL of directe inhoud ingevuld voor deze bron." };
       }
       const { text } = await fetchWebsiteText(bron.url);
       if (!text.trim()) {

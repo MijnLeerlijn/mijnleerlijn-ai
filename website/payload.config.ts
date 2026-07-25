@@ -21,8 +21,11 @@ import { SupportThreads } from "./payload/collections/SupportThreads";
 import { KnowledgeDrafts } from "./payload/collections/KnowledgeDrafts";
 import { KnowledgeSources } from "./payload/collections/KnowledgeSources";
 import { AssistantConversations } from "./payload/collections/AssistantConversations";
+import { AssistantEvalQuestions } from "./payload/collections/AssistantEvalQuestions";
+import { AssistantEvalRuns } from "./payload/collections/AssistantEvalRuns";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
+import { AssistantEval } from "./payload/globals/AssistantEval";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -93,8 +96,10 @@ export default buildConfig({
     KnowledgeDrafts,
     KnowledgeSources,
     AssistantConversations,
+    AssistantEvalQuestions,
+    AssistantEvalRuns,
   ],
-  globals: [GmailConnection, KnowledgeSearch],
+  globals: [GmailConnection, KnowledgeSearch, AssistantEval],
   editor: lexicalEditor(),
   db: postgresAdapter({
     pool: { connectionString: requireEnv("DATABASE_URI") },

@@ -1,0 +1,230 @@
+Kennisbasis MijnLeerlijn — achtergrondverhaal voor de Helpdesk AI
+Doel van dit document
+Dit document is geen handleiding op zich. Het is de onderliggende logica van MijnLeerlijn: het verhaal achter de software, de filosofie waarom bepaalde keuzes zijn gemaakt, en hoe alle onderdelen (curriculum, leerlingen, statussen, analyse, portfolio) met elkaar samenhangen.
+Gebruik dit document als mentaal model. Als een gebruiker een vraag stelt aan de helpdesk:
+	•	Bepaal eerst welk onderdeel van MijnLeerlijn de vraag raakt (zie de cyclus hieronder).
+	•	Leg kort uit waarom dit onderdeel zo werkt (de "why" — vaak met meerdere mogelijke routes, omdat scholen verschillend werken).
+	•	Duik daarna in de aangeleverde handleidingen ("Werken met MijnLeerlijn", "Starten met MijnLeerlijn — vanuit concrete doelen", en de losse pptx-slides) voor de exacte klik-voor-klik stappen, schermnamen en knoppen.
+	•	Als er meerdere manieren zijn om iets te doen (dit komt vaak voor), noem ze allemaal, leg per manier kort uit wanneer je die kiest, en werk daarna elke manier stapsgewijs uit.
+Een goed antwoord volgt dus altijd de vorm: Waarom kan dit op meerdere manieren → welke manieren zijn er → wanneer kies je welke → hoe doe je het stap voor stap (uit de handleiding).
+
+1. De kernfilosofie: MijnLeerlijn is een middel, geen doel
+MijnLeerlijn is software gebouwd vanuit een onderwijsvisie, niet andersom. De centrale uitspraken die steeds terugkomen in het materiaal:
+	•	"MijnLeerlijn is een middel, geen doel op zich."
+	•	"Er kan veel, er moet niets." MijnLeerlijn ondersteunt de school, niet andersom. Elk team bepaalt zijn eigen koers.
+	•	Software alleen lost niets op — de uitvoering in de praktijk maakt het verschil.
+Dat betekent voor de helpdesk: er is zelden precies één juiste manier om iets te doen. De software biedt vrijheid van inrichting (methode volgen, eigen curriculum, mengvorm; klassikaal, Montessori/Dalton, vrije school, unitonderwijs) en verwacht dat een schoolteam samen keuzes maakt over hoe ze statussen, koppelingen en succescriteria invullen. Wanneer een vraag "wat is de juiste manier" lijkt te zijn, is het antwoord vaak: "dat hangt van jullie teamafspraak af — hier zijn de opties en de afwegingen."
+De DOEL-aanpak (implementatiemethodiek van MijnLeerlijn zelf)
+Dit is niet een schermfunctie maar de begeleidingsmethodiek waarmee scholen worden geholpen:
+	•	D – Doel: wat willen we samen bereiken? Eerst het doel van de school verwoorden.
+	•	O – Organisatie: wat gebeurt er al, wat werkt goed, wat moet anders in de organisatie?
+	•	E – Eigenaarschap: vakmanschap van de leerkracht versterken; inzicht geeft eigenaarschap over curriculum en groei van leerlingen.
+	•	L – Leerlijnen: de borging van gemaakte keuzes; alles moet terug te vinden zijn in de leerlijnen en het aanbod aan leerlingen.
+
+2. De cyclus van MijnLeerlijn — het overkoepelende model
+Alle functionaliteit van MijnLeerlijn hangt aan één cyclus, die letterlijk in de interface en in het merkbeeld terugkomt (het cirkeldiagram met vijf bollen rond het logo):
+Curriculum → Plannen → Volgen → Analyseren → Bijstellen → (terug naar Curriculum)
+Met daarnaast, als centrale "motor" in het midden: Bijstellen, gevoed door twee stromen: Curriculum (past de inhoud/structuur zelf aan) en Aanbod van de leerlingen (past aan wat individuele leerlingen/groepen krijgen aangeboden).
+In een uitgebreidere versie van dezelfde cyclus (de "route naar autonomie", van methodevolger naar curriculumontwerper) staan zes stappen:
+	•	De methode als basis — werken met methode-doelen en -toetsen, status bijhouden (Behaald/Gesloten).
+	•	De cruciale keuze — aan het einde van een periode: neem je niet-behaalde doelen mee naar de volgende periode, of sluit je het doel?
+	•	Periode-analyse — bij het sluiten van een doel een notitie maken waarom; aan het einde van het jaar terugkijken of die keuze goed uitpakte en het curriculum eventueel aanpassen.
+	•	Tags & prioriteiten — onderscheid maken tussen aanbod-doelen (kennismaking, verrijking, keuzevrijheid, niet alles hoeft nu) en cruciale doelen (essentieel voor vervolg, diepgang, prioriteit in planning).
+	•	Eigen succescriteria & materialen — methode-toetsen vervangen door eigen succescriteria (begrip, strategie, automatiseren, memoriseren, flexibel toepassen) en lessen koppelen aan eigen materialen (werkbladen, digitale bronnen, concreet materiaal).
+	•	Volledige autonomie — werken vanuit de eigen visie van de school (bijv. Montessori/ Dalton); de methode is dan nog slechts een bronnenboek.
+De onderste balk van dit model vat de spanning goed samen: "Moeten" = volgen van de methode versus "Sturen" = vormgeven vanuit de eigen visie van de school en de leerlingen. De kern: "De methode is het middel, de leerlijn is het doel — stap voor stap bouwen aan een curriculum dat past bij de visie van de school."
+De helpdesk moet dit besef altijd meenemen: een vraag over "hoe pas ik iets aan" is bijna altijd een vraag over waar in deze cyclus de gebruiker zich bevindt (net klaar met plannen? net een periode geëvalueerd? bezig met leerlingen koppelen?).
+
+3. Bouwstenen van het curriculum
+Het curriculum is het fundament ("het kompas") van waaruit al het andere wordt opgebouwd. De vaste, verplichte volgorde/structuur is:
+	•	Hoofdgebied — bijv. Rekenen, Taal, Wereldoriëntatie.
+	•	Deelgebied — bijv. binnen Rekenen: Getalbegrip, Meten en Meetkunde, Automatiseren.
+	•	Leerdoel — zo concreet mogelijk, bij voorkeur in de ik-vorm (bijv. niet "Tellen tot 50" maar "Ik kan vlot en zonder fouten tellen tot 50"). De ik-vorm maakt doelen inzichtelijk voor leerlingen zelf én maakt het formuleren van succescriteria eenvoudiger.
+	•	(Optioneel) Inhoudspagina / verdiepingspagina — extra uitleg, instructie, materialen, succescriteria per leerdoel. Niet verplicht, wel waardevol voor overdracht tussen collega's.
+	•	Leerjaar — in welk leerjaar het doel structureel aan bod zou moeten komen.
+	•	Periode — het schooljaar wordt verdeeld in logische periodes (bijv. 5 periodes van vakantie tot vakantie); elk doel krijgt een periode waarin het (indicatief) wordt aangeboden.
+	•	Tags (labels) — vrij te configureren labels om doelen te verrijken en later te kunnen filteren/analyseren.
+Belangrijk om aan de gebruiker uit te leggen: de koppeling van een leerdoel aan een leerjaar/periode is een planningsindicatie, geen dwang. Het geeft een tijdlijn van het aanbod, maar een individuele leerling kan er eerder of later aan toe zijn. Dat bepaalt de leerkracht zelf.
+Twee routes om te starten met een curriculum
+	•	Eigen leerdoelen aanleveren via Excel in een vast format (hoofddomein, deelgebied, doel, leerjaar, periode, labels), zelf opgesteld of gebaseerd op een bestaande bron (bijv. het Oranje Boek van Nieuw Leren). Herhaaldoelen hoeven in het begin nog niet te worden opgenomen — die ontwikkel je gaandeweg vanuit de praktijk.
+	•	Starten met een kant-en-klaar curriculum met concrete doelen (bijvoorbeeld gekoppeld aan een methode), waarbij de methode-inhoud vaak al vooraf is ingevuld op de verdiepingspagina's.
+Bij het (her)inladen van een curriculum via Excel: vraag de admin om een export (.xlsx), verwijder ongebruikte hoofdgebieden, laat de rest exact staan, voeg in de kolom "Tags" de gewenste labels toe (komma-gescheiden), en laat de admin opnieuw uploaden — bestaande instellingen blijven behouden, alleen tags worden toegevoegd.
+Tags: waarvoor en hoe
+Tags zijn labels waarmee leerdoelen worden verrijkt, gefilterd en geanalyseerd. Typische toepassingen:
+	•	Aangeven of een doel een aanbodsdoel (mag direct op "behaald" zodra het is aangeboden) of een cruciaal doel is (pas op "behaald" zetten als beheersing echt is aangetoond).
+	•	Een thema koppelen (bijv. Lente, Herfst, Dieren) zodat gerelateerde doelen in één klik terug te vinden zijn.
+	•	Succescriteria vastleggen (bijv. "zonder hulp", "automatiseren", "toepassen in context").
+	•	Signaalwaarden zoals "Ingevuld" (verdiepingspagina is al ingevuld) of "M/E-toets" (bij welke midden-/eindtoets dit doel hoort).
+Tags worden beheerd via categorieën (bijv. "Doeltype", "Thema's", "Succescriteria"), gekoppeld aan een hoofdgebied zodat filteren per vakgebied makkelijk blijft. Nieuwe tags/categorieën aanmaken is doorgaans een taak van de admin.
+
+4. Leerdoelen koppelen aan leerlingen — drie manieren, met redenering
+Dit is een kernvraag die vaak terugkomt in de helpdesk. Er zijn drie manieren om leerdoelen aan leerlingen te koppelen, elk met een andere reden van bestaan:
+4.1 Via hoofdgebiedprofiel + leerjaar/periode ("automatisch meegaan in de leerlijn")
+Waarom deze manier? Geschikt voor leerlijnen met een vast tempo, waarbij je wilt dat per periode automatisch de juiste doelen klaarstaan — zonder dat je zelf iedere periode opnieuw doelen hoeft te selecteren. Let op: niet-behaalde of niet-gesloten doelen worden automatisch meegenomen naar de volgende periode.
+Wat is een hoofdgebiedprofiel? Een profielinstelling per vakgebied die vastlegt welke deelgebieden voor dit profiel actief moeten staan en welke uit mogen blijven (bijv. het profiel "Rekenen 1F" zet alleen de 1F-deelgebieden aan, niet de 1S-deelgebieden). Koppel je een leerling aan zo'n profiel, dan worden automatisch de juiste deelgebieden aangezet, alle andere uitgeschakeld, en worden alleen leerdoelen binnen de actieve deelgebieden klaargezet. Dit voorkomt dat leerlingen onnodig doelen krijgen die niet bij hun niveau/route passen. Het instellen van profielen gebeurt meestal door de schooladmin of de MijnLeerlijn-adviseur; als team spreek je af welke profielen gebruikt worden. Vuistregel: in de basis koppel je iedereen aan 1S/2F, tenzij voor een leerling anders is besloten.
+Stappen (samengevat, zie handleiding voor schermdetails):
+	•	Hoofdgebiedprofielen worden aangemaakt (welke deelgebieden horen bij dit profiel).
+	•	Leerlingen selecteren in het leerlingenoverzicht → "Beheer hoofdgebiedprofielen" → hoofd- gebied kiezen → per leerling (of in één keer voor alle geselecteerden) het juiste profiel toewijzen.
+	•	Bij het (opnieuw) koppelen kies je of eerder gekoppelde doelen actief blijven of worden uitgeschakeld (bijv. bij overstap van profiel 1S naar 1F kun je de oude 1S-doelen sluiten).
+	•	Vervolgens koppel je leerlingen aan het juiste niveau en periode binnen dat profiel (via "Beheer niveau en periode"): dit bepaalt vanaf welk punt in de leerlijn iemand start.
+	•	MijnLeerlijn genereert daarna automatisch de leerdoelen in het Persoonlijk Leerdoelenplan van de leerling, met status "Nieuw" (blauw).
+Voordeel: automatische voortgang per periode, handig voor een cyclisch jaarritme.
+4.2 Via doelensets
+Waarom deze manier? Wordt vaak gebruikt bij kleuters, thematisch werken of zelfstandig werken, waar je zelf volledige regie wilt houden over welke doelen wanneer worden aangeboden — zonder dat het systeem automatisch nieuwe doelen per periode toevoegt.
+Hoe werkt het?
+	•	Kies leerdoelen uit het gehele curriculum en bundel ze in een doelenset.
+	•	Koppel deze set (handmatig) aan één of meerdere leerlingen tegelijk.
+Voordeel: grote flexibiliteit, doelen komen niet automatisch bij, volledige regie blijft bij de leerkracht. Aandachtspunt: het risico is dat het tempo niet vanzelf wordt bewaakt — er kan te weinig aan bod komen binnen een bepaalde periode als je niet zelf actief blijft plannen.
+4.3 Handmatig koppelen van losse doelen
+Waarom deze manier? Ideaal voor maatwerk, differentiatie of individuele leerroutes, bijvoorbeeld voor een leerling met een eigen leerlijn (ontwikkelingsperspectief) of specifieke onderwijsbehoefte.
+Hoe werkt het?
+	•	Selecteer handmatig één of meerdere leerdoelen die passen bij de onderwijsbehoefte.
+	•	Koppel deze direct aan één of meerdere leerlingen.
+Voordeel: gericht inspelen op individuele onderwijsbehoeften of verrijking, zonder de omweg via profielen of sets.
+Wat alle drie de manieren gemeen hebben
+In alle gevallen komt een gekoppeld leerdoel terecht in het Persoonlijk Leerdoelenplan van de leerling met status "Nieuw" (blauw). Vanaf dat moment volg je, werk je bij en analyseer je het doel op dezelfde manier, ongeacht hoe het gekoppeld is.
+Voor de helpdesk-AI: als iemand vraagt "hoe koppel ik doelen aan leerlingen", geef dus altijd eerst deze drie routes met hun "waarom", laat de gebruiker (of context) bepalen welke het beste past, en werk daarna de gekozen route (of alle drie) stap voor stap uit met de exacte schermnamen/knoppen uit de handleiding "Starten met MijnLeerlijn" (pagina's 10 t/m 16) en de losse pptx-slides ("Leerdoelen koppelen aan leerlingen").
+
+5. Statussen: het hart van het volgsysteem
+MijnLeerlijn werkt met statussen om per leerling per leerdoel bij te houden waar iemand staat. Statussen maken voortgang zichtbaar, analyseerbaar en bijstuurbaar. Een school heeft grote vrijheid in het invullen van de betekenis van statussen, met uitzondering van een paar kleuren die een vaste technische werking hebben.
+Kleur
+Naam (standaard)
+Betekenis / technisch gedrag
+🔵 Blauw
+Nieuw
+Automatische status zodra een doel aan een leerling wordt gekoppeld: het doel is gekoppeld maar nog niet aangeboden.
+🟠 Oranje
+Oud / zelf te benoemen
+Kan een technische functie hebben: als bij het hoofdgebied de instelling aanstaat, verandert een nog-blauw doel bij een periodewissel automatisch naar oranje (signaal: dit doel staat al langer open, komt uit een vorige periode). Staat de instelling uit, dan gedraagt oranje zich als een gewone vrije status (zoals geel/paars).
+🟡 Geel / 🟣 Paars
+Vrij te benoemen
+Geen technische functie. Een school kan deze zelf invullen, bijv. Geel = "doel geïntroduceerd", Paars = "doel wordt zelfstandig geoefend". Veranderen alleen als de gebruiker dit zelf doet.
+🟢 Groen
+Behaald
+Vaste status: het leerdoel is aantoonbaar beheerst. Zodra een doel op "Behaald" wordt gezet, verhuist het automatisch naar het portfolio van de leerling.
+🔴 Rood
+Gesloten
+Het doel is afgesloten zonder dat het behaald is (bijv. bij vertrek van een leerling of einde schooljaar) — en dat is een bewuste, oké keuze.
+⚫ Zwart
+Komend
+Doelen die al klaarstaan voor een volgende periode (bij gebruik van periodeplanning) maar nog niet actief zijn.
+⚪ Grijs
+Inactief
+Het doel is (nog) niet aan de leerling gekoppeld; deze status hoeft niet actief beheerd te worden.
+Waarom deze opzet? De status "Nieuw" en "Behaald" zijn helder, maar wat er tussenin gebeurt bepaalt een team zelf — dit vraagt om een expliciete teamafspraak: welke tussenstappen willen we zien, en hoe gebruiken we geel/paars/oranje om dat inzichtelijk te maken? Bespreek dit met de MijnLeerlijn-adviseur.
+Een leerdoel is "actief" zolang de status blauw (nieuw), geel, paars of oranje is. Doelen op groen (behaald) of rood (gesloten) verdwijnen uit het actieve overzicht (maar zijn terug te vinden door de status-filter aan te passen).
+Waarschuwing die vaak relevant is: als statussen niet actief worden bijgehouden, blijven doelen "open" staan, wat het overzicht vervuilt en onduidelijkheid geeft over het werkelijke aanbod. Tip uit de handleiding: zorg dat op vrijdag alles is bijgewerkt, zodat op maandag een actueel overzicht (eventueel geprint) klaarligt.
+Betekenis geven aan "Behaald"
+Omdat een school met een eigen curriculum werkt, is het extra belangrijk dat "Behaald" ook echt iets betekent — je zet doelen niet zomaar op groen. Aanbevolen aanpak in drie stappen:
+	•	Tag het leerdoeltype — bijv. Begrip, Ontwikkelen van procedures, Automatiseren, Memoriseren, Flexibel toepassen.
+	•	Bepaal wat je wil zien — bijv. bij automatiseren: hoeveel sommen in hoeveel tijd?
+	•	Leg vast hoe je toetst — een toets, observatie of opdracht.
+Noteer op de inhoudspagina van het leerdoel waarom en waarmee het doel op behaald is gezet (naam + datum erbij, zodat duidelijk blijft wie de keuze maakte en wanneer).
+
+6. Waar je statussen beheert: overzichten
+Er zijn twee hoofdvormen van overzicht om statussen in bulk te beheren:
+	•	Groepsoverzicht leerdoelen — per hoofdgebied zie je welke deelgebieden actief zijn, hoeveel leerdoelen gekoppeld zijn en bij hoeveel leerlingen. Je kunt per leerdoel (via het info-bolletje) zien hoeveel leerlingen het doel nog actief hebben, en via het oogje naar het detail-statusoverzicht om per leerling de status te wijzigen. Hier kun je filteren (op status, niveau, leerjaar, periode, tags) en in bulk leerlingen/doelen selecteren om in één actie de status aan te passen (bijv. van Nieuw naar Behaald voor een hele groep).
+	•	Groepsoverzicht statussen — een leerling-centrisch overzicht: per leerling zie je het totaal aantal doelen per statuskleur. Hier kun je filteren op vakgebied en zelfs eigen toetsresultaten (LVS-score, bijv. M5) handmatig invullen om te vergelijken met behaalde doelen (zie hoofdstuk 8, LVS-analyse).
+Beide overzichten zijn te downloaden/printen, zodat een leerkracht ze op papier bij zich kan houden en handmatig kan bijwerken.
+
+7. Plannen: de periodeplanner
+De periodeplanner is het instrument om het aanbod concreet in de tijd te zetten:
+	•	Maak een eigen dag- of weeksjabloon.
+	•	Sleep doelen naar een specifieke dag.
+	•	Zet notities bij een les of dag.
+	•	Een logboek houdt notities en statussen automatisch bij.
+Dit sluit aan op de "Plannen"-stap van de cyclus: nadat het curriculum en de koppeling aan leerlingen staan, bepaal je wanneer welk doel aan bod komt.
+
+8. Analyseren en bijstellen
+Analyseren is geen extra taak, maar een cruciale, structurele stap in cyclisch en doelgericht onderwijs — vaste onderdeel aan het einde van elke periode.
+8.1 Periode-analyse (terugblikken én vooruitkijken)
+Aan het einde van een periode analyseer je:
+	•	Welke doelen zijn behaald?
+	•	Welke doelen zijn nog niet behaald of afgesloten, en waarom niet (geen tijd, geen instructie, niet getoetst, te moeilijk)?
+	•	Zijn dit cruciale doelen die mee moeten naar de volgende periode, of aanbodsdoelen die kunnen vervallen?
+	•	Welke nieuwe doelen komen in de volgende periode beschikbaar?
+Belangrijk onderscheid dat de helpdesk altijd moet maken:
+	•	Aanbod aanpassen = een aanpassing voor een specifieke leerling of groep (bijv. een sterke groep die sneller mag).
+	•	Curriculum aanpassen = een structurele aanpassing omdat blijkt dat de doelen, volgorde of inhoud van de leerlijn zelf niet klopt.
+Deze twee vragen los van elkaar behandelen voorkomt dat een incidentele leerling-uitzondering het hele curriculum verandert, of andersom.
+8.2 LVS-analyse (toetsresultaten in perspectief)
+Toetsen zeggen op zichzelf niet alles — pas in relatie tot het aanbod krijgen cijfers betekenis. In het groepsoverzicht statussen kun je (na het kiezen van een vakgebied) een "Huidige toets" invullen (bijv. M5) met LVS-scores, om te vergelijken:
+	•	Komen behaalde leerdoelen overeen met de LVS-score?
+	•	Scoort een leerling laag terwijl veel doelen "behaald" staan? → mogelijk liggen de succescriteria te laag.
+	•	Scoort een leerling hoog terwijl veel doelen nog niet behaald zijn? → toont mogelijk beheersing op een andere manier dan getoetst.
+	•	Zijn er doelen getoetst die nog niet zijn aangeboden?
+	•	Is dit patroon zichtbaar bij één leerling, of bij een hele groep/jaargroep (signaal voor curriculumherziening)?
+8.3 Vastleggen van keuzes
+Gebruik de notitie-functie (op leerling-, deelgebied- of leerdoelniveau, en op de inhoudspagina van een leerdoel) om te onderbouwen waarom bepaalde doelen zijn blijven staan, wat ermee gebeurt, en welke interventies nodig zijn. Deze notities zijn waardevolle overdrachtsinformatie voor collega's en helpen bij het borgen van teamkennis. Zet er altijd naam en datum bij.
+Aanbevolen: een gedeeld online document per groep/leerdoel waarin het team signalen verzamelt (doel sluit niet aan bij de praktijk, doel is te groot/onduidelijk, aanbod past niet bij planning, succescriteria zijn niet scherp, aanpassingen vanuit ervaring). Dit wordt tijdens de periode-analyse besproken en verwerkt.
+
+9. Borging van teamkennis en curriculumkwaliteit
+Borgen is niet alleen vastleggen, maar een proces van samen leren en verbeteren. Wat een team kan vastleggen in MijnLeerlijn (op groeps-, leerjaar- of schoolniveau):
+	•	Leerlijn — welke doelen bieden we aan, wanneer en waarom (via de inhoudspagina per leerdoel: aanpak, materialen, toetsvorm — methode-inhoud óf eigen bronnen).
+	•	Succescriteria — hoe weten we of een doel behaald is.
+	•	Analyseresultaten — wat viel op, wat nemen we mee naar de volgende periode.
+	•	Aanbodaanpassingen — hoe passen we het onderwijs aan op basis van inzichten.
+	•	Reflecties — wat werkte goed, wat willen we anders.
+Praktisch: plan vaste reflectiemomenten per periode, gebruik teamoverleg niet alleen voor rapportage maar als leermoment, gebruik de notitiefunctie om keuzes direct vast te leggen, en werk met een gezamenlijke doelenstructuur zodat alle leerkrachten vanuit dezelfde basis werken.
+
+10. Portfolio en eigenaarschap bij leerlingen
+Leerlingen leren meer wanneer ze inzicht hebben in hun eigen ontwikkeling. Elke leerling heeft een eigen digitale omgeving (MijnPortfolio) waarin actieve leerdoelen automatisch worden verzameld. Zodra een doel op "Behaald" wordt gezet, verhuist het automatisch naar het portfolio, waar ook bewijzen van leren kunnen worden toegevoegd (foto, werkstuk, toets, observatie).
+Onderdelen van het portfolio/leerdoelenplan:
+	•	"Dit ben ik" / "Dit ben jij" — persoonlijke informatie, foto's, groei-leerlijnen, tekst, ruimte voor leerling, leraar én ouder.
+	•	Persoonlijk Leerdoelenplan (PLP) — geprint en/of digitaal; leerlingen kunnen online zelf aangeven "ik denk dat ik het behaald heb", "ik heb hulp nodig", hoe vaak ze zelfstandig hebben gewerkt, en er is een chat-functie.
+	•	Leerdoelen kunnen worden voorzien van een "Prioriteit"-markering.
+Een school bepaalt zelf welk bewijsmateriaal wordt toegelaten, hoe zichtbaar het portfolio is voor leerling en ouders, en welke reflectievragen worden toegevoegd. Toepassingen: leerlingen laten meekijken in hun leerdoelenplan, voortgang bespreken in kindgesprekken, doelen als leidraad gebruiken voor oudergesprekken.
+
+11. Favorieten, notities en het dashboard
+	•	MijnDashboard toont persoonlijke notities, favorieten (MijnFavorieten) en berichten (MijnBerichten — laatstgenoemde nog niet altijd van toepassing). Het hoofdmenu is in/uit-klapbaar.
+	•	Favorieten aanmaken: op vrijwel elke pagina staat een link-icoon. Klik erop, geef de favoriet een naam, klik op Opslaan. De favoriet verschijnt daarna direct in het menu onder MijnFavorieten, voor snelle toegang tot bijvoorbeeld een specifiek groepsoverzicht.
+	•	Notities per leerdoel/leerling en per deelgebied/leerling: naast statussen kun je vrije tekst vastleggen (bijv. afspraken, leerproces-observaties) op leerling- of hoofdgebiedniveau, zichtbaar met wie het geschreven heeft en wanneer.
+
+12. Admin-rechten
+Een school kan bepaalde leerkrachten adminrechten geven, waarmee toegang ontstaat tot extra instellingen en beheer die niet in de standaard leerkrachtweergave zitten.
+	•	De eerste admin wordt aangemaakt door de MijnLeerlijn-adviseur.
+	•	Eenmaal admin: via het eigen profiel het schuifje "Adminweergave inschakelen" aanzetten; de omgeving herlaadt met een uitgebreider menu.
+	•	Andere collega's admin maken: via "Leerkrachten"/"Leraren" → naam van de collega → schuifje "Heeft adminrechten?" aanzetten.
+	•	Adminrechten geven veel mogelijkheden: instellingen wijzigen, hoofdgebiedprofielen aanmaken, leerdoelen/structuren aanpassen, curriculumgegevens verwijderen, benaming van statussen aanpassen, en meer. Gebruik deze rol verantwoordelijk en schakel de adminweergave weer uit als je klaar bent.
+
+13. Eenduidige taal — het begrippenkader
+Onderwijstermen worden in de praktijk vaak door elkaar gebruikt. MijnLeerlijn hanteert een vaste begrippenset, en raadt teams aan deze samen te bespreken om misverstanden te voorkomen. Gebruik deze definities als de helpdesk-AI om vragen te verduidelijken of een gebruiker te helpen de juiste term te vinden:
+Vanuit de wet/kader:
+	•	Kerndoelen — brede, landelijke leerdoelen per vakgebied (aanbodsdoelen, beheersingsdoelen, ervaringsdoelen). Kerndoelen gaan over de hoofdlijnen; scholen hebben zelf de vrijheid om te bepalen hóe kinderen de doelen halen.
+	•	Referentieniveaus — wat kinderen minimaal moeten kennen/kunnen op het gebied van taal en rekenen. 1F zou ieder kind minimaal moeten beheersen; 2F/1S is het streefniveau voor alle leerlingen.
+	•	SLO / Tussendoelen — bij de kerndoelen voor het primair onderwijs zijn tussendoelen geformuleerd waaruit leerlijnen kunnen worden afgeleid; uitgewerkte voorbeelden van de wettelijke doelen.
+Doelen:
+	•	Leerlijnen — de opbouw van leerdoelen binnen een vakgebied, over meerdere leerjaren.
+	•	Leerdoelen — concrete doelen per leerjaar of periode binnen een vakgebied; vaak niet in één les te behalen.
+	•	Lesdoelen — wat een leerling aan het einde van één les kan.
+Aanbod:
+	•	Curriculum — het totale onderwijsaanbod van een school met inhoud, afgestemd op kerndoelen, leerlijnen en leerlingpopulatie.
+	•	Jaar- en weekplanning — wanneer en hoe leerdoelen in een schooljaar worden aangeboden.
+	•	Leeractiviteiten — alle instructies, opdrachten en werkvormen om de leerdoelen te bereiken.
+Volgen van de ontwikkeling:
+	•	Succescriteria — criteria waarmee wordt vastgesteld of een leerling een leerdoel heeft behaald.
+	•	Formatief evalueren — via observeren, toetsen of andere evaluatievormen vaststellen of een leerdoel is behaald, met als doel te bepalen wat de volgende stap kan zijn.
+Hoe MijnLeerlijn dit samenbrengt (de eigen "school"-regel in het model): een curriculum opgebouwd uit leerlijnen met concrete leerdoelen; deze doelen bevatten succescriteria zodat bepaald kan worden of een doel behaald is; bij het evalueren wordt gekeken op kind-, groeps- én schoolniveau of aanpassingen in het aanbod nodig zijn.
+
+14. De leerdoelencyclus als praktisch werkritme
+Naast de grote "kompas"-cyclus (hoofdstuk 2) is er een praktisch vijfstappen-werkritme dat een leerkracht per periode doorloopt:
+	•	Plannen — welke doelen worden in de volgende periode aangeboden? Gebaseerd op het curriculum en eerdere analyses.
+	•	Uitvoeren — instructie geven, leerlingen laten oefenen, differentiëren waar nodig.
+	•	Volgen — statussen bijhouden in MijnLeerlijn, zodat direct zicht bestaat op waar elke leerling staat.
+	•	Evalueren — aan het einde van de periode terugkijken: welke doelen behaald, welke niet, wat zegt dit over het aanbod en het curriculum.
+	•	Bijstellen — keuzes maken: doelen meenemen, succescriteria aanpassen, curriculum wijzigen. Hierna begint de cyclus opnieuw met plannen.
+
+15. Praktische randzaken (account, inloggen, helpdesk zelf)
+	•	Nieuw account: bij aanmaak wordt een e-mail verstuurd (check ook de spammap) met wachtwoord en de unieke inlog-link van de school.
+	•	Wachtwoord vergeten: via "Wachtwoord vergeten?" op het inlogscherm van de eigen schoolomgeving (let op dat dit altijd via een inlogscherm gaat i.v.m. beveiliging); een e-mail met resetlink volgt.
+	•	Wachtwoord aanpassen: via het eigen profiel (potloodje), naar beneden scrollen, twee keer hetzelfde wachtwoord invullen, opslaan.
+	•	Zelf hulp zoeken: de online Helpdesk bevat stap-voor-stap handleidingen (o.a. Starten met MijnLeerlijn, Werken vanuit een groep, Leerling-onderdelen) mét filmpjes. Is het antwoord niet te vinden, dan kan het Helpdesk-formulier worden ingevuld (naam, e-mail, school, type vraag, onderwerp, omschrijving) — reactie doorgaans binnen 1 werkdag. Hoe specifieker de vraag (leerjaar, schooltype, functie in MijnLeerlijn), hoe sneller en gerichter geholpen kan worden.
+
+16. Hoe de helpdesk-AI dit document moet gebruiken
+	•	Herken het type vraag: gaat het over curriculum opbouwen, leerlingen koppelen, statussen bijhouden, analyseren, portfolio, admin, of taalgebruik/begrippen? Gebruik de hoofdstukindeling hierboven als routeringskaart.
+	•	Leg eerst de "waarom" uit — vaak zijn er meerdere legitieme routes (zoals bij het koppelen van doelen aan leerlingen: profiel/leerjaar-periode, doelenset, of handmatig). Noem ze allemaal met een korte reden wanneer je welke kiest, tenzij de vraag duidelijk over één specifieke route gaat.
+	•	Werk daarna de exacte stappen uit aan de hand van de meegeleverde handleidingen ("Starten met MijnLeerlijn — Werken vanuit concrete doelen" voor schermdetails en klik-stappen; "Werken met MijnLeerlijn — Software met een visie" voor de onderliggende redenering per hoofdstuk; de losse pptx-slides voor beknopte visuele samenvattingen). Gebruik exacte schermnamen en knoplabels uit die documenten (bijv. "Beheer niveau en periode", "Groepsoverzicht leerdoelen", "Genereer hoofdgebiedoverzicht").
+	•	Wees alert op technisch vaste versus vrij instelbare onderdelen — bijvoorbeeld: de kleuren blauw/groen hebben vaste technische betekenis, geel/paars zijn vrij, oranje kan beide zijn afhankelijk van een instelling per hoofdgebied. Verwar dit niet.
+	•	Herinner gebruikers eraan dat teamafspraken leidend zijn waar de software vrijheid biedt (statusbetekenis, wel/niet doelen meenemen, succescriteria) — verwijs bij twijfel naar overleg met het team of de MijnLeerlijn-adviseur, in plaats van zelf een "harde regel" te verzinnen die er niet is.
+	•	Sluit, waar relevant, af met een verwijzing naar de Helpdesk (formulier) voor schoolspecifieke situaties die de documentatie niet dekt.
+

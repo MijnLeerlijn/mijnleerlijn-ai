@@ -1,5 +1,5 @@
 import type { Payload } from "payload";
-import type { SearchHit } from "@/lib/embeddings/similarity-search";
+import type { SearchHit, KnowledgeSourcePriority, BronRol } from "@/lib/embeddings/similarity-search";
 
 // Zet de treffers van lib/embeddings/similarity-search.ts om in
 // contextblokken voor het taalmodel + weergavemetadata voor de
@@ -25,7 +25,17 @@ export interface ContextItem {
   refCollection: "knowledge-sources" | "knowledge-drafts" | "articles";
   refId: number;
   url: string;
+  priority?: KnowledgeSourcePriority;
+  bronrol?: BronRol;
 }
+
+const BRONROL_LABEL: Record<BronRol, string> = {
+  "release-note": "release note",
+  manual: "handleiding",
+  "background-model": "achtergrondmodel",
+  faq: "FAQ",
+  support: "support (niet definitief)",
+};
 
 const BRON_TYPE_LABEL: Record<string, string> = {
   pdf: "Handleiding",
@@ -98,6 +108,8 @@ export async function buildContext(payload: Payload, hits: SearchHit[]): Promise
           refCollection: "knowledge-sources",
           refId: bron.id,
           url: `/admin/collections/knowledge-sources/${bron.id}`,
+          priority: hit.priority,
+          bronrol: hit.bronrol,
         });
       } else {
         items.push({
@@ -110,6 +122,8 @@ export async function buildContext(payload: Payload, hits: SearchHit[]): Promise
           refCollection: "knowledge-sources",
           refId: bron.id,
           url: `/admin/collections/knowledge-sources/${bron.id}`,
+          priority: hit.priority,
+          bronrol: hit.bronrol,
         });
       }
     } else if (hit.type === "knowledge-draft") {
@@ -125,6 +139,7 @@ export async function buildContext(payload: Payload, hits: SearchHit[]): Promise
         refCollection: "knowledge-drafts",
         refId: draft.id,
         url: `/admin/collections/knowledge-drafts/${draft.id}`,
+        bronrol: hit.bronrol,
       });
     } else if (hit.type === "article") {
       const artikel = articles.docs.find((d) => d.id === hit.id);
@@ -139,6 +154,7 @@ export async function buildContext(payload: Payload, hits: SearchHit[]): Promise
         refCollection: "articles",
         refId: artikel.id,
         url: `/artikel/${artikel.slug}`,
+        bronrol: hit.bronrol,
       });
     }
   }
@@ -146,11 +162,22 @@ export async function buildContext(payload: Payload, hits: SearchHit[]): Promise
   return items;
 }
 
+/**
+ * De bronrol (en, indien van toepassing, de prioriteit) staat expliciet in
+ * de header van elk contextblok — zodat het taalmodel zelf de
+ * conflictregels uit de systeeminstructie (lib/assistant/answer.ts) kan
+ * toepassen: "welke bron(nen) zijn hier het meest gezaghebbend voor DEZE
+ * vraag" is een contextafhankelijke afweging (zie het commentaar bij
+ * BronRol in lib/embeddings/similarity-search.ts) die het model met deze
+ * expliciete labels kan maken, niet iets dat hier als vaste sorteervolgorde
+ * afgedwongen kan worden.
+ */
 export function contextItemsNaarPrompt(items: ContextItem[]): string {
   return items
-    .map(
-      (item) =>
-        `[Bron ${item.index}: ${item.label} "${item.title}"${item.chapterTitle ? ` — ${item.chapterTitle}` : ""}]\n${item.text}`
-    )
+    .map((item) => {
+      const rolLabel = item.bronrol ? BRONROL_LABEL[item.bronrol] : undefined;
+      const metadata = [rolLabel, item.priority].filter(Boolean).join(", ");
+      return `[Bron ${item.index}: ${item.label} "${item.title}"${item.chapterTitle ? ` — ${item.chapterTitle}` : ""}${metadata ? ` (${metadata})` : ""}]\n${item.text}`;
+    })
     .join("\n\n");
 }

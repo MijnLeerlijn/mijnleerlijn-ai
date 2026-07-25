@@ -81,6 +81,8 @@ export interface Config {
     'knowledge-drafts': KnowledgeDraft;
     'knowledge-sources': KnowledgeSource;
     'assistant-conversations': AssistantConversation;
+    'assistant-eval-questions': AssistantEvalQuestion;
+    'assistant-eval-runs': AssistantEvalRun;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
     'payload-locked-documents': PayloadLockedDocument;
@@ -103,6 +105,8 @@ export interface Config {
     'knowledge-drafts': KnowledgeDraftsSelect<false> | KnowledgeDraftsSelect<true>;
     'knowledge-sources': KnowledgeSourcesSelect<false> | KnowledgeSourcesSelect<true>;
     'assistant-conversations': AssistantConversationsSelect<false> | AssistantConversationsSelect<true>;
+    'assistant-eval-questions': AssistantEvalQuestionsSelect<false> | AssistantEvalQuestionsSelect<true>;
+    'assistant-eval-runs': AssistantEvalRunsSelect<false> | AssistantEvalRunsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -116,10 +120,12 @@ export interface Config {
   globals: {
     'gmail-connection': GmailConnection;
     'knowledge-search': KnowledgeSearch;
+    'assistant-eval': AssistantEval;
   };
   globalsSelect: {
     'gmail-connection': GmailConnectionSelect<false> | GmailConnectionSelect<true>;
     'knowledge-search': KnowledgeSearchSelect<false> | KnowledgeSearchSelect<true>;
+    'assistant-eval': AssistantEvalSelect<false> | AssistantEvalSelect<true>;
   };
   locale: null;
   widgets: {
@@ -716,9 +722,21 @@ export interface KnowledgeSource {
    */
   file?: (number | null) | Media;
   /**
-   * Voor alle typen behalve PDF: link naar de video, website, release notes, handleiding, FAQ of het interne document.
+   * Voor alle typen behalve PDF: link naar de video, website, release notes, handleiding, FAQ of het interne document. Alternatief voor 'Directe inhoud' hieronder — vul één van beide in.
    */
   url?: string | null;
+  /**
+   * Alternatief voor URL: tekst die niet online staat rechtstreeks plakken (bv. een intern achtergronddocument). Gevuld = deze tekst wordt gebruikt, er wordt dan niet van de URL gefetcht.
+   */
+  content?: string | null;
+  /**
+   * Rol van deze bron bij het oplossen van een conflict tussen bronnen. Leeg = automatisch afgeleid van het type. Zie het commentaar in lib/embeddings/similarity-search.ts voor de precieze conflictvolgorde.
+   */
+  purpose?: ('background-model' | 'manual' | 'release-note' | 'faq' | 'support') | null;
+  /**
+   * Leeg = centraal, relevant voor alle varianten (standaard). Ingevuld = deze bron is uitsluitend bedoeld voor de gekozen variant(en). Nog niet gebruikt door de retrieval zelf — puur classificatie, zie het commentaar hiernaast.
+   */
+  variantContext?: (number | Variant)[] | null;
   /**
    * Alleen voor automatisch gesynchroniseerde bronnen — zie lib/knowledge/sync-manuals.ts.
    */
@@ -838,6 +856,100 @@ export interface AssistantConversation {
   feedbackRating: 'geen' | 'nuttig' | 'niet_nuttig';
   feedbackMissing?: string | null;
   user: number | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Vaste testvragenset voor de chatbot-evaluatieomgeving (/admin/globals/assistant-eval). Zie payload/seed/eval-questions.ts.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assistant-eval-questions".
+ */
+export interface AssistantEvalQuestion {
+  id: number;
+  question: string;
+  /**
+   * Bepaalt waarop deze vraag bedoeld is te testen — zie het commentaar bovenin payload/seed/eval-questions.ts voor de precieze definities.
+   */
+  category: 'feitelijk' | 'stap_voor_stap' | 'meerdere_routes' | 'onduidelijk' | 'onvoldoende_bron';
+  /**
+   * Optioneel: waarom deze vraag representatief is, of wat er lastig aan is.
+   */
+  notes?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Uitkomsten van chatbot-evaluatieruns (/admin/globals/assistant-eval) — diagnostiek + handmatige beoordeling per testvraag.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assistant-eval-runs".
+ */
+export interface AssistantEvalRun {
+  id: number;
+  /**
+   * Leeg bij een losse, handmatig ingevoerde testvraag.
+   */
+  evalQuestion?: (number | null) | AssistantEvalQuestion;
+  /**
+   * Snapshot van de daadwerkelijk gebruikte vraagtekst.
+   */
+  question: string;
+  /**
+   * Zie lib/assistant/rewrite-query.ts.
+   */
+  rewrittenQuery: string;
+  /**
+   * "core", "core+secondary" of "core+secondary+reference" — zie searchKnowledgePhased.
+   */
+  retrievalFase: string;
+  /**
+   * Alles wat searchKnowledgePhased teruggaf, vóór antwoordgeneratie.
+   */
+  hits?:
+    | {
+        type: string;
+        refId: number;
+        title: string;
+        chapterTitle?: string | null;
+        similarity: number;
+        priority?: string | null;
+        bronrol?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * Letterlijke prompt-context — zie contextItemsNaarPrompt().
+   */
+  contextText: string;
+  hasAnswer: boolean;
+  answer: string;
+  reasoning?: string | null;
+  confidence: number;
+  /**
+   * Leeg bij 'geen antwoord' — zelfde als in de echte assistent-UI.
+   */
+  sources?:
+    | {
+        label: string;
+        refCollection: string;
+        refId: number;
+        title: string;
+        chapterTitle?: string | null;
+        similarity: number;
+        url: string;
+        id?: string | null;
+      }[]
+    | null;
+  model?: string | null;
+  /**
+   * Handmatige beoordeling — wordt nooit automatisch bepaald.
+   */
+  verdict?: ('nog_niet_beoordeeld' | 'correct' | 'gedeeltelijk_correct' | 'incorrect') | null;
+  /**
+   * Vrij tekstveld: wat klopte niet, wat ontbrak, waarom deze beoordeling.
+   */
+  opmerkingen?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1012,6 +1124,14 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'assistant-conversations';
         value: number | AssistantConversation;
+      } | null)
+    | ({
+        relationTo: 'assistant-eval-questions';
+        value: number | AssistantEvalQuestion;
+      } | null)
+    | ({
+        relationTo: 'assistant-eval-runs';
+        value: number | AssistantEvalRun;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -1446,6 +1566,9 @@ export interface KnowledgeSourcesSelect<T extends boolean = true> {
   priority?: T;
   file?: T;
   url?: T;
+  content?: T;
+  purpose?: T;
+  variantContext?: T;
   sourceFilePath?: T;
   sourceFileHash?: T;
   description?: T;
@@ -1507,6 +1630,61 @@ export interface AssistantConversationsSelect<T extends boolean = true> {
   feedbackRating?: T;
   feedbackMissing?: T;
   user?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assistant-eval-questions_select".
+ */
+export interface AssistantEvalQuestionsSelect<T extends boolean = true> {
+  question?: T;
+  category?: T;
+  notes?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assistant-eval-runs_select".
+ */
+export interface AssistantEvalRunsSelect<T extends boolean = true> {
+  evalQuestion?: T;
+  question?: T;
+  rewrittenQuery?: T;
+  retrievalFase?: T;
+  hits?:
+    | T
+    | {
+        type?: T;
+        refId?: T;
+        title?: T;
+        chapterTitle?: T;
+        similarity?: T;
+        priority?: T;
+        bronrol?: T;
+        id?: T;
+      };
+  contextText?: T;
+  hasAnswer?: T;
+  answer?: T;
+  reasoning?: T;
+  confidence?: T;
+  sources?:
+    | T
+    | {
+        label?: T;
+        refCollection?: T;
+        refId?: T;
+        title?: T;
+        chapterTitle?: T;
+        similarity?: T;
+        url?: T;
+        id?: T;
+      };
+  model?: T;
+  verdict?: T;
+  opmerkingen?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1623,6 +1801,17 @@ export interface KnowledgeSearch {
   createdAt?: string | null;
 }
 /**
+ * Test de AI-assistent tegen de vaste vragenset (40 vragen) of een losse vraag, met volledige retrieval-diagnostiek en handmatige beoordeling.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assistant-eval".
+ */
+export interface AssistantEval {
+  id: number;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "gmail-connection_select".
  */
@@ -1643,6 +1832,15 @@ export interface GmailConnectionSelect<T extends boolean = true> {
  * via the `definition` "knowledge-search_select".
  */
 export interface KnowledgeSearchSelect<T extends boolean = true> {
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assistant-eval_select".
+ */
+export interface AssistantEvalSelect<T extends boolean = true> {
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

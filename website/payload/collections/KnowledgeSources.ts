@@ -135,8 +135,68 @@ export const KnowledgeSources: CollectionConfig = {
       label: "URL",
       admin: {
         description:
-          "Voor alle typen behalve PDF: link naar de video, website, release notes, handleiding, FAQ of het interne document.",
+          "Voor alle typen behalve PDF: link naar de video, website, release notes, handleiding, FAQ of het interne document. Alternatief voor 'Directe inhoud' hieronder — vul één van beide in.",
         condition: (_d, s) => s?.type !== "pdf",
+      },
+    },
+    {
+      // Alternatief voor `url` bij bronnen die niet online staan — met name
+      // interne achtergronddocumenten (zie lib/knowledge/index-source.ts: als
+      // dit veld gevuld is, wordt de tekst rechtstreeks gebruikt en wordt er
+      // NIET van een URL gefetcht). Bewust géén los "docx-parser"-onderdeel
+      // toegevoegd aan de indexeerpijplijn: brontekst uit Word/andere
+      // formaten wordt vooraf (net als bij payload/import-handleidingen/data/)
+      // omgezet naar platte tekst en hier geplakt, of het brondocument wordt
+      // als PDF geüpload via het type "PDF" hierboven.
+      name: "content",
+      type: "textarea",
+      label: "Directe inhoud",
+      admin: {
+        description:
+          "Alternatief voor URL: tekst die niet online staat rechtstreeks plakken (bv. een intern achtergronddocument). Gevuld = deze tekst wordt gebruikt, er wordt dan niet van de URL gefetcht.",
+        condition: (_d, s) => s?.type !== "pdf" && s?.type !== "video",
+      },
+    },
+    {
+      // "Bronrol" voor de AI-assistent — ANDERS dan `type` hierboven: `type`
+      // is de redactionele categorie/hoe-de-inhoud-wordt-opgehaald, `purpose`
+      // is de rol die deze bron speelt bij het oplossen van een conflict
+      // tussen bronnen (zie lib/embeddings/similarity-search.ts,
+      // bepaalBronrol()). Optioneel: leeg = automatisch afgeleid van `type`
+      // (handleiding/pdf/website → manual, release_notes → release-note,
+      // faq → faq, intern_document → background-model). Alleen invullen om
+      // die automatische afleiding te overschrijven.
+      name: "purpose",
+      type: "select",
+      label: "Bronrol (purpose)",
+      options: [
+        { label: "Achtergrondmodel (visie/samenhang)", value: "background-model" },
+        { label: "Handleiding (concrete stappen)", value: "manual" },
+        { label: "Release note (actuele wijziging)", value: "release-note" },
+        { label: "FAQ", value: "faq" },
+        { label: "Support (uit supportthreads)", value: "support" },
+      ],
+      admin: {
+        description:
+          "Rol van deze bron bij het oplossen van een conflict tussen bronnen. Leeg = automatisch afgeleid van het type. Zie het commentaar in lib/embeddings/similarity-search.ts voor de precieze conflictvolgorde.",
+      },
+    },
+    {
+      // Zelfde patroon als Articles.ts's `variantContext` — leeg/central is
+      // de standaard voor vrijwel alle huidige kennisbronnen (er is nog geen
+      // écht werkende tweede variant, zie docs/TODO.md). Uitsluitend metadata
+      // hier: er is BEWUST geen variant-gefilterde retrieval-logica gebouwd
+      // (buiten scope van deze opdracht, "geen nieuwe varianten") — dit veld
+      // legt alleen vast welke bronnen straks, zodra dat wél gebouwd wordt,
+      // als centraal/variant-specifiek geteld moeten worden.
+      name: "variantContext",
+      type: "relationship",
+      relationTo: "variants",
+      hasMany: true,
+      label: "Variantcontext",
+      admin: {
+        description:
+          "Leeg = centraal, relevant voor alle varianten (standaard). Ingevuld = deze bron is uitsluitend bedoeld voor de gekozen variant(en). Nog niet gebruikt door de retrieval zelf — puur classificatie, zie het commentaar hiernaast.",
       },
     },
     {

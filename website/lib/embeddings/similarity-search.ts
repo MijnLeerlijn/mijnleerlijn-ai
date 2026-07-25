@@ -23,6 +23,10 @@ export interface SearchHit {
   chapterTitle?: string;
   similarity: number;
   reason: string;
+  /** Alleen gezet voor knowledge-source/knowledge-source-chapter — zie KnowledgeSourcePriority. */
+  priority?: KnowledgeSourcePriority;
+  /** Bronrol voor conflictresolutie tussen bronnen — zie bepaalBronrol() hieronder. */
+  bronrol?: BronRol;
 }
 
 const STANDAARD_ZOEKLIMIET = 10;
@@ -69,6 +73,62 @@ function bouwReden(type: SearchHitType, similarity: number, chapterTitle?: strin
 export type KnowledgeSourcePriority = "core" | "secondary" | "reference";
 const PRIORITEIT_RANG: Record<KnowledgeSourcePriority, number> = { core: 0, secondary: 1, reference: 2 };
 
+// Bronrol ("purpose") — WAT voor soort bron dit is, los van `priority`
+// (HOE belangrijk de bron is) en los van `type` (redactionele categorie/
+// hoe de inhoud is opgehaald). Gebruikt als tie-break bij (bijna) gelijke
+// similarity-scores, zie vergelijkGefaseerd() hieronder, én zichtbaar per
+// bron in de prompt-context (lib/assistant/build-context.ts) zodat het
+// taalmodel zelf de conflictregels uit de systeeminstructie kan toepassen —
+// zie lib/assistant/answer.ts voor de volledige, uitgeschreven regels:
+//   1. actuele release note voor gewijzigde functionaliteit;
+//   2. handleiding voor schermnamen, knoppen en concrete stappen;
+//   3. background-model voor visie, samenhang en mogelijke routes;
+//   4. gevalideerde FAQ/supportkennis voor praktijkvragen;
+//   5. onbevestigde knowledge drafts nooit als definitieve waarheid (al
+//      structureel afgedwongen: alleen status "approved" bereikt retrieval
+//      ooit, zie VEILIGE_DRAFT_STATUSSEN hierboven).
+// Deze volgorde is INHOUDELIJK/contextafhankelijk ("voor gewijzigde
+// functionaliteit", "voor concrete stappen") — geen vraag laat zich zonder
+// een aparte classificatiestap indelen in "gaat dit over een wijziging?".
+// De tie-break hieronder codeert daarom uitsluitend de VASTE component
+// (release-note vóór manual vóór background-model vóór faq vóór support) en
+// alleen bij een (bijna) gelijke score — de inhoudelijke afweging ("is dit
+// een stappenvraag of een visievraag") hoort bij het taalmodel, dat de
+// volledige, contextafhankelijke regels in de systeeminstructie krijgt.
+export type BronRol = "release-note" | "manual" | "background-model" | "faq" | "support";
+const BRONROL_RANG: Record<BronRol, number> = {
+  "release-note": 0,
+  manual: 1,
+  "background-model": 2,
+  faq: 3,
+  support: 4,
+};
+
+const TYPE_NAAR_BRONROL: Record<string, BronRol> = {
+  pdf: "manual",
+  handleiding: "manual",
+  website: "manual",
+  release_notes: "release-note",
+  faq: "faq",
+  intern_document: "background-model",
+};
+
+/**
+ * Bepaalt de bronrol van een Knowledge Source: het handmatige veld `purpose`
+ * (payload/collections/KnowledgeSources.ts) wint altijd, anders een
+ * redelijke default op basis van `type`. Onbekende/ontbrekende combinaties
+ * vallen terug op "manual" (de meest voorkomende, minst risicovolle
+ * default — nooit undefined, anders zou zo'n bron nooit meedoen aan de
+ * tie-break hieronder).
+ */
+function bepaalBronrol(type: string, purpose: string | null | undefined): BronRol {
+  if (purpose === "background-model" || purpose === "manual" || purpose === "release-note" ||
+    purpose === "faq" || purpose === "support") {
+    return purpose;
+  }
+  return TYPE_NAAR_BRONROL[type] ?? "manual";
+}
+
 interface Kandidaat {
   type: SearchHitType;
   id: number;
@@ -77,6 +137,8 @@ interface Kandidaat {
   embedding: number[];
   /** Alleen gezet voor knowledge-source/knowledge-source-chapter — hoofdstukken erven de prioriteit van hun bron. */
   priority?: KnowledgeSourcePriority;
+  /** Bronrol — knowledge-drafts krijgen altijd "support", articles altijd "manual", zie verzamelKandidaten(). */
+  bronrol: BronRol;
 }
 
 function isEmbeddingVector(waarde: unknown): waarde is number[] {
@@ -100,6 +162,7 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
     // mee in een prioriteitstier (zie searchKnowledgePhased hieronder), maar
     // blijft-ie wel gewoon een geldige kandidaat voor searchKnowledge().
     const priority = bron.priority as KnowledgeSourcePriority | undefined;
+    const bronrol = bepaalBronrol(bron.type, bron.purpose as string | null | undefined);
     if (isEmbeddingVector(bron.embedding)) {
       kandidaten.push({
         type: "knowledge-source",
@@ -107,6 +170,7 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
         title: bron.title,
         embedding: bron.embedding,
         priority,
+        bronrol,
       });
     }
     for (const hoofdstuk of (bron.chapters ?? []) as { title: string; embedding?: unknown }[]) {
@@ -118,6 +182,7 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
           chapterTitle: hoofdstuk.title,
           embedding: hoofdstuk.embedding,
           priority,
+          bronrol,
         });
       }
     }
@@ -139,6 +204,13 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
         id: draft.id,
         title: draft.title,
         embedding: draft.embedding,
+        // Altijd "support": knowledge-drafts komen voort uit (opgeschoonde)
+        // supportthreads, zie lib/support/analyze.ts. Alleen status
+        // "approved" bereikt hier — zie VEILIGE_DRAFT_STATUSSEN hierboven —
+        // dus "onbevestigde knowledge drafts nooit als definitieve
+        // waarheid" is al structureel afgedwongen vóórdat bronrol er
+        // überhaupt toe doet.
+        bronrol: "support",
       });
     }
   }
@@ -157,6 +229,10 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
         id: artikel.id,
         title: artikel.title,
         embedding: artikel.embedding,
+        // Een gepubliceerd artikel is al centraal geredigeerde, gepubliceerde
+        // handleiding-achtige content (zie payload/collections/Articles.ts)
+        // — dichtst bij "manual" van de vijf bronrollen.
+        bronrol: "manual",
       });
     }
   }
@@ -183,6 +259,8 @@ function naarSearchHit(k: GescoordeKandidaat): SearchHit {
     chapterTitle: k.chapterTitle,
     similarity: k.similarity,
     reason: bouwReden(k.type, k.similarity, k.chapterTitle),
+    priority: k.priority,
+    bronrol: k.bronrol,
   };
 }
 
@@ -259,13 +337,19 @@ function telVoldoende(kandidaten: GescoordeKandidaat[], drempel: number): number
 /**
  * Sorteert eerst op afgeronde similarity-score (zelfde percentage-afronding
  * als bouwReden()/answer.ts's confidence — geen nieuwe granulariteit): bij
- * een GELIJK afgerond percentage ("vergelijkbare relevantie") beslist de
- * prioriteitstier, core vóór secondary vóór reference. Dit tie-break geldt
- * uitdrukkelijk alleen tussen twee kandidaten die BEIDE een prioriteitstier
- * hebben (knowledge-sources/hoofdstukken) — een knowledge-draft of article
- * wordt hierdoor nooit voor- of achteruitgeschoven, die blijven zuiver op
- * score gerangschikt. Als laatste, deterministische stap: de ruwe (niet
- * afgeronde) score, zodat de sortering nooit van aanroep tot aanroep wisselt.
+ * een GELIJK afgerond percentage ("vergelijkbare relevantie") beslist eerst
+ * de prioriteitstier (core vóór secondary vóór reference), dán de bronrol
+ * (release-note vóór manual vóór background-model vóór faq vóór support —
+ * zie BRONROL_RANG hierboven). Dit zijn BEWUST alleen tie-breaks bij
+ * (bijna) gelijke score, geen herweging van de score zelf: een sterk
+ * relevantere bron met een "lagere" bronrol wint nog altijd gewoon van een
+ * zwak relevante bron met een "hogere" bronrol. De prioriteitstier-tie-break
+ * geldt uitdrukkelijk alleen tussen twee kandidaten die BEIDE een
+ * prioriteitstier hebben (knowledge-sources/hoofdstukken) — een
+ * knowledge-draft of article wordt hierdoor nooit voor- of
+ * achteruitgeschoven op prioriteit. Als laatste, deterministische stap: de
+ * ruwe (niet afgeronde) score, zodat de sortering nooit van aanroep tot
+ * aanroep wisselt.
  */
 function vergelijkGefaseerd(a: GescoordeKandidaat, b: GescoordeKandidaat): number {
   const percentageVerschil = Math.round(b.similarity * 100) - Math.round(a.similarity * 100);
@@ -273,6 +357,10 @@ function vergelijkGefaseerd(a: GescoordeKandidaat, b: GescoordeKandidaat): numbe
 
   if (a.priority && b.priority && a.priority !== b.priority) {
     return PRIORITEIT_RANG[a.priority] - PRIORITEIT_RANG[b.priority];
+  }
+
+  if (a.bronrol !== b.bronrol) {
+    return BRONROL_RANG[a.bronrol] - BRONROL_RANG[b.bronrol];
   }
 
   return b.similarity - a.similarity;

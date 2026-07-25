@@ -152,6 +152,46 @@ describe("indexeerBron — website (en release notes/handleiding/faq/intern docu
     expect(uitkomst).toMatchObject({ type: "failed" });
     if (uitkomst.type === "failed") expect(uitkomst.foutmelding).toContain("Geen URL");
   });
+
+  it("gebruikt direct ingevulde 'content' i.p.v. een URL op te halen, zonder fetch aan te roepen (chatbot-evaluatieopdracht: intern achtergronddocument)", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const uitkomst = await indexeerBron({
+      title: "Kennisbasis MijnLeerlijn — achtergrondverhaal voor de Helpdesk AI",
+      type: "intern_document",
+      content: "Dit document is geen handleiding op zich. Het is de onderliggende logica van MijnLeerlijn.",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(uitkomst).toMatchObject({ type: "indexed", summary: "Documentsamenvatting." });
+  });
+
+  it("geeft voorrang aan 'content' boven een eventueel ingevulde URL", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const uitkomst = await indexeerBron({
+      title: "Bron met zowel content als url",
+      type: "intern_document",
+      url: "https://mijnleerlijn.nl/intern",
+      content: "Directe inhoud die gebruikt moet worden.",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(uitkomst).toMatchObject({ type: "indexed" });
+  });
+
+  it("faalt netjes als zowel 'content' als 'url' ontbreken", async () => {
+    const uitkomst = await indexeerBron({
+      title: "Zonder content of URL",
+      type: "intern_document",
+      content: null,
+      url: null,
+    });
+    expect(uitkomst).toMatchObject({ type: "failed" });
+    if (uitkomst.type === "failed") expect(uitkomst.foutmelding).toContain("Geen URL of directe inhoud");
+  });
 });
 
 describe("indexeerBron — video", () => {
