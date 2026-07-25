@@ -80,6 +80,29 @@ describe("processKnowledgeSource — PDF-bestandsresolutie", () => {
     );
   });
 
+  it("decodeert URL-gecodeerde tekens (spaties/haakjes) in het pad vóórdat er gesigned wordt (regressie: HTTP 403 op bestanden als 'Analyse (1).pdf')", async () => {
+    // De bug: new URL(url).pathname geeft %20/%28/%29 terug (URL-gecodeerd),
+    // maar de werkelijke Blob-sleutel bevat de LETTERLIJKE spatie/haakjes —
+    // zonder decodeURIComponent() werd een signed URL voor een NIET-
+    // bestaande/verkeerde sleutel gegenereerd, wat Vercel Blob met een 403
+    // beantwoordde. Live geverifieerd tegen de echte Blob-store vóór de fix.
+    mockIndexeerBron.mockResolvedValue(basisIndexUitkomst);
+    mockGenereerDownloadUrl.mockResolvedValue("https://voorbeeld.private.blob.vercel-storage.com/signed");
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [{ id: 1, title: "Analyse", type: "pdf" }],
+      media: [
+        {
+          id: 42,
+          url: "https://storeid123.private.blob.vercel-storage.com/handleidingen/abc123__Analyse%20%281%29.pdf",
+        },
+      ],
+    });
+
+    await processKnowledgeSource(payload, { id: 1, title: "Analyse", type: "pdf", file: 42 });
+
+    expect(mockGenereerDownloadUrl).toHaveBeenCalledWith("handleidingen/abc123__Analyse (1).pdf");
+  });
+
   it("vraagt geen mediabestand op voor niet-PDF-typen", async () => {
     mockIndexeerBron.mockResolvedValue(basisIndexUitkomst);
     const { payload, collection } = maakFakePayload({

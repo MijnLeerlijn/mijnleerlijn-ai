@@ -48,7 +48,24 @@ async function resolveerBestandsUrl(payload: Payload, mediaId: number): Promise<
   const url = media?.url;
   if (!url) return null;
   if (isPrivateBlobUrl(url)) {
-    const pathname = new URL(url).pathname.replace(/^\//, "");
+    // BUG (opgelost): new URL(url).pathname geeft het URL-GECODEERDE pad
+    // terug (spaties/haakjes/komma's blijven %20/%28/%29/%2C) — dat is NIET
+    // de werkelijke, ruwe Blob-sleutel waarmee het bestand ooit geüpload is
+    // (payload/upload-manuals-to-blob/index.ts gebruikt de letterlijke
+    // bestandsnaam, ongecodeerd). issueSignedToken/presignUrl (services/
+    // storage.ts) signen exact de string die je meegeeft als `pathname` —
+    // geef je de gecodeerde variant mee, dan signt de aanroep een pathname
+    // die niet overeenkomt met de echte sleutel, en geeft Vercel Blob een
+    // 403 terug (geldige handtekening, verkeerde/onbestaande sleutel).
+    // Live geverifieerd: voor bestandsnamen ZONDER spaties/haakjes (bv.
+    // "Aan-de-slag-...pdf", alleen koppeltekens) is de gecodeerde en de
+    // ruwe variant toevallig identiek, dus leek dit eerder te werken — voor
+    // "Analyse (1).pdf" en elk ander bestand met spaties/haakjes/komma's
+    // NIET. decodeURIComponent() herstelt de ruwe sleutel.
+    const pathname = decodeURIComponent(new URL(url).pathname).replace(/^\//, "");
+    payload.logger.info(
+      `[process-source] media ${mediaId}: private Blob-URL gedetecteerd, genereer signed download-URL voor pathname="${pathname}"`
+    );
     return genereerDownloadUrl(pathname);
   }
   if (isAbsoluteUrl(url)) return url;

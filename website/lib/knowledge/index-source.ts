@@ -120,7 +120,16 @@ export async function indexeerBron(bron: BronVoorIndexering): Promise<BronUitkom
       if (!bron.fileUrl) {
         return { type: "failed", foutmelding: "Geen bestand gekoppeld aan deze PDF-bron." };
       }
+      // Alleen het pad loggen, nooit de querystring — bij een signed Blob-URL
+      // (lib/knowledge/process-source.ts's resolveerBestandsUrl) staat daar een
+      // kortlevend maar wél geldig toegangstoken in. Dit is bewust ALTIJD
+      // gelogd (niet alleen in development): bij een volgende download-fout
+      // moet in productie direct zichtbaar zijn welk pad geprobeerd werd en
+      // welke HTTP-status er terugkwam, zonder dat er live meegekeken hoeft
+      // te worden.
+      const fileUrlZonderQuery = bron.fileUrl.split("?")[0];
       const response = await fetch(bron.fileUrl);
+      console.log(`[index-source] PDF-fetch ${fileUrlZonderQuery} -> HTTP ${response.status}`);
       if (!response.ok) {
         return { type: "failed", foutmelding: `Kon PDF niet ophalen (HTTP ${response.status}).` };
       }
