@@ -3,6 +3,10 @@ import { buildContext, contextItemsNaarPrompt } from "./build-context";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import type { SearchHit } from "@/lib/embeddings/similarity-search";
 
+function lexicalMet(tekst: string): unknown {
+  return { root: { type: "root", children: [{ type: "paragraph", children: [{ type: "text", text: tekst }] }] } };
+}
+
 describe("buildContext", () => {
   it("haalt de volledige tekst en het juiste label op per brontype (meerdere bronnen)", async () => {
     const { payload } = maakFakePayload({
@@ -95,6 +99,98 @@ describe("buildContext", () => {
   it("geeft een lege lijst terug bij geen treffers (geen bronnen)", async () => {
     const { payload } = maakFakePayload({});
     const items = await buildContext(payload, []);
+    expect(items).toHaveLength(0);
+  });
+
+  it("bouwt een ContextItem voor een handleiding-treffer (hele handleiding)", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        { id: 1, titel: "Hoofdgebiedprofiel aanmaken", slug: "hoofdgebiedprofiel-aanmaken", korteOmschrijving: "Uitleg." },
+      ],
+    });
+    const hits: SearchHit[] = [
+      { type: "handleiding", id: 1, title: "Hoofdgebiedprofiel aanmaken", similarity: 0.8, reason: "" },
+    ];
+
+    const items = await buildContext(payload, hits);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      label: "Handleiding",
+      title: "Hoofdgebiedprofiel aanmaken",
+      text: "Uitleg.",
+      refCollection: "handleidingen",
+      refId: 1,
+      url: "/handleidingen/hoofdgebiedprofiel-aanmaken",
+    });
+  });
+
+  it("vindt de juiste stap terug voor een handleiding-step-treffer via de stabiele stepId (niet titel)", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 1,
+          titel: "Hoofdgebiedprofiel aanmaken",
+          slug: "hoofdgebiedprofiel-aanmaken",
+          korteOmschrijving: "Uitleg.",
+          stappen: [
+            { id: "stap-a", titel: "Open Beheer", uitleg: lexicalMet("Ga naar Beheer.") },
+            { id: "stap-b", titel: "Maak profiel", uitleg: lexicalMet("Klik op Nieuw profiel.") },
+          ],
+        },
+      ],
+    });
+    const hits: SearchHit[] = [
+      {
+        type: "handleiding-step",
+        id: 1,
+        title: "Hoofdgebiedprofiel aanmaken",
+        chapterTitle: "Maak profiel",
+        stepId: "stap-b",
+        similarity: 0.9,
+        reason: "",
+      },
+    ];
+
+    const items = await buildContext(payload, hits);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      label: "Handleidingstap",
+      title: "Hoofdgebiedprofiel aanmaken",
+      chapterTitle: "Maak profiel",
+      stepId: "stap-b",
+      refCollection: "handleidingen",
+      url: "/handleidingen/hoofdgebiedprofiel-aanmaken#stap-stap-b",
+    });
+    expect(items[0]!.text).toContain("Klik op Nieuw profiel.");
+  });
+
+  it("slaat een handleiding-step-treffer over wanneer de stap-id niet meer bestaat (bv. verwijderd)", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 1,
+          titel: "Handleiding",
+          slug: "handleiding",
+          korteOmschrijving: "Uitleg.",
+          stappen: [{ id: "stap-a", titel: "Stap", uitleg: lexicalMet("Tekst.") }],
+        },
+      ],
+    });
+    const hits: SearchHit[] = [
+      {
+        type: "handleiding-step",
+        id: 1,
+        title: "Handleiding",
+        stepId: "verwijderde-stap",
+        similarity: 0.9,
+        reason: "",
+      },
+    ];
+
+    const items = await buildContext(payload, hits);
+
     expect(items).toHaveLength(0);
   });
 });

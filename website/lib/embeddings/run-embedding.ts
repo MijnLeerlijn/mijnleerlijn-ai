@@ -3,6 +3,7 @@ import {
   embedKnowledgeSource,
   embedKnowledgeDraft,
   embedArticle,
+  embedHandleiding,
   type ProcesUitkomst,
 } from "./process-embedding";
 
@@ -21,13 +22,19 @@ import {
 export const STANDAARD_LIMIET = 5;
 const HARDE_MAX_LIMIET = 25;
 
-export type EmbeddableCollectie = "knowledge-sources" | "knowledge-drafts" | "articles";
-const ALLE_COLLECTIES: EmbeddableCollectie[] = ["knowledge-sources", "knowledge-drafts", "articles"];
+export type EmbeddableCollectie = "knowledge-sources" | "knowledge-drafts" | "articles" | "handleidingen";
+const ALLE_COLLECTIES: EmbeddableCollectie[] = [
+  "knowledge-sources",
+  "knowledge-drafts",
+  "articles",
+  "handleidingen",
+];
 
 const PROCESSORS: Record<EmbeddableCollectie, (payload: Payload, id: number) => Promise<ProcesUitkomst>> = {
   "knowledge-sources": embedKnowledgeSource,
   "knowledge-drafts": embedKnowledgeDraft,
   articles: embedArticle,
+  handleidingen: embedHandleiding,
 };
 
 export interface EmbedSamenvatting {
@@ -54,6 +61,19 @@ async function selecteerIds(
           { embeddingStatus: { in: ["pending", "stale"] } },
           { articleStatus: { equals: "gepubliceerd" } },
         ],
+      },
+      limit,
+      overrideAccess: true,
+      depth: 0,
+    });
+    return resultaat.docs.map((d) => d.id);
+  }
+
+  if (collectie === "handleidingen") {
+    const resultaat = await payload.find({
+      collection: "handleidingen",
+      where: {
+        and: [{ embeddingStatus: { in: ["pending", "stale"] } }, { status: { equals: "gepubliceerd" } }],
       },
       limit,
       overrideAccess: true,

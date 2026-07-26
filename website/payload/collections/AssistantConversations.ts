@@ -94,6 +94,24 @@ export const AssistantConversations: CollectionConfig = {
         { name: "url", type: "text", required: true, label: "URL" },
       ],
     },
+    {
+      // Handleidingbouwer: welke stap(pen) daadwerkelijk getoond zijn — apart
+      // van `sources` hierboven (dat blijft de generieke citatielijst) omdat
+      // dit specifiek de structuur is die een latere analytics-ronde nodig
+      // heeft: "welke handleiding/stap is gebruikt" zonder de hele `sources`-
+      // array te moeten herinterpreteren. Nog GEEN analytics-verwerking hier
+      // — puur alvast opslaan, zie het gesprek "Handleidingbouwer".
+      name: "steps",
+      type: "array",
+      label: "Getoonde stappen",
+      labels: { singular: "Stap", plural: "Stappen" },
+      admin: { readOnly: true },
+      fields: [
+        { name: "handleidingId", type: "number", required: true, label: "Handleiding-ID" },
+        { name: "stepId", type: "text", required: true, label: "Stap-ID" },
+        { name: "stepNummer", type: "number", required: true, label: "Stapnummer" },
+      ],
+    },
     { name: "model", type: "text", label: "AI-model", admin: { readOnly: true } },
     { name: "inputTokens", type: "number", label: "Input-tokens", admin: { readOnly: true } },
     { name: "outputTokens", type: "number", label: "Output-tokens", admin: { readOnly: true } },

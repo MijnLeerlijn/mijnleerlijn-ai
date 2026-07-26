@@ -178,3 +178,202 @@ describe("processPublicQuestion — publiek-veilige bronnenlijst", () => {
     expect(collection("assistant-conversations")).toHaveLength(0);
   });
 });
+
+function lexicalMet(tekst: string): unknown {
+  return { root: { type: "root", children: [{ type: "paragraph", children: [{ type: "text", text: tekst }] }] } };
+}
+
+function maakHandleidingSeed() {
+  return {
+    ...maakSeed(),
+    handleidingen: [
+      {
+        id: 10,
+        titel: "Hoofdgebiedprofiel aanmaken",
+        slug: "hoofdgebiedprofiel-aanmaken",
+        korteOmschrijving: "Uitleg.",
+        stappen: [
+          {
+            id: "stap-a",
+            titel: "Open Beheer",
+            uitleg: lexicalMet("Ga naar Beheer en kies Hoofdgebiedprofielen."),
+            media: [{ bestand: { url: "/media/screenshot-1.png", altText: "Het Beheer-menu" }, onderschrift: "Het menu" }],
+          },
+          {
+            id: "stap-b",
+            titel: "Maak profiel aan",
+            uitleg: lexicalMet("Klik rechtsboven op Nieuw profiel."),
+          },
+          { id: "stap-verborgen", titel: "Verborgen stap", uitleg: lexicalMet("Tekst."), verborgen: true },
+        ],
+      },
+    ],
+  };
+}
+
+describe("processPublicQuestion — relevante handleidingstappen (Handleidingbouwer)", () => {
+  it("geeft de getoonde stap(pen) terug met afbeelding, onderschrift, alt-tekst, stapnummer en een link naar de volledige handleiding", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        {
+          type: "handleiding-step",
+          id: 10,
+          title: "Hoofdgebiedprofiel aanmaken",
+          chapterTitle: "Open Beheer",
+          stepId: "stap-a",
+          similarity: 0.9,
+          reason: "",
+        },
+      ])
+    );
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Ga naar Beheer en kies Hoofdgebiedprofielen.", reasoning: "..." },
+      usage: USAGE,
+    });
+    const { payload } = maakFakePayload(maakHandleidingSeed());
+
+    const uitkomst = await processPublicQuestion(payload, { question: "Hoe open ik hoofdgebiedprofielen?" });
+
+    expect(uitkomst.type).toBe("answered");
+    if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
+    expect(uitkomst.steps).toEqual([
+      {
+        handleidingId: 10,
+        handleidingSlug: "hoofdgebiedprofiel-aanmaken",
+        handleidingTitel: "Hoofdgebiedprofiel aanmaken",
+        handleidingUrl: "/handleidingen/hoofdgebiedprofiel-aanmaken",
+        stepId: "stap-a",
+        stepNummer: 1,
+        titel: "Open Beheer",
+        uitleg: "Ga naar Beheer en kies Hoofdgebiedprofielen.",
+        images: [{ url: "/media/screenshot-1.png", caption: "Het menu", alt: "Het Beheer-menu" }],
+      },
+    ]);
+  });
+
+  it("toont alleen de relevant gevonden stap, niet de hele handleiding — stap 2 komt niet mee als alleen stap 1 gevonden is", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        {
+          type: "handleiding-step",
+          id: 10,
+          title: "Hoofdgebiedprofiel aanmaken",
+          chapterTitle: "Open Beheer",
+          stepId: "stap-a",
+          similarity: 0.9,
+          reason: "",
+        },
+      ])
+    );
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "..." },
+      usage: USAGE,
+    });
+    const { payload } = maakFakePayload(maakHandleidingSeed());
+
+    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+
+    if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
+    expect(uitkomst.steps).toHaveLength(1);
+    expect(uitkomst.steps[0]?.stepId).toBe("stap-a");
+  });
+
+  it("laat een verborgen stap nooit zien, zelfs niet als de retrieval 'm (onterecht) zou teruggeven — verdediging in diepte", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        {
+          type: "handleiding-step",
+          id: 10,
+          title: "Hoofdgebiedprofiel aanmaken",
+          chapterTitle: "Verborgen stap",
+          stepId: "stap-verborgen",
+          similarity: 0.9,
+          reason: "",
+        },
+      ])
+    );
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "..." },
+      usage: USAGE,
+    });
+    const { payload } = maakFakePayload(maakHandleidingSeed());
+
+    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+
+    if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
+    expect(uitkomst.steps).toEqual([]);
+  });
+
+  it("geeft een lege images-lijst voor een stap zonder screenshot", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        {
+          type: "handleiding-step",
+          id: 10,
+          title: "Hoofdgebiedprofiel aanmaken",
+          chapterTitle: "Maak profiel aan",
+          stepId: "stap-b",
+          similarity: 0.9,
+          reason: "",
+        },
+      ])
+    );
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "..." },
+      usage: USAGE,
+    });
+    const { payload } = maakFakePayload(maakHandleidingSeed());
+
+    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+
+    if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
+    expect(uitkomst.steps[0]?.images).toEqual([]);
+  });
+
+  it("geeft geen stappen terug bij 'geen antwoord'", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        {
+          type: "handleiding-step",
+          id: 10,
+          title: "Hoofdgebiedprofiel aanmaken",
+          stepId: "stap-a",
+          similarity: 0.1,
+          reason: "",
+        },
+      ])
+    );
+    const { payload } = maakFakePayload(maakHandleidingSeed());
+
+    const uitkomst = await processPublicQuestion(payload, { question: "onduidelijke vraag" });
+
+    if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
+    expect(uitkomst.steps).toEqual([]);
+  });
+
+  it("legt de getoonde stap ook vast op het conversatierecord (analytics-klaar, nog niet verwerkt)", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        {
+          type: "handleiding-step",
+          id: 10,
+          title: "Hoofdgebiedprofiel aanmaken",
+          chapterTitle: "Open Beheer",
+          stepId: "stap-a",
+          similarity: 0.9,
+          reason: "",
+        },
+      ])
+    );
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "..." },
+      usage: USAGE,
+    });
+    const { payload, collection } = maakFakePayload(maakHandleidingSeed());
+
+    await processPublicQuestion(payload, { question: "vraag" });
+
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.steps).toEqual([{ handleidingId: 10, stepId: "stap-a", stepNummer: 1 }]);
+  });
+});

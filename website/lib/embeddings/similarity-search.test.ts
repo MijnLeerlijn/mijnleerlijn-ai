@@ -818,3 +818,152 @@ describe("searchKnowledgePhased — achtergrondverhaal (background-model) vs. ha
     expect(resultaat.hits[0]?.bronrol).toBe("manual");
   });
 });
+
+// Handleidingbouwer: gestructureerde handleidingstappen als eigen kandidaat-
+// bron naast Knowledge Sources/drafts/articles, zie het gesprek. Geen
+// prioriteitstier (isAltijdToegelaten), harde status/verborgen-filters, en
+// bronrol "handleidingstap" die bij gelijke score altijd wint van "manual"
+// (PDF) maar verliest van "release-note".
+describe("searchKnowledgePhased — Handleidingbouwer (handleidingen/handleidingstappen)", () => {
+  const DREMPEL = 0.5;
+
+  function embeddingVoorScore(score: number): number[] {
+    return [score, Math.sqrt(1 - score * score), 0];
+  }
+
+  beforeEach(() => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0, 0]);
+  });
+
+  it("1. Een gepubliceerde handleiding en haar niet-verborgen stap komen mee als kandidaat, met stabiele stepId", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 5,
+          titel: "Hoofdgebiedprofiel aanmaken",
+          korteOmschrijving: "Uitleg.",
+          status: "gepubliceerd",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.4),
+          stappen: [
+            { id: "stap-abc", titel: "Open Beheer", embedding: embeddingVoorScore(0.9) },
+            { id: "stap-def", titel: "Verborgen stap", verborgen: true, embedding: embeddingVoorScore(0.95) },
+          ],
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    const stapHit = resultaat.hits.find((h) => h.type === "handleiding-step");
+    expect(stapHit).toMatchObject({ id: 5, stepId: "stap-abc", chapterTitle: "Open Beheer", bronrol: "handleidingstap" });
+    expect(resultaat.hits.some((h) => h.stepId === "stap-def")).toBe(false);
+  });
+
+  it("2. Een concept-handleiding komt NOOIT mee, ook niet met een hoge score", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 6,
+          titel: "Nog in concept",
+          korteOmschrijving: "Uitleg.",
+          status: "concept",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.99),
+          stappen: [{ id: "s1", titel: "Stap", embedding: embeddingVoorScore(0.99) }],
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.hits.some((h) => h.id === 6)).toBe(false);
+  });
+
+  it("3. Een gearchiveerde handleiding komt NOOIT mee", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 7,
+          titel: "Gearchiveerd",
+          korteOmschrijving: "Uitleg.",
+          status: "gearchiveerd",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.99),
+          stappen: [{ id: "s1", titel: "Stap", embedding: embeddingVoorScore(0.99) }],
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.hits.some((h) => h.id === 7)).toBe(false);
+  });
+
+  it("4. Bij gelijke score wint een handleidingstap altijd van een PDF-handleiding (manual)", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 8,
+          titel: "Gestructureerde handleiding",
+          korteOmschrijving: "Uitleg.",
+          status: "gepubliceerd",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.4),
+          stappen: [{ id: "s1", titel: "Stap", embedding: embeddingVoorScore(0.8) }],
+        },
+      ],
+      "knowledge-sources": [
+        { id: 9, title: "PDF-handleiding", type: "pdf", priority: "core", embeddingStatus: "indexed", embedding: embeddingVoorScore(0.8) },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, { query: "iets", limiet: 1, drempelVoorVoldoende: DREMPEL });
+
+    expect(resultaat.hits).toHaveLength(1);
+    expect(resultaat.hits[0]?.bronrol).toBe("handleidingstap");
+  });
+
+  it("5. Een release note wint nog steeds van een handleidingstap bij gelijke score", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 10,
+          titel: "Handleiding",
+          korteOmschrijving: "Uitleg.",
+          status: "gepubliceerd",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.4),
+          stappen: [{ id: "s1", titel: "Stap", embedding: embeddingVoorScore(0.8) }],
+        },
+      ],
+      "knowledge-sources": [
+        {
+          id: 11,
+          title: "Release notes juli",
+          type: "release_notes",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.8),
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, { query: "iets", limiet: 1, drempelVoorVoldoende: DREMPEL });
+
+    expect(resultaat.hits).toHaveLength(1);
+    expect(resultaat.hits[0]?.bronrol).toBe("release-note");
+  });
+});

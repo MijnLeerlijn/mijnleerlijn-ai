@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { embedKnowledgeSource, embedKnowledgeDraft, embedArticle } from "./process-embedding";
+import { embedKnowledgeSource, embedKnowledgeDraft, embedArticle, embedHandleiding } from "./process-embedding";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import { generateEmbedding } from "@/services/ai-client";
+
+function lexicalMet(tekst: string): unknown {
+  return { root: { type: "root", children: [{ type: "paragraph", children: [{ type: "text", text: tekst }] }] } };
+}
 
 vi.mock("@/services/ai-client", () => ({
   generateEmbedding: vi.fn(),
@@ -235,5 +239,128 @@ describe("embedArticle", () => {
     const uitkomst = await embedArticle(payload, 1);
 
     expect(uitkomst).toEqual({ type: "embedded" });
+  });
+});
+
+describe("embedHandleiding", () => {
+  it("embedt een gepubliceerde handleiding en al haar stappen apart", async () => {
+    const { payload, collection } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 1,
+          titel: "Hoofdgebiedprofiel aanmaken",
+          korteOmschrijving: "Uitleg.",
+          status: "gepubliceerd",
+          embeddingStatus: "pending",
+          stappen: [
+            { id: "s1", titel: "Open Beheer", uitleg: lexicalMet("Ga naar Beheer.") },
+            { id: "s2", titel: "Maak profiel", uitleg: lexicalMet("Klik op Nieuw profiel.") },
+          ],
+        },
+      ],
+    });
+
+    const uitkomst = await embedHandleiding(payload, 1);
+
+    expect(uitkomst).toEqual({ type: "embedded" });
+    const doc = collection("handleidingen")[0]!;
+    expect(doc.embeddingStatus).toBe("indexed");
+    const stappen = doc.stappen as { embedding: number[] }[];
+    expect(stappen).toHaveLength(2);
+    expect(stappen[0]!.embedding).toEqual([0.1, 0.2, 0.3]);
+    expect(stappen[1]!.embedding).toEqual([0.1, 0.2, 0.3]);
+    expect(mockGenerateEmbedding).toHaveBeenCalledTimes(3); // handleiding zelf + 2 stappen
+  });
+
+  it("negeert een niet-gepubliceerde handleiding (concept)", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 1,
+          titel: "Nog concept",
+          korteOmschrijving: "Uitleg.",
+          status: "concept",
+          embeddingStatus: "pending",
+          stappen: [{ id: "s1", titel: "Stap", uitleg: lexicalMet("Tekst.") }],
+        },
+      ],
+    });
+
+    const uitkomst = await embedHandleiding(payload, 1);
+
+    expect(uitkomst).toMatchObject({ type: "ignored" });
+    expect(mockGenerateEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("embedt een verborgen stap gewoon mee (verbergen is een retrieval-filter, geen embed-filter)", async () => {
+    const { payload, collection } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 1,
+          titel: "Handleiding",
+          korteOmschrijving: "Uitleg.",
+          status: "gepubliceerd",
+          embeddingStatus: "pending",
+          stappen: [{ id: "s1", titel: "Verborgen stap", uitleg: lexicalMet("Tekst."), verborgen: true }],
+        },
+      ],
+    });
+
+    await embedHandleiding(payload, 1);
+
+    const stappen = collection("handleidingen")[0]!.stappen as { embedding: number[] }[];
+    expect(stappen[0]!.embedding).toEqual([0.1, 0.2, 0.3]);
+  });
+
+  it("slaat een ongewijzigde, al geïndexeerde handleiding over bij herembedden", async () => {
+    const { payload } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 1,
+          titel: "Handleiding",
+          korteOmschrijving: "Uitleg.",
+          status: "gepubliceerd",
+          embeddingStatus: "pending",
+          stappen: [{ id: "s1", titel: "Stap", uitleg: lexicalMet("Tekst.") }],
+        },
+      ],
+    });
+
+    const eerste = await embedHandleiding(payload, 1);
+    mockGenerateEmbedding.mockClear();
+    const tweede = await embedHandleiding(payload, 1);
+
+    expect(eerste).toEqual({ type: "embedded" });
+    expect(tweede).toEqual({ type: "skipped" });
+    expect(mockGenerateEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("embedt alleen de gewijzigde stap opnieuw, niet de ongewijzigde stap ernaast", async () => {
+    const { payload, collection } = maakFakePayload({
+      handleidingen: [
+        {
+          id: 1,
+          titel: "Handleiding",
+          korteOmschrijving: "Uitleg.",
+          status: "gepubliceerd",
+          embeddingStatus: "pending",
+          stappen: [
+            { id: "s1", titel: "Stap 1", uitleg: lexicalMet("Tekst 1.") },
+            { id: "s2", titel: "Stap 2", uitleg: lexicalMet("Tekst 2.") },
+          ],
+        },
+      ],
+    });
+
+    await embedHandleiding(payload, 1);
+    // Simuleert een bewerking van alleen stap 1.
+    const doc = collection("handleidingen")[0]!;
+    (doc.stappen as { titel: string }[])[0]!.titel = "Stap 1 (bewerkt)";
+    mockGenerateEmbedding.mockClear();
+
+    await embedHandleiding(payload, 1);
+
+    // handleiding-tekst zelf is ongewijzigd (titel/omschrijving), dus alleen de gewijzigde stap wordt herembed.
+    expect(mockGenerateEmbedding).toHaveBeenCalledTimes(1);
   });
 });

@@ -80,6 +80,7 @@ export interface Config {
     'support-threads': SupportThread;
     'knowledge-drafts': KnowledgeDraft;
     'knowledge-sources': KnowledgeSource;
+    handleidingen: Handleidingen;
     'assistant-conversations': AssistantConversation;
     'assistant-eval-questions': AssistantEvalQuestion;
     'assistant-eval-runs': AssistantEvalRun;
@@ -104,6 +105,7 @@ export interface Config {
     'support-threads': SupportThreadsSelect<false> | SupportThreadsSelect<true>;
     'knowledge-drafts': KnowledgeDraftsSelect<false> | KnowledgeDraftsSelect<true>;
     'knowledge-sources': KnowledgeSourcesSelect<false> | KnowledgeSourcesSelect<true>;
+    handleidingen: HandleidingenSelect<false> | HandleidingenSelect<true>;
     'assistant-conversations': AssistantConversationsSelect<false> | AssistantConversationsSelect<true>;
     'assistant-eval-questions': AssistantEvalQuestionsSelect<false> | AssistantEvalQuestionsSelect<true>;
     'assistant-eval-runs': AssistantEvalRunsSelect<false> | AssistantEvalRunsSelect<true>;
@@ -121,11 +123,13 @@ export interface Config {
     'gmail-connection': GmailConnection;
     'knowledge-search': KnowledgeSearch;
     'assistant-eval': AssistantEval;
+    'helpdesk-voorbeeldvragen': HelpdeskVoorbeeldvragen;
   };
   globalsSelect: {
     'gmail-connection': GmailConnectionSelect<false> | GmailConnectionSelect<true>;
     'knowledge-search': KnowledgeSearchSelect<false> | KnowledgeSearchSelect<true>;
     'assistant-eval': AssistantEvalSelect<false> | AssistantEvalSelect<true>;
+    'helpdesk-voorbeeldvragen': HelpdeskVoorbeeldvragenSelect<false> | HelpdeskVoorbeeldvragenSelect<true>;
   };
   locale: null;
   widgets: {
@@ -830,6 +834,133 @@ export interface KnowledgeSource {
   createdAt: string;
 }
 /**
+ * Handleidingen opgebouwd uit losse stappen met tekst en afbeeldingen — de opvolger van PDF-handleidingen.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "handleidingen".
+ */
+export interface Handleidingen {
+  id: number;
+  internTitel: string;
+  titel: string;
+  /**
+   * Voor de publieke URL: /handleidingen/{slug}
+   */
+  slug: string;
+  korteOmschrijving: string;
+  categorie: number | Category;
+  /**
+   * Leeg = relevant voor alle varianten (standaard).
+   */
+  variantContext?: (number | Variant)[] | null;
+  status: 'concept' | 'gepubliceerd' | 'gearchiveerd';
+  /**
+   * Alleen bronnen die hier aangevinkt zijn, verschijnen voor bezoekers in de 'Handleidingen'-sidebar. Heeft geen invloed op wat de AI intern mag gebruiken om te antwoorden.
+   */
+  zichtbaarInSidebar?: boolean | null;
+  /**
+   * Laag = hoger in de lijst binnen de categorie. Leeg = alfabetisch op titel, onderaan.
+   */
+  volgorde?: number | null;
+  zoekwoorden?: string[] | null;
+  laatstBijgewerkt?: string | null;
+  /**
+   * Optioneel: een bestaande PDF-handleiding die dit vervangt/aanvult. Toont een downloadlink op de publieke pagina. Geen automatische import — alleen een koppeling.
+   */
+  legacyBron?: (number | null) | KnowledgeSource;
+  /**
+   * Eenvoudige teller, geen volwaardig versiebeheer — wordt op 1 gezet bij de eerste publicatie en daarna opgehoogd bij elke volgende publicatie. Leeg zolang de handleiding nog nooit gepubliceerd is.
+   */
+  versie?: number | null;
+  gepubliceerdOp?: string | null;
+  gepubliceerdDoor?: (number | null) | User;
+  /**
+   * Sleep aan de rijen om te herordenen. Elke stap krijgt automatisch een vaste, permanente id die nooit verandert door herordenen of een titelwijziging — de AI verwijst naar die id, niet naar de titel.
+   */
+  stappen?:
+    | {
+        titel: string;
+        /**
+         * Beperkte opmaak: vet, lijst, link. Wordt automatisch naar platte tekst omgezet voor de AI.
+         */
+        uitleg: {
+          root: {
+            type: string;
+            children: {
+              type: any;
+              version: number;
+              [k: string]: unknown;
+            }[];
+            direction: ('ltr' | 'rtl') | null;
+            format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+            indent: number;
+            version: number;
+          };
+          [k: string]: unknown;
+        };
+        /**
+         * Screenshots bij deze stap. Bewust 'media' genoemd (niet 'afbeeldingen') zodat hier later ook video bij kan — voor nu wordt alleen een afbeelding ondersteund.
+         */
+        media?:
+          | {
+              bestand: number | Media;
+              onderschrift?: string | null;
+              id?: string | null;
+            }[]
+          | null;
+        waarschuwing?: string | null;
+        tip?: string | null;
+        /**
+         * Bijv. 'Beheer > Hoofdgebiedprofielen' of 'Nieuw profiel'.
+         */
+        knopOfSchermnaam?: string | null;
+        zoekwoorden?: string[] | null;
+        /**
+         * Leeg = relevant voor alle varianten.
+         */
+        variantContext?: (number | Variant)[] | null;
+        /**
+         * Nooit publiek zichtbaar en nooit gebruikt in AI-antwoorden.
+         */
+        interneNotitie?: string | null;
+        /**
+         * Verbergt deze stap op de publieke pagina en in AI-antwoorden, zonder hem te verwijderen.
+         */
+        verborgen?: boolean | null;
+        embeddingStatus?: ('pending' | 'indexed' | 'stale') | null;
+        embeddingTextHash?: string | null;
+        embedding?:
+          | {
+              [k: string]: unknown;
+            }
+          | unknown[]
+          | string
+          | number
+          | boolean
+          | null;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * Wordt automatisch gezet bij publiceren — nooit handmatig aanpassen.
+   */
+  embeddingStatus: 'pending' | 'indexed' | 'stale';
+  embeddedAt?: string | null;
+  embeddingModel?: string | null;
+  embeddingTextHash?: string | null;
+  embedding?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant én de publieke helpdesk-homepage).
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -858,6 +989,14 @@ export interface AssistantConversation {
         chapterTitle?: string | null;
         similarity: number;
         url: string;
+        id?: string | null;
+      }[]
+    | null;
+  steps?:
+    | {
+        handleidingId: number;
+        stepId: string;
+        stepNummer: number;
         id?: string | null;
       }[]
     | null;
@@ -1136,6 +1275,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'knowledge-sources';
         value: number | KnowledgeSource;
+      } | null)
+    | ({
+        relationTo: 'handleidingen';
+        value: number | Handleidingen;
       } | null)
     | ({
         relationTo: 'assistant-conversations';
@@ -1621,6 +1764,58 @@ export interface KnowledgeSourcesSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "handleidingen_select".
+ */
+export interface HandleidingenSelect<T extends boolean = true> {
+  internTitel?: T;
+  titel?: T;
+  slug?: T;
+  korteOmschrijving?: T;
+  categorie?: T;
+  variantContext?: T;
+  status?: T;
+  zichtbaarInSidebar?: T;
+  volgorde?: T;
+  zoekwoorden?: T;
+  laatstBijgewerkt?: T;
+  legacyBron?: T;
+  versie?: T;
+  gepubliceerdOp?: T;
+  gepubliceerdDoor?: T;
+  stappen?:
+    | T
+    | {
+        titel?: T;
+        uitleg?: T;
+        media?:
+          | T
+          | {
+              bestand?: T;
+              onderschrift?: T;
+              id?: T;
+            };
+        waarschuwing?: T;
+        tip?: T;
+        knopOfSchermnaam?: T;
+        zoekwoorden?: T;
+        variantContext?: T;
+        interneNotitie?: T;
+        verborgen?: T;
+        embeddingStatus?: T;
+        embeddingTextHash?: T;
+        embedding?: T;
+        id?: T;
+      };
+  embeddingStatus?: T;
+  embeddedAt?: T;
+  embeddingModel?: T;
+  embeddingTextHash?: T;
+  embedding?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "assistant-conversations_select".
  */
 export interface AssistantConversationsSelect<T extends boolean = true> {
@@ -1640,6 +1835,14 @@ export interface AssistantConversationsSelect<T extends boolean = true> {
         chapterTitle?: T;
         similarity?: T;
         url?: T;
+        id?: T;
+      };
+  steps?:
+    | T
+    | {
+        handleidingId?: T;
+        stepId?: T;
+        stepNummer?: T;
         id?: T;
       };
   model?: T;
@@ -1832,6 +2035,26 @@ export interface AssistantEval {
   createdAt?: string | null;
 }
 /**
+ * De klikbare voorbeeldvragen onder het invoerveld op de helpdesk-homepage.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "helpdesk-voorbeeldvragen".
+ */
+export interface HelpdeskVoorbeeldvragen {
+  id: number;
+  /**
+   * Worden direct verstuurd zodra een bezoeker erop klikt.
+   */
+  vragen?:
+    | {
+        tekst: string;
+        id?: string | null;
+      }[]
+    | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "gmail-connection_select".
  */
@@ -1861,6 +2084,21 @@ export interface KnowledgeSearchSelect<T extends boolean = true> {
  * via the `definition` "assistant-eval_select".
  */
 export interface AssistantEvalSelect<T extends boolean = true> {
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "helpdesk-voorbeeldvragen_select".
+ */
+export interface HelpdeskVoorbeeldvragenSelect<T extends boolean = true> {
+  vragen?:
+    | T
+    | {
+        tekst?: T;
+        id?: T;
+      };
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

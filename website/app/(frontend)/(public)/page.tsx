@@ -1,6 +1,18 @@
+import { getPayload } from "payload";
+import config from "@/payload.config";
 import HelpdeskChat from "@/components/organisms/HelpdeskChat";
 import HandleidingenSidebar from "@/components/organisms/HandleidingenSidebar";
 import GradientAccent from "@/components/atoms/GradientAccent";
+
+interface VoorbeeldvraagRij {
+  tekst: string;
+}
+
+async function haalVoorbeeldvragen(): Promise<string[]> {
+  const payload = await getPayload({ config });
+  const global = await payload.findGlobal({ slug: "helpdesk-voorbeeldvragen", overrideAccess: true, depth: 0 });
+  return ((global.vragen ?? []) as VoorbeeldvraagRij[]).map((v) => v.tekst).filter(Boolean);
+}
 
 // Helpdesk MVP 1.0 (2026-07-25): de homepage IS de chatbot — zie het
 // akkoord op het wireframevoorstel in de sessiegeschiedenis. Vervangt de
@@ -14,7 +26,9 @@ import GradientAccent from "@/components/atoms/GradientAccent";
 // — "geen lange introducties, geen verdere afleiding". De 70/30-verdeling
 // (chat/sidebar) staat op lg: ernaast; daaronder stapelt de sidebar gewoon
 // onder de chat (geen sticky, geen aparte mobiele interactie).
-export default function Home() {
+export default async function Home() {
+  const voorbeeldvragen = await haalVoorbeeldvragen();
+
   return (
     <div className="mx-auto max-w-[1200px] px-4 pb-16 pt-8 sm:px-8 sm:pt-12 lg:px-16">
       <div className="max-w-[720px]">
@@ -27,7 +41,7 @@ export default function Home() {
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[70%_30%] lg:gap-12">
-        <HelpdeskChat />
+        <HelpdeskChat voorbeeldvragen={voorbeeldvragen} />
         <HandleidingenSidebar />
       </div>
     </div>

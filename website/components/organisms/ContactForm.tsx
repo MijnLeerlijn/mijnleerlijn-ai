@@ -4,6 +4,7 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import { AlertTriangle } from "lucide-react";
 import Label from "@/components/atoms/Label";
 import Button from "@/components/atoms/Button";
+import Textarea from "@/components/atoms/Textarea";
 import ContactField from "@/components/molecules/ContactField";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -40,9 +41,12 @@ export default function ContactForm({ initieelOnderwerp, initieleUitleg, initiel
   const { showToast } = useToast();
   const [versturen, setVersturen] = useState(false);
   const [verstuurd, setVerstuurd] = useState(false);
+  const [soortVraag, setSoortVraag] = useState(soortVraagOpties[0]);
+  const [aanvulling, setAanvulling] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
   const selectId = useId();
   const fileId = useId();
+  const aanvullingId = useId();
 
   const onVersturen = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -113,7 +117,8 @@ export default function ContactForm({ initieelOnderwerp, initieleUitleg, initiel
               id={selectId}
               name="soortVraag"
               required
-              defaultValue={initieelOnderwerp ? "Ik snap iets niet" : undefined}
+              value={soortVraag}
+              onChange={(e) => setSoortVraag(e.target.value)}
               className="h-10 w-full rounded-md border border-grijs-200 bg-white px-3 text-base text-grijs-900 outline-none transition-colors duration-[120ms] focus:border-2 focus:border-[var(--variant-accent)]"
             >
               {soortVraagOpties.map((optie) => (
@@ -130,18 +135,39 @@ export default function ContactForm({ initieelOnderwerp, initieleUitleg, initiel
             placeholder="Korte samenvatting"
             defaultValue={initieelOnderwerp}
           />
-          <ContactField
-            label="Uitleg van het probleem"
-            name="uitleg"
-            required
-            multiline
-            rows={initieleUitleg ? 8 : 4}
-            defaultValue={initieleUitleg}
-          />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <ContactField label="Wat verwacht je?" name="verwacht" multiline rows={3} />
-            <ContactField label="Wat zie je daadwerkelijk?" name="ziet" multiline rows={3} />
-          </div>
+          {initieleUitleg ? (
+            <div>
+              <Label htmlFor={aanvullingId}>Wil je nog iets toevoegen?</Label>
+              <Textarea
+                id={aanvullingId}
+                rows={3}
+                placeholder="Optioneel — je vraag en het antwoord van de assistent sturen we automatisch mee."
+                value={aanvulling}
+                onChange={(e) => setAanvulling(e.target.value)}
+              />
+              <details className="mt-2 rounded-md border border-grijs-100 bg-grijs-50 px-3 py-2">
+                <summary className="cursor-pointer select-none text-sm font-medium text-grijs-600 hover:text-grijs-900">
+                  Bekijk wat we automatisch meesturen naar support
+                </summary>
+                <pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-grijs-600">
+                  {initieleUitleg}
+                </pre>
+              </details>
+              <input
+                type="hidden"
+                name="uitleg"
+                value={aanvulling.trim() ? `${aanvulling.trim()}\n\n${initieleUitleg}` : initieleUitleg}
+              />
+            </div>
+          ) : (
+            <ContactField label="Uitleg van het probleem" name="uitleg" required multiline rows={4} />
+          )}
+          {soortVraag === "Ik denk dat er iets stuk is" && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <ContactField label="Wat verwacht je?" name="verwacht" multiline rows={3} />
+              <ContactField label="Wat zie je daadwerkelijk?" name="ziet" multiline rows={3} />
+            </div>
+          )}
           <ContactField
             label="URL van de softwarepagina"
             name="url"

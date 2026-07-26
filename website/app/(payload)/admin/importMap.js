@@ -27,6 +27,7 @@ import { OnderbouwdDoorSummary as OnderbouwdDoorSummary_4021c60dec449f3f4dca6fbb
 import { IndexSelectedSourcesButton as IndexSelectedSourcesButton_b5b69fec3c5edbf30832ffae2e98d786 } from '@/payload/components/IndexSelectedSourcesButton'
 import { SyncManualsButton as SyncManualsButton_ad6e90d59b6285b626376eb981c3b037 } from '@/payload/components/SyncManualsButton'
 import { RepairFailedSourcesButton as RepairFailedSourcesButton_83d0b9376bd6e9d842c1b5becf06fb30 } from '@/payload/components/RepairFailedSourcesButton'
+import { HandleidingPreviewLink as HandleidingPreviewLink_05d9b73ce5a92962ef841533d566a9e2 } from '@/payload/components/HandleidingPreviewLink'
 import { GmailSyncButton as GmailSyncButton_9ca8d060c59b410164b116ec5b036204 } from '@/payload/components/GmailSyncButton'
 import { AnalyzeNewThreadsButton as AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd1df9de28668f } from '@/payload/components/AnalyzeNewThreadsButton'
 import { SemanticSearchTester as SemanticSearchTester_1ddc55405c03875741beea8d02298f60 } from '@/payload/components/SemanticSearchTester'
@@ -65,6 +66,7 @@ export const importMap = {
   "@/payload/components/IndexSelectedSourcesButton#IndexSelectedSourcesButton": IndexSelectedSourcesButton_b5b69fec3c5edbf30832ffae2e98d786,
   "@/payload/components/SyncManualsButton#SyncManualsButton": SyncManualsButton_ad6e90d59b6285b626376eb981c3b037,
   "@/payload/components/RepairFailedSourcesButton#RepairFailedSourcesButton": RepairFailedSourcesButton_83d0b9376bd6e9d842c1b5becf06fb30,
+  "@/payload/components/HandleidingPreviewLink#HandleidingPreviewLink": HandleidingPreviewLink_05d9b73ce5a92962ef841533d566a9e2,
   "@/payload/components/GmailSyncButton#GmailSyncButton": GmailSyncButton_9ca8d060c59b410164b116ec5b036204,
   "@/payload/components/AnalyzeNewThreadsButton#AnalyzeNewThreadsButton": AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd1df9de28668f,
   "@/payload/components/SemanticSearchTester#SemanticSearchTester": SemanticSearchTester_1ddc55405c03875741beea8d02298f60,

@@ -20,12 +20,14 @@ import { AnswerFeedback } from "./payload/collections/AnswerFeedback";
 import { SupportThreads } from "./payload/collections/SupportThreads";
 import { KnowledgeDrafts } from "./payload/collections/KnowledgeDrafts";
 import { KnowledgeSources } from "./payload/collections/KnowledgeSources";
+import { Handleidingen } from "./payload/collections/Handleidingen";
 import { AssistantConversations } from "./payload/collections/AssistantConversations";
 import { AssistantEvalQuestions } from "./payload/collections/AssistantEvalQuestions";
 import { AssistantEvalRuns } from "./payload/collections/AssistantEvalRuns";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
 import { AssistantEval } from "./payload/globals/AssistantEval";
+import { HelpdeskVoorbeeldvragen } from "./payload/globals/HelpdeskVoorbeeldvragen";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -95,11 +97,12 @@ export default buildConfig({
     SupportThreads,
     KnowledgeDrafts,
     KnowledgeSources,
+    Handleidingen,
     AssistantConversations,
     AssistantEvalQuestions,
     AssistantEvalRuns,
   ],
-  globals: [GmailConnection, KnowledgeSearch, AssistantEval],
+  globals: [GmailConnection, KnowledgeSearch, AssistantEval, HelpdeskVoorbeeldvragen],
   editor: lexicalEditor(),
   db: postgresAdapter({
     pool: { connectionString: requireEnv("DATABASE_URI") },
@@ -114,6 +117,12 @@ export default buildConfig({
         vercelBlobStorage({
           token: blobToken,
           collections: { media: true },
+          // Zonder dit botst een tweede upload met dezelfde bestandsnaam
+          // (bv. een generieke screenshot-naam als "Schermafbeelding.png",
+          // heel gangbaar in de Handleidingbouwer) hard op "blob already
+          // exists" — plugin-default is false, ontdekt tijdens live E2E-
+          // verificatie van de Handleidingbouwer.
+          addRandomSuffix: true,
         }),
       ]
     : [],

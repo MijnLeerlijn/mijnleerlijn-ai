@@ -10,7 +10,9 @@ import type { CategorieKleur } from "@/lib/data/categories";
 interface PublicManual {
   id: number;
   title: string;
-  hasFile: boolean;
+  kind: "handleiding" | "pdf";
+  href: string | null;
+  downloadable: boolean;
 }
 
 interface PublicCategory {
@@ -164,28 +166,34 @@ export default function HandleidingenSidebar() {
 
                 {isOpen && (
                   <ul className="ml-[52px] mt-1 flex flex-col gap-1 pb-1">
-                    {categorie.manuals.map((manual) => (
-                      <li key={manual.id} className="flex items-center justify-between gap-2 py-1">
-                        <a
-                          href={manual.hasFile ? `/api/knowledge/download/${manual.id}` : undefined}
-                          target={manual.hasFile ? "_blank" : undefined}
-                          rel={manual.hasFile ? "noopener noreferrer" : undefined}
-                          className={`flex-1 text-sm text-grijs-700 ${manual.hasFile ? "hover:text-[var(--variant-accent)] hover:underline" : ""}`}
-                        >
-                          {manual.title}
-                        </a>
-                        {manual.hasFile && (
+                    {categorie.manuals.map((manual) => {
+                      // PDF's openen als extern bestand in een nieuw tabblad
+                      // (zelfde gedrag als voorheen); een handleiding-pagina
+                      // is gewone interne navigatie, dus in hetzelfde tabblad.
+                      const externLink = manual.kind === "pdf";
+                      return (
+                        <li key={`${manual.kind}-${manual.id}`} className="flex items-center justify-between gap-2 py-1">
                           <a
-                            href={`/api/knowledge/download/${manual.id}`}
-                            download
-                            aria-label={`Download ${manual.title} als PDF`}
-                            className="shrink-0 text-grijs-400 hover:text-[var(--variant-accent)]"
+                            href={manual.href ?? undefined}
+                            target={externLink ? "_blank" : undefined}
+                            rel={externLink ? "noopener noreferrer" : undefined}
+                            className={`flex-1 text-sm text-grijs-700 ${manual.href ? "hover:text-[var(--variant-accent)] hover:underline" : ""}`}
                           >
-                            <Download size={16} aria-hidden />
+                            {manual.title}
                           </a>
-                        )}
-                      </li>
-                    ))}
+                          {manual.downloadable && manual.href && (
+                            <a
+                              href={manual.href}
+                              download
+                              aria-label={`Download ${manual.title} als PDF`}
+                              className="shrink-0 text-grijs-400 hover:text-[var(--variant-accent)]"
+                            >
+                              <Download size={16} aria-hidden />
+                            </a>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

@@ -56,6 +56,7 @@ describe("POST /api/helpdesk/ask", () => {
       hasAnswer: true,
       answer: "Antwoord.",
       manuals: [],
+      steps: [],
     });
 
     const response = await POST(maakRequest({ body: { question: "Hoe maak ik een profiel aan?" } }));
@@ -81,6 +82,7 @@ describe("POST /api/helpdesk/ask", () => {
       hasAnswer: true,
       answer: "Antwoord.",
       manuals: [],
+      steps: [],
     });
 
     const ip = "203.0.113.10";

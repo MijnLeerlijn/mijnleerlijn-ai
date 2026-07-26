@@ -8,6 +8,14 @@ const nextConfig: NextConfig = {
   experimental: {
     globalNotFound: true,
   },
+  // Handleidingbouwer: stapafbeeldingen (payload/collections/Media.ts, via
+  // de publieke vercelBlobStorage-plugin) worden met next/image getoond
+  // (components/organisms/HelpdeskChat.tsx) — zonder deze allowlist weigert
+  // Next.js elke externe Blob-URL hard. Wildcard omdat de store-subdomeinnaam
+  // per Vercel-project verschilt en niet vooraf bekend is.
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "**.public.blob.vercel-storage.com" }],
+  },
 };
 
 export default withPayload(nextConfig);

@@ -13,7 +13,7 @@ import { focusRingOnDark } from "@/utils/focus-ring";
 const sitemap = [
   [
     { label: "Home", href: "/" },
-    { label: "Categorieën", href: "/#ontdek" },
+    { label: "Categorieën", href: "/#handleidingen" },
   ],
   [
     { label: "Updates", href: "/updates" },

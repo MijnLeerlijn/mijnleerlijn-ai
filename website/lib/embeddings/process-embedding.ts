@@ -1,10 +1,13 @@
-import type { Payload } from "payload";
+import type { Payload, PayloadRequest } from "payload";
+import type { Handleidingen } from "@/types/payload-generated";
 import { embedIfChanged } from "./embed-record";
 import {
   buildKnowledgeSourceText,
   buildChapterText,
   buildKnowledgeDraftText,
   buildArticleText,
+  buildHandleidingText,
+  buildStapText,
 } from "./embeddable-text";
 
 // Payload-orkestratie per document: tekst opbouwen, lib/embeddings/
@@ -222,4 +225,105 @@ export async function embedArticle(payload: Payload, id: number): Promise<Proces
     },
   });
   return { type: "embedded" };
+}
+
+type Stap = NonNullable<Handleidingen["stappen"]>[number];
+
+// Handleidingbouwer: zelfde patroon als embedKnowledgeSource (bron +
+// hoofdstukken), maar dan handleiding + stappen. Alleen gepubliceerde
+// handleidingen worden geëmbed (zelfde "hard-in-code"-poort als
+// embedArticle) — retrieval (lib/embeddings/similarity-search.ts) filtert
+// hier BOVENOP nogmaals op status, dit is verdediging in diepte. Een
+// verborgen stap wordt WEL gewoon geëmbed (zodat verbergen/tonen instant
+// werkt zonder herembedden) — verzamelKandidaten() sluit 'm bij retrieval
+// uit, niet deze functie.
+// LET OP: req wordt hier bewust doorgegeven aan elke findByID/update-
+// aanroep. Deze functie wordt aangeroepen VANUIT de afterChange-hook van
+// hetzelfde document (Handleidingen.ts) — zonder req openen findByID/update
+// een NIEUWE transactie die op de rij-lock van de nog-open buitenste
+// transactie wacht en oneindig hangt (ontdekt tijdens live E2E-verificatie:
+// de publicatie-hook liep vast op de update()-aanroep hieronder, exact het
+// deadlock-patroon dat elders in dit project al bekend was en daar wél
+// consequent met req voorkomen werd).
+export async function embedHandleiding(
+  payload: Payload,
+  id: number,
+  req?: Partial<PayloadRequest>
+): Promise<ProcesUitkomst> {
+  const handleiding = await payload.findByID({
+    collection: "handleidingen",
+    id,
+    overrideAccess: true,
+    depth: 0,
+    req,
+  });
+
+  if (handleiding.status !== "gepubliceerd") {
+    return { type: "ignored", reden: "Alleen gepubliceerde handleidingen worden geëmbed." };
+  }
+
+  const stappen = ((handleiding.stappen ?? []) as Stap[]).slice();
+  let stapFout: string | null = null;
+  for (let i = 0; i < stappen.length; i += 1) {
+    const stap = stappen[i]!;
+    const uitkomst = await embedIfChanged({
+      text: buildStapText(stap),
+      storedHash: stap.embeddingTextHash,
+      storedStatus: stap.embedding ? "indexed" : undefined,
+    });
+    if (uitkomst.type === "embedded") {
+      stappen[i] = { ...stap, embedding: uitkomst.embedding, embeddingTextHash: uitkomst.hash };
+    } else if (uitkomst.type === "failed") {
+      stapFout = `stap "${stap.titel}": ${uitkomst.foutmelding}`;
+    }
+  }
+
+  const tekst = buildHandleidingText({
+    titel: handleiding.titel,
+    korteOmschrijving: handleiding.korteOmschrijving,
+    zoekwoorden: handleiding.zoekwoorden,
+  });
+  const uitkomst = await embedIfChanged({
+    text: tekst,
+    storedHash: handleiding.embeddingTextHash,
+    storedStatus: handleiding.embeddingStatus,
+  });
+
+  if (uitkomst.type === "failed") {
+    await payload.update({
+      collection: "handleidingen",
+      id,
+      overrideAccess: true,
+      data: { embeddingStatus: "stale", stappen },
+      req,
+    });
+    return {
+      type: "failed",
+      foutmelding: stapFout ? `${uitkomst.foutmelding}; ${stapFout}` : uitkomst.foutmelding,
+    };
+  }
+
+  if (
+    uitkomst.type === "skipped" &&
+    stappen.every((s, i) => s === (handleiding.stappen as Stap[] | undefined)?.[i])
+  ) {
+    return stapFout ? { type: "failed", foutmelding: stapFout } : { type: "skipped" };
+  }
+
+  await payload.update({
+    collection: "handleidingen",
+    id,
+    overrideAccess: true,
+    data: {
+      embeddingStatus: stapFout ? "stale" : "indexed",
+      embeddedAt: new Date().toISOString(),
+      embeddingModel: uitkomst.type === "embedded" ? uitkomst.model : handleiding.embeddingModel,
+      embeddingTextHash: uitkomst.type === "embedded" ? uitkomst.hash : handleiding.embeddingTextHash,
+      embedding: uitkomst.type === "embedded" ? uitkomst.embedding : handleiding.embedding,
+      stappen,
+    },
+    req,
+  });
+
+  return stapFout ? { type: "failed", foutmelding: stapFout } : { type: "embedded" };
 }

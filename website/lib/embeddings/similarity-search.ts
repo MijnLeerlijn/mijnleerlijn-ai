@@ -14,13 +14,21 @@ import { generateEmbedding } from "@/services/ai-client";
 // echte vectorstore/pgvector-koppeling komt. Zie het commentaar bij
 // `embedding` in payload/collections/KnowledgeSources.ts.
 
-export type SearchHitType = "knowledge-source" | "knowledge-source-chapter" | "knowledge-draft" | "article";
+export type SearchHitType =
+  | "knowledge-source"
+  | "knowledge-source-chapter"
+  | "knowledge-draft"
+  | "article"
+  | "handleiding"
+  | "handleiding-step";
 
 export interface SearchHit {
   type: SearchHitType;
   id: number;
   title: string;
   chapterTitle?: string;
+  /** Alleen gezet voor type "handleiding-step" — Payload's eigen, stabiele array-rij-id (NIET titel-matching, dat breekt bij een hernoemde stap). */
+  stepId?: string;
   similarity: number;
   reason: string;
   /** Alleen gezet voor knowledge-source/knowledge-source-chapter — zie KnowledgeSourcePriority. */
@@ -55,13 +63,16 @@ const TYPE_LABEL: Record<SearchHitType, string> = {
   "knowledge-source-chapter": "dit hoofdstuk",
   "knowledge-draft": "dit conceptkennisartikel",
   article: "dit artikel",
+  handleiding: "deze handleiding",
+  "handleiding-step": "deze stap",
 };
 
 function bouwReden(type: SearchHitType, similarity: number, chapterTitle?: string): string {
   const percentage = Math.round(similarity * 100);
   const kwalificatie =
     similarity >= 0.85 ? "zeer hoge" : similarity >= 0.7 ? "hoge" : similarity >= 0.5 ? "gemiddelde" : "lage";
-  const doel = chapterTitle ? `hoofdstuk "${chapterTitle}"` : TYPE_LABEL[type];
+  const subitemLabel = type === "handleiding-step" ? "stap" : "hoofdstuk";
+  const doel = chapterTitle ? `${subitemLabel} "${chapterTitle}"` : TYPE_LABEL[type];
   return `${kwalificatie} semantische overlap (${percentage}%) met ${doel}.`;
 }
 
@@ -81,7 +92,10 @@ const PRIORITEIT_RANG: Record<KnowledgeSourcePriority, number> = { core: 0, seco
 // taalmodel zelf de conflictregels uit de systeeminstructie kan toepassen —
 // zie lib/assistant/answer.ts voor de volledige, uitgeschreven regels:
 //   1. actuele release note voor gewijzigde functionaliteit;
-//   2. handleiding voor schermnamen, knoppen en concrete stappen;
+//   2. gestructureerde handleidingstap (Handleidingbouwer) vóór een PDF-
+//      handleiding voor schermnamen, knoppen en concrete stappen — bij
+//      vergelijkbare relevantie wint de gestructureerde stap altijd, zie
+//      het gesprek "Handleidingbouwer";
 //   3. background-model voor visie, samenhang en mogelijke routes;
 //   4. gevalideerde FAQ/supportkennis voor praktijkvragen;
 //   5. onbevestigde knowledge drafts nooit als definitieve waarheid (al
@@ -91,17 +105,19 @@ const PRIORITEIT_RANG: Record<KnowledgeSourcePriority, number> = { core: 0, seco
 // functionaliteit", "voor concrete stappen") — geen vraag laat zich zonder
 // een aparte classificatiestap indelen in "gaat dit over een wijziging?".
 // De tie-break hieronder codeert daarom uitsluitend de VASTE component
-// (release-note vóór manual vóór background-model vóór faq vóór support) en
-// alleen bij een (bijna) gelijke score — de inhoudelijke afweging ("is dit
-// een stappenvraag of een visievraag") hoort bij het taalmodel, dat de
-// volledige, contextafhankelijke regels in de systeeminstructie krijgt.
-export type BronRol = "release-note" | "manual" | "background-model" | "faq" | "support";
+// (release-note vóór handleidingstap vóór manual vóór background-model vóór
+// faq vóór support) en alleen bij een (bijna) gelijke score — de
+// inhoudelijke afweging ("is dit een stappenvraag of een visievraag") hoort
+// bij het taalmodel, dat de volledige, contextafhankelijke regels in de
+// systeeminstructie krijgt.
+export type BronRol = "release-note" | "handleidingstap" | "manual" | "background-model" | "faq" | "support";
 const BRONROL_RANG: Record<BronRol, number> = {
   "release-note": 0,
-  manual: 1,
-  "background-model": 2,
-  faq: 3,
-  support: 4,
+  handleidingstap: 1,
+  manual: 2,
+  "background-model": 3,
+  faq: 4,
+  support: 5,
 };
 
 const TYPE_NAAR_BRONROL: Record<string, BronRol> = {
@@ -134,6 +150,8 @@ interface Kandidaat {
   id: number;
   title: string;
   chapterTitle?: string;
+  /** Alleen gezet voor type "handleiding-step" — zie SearchHit.stepId. */
+  stepId?: string;
   embedding: number[];
   /** Alleen gezet voor knowledge-source/knowledge-source-chapter — hoofdstukken erven de prioriteit van hun bron. */
   priority?: KnowledgeSourcePriority;
@@ -237,6 +255,54 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
     }
   }
 
+  // Handleidingbouwer: alleen GEPUBLICEERDE handleidingen — dit is een harde,
+  // deterministische filter (niet alleen een promptinstructie), zie het
+  // gesprek "Handleidingbouwer": "conceptstappen mogen nooit in publieke
+  // AI-antwoorden verschijnen" en "gearchiveerde handleidingen mogen niet
+  // meer verschijnen". Een `verborgen`-stap wordt hier bewust overgeslagen
+  // (niet al bij het embedden, zie embedHandleiding) — zo werkt verbergen
+  // instant, zonder herembedden.
+  const handleidingen = await payload.find({
+    collection: "handleidingen",
+    where: {
+      and: [{ status: { equals: "gepubliceerd" } }, { embeddingStatus: { equals: "indexed" } }],
+    },
+    limit: MAX_KANDIDATEN_PER_COLLECTIE,
+    overrideAccess: true,
+    depth: 0,
+  });
+  for (const handleiding of handleidingen.docs) {
+    if (isEmbeddingVector(handleiding.embedding)) {
+      kandidaten.push({
+        type: "handleiding",
+        id: handleiding.id,
+        title: handleiding.titel,
+        embedding: handleiding.embedding,
+        bronrol: "handleidingstap",
+      });
+    }
+    for (const stap of (handleiding.stappen ?? []) as {
+      id?: string;
+      titel: string;
+      verborgen?: boolean | null;
+      embedding?: unknown;
+    }[]) {
+      if (stap.verborgen) continue;
+      if (!stap.id) continue;
+      if (isEmbeddingVector(stap.embedding)) {
+        kandidaten.push({
+          type: "handleiding-step",
+          id: handleiding.id,
+          title: handleiding.titel,
+          chapterTitle: stap.titel,
+          stepId: stap.id,
+          embedding: stap.embedding,
+          bronrol: "handleidingstap",
+        });
+      }
+    }
+  }
+
   return kandidaten;
 }
 
@@ -257,6 +323,7 @@ function naarSearchHit(k: GescoordeKandidaat): SearchHit {
     id: k.id,
     title: k.title,
     chapterTitle: k.chapterTitle,
+    stepId: k.stepId,
     similarity: k.similarity,
     reason: bouwReden(k.type, k.similarity, k.chapterTitle),
     priority: k.priority,
@@ -326,8 +393,17 @@ function isPrioriteit(k: GescoordeKandidaat, prioriteit: KnowledgeSourcePriority
   return k.priority === prioriteit;
 }
 
+// Handleidingen/handleidingstappen hebben, net als knowledge-drafts/articles,
+// geen prioriteitstier (die bestaat alleen voor Knowledge Sources) — zonder
+// deze regel zouden ze door isPrioriteit() nooit in core/secondary/reference
+// vallen en dus stilzwijgend NOOIT meedoen in searchKnowledgePhased().
 function isAltijdToegelaten(k: GescoordeKandidaat): boolean {
-  return k.type === "knowledge-draft" || k.type === "article";
+  return (
+    k.type === "knowledge-draft" ||
+    k.type === "article" ||
+    k.type === "handleiding" ||
+    k.type === "handleiding-step"
+  );
 }
 
 function telVoldoende(kandidaten: GescoordeKandidaat[], drempel: number): number {

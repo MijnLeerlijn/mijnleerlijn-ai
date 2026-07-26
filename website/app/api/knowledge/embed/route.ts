@@ -9,7 +9,12 @@ import {
   type EmbeddableCollectie,
 } from "@/lib/embeddings/run-embedding";
 
-const GELDIGE_COLLECTIES: EmbeddableCollectie[] = ["knowledge-sources", "knowledge-drafts", "articles"];
+const GELDIGE_COLLECTIES: EmbeddableCollectie[] = [
+  "knowledge-sources",
+  "knowledge-drafts",
+  "articles",
+  "handleidingen",
+];
 
 // Maakt/vernieuwt embeddings — zie lib/embeddings/ voor de daadwerkelijke
 // logica. Admin-only via dezelfde sessieverificatie als

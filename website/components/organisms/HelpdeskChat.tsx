@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { ThumbsUp, ThumbsDown, FileText, ExternalLink, Download } from "lucide-react";
+import { ThumbsUp, ThumbsDown, FileText, ExternalLink, X } from "lucide-react";
+import Image from "next/image";
 import Button from "@/components/atoms/Button";
 import Input from "@/components/atoms/Input";
 import Spinner from "@/components/atoms/Spinner";
@@ -14,11 +15,35 @@ interface PublicManual {
   hasFile: boolean;
 }
 
+interface PublicStepImage {
+  url: string;
+  caption?: string;
+  alt: string;
+}
+
+// Handleidingbouwer: de stap-citaten die direct onder een antwoord getoond
+// worden — "toon alleen de stappen die echt relevant zijn, niet standaard de
+// hele handleiding". Zelfde vorm als lib/assistant/process-public-question.ts's
+// PublicStep (lokaal herhaald, zelfde patroon als PublicManual hierboven —
+// geen gedeeld import tussen server- en clientcode in dit bestand).
+interface PublicStep {
+  handleidingId: number;
+  handleidingSlug: string;
+  handleidingTitel: string;
+  handleidingUrl: string;
+  stepId: string;
+  stepNummer: number;
+  titel: string;
+  uitleg: string;
+  images: PublicStepImage[];
+}
+
 interface Antwoord {
   conversationId: number;
   hasAnswer: boolean;
   answer: string;
   manuals: PublicManual[];
+  steps: PublicStep[];
 }
 
 interface Bericht {
@@ -44,9 +69,15 @@ interface Bericht {
 // hoort bij het interne scherm (eigen "Wat miste er?"-tekstprompt, ander
 // eindpunt) — hier volstaan 👍/👎 zelf, en 👎 opent direct het
 // contactformulier in plaats van een tussenstap.
-export default function HelpdeskChat() {
+interface HelpdeskChatProps {
+  /** Klikbare voorbeeldvragen onder het invoerveld (CMS-beheerd, zie payload/globals/HelpdeskVoorbeeldvragen.ts) — leeg = niets tonen. */
+  voorbeeldvragen?: string[];
+}
+
+export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps) {
   const [berichten, setBerichten] = useState<Bericht[]>([]);
   const [vraag, setVraag] = useState("");
+  const [vergroteAfbeelding, setVergroteAfbeelding] = useState<PublicStepImage | null>(null);
   const bezig = berichten.some((b) => b.status === "laden");
 
   function samengesteldeUitleg(bericht: Bericht): string {
@@ -54,26 +85,34 @@ export default function HelpdeskChat() {
     if (bericht.antwoord?.answer) {
       delen.push(`Antwoord van de assistent:\n${bericht.antwoord.answer}`);
     }
+    if (bericht.antwoord?.steps.length) {
+      delen.push(
+        `Getoonde stappen:\n${bericht.antwoord.steps.map((s) => `- ${s.handleidingTitel} — stap ${s.stepNummer}: ${s.titel}`).join("\n")}`
+      );
+    }
     if (bericht.antwoord?.manuals.length) {
       delen.push(`Gebruikte bronnen:\n${bericht.antwoord.manuals.map((m) => `- ${m.title}`).join("\n")}`);
     }
     return delen.join("\n\n");
   }
 
-  async function verstuurVraag(event: FormEvent) {
-    event.preventDefault();
-    const tekst = vraag.trim();
-    if (!tekst || bezig) return;
+  // Losgetrokken van het formulier-submit-event zodat zowel het echte
+  // invoerveld als een klik op een voorbeeldvraag dezelfde flow gebruiken —
+  // inclusief de bestaande, meteen-zichtbare feedback (vraagbubbel + spinner
+  // verschijnen synchroon, vóór de fetch), zodat "direct versturen" bij een
+  // voorbeeldvraag hetzelfde voelt als zelf typen en op Verstuur klikken.
+  async function stelVraag(tekst: string) {
+    const schoon = tekst.trim();
+    if (!schoon || bezig) return;
 
     const id = crypto.randomUUID();
-    setBerichten((huidig) => [...huidig, { id, vraag: tekst, status: "laden", toonContact: false }]);
-    setVraag("");
+    setBerichten((huidig) => [...huidig, { id, vraag: schoon, status: "laden", toonContact: false }]);
 
     try {
       const res = await fetch("/api/helpdesk/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: tekst }),
+        body: JSON.stringify({ question: schoon }),
       });
       const data = await res.json();
 
@@ -97,27 +136,42 @@ export default function HelpdeskChat() {
 
       setBerichten((huidig) =>
         huidig.map((b) =>
-          b.id === id
-            ? { ...b, status: "klaar", antwoord: data, toonContact: !data.hasAnswer }
-            : b
+          b.id === id ? { ...b, status: "klaar", antwoord: data, toonContact: !data.hasAnswer } : b
         )
       );
     } catch {
       setBerichten((huidig) =>
         huidig.map((b) =>
           b.id === id
-            ? { ...b, status: "fout", foutmelding: "De assistent is nu niet bereikbaar door een netwerkfout." }
+            ? {
+                ...b,
+                status: "fout",
+                foutmelding: "De assistent is nu niet bereikbaar door een netwerkfout.",
+              }
             : b
         )
       );
     }
   }
 
+  async function verstuurVraag(event: FormEvent) {
+    event.preventDefault();
+    const tekst = vraag;
+    setVraag("");
+    await stelVraag(tekst);
+  }
+
+  function klikVoorbeeldvraag(tekst: string) {
+    stelVraag(tekst);
+  }
+
   async function geefFeedback(bericht: Bericht, rating: "nuttig" | "niet_nuttig") {
     if (!bericht.antwoord || bericht.feedback) return;
     setBerichten((huidig) =>
       huidig.map((b) =>
-        b.id === bericht.id ? { ...b, feedback: rating, toonContact: rating === "niet_nuttig" || b.toonContact } : b
+        b.id === bericht.id
+          ? { ...b, feedback: rating, toonContact: rating === "niet_nuttig" || b.toonContact }
+          : b
       )
     );
     try {
@@ -163,9 +217,64 @@ export default function HelpdeskChat() {
               <div className="max-w-[85%] rounded-xl border border-grijs-200 border-t-2 border-t-[var(--variant-accent)] bg-white p-5 shadow-sm sm:max-w-[70%]">
                 <MarkdownAnswer tekst={bericht.antwoord.answer} />
 
+                {bericht.antwoord.steps.length > 0 && (
+                  <div className="mt-4 flex flex-col gap-4 border-t border-grijs-100 pt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-grijs-500">
+                      Relevante stap{bericht.antwoord.steps.length > 1 ? "pen" : ""} uit de handleiding
+                    </p>
+                    {bericht.antwoord.steps.map((stap) => (
+                      <div key={`${stap.handleidingId}-${stap.stepId}`} className="flex flex-col gap-2">
+                        <p className="text-sm font-semibold text-grijs-900">
+                          Stap {stap.stepNummer} — {stap.titel}
+                        </p>
+                        <p className="text-sm leading-6 text-grijs-700">{stap.uitleg}</p>
+                        {stap.images.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {stap.images.map((afbeelding, i) => (
+                              <button
+                                key={`${afbeelding.url}-${i}`}
+                                type="button"
+                                onClick={() => setVergroteAfbeelding(afbeelding)}
+                                className="group flex flex-col overflow-hidden rounded-lg border border-grijs-200"
+                              >
+                                <Image
+                                  src={afbeelding.url}
+                                  alt={afbeelding.alt}
+                                  width={320}
+                                  height={200}
+                                  className="h-auto w-full max-w-[280px] object-cover transition-opacity duration-[120ms] group-hover:opacity-80"
+                                />
+                                {afbeelding.caption && (
+                                  <span className="bg-grijs-50 px-2 py-1 text-left text-xs text-grijs-600">
+                                    {afbeelding.caption}
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {[...new Map(bericht.antwoord.steps.map((s) => [s.handleidingUrl, s])).values()].map(
+                      (s) => (
+                        <a
+                          key={s.handleidingUrl}
+                          href={s.handleidingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 self-start text-sm text-[var(--variant-accent)] hover:underline"
+                        >
+                          <ExternalLink size={14} aria-hidden />
+                          Bekijk de volledige handleiding &ldquo;{s.handleidingTitel}&rdquo;
+                        </a>
+                      )
+                    )}
+                  </div>
+                )}
+
                 {bericht.antwoord.manuals.length > 0 && (
                   <div className="mt-4 border-t border-grijs-100 pt-4">
-                    <p className="flex items-center gap-1.5 text-xs font-semibold text-grijs-600">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-grijs-500">
                       <FileText size={14} aria-hidden className="text-[var(--variant-accent)]" />
                       Bekijk handleiding{bericht.antwoord.manuals.length > 1 ? "en" : ""}
                     </p>
@@ -177,25 +286,15 @@ export default function HelpdeskChat() {
                         >
                           <span className="text-grijs-900">{manual.title}</span>
                           {manual.hasFile && (
-                            <span className="flex shrink-0 items-center gap-2">
-                              <a
-                                href={`/api/knowledge/download/${manual.id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-[var(--variant-accent)] hover:underline"
-                              >
-                                <ExternalLink size={14} aria-hidden />
-                                Openen
-                              </a>
-                              <a
-                                href={`/api/knowledge/download/${manual.id}`}
-                                download
-                                aria-label={`Download ${manual.title} als PDF`}
-                                className="text-grijs-400 hover:text-[var(--variant-accent)]"
-                              >
-                                <Download size={14} aria-hidden />
-                              </a>
-                            </span>
+                            <a
+                              href={`/api/knowledge/download/${manual.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex shrink-0 items-center gap-1 text-[var(--variant-accent)] hover:underline"
+                            >
+                              <ExternalLink size={14} aria-hidden />
+                              Openen
+                            </a>
                           )}
                         </li>
                       ))}
@@ -211,7 +310,9 @@ export default function HelpdeskChat() {
                     className={`flex items-center gap-1.5 text-sm transition-colors duration-[120ms] ${
                       bericht.feedback === "nuttig"
                         ? "font-medium text-groen"
-                        : "text-grijs-500 hover:text-groen disabled:hover:text-grijs-500"
+                        : bericht.feedback
+                          ? "text-grijs-300"
+                          : "text-grijs-500 hover:text-groen"
                     }`}
                   >
                     <ThumbsUp size={16} aria-hidden />
@@ -224,17 +325,27 @@ export default function HelpdeskChat() {
                     className={`flex items-center gap-1.5 text-sm transition-colors duration-[120ms] ${
                       bericht.feedback === "niet_nuttig"
                         ? "font-medium text-rood"
-                        : "text-grijs-500 hover:text-rood disabled:hover:text-grijs-500"
+                        : bericht.feedback
+                          ? "text-grijs-300"
+                          : "text-grijs-500 hover:text-rood"
                     }`}
                   >
                     <ThumbsDown size={16} aria-hidden />
                     Ik kom er niet uit
                   </button>
+                  {bericht.feedback && (
+                    <span className="text-sm text-grijs-500">
+                      {bericht.feedback === "nuttig"
+                        ? "Bedankt voor je feedback!"
+                        : "Bedankt, we kijken ernaar."}
+                    </span>
+                  )}
                 </div>
 
                 {!bericht.antwoord.hasAnswer && (
                   <p className="mt-1 text-xs text-grijs-500">
-                    Vul hieronder aan wat je precies wilt weten — een collega neemt persoonlijk contact met je op.
+                    Vul hieronder aan wat je precies wilt weten — een collega neemt persoonlijk contact met je
+                    op.
                   </p>
                 )}
 
@@ -267,6 +378,49 @@ export default function HelpdeskChat() {
           Verstuur
         </Button>
       </form>
+
+      {voorbeeldvragen.length > 0 && berichten.length === 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {voorbeeldvragen.map((tekst) => (
+            <button
+              key={tekst}
+              type="button"
+              onClick={() => klikVoorbeeldvraag(tekst)}
+              disabled={bezig}
+              className="rounded-full border border-grijs-200 bg-white px-3 py-1.5 text-xs text-grijs-600 transition-colors duration-[120ms] hover:border-[var(--variant-accent)] hover:text-[var(--variant-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {tekst}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {vergroteAfbeelding && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={vergroteAfbeelding.alt}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-donkerblauw/80 p-6"
+          onClick={() => setVergroteAfbeelding(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setVergroteAfbeelding(null)}
+            aria-label="Sluiten"
+            className="absolute right-6 top-6 text-white/80 hover:text-white"
+          >
+            <X size={28} aria-hidden />
+          </button>
+          <Image
+            src={vergroteAfbeelding.url}
+            alt={vergroteAfbeelding.alt}
+            width={1200}
+            height={800}
+            className="max-h-[85vh] w-auto max-w-[90vw] rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -4,7 +4,26 @@ import {
   buildChapterText,
   buildKnowledgeDraftText,
   buildArticleText,
+  buildHandleidingText,
+  buildStapText,
+  richTextNaarPlatteTekst,
 } from "./embeddable-text";
+
+// Minimale, geldige Lexical SerializedEditorState — convertLexicalToPlaintext
+// valt zonder eigen `converters` terug op een generieke heuristiek (tekst-
+// property gebruiken, anders children doorlopen), dus dit hoeft geen
+// volledige/echte Lexical-node-typering te zijn.
+function lexicalMet(...paragrafen: string[]): unknown {
+  return {
+    root: {
+      type: "root",
+      children: paragrafen.map((tekst) => ({
+        type: "paragraph",
+        children: [{ type: "text", text: tekst, format: 0 }],
+      })),
+    },
+  };
+}
 
 describe("buildKnowledgeSourceText", () => {
   it("combineert titel, samenvatting, categorie en trefwoorden", () => {
@@ -60,5 +79,56 @@ describe("buildArticleText", () => {
     expect(tekst).toContain("Rapportage exporteren");
     expect(tekst).toContain("Rapportages");
     expect(tekst).toContain("rapportage, pdf");
+  });
+});
+
+describe("richTextNaarPlatteTekst", () => {
+  it("zet Lexical richText om naar platte tekst", () => {
+    const tekst = richTextNaarPlatteTekst(lexicalMet("Ga naar Beheer.", "Kies Hoofdgebiedprofielen."));
+    expect(tekst).toContain("Ga naar Beheer.");
+    expect(tekst).toContain("Kies Hoofdgebiedprofielen.");
+  });
+
+  it("geeft een lege string bij een lege/ontbrekende waarde, gooit geen fout", () => {
+    expect(richTextNaarPlatteTekst(null)).toBe("");
+    expect(richTextNaarPlatteTekst(undefined)).toBe("");
+    expect(richTextNaarPlatteTekst("geen-object")).toBe("");
+  });
+
+  it("faalt niet hard op een onverwachte/kapotte structuur", () => {
+    expect(richTextNaarPlatteTekst({ onverwacht: true })).toBe("");
+  });
+});
+
+describe("buildHandleidingText", () => {
+  it("combineert titel, korte omschrijving en zoekwoorden", () => {
+    const tekst = buildHandleidingText({
+      titel: "Hoofdgebiedprofiel aanmaken",
+      korteOmschrijving: "Stap voor stap een nieuw profiel instellen.",
+      zoekwoorden: ["profiel", "hoofdgebied"],
+    });
+    expect(tekst).toContain("Hoofdgebiedprofiel aanmaken");
+    expect(tekst).toContain("Stap voor stap");
+    expect(tekst).toContain("profiel, hoofdgebied");
+  });
+});
+
+describe("buildStapText", () => {
+  it("combineert staptitel, platte uitlegtekst, knop/schermnaam en zoekwoorden", () => {
+    const tekst = buildStapText({
+      titel: "Open Hoofdgebiedprofielen",
+      uitleg: lexicalMet("Ga naar Beheer en kies Hoofdgebiedprofielen."),
+      knopOfSchermnaam: "Beheer > Hoofdgebiedprofielen",
+      zoekwoorden: ["hoofdgebied"],
+    });
+    expect(tekst).toContain("Open Hoofdgebiedprofielen");
+    expect(tekst).toContain("Ga naar Beheer en kies Hoofdgebiedprofielen.");
+    expect(tekst).toContain("Beheer > Hoofdgebiedprofielen");
+    expect(tekst).toContain("hoofdgebied");
+  });
+
+  it("bevat nooit een interneNotitie (dat veld bestaat hier bewust niet)", () => {
+    const tekst = buildStapText({ titel: "Stap", uitleg: lexicalMet("Tekst.") });
+    expect(tekst).not.toContain("interneNotitie");
   });
 });

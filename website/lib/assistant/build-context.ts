@@ -1,5 +1,6 @@
 import type { Payload } from "payload";
 import type { SearchHit, KnowledgeSourcePriority, BronRol } from "@/lib/embeddings/similarity-search";
+import { richTextNaarPlatteTekst } from "@/lib/embeddings/embeddable-text";
 
 // Zet de treffers van lib/embeddings/similarity-search.ts om in
 // contextblokken voor het taalmodel + weergavemetadata voor de
@@ -20,9 +21,11 @@ export interface ContextItem {
   label: string;
   title: string;
   chapterTitle?: string;
+  /** Alleen gezet voor type "handleiding-step" — de stabiele stap-id, zie SearchHit.stepId. */
+  stepId?: string;
   text: string;
   similarity: number;
-  refCollection: "knowledge-sources" | "knowledge-drafts" | "articles";
+  refCollection: "knowledge-sources" | "knowledge-drafts" | "articles" | "handleidingen";
   refId: number;
   url: string;
   priority?: KnowledgeSourcePriority;
@@ -31,6 +34,7 @@ export interface ContextItem {
 
 const BRONROL_LABEL: Record<BronRol, string> = {
   "release-note": "release note",
+  handleidingstap: "handleidingstap",
   manual: "handleiding",
   "background-model": "achtergrondmodel",
   faq: "FAQ",
@@ -53,8 +57,13 @@ export async function buildContext(payload: Payload, hits: SearchHit[]): Promise
     .map((h) => h.id);
   const draftIds = hits.filter((h) => h.type === "knowledge-draft").map((h) => h.id);
   const articleIds = hits.filter((h) => h.type === "article").map((h) => h.id);
+  const handleidingIds = [
+    ...new Set(
+      hits.filter((h) => h.type === "handleiding" || h.type === "handleiding-step").map((h) => h.id)
+    ),
+  ];
 
-  const [bronnen, drafts, articles] = await Promise.all([
+  const [bronnen, drafts, articles, handleidingen] = await Promise.all([
     bronIds.length > 0
       ? payload.find({
           collection: "knowledge-sources",
@@ -78,6 +87,15 @@ export async function buildContext(payload: Payload, hits: SearchHit[]): Promise
           collection: "articles",
           where: { id: { in: articleIds } },
           limit: articleIds.length,
+          overrideAccess: true,
+          depth: 0,
+        })
+      : { docs: [] },
+    handleidingIds.length > 0
+      ? payload.find({
+          collection: "handleidingen",
+          where: { id: { in: handleidingIds } },
+          limit: handleidingIds.length,
           overrideAccess: true,
           depth: 0,
         })
@@ -156,6 +174,45 @@ export async function buildContext(payload: Payload, hits: SearchHit[]): Promise
         url: `/artikel/${artikel.slug}`,
         bronrol: hit.bronrol,
       });
+    } else if (hit.type === "handleiding" || hit.type === "handleiding-step") {
+      const handleiding = handleidingen.docs.find((d) => d.id === hit.id);
+      if (!handleiding) continue;
+      if (hit.type === "handleiding-step") {
+        // Stabiele id-lookup (NIET titel-matching, zie het commentaar bij
+        // SearchHit.stepId) — een hernoemde stap breekt deze koppeling dus
+        // nooit, in tegenstelling tot KnowledgeSources.chapters hierboven.
+        const stap = ((handleiding.stappen ?? []) as { id?: string; titel: string; uitleg: unknown }[]).find(
+          (s) => s.id === hit.stepId
+        );
+        if (!stap) continue;
+        items.push({
+          index: index++,
+          type: hit.type,
+          label: "Handleidingstap",
+          title: handleiding.titel,
+          chapterTitle: stap.titel,
+          stepId: hit.stepId,
+          text: `${stap.titel}\n${richTextNaarPlatteTekst(stap.uitleg)}`,
+          similarity: hit.similarity,
+          refCollection: "handleidingen",
+          refId: handleiding.id,
+          url: `/handleidingen/${handleiding.slug}#stap-${hit.stepId}`,
+          bronrol: hit.bronrol,
+        });
+      } else {
+        items.push({
+          index: index++,
+          type: hit.type,
+          label: "Handleiding",
+          title: handleiding.titel,
+          text: handleiding.korteOmschrijving ?? "",
+          similarity: hit.similarity,
+          refCollection: "handleidingen",
+          refId: handleiding.id,
+          url: `/handleidingen/${handleiding.slug}`,
+          bronrol: hit.bronrol,
+        });
+      }
     }
   }
 

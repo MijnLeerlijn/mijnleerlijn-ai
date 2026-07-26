@@ -1,5 +1,7 @@
 import type { Payload } from "payload";
 import { searchKnowledgePhased } from "@/lib/embeddings/similarity-search";
+import { richTextNaarPlatteTekst } from "@/lib/embeddings/embeddable-text";
+import { naarRelatiefMediaPad } from "@/lib/format/media-url";
 import { buildContext, type ContextItem } from "./build-context";
 import { genereerAssistentAntwoord, MIN_SIMILARITY_VOOR_ANTWOORD } from "./answer";
 import { rewriteSearchQuery } from "./rewrite-query";
@@ -34,6 +36,29 @@ export interface PublicManual {
   hasFile: boolean;
 }
 
+export interface PublicStepImage {
+  url: string;
+  caption?: string;
+  alt: string;
+}
+
+// Handleidingbouwer: de stap-citaten die de publieke chat direct onder een
+// antwoord toont — "toon alleen de stappen die echt relevant zijn, niet
+// standaard de hele handleiding" (zie het gesprek). Bewust een apart veld
+// naast `manuals` (niet erin vermengd): de weergave is functioneel anders
+// (afbeeldingen inline vs. een titel+downloadlink).
+export interface PublicStep {
+  handleidingId: number;
+  handleidingSlug: string;
+  handleidingTitel: string;
+  handleidingUrl: string;
+  stepId: string;
+  stepNummer: number;
+  titel: string;
+  uitleg: string;
+  images: PublicStepImage[];
+}
+
 export type ProcessPublicQuestionUitkomst =
   | {
       type: "answered" | "no-answer";
@@ -46,6 +71,7 @@ export type ProcessPublicQuestionUitkomst =
       hasAnswer: boolean;
       answer: string;
       manuals: PublicManual[];
+      steps: PublicStep[];
     }
   | { type: "failed"; foutmelding: string };
 
@@ -90,6 +116,91 @@ async function bepaalPubliekeManuals(payload: Payload, contextItems: ContextItem
   return manuals;
 }
 
+interface HandleidingMediaDoc {
+  url?: string | null;
+  altText?: string | null;
+}
+
+interface HandleidingStapDoc {
+  id?: string;
+  titel: string;
+  uitleg: unknown;
+  verborgen?: boolean | null;
+  media?: { bestand: HandleidingMediaDoc | number | null; onderschrift?: string | null }[] | null;
+}
+
+interface HandleidingDoc {
+  id: number;
+  titel: string;
+  slug: string;
+  stappen?: HandleidingStapDoc[] | null;
+}
+
+/**
+ * Vertaalt de "handleiding-step"-ContextItems die daadwerkelijk in het
+ * antwoord gebruikt zijn naar publiek te tonen stappen MET afbeeldingen —
+ * "de AI kiest niet zelf welke afbeelding erbij hoort, die volgt automatisch
+ * uit de gevonden stap-id" (zie het gesprek). Een `verborgen`-stap kan hier
+ * in theorie niet meer voorkomen (searchKnowledgePhased sluit die al uit),
+ * maar wordt hier defensief nogmaals overgeslagen — verdediging in diepte,
+ * zelfde filosofie als elders in deze pijplijn.
+ */
+async function bepaalRelevanteStappen(payload: Payload, contextItems: ContextItem[]): Promise<PublicStep[]> {
+  const stapItems = contextItems.filter((item) => item.type === "handleiding-step" && item.stepId);
+  if (stapItems.length === 0) return [];
+
+  const handleidingIds = [...new Set(stapItems.map((item) => item.refId))];
+  const handleidingen = await payload.find({
+    collection: "handleidingen",
+    where: { id: { in: handleidingIds } },
+    limit: handleidingIds.length,
+    overrideAccess: true,
+    depth: 1,
+  });
+  const byId = new Map((handleidingen.docs as unknown as HandleidingDoc[]).map((h) => [h.id, h]));
+
+  const stappen: PublicStep[] = [];
+  const gezien = new Set<string>();
+  for (const item of stapItems) {
+    const sleutel = `${item.refId}:${item.stepId}`;
+    if (gezien.has(sleutel)) continue;
+    gezien.add(sleutel);
+
+    const handleiding = byId.get(item.refId);
+    if (!handleiding) continue;
+    const alleStappen = handleiding.stappen ?? [];
+    const stapIndex = alleStappen.findIndex((s) => s.id === item.stepId);
+    if (stapIndex === -1) continue;
+    const stap = alleStappen[stapIndex]!;
+    if (stap.verborgen) continue;
+
+    const images: PublicStepImage[] = (stap.media ?? []).flatMap((m) => {
+      const bestand = m.bestand;
+      if (!bestand || typeof bestand === "number" || !bestand.url) return [];
+      return [
+        {
+          url: naarRelatiefMediaPad(bestand.url),
+          caption: m.onderschrift ?? undefined,
+          alt: bestand.altText ?? stap.titel,
+        },
+      ];
+    });
+
+    stappen.push({
+      handleidingId: handleiding.id,
+      handleidingSlug: handleiding.slug,
+      handleidingTitel: handleiding.titel,
+      handleidingUrl: `/handleidingen/${handleiding.slug}`,
+      stepId: item.stepId!,
+      stepNummer: stapIndex + 1,
+      titel: stap.titel,
+      uitleg: richTextNaarPlatteTekst(stap.uitleg),
+      images,
+    });
+  }
+  return stappen;
+}
+
 export async function processPublicQuestion(
   payload: Payload,
   opties: { question: string }
@@ -111,12 +222,14 @@ export async function processPublicQuestion(
     return { type: "failed", foutmelding: boodschap };
   }
 
-  const uitkomst = await genereerAssistentAntwoord(opties.question, contextItems);
+  const heeftStructuredStappen = contextItems.some((item) => item.type === "handleiding-step");
+  const uitkomst = await genereerAssistentAntwoord(opties.question, contextItems, { heeftStructuredStappen });
   if (uitkomst.type === "failed") {
     return uitkomst;
   }
 
   const manuals = uitkomst.type === "answered" ? await bepaalPubliekeManuals(payload, contextItems) : [];
+  const steps = uitkomst.type === "answered" ? await bepaalRelevanteStappen(payload, contextItems) : [];
 
   const record = await payload.create({
     collection: "assistant-conversations",
@@ -137,6 +250,11 @@ export async function processPublicQuestion(
         similarity: item.similarity,
         url: item.url,
       })),
+      steps: steps.map((stap) => ({
+        handleidingId: stap.handleidingId,
+        stepId: stap.stepId,
+        stepNummer: stap.stepNummer,
+      })),
       model: uitkomst.model,
       inputTokens: uitkomst.usage.inputTokens,
       outputTokens: uitkomst.usage.outputTokens,
@@ -153,5 +271,6 @@ export async function processPublicQuestion(
     hasAnswer: uitkomst.type === "answered",
     answer: uitkomst.answer,
     manuals,
+    steps,
   };
 }
