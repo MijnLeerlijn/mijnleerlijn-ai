@@ -3,8 +3,10 @@ import { adminOnly, isAdmin, type AuthUser } from "../access/roles";
 
 // Logboek van elke vraag/antwoord-uitwisseling met de AI-assistent
 // (Sprint 5, /assistant) — zie lib/assistant/process-question.ts (de enige
-// plek die dit aanmaakt) en app/api/assistant/feedback/route.ts (de enige
-// plek die feedbackRating/feedbackMissing bijwerkt). Bewust volledig
+// plek die dit aanmaakt voor het interne /assistant-scherm) en
+// lib/assistant/process-public-question.ts (Helpdesk MVP 1.0: dezelfde
+// collectie, nu ook gebruikt door de PUBLIEKE, niet-ingelogde
+// helpdesk-homepage, zie app/api/helpdesk/ask/route.ts). Bewust volledig
 // dichtgetimmerd zoals payload/collections/AnswerFeedback.ts/
 // ContactSubmissions.ts: create/update staan hier dicht voor de normale API,
 // zodat alles uitsluitend via de eigen, gecontroleerde routes loopt
@@ -13,14 +15,18 @@ import { adminOnly, isAdmin, type AuthUser } from "../access/roles";
 //
 // Lezen: een beheerder ziet alles; een redacteur ziet uitsluitend de eigen
 // gesprekken (voor de "gesprekken"-zijbalk op /assistant) — zelfde patroon
-// als payload/collections/Users.ts se eigen read-access.
+// als payload/collections/Users.ts se eigen read-access. Een anonieme
+// helpdesk-conversatie (user: null) heeft dus GEEN redacteur-eigenaar en is
+// uitsluitend voor beheerders zichtbaar — bewust, want er is geen
+// ingelogde gebruiker om "eigen gesprek" aan te koppelen.
 export const AssistantConversations: CollectionConfig = {
   slug: "assistant-conversations",
   admin: {
     useAsTitle: "question",
-    defaultColumns: ["question", "hasAnswer", "confidence", "user", "createdAt"],
+    defaultColumns: ["question", "source", "hasAnswer", "confidence", "user", "createdAt"],
     group: "Beheer",
-    description: "Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant).",
+    description:
+      "Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant én de publieke helpdesk-homepage).",
   },
   access: {
     read: ({ req }) => {
@@ -34,6 +40,18 @@ export const AssistantConversations: CollectionConfig = {
     delete: adminOnly,
   },
   fields: [
+    {
+      name: "source",
+      type: "select",
+      required: true,
+      defaultValue: "assistant",
+      label: "Herkomst",
+      options: [
+        { label: "Intern (/assistant)", value: "assistant" },
+        { label: "Publieke helpdesk-homepage", value: "helpdesk" },
+      ],
+      admin: { readOnly: true },
+    },
     { name: "question", type: "textarea", required: true, label: "Vraag" },
     {
       name: "hasAnswer",
@@ -107,9 +125,11 @@ export const AssistantConversations: CollectionConfig = {
       name: "user",
       type: "relationship",
       relationTo: "users",
-      required: true,
       label: "Gesteld door",
-      admin: { readOnly: true },
+      admin: {
+        readOnly: true,
+        description: "Leeg bij een anonieme vraag via de publieke helpdesk-homepage (source: 'helpdesk').",
+      },
     },
   ],
 };

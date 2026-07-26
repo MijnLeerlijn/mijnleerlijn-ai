@@ -76,6 +76,19 @@ export const KnowledgeSources: CollectionConfig = {
     update: adminOnly,
     delete: adminOnly,
   },
+  hooks: {
+    // Livegang-afwerking: verwijderen via de admin-UI liet voorheen het
+    // gekoppelde Media-document en (bij een gesynchroniseerde PDF) de
+    // onderliggende private Blob gewoon staan — verweesde opslag. Chapters
+    // (chunks/embeddings) verdwijnen al automatisch mee (array-subtabel,
+    // FK-cascade), zie lib/knowledge/delete-source.ts.
+    afterDelete: [
+      async ({ doc, req }) => {
+        const { ruimKnowledgeSourceBijlagenOp } = await import("@/lib/knowledge/delete-source");
+        await ruimKnowledgeSourceBijlagenOp(req.payload, doc, req);
+      },
+    ],
+  },
   fields: [
     { name: "title", type: "text", required: true, label: "Titel" },
     {
@@ -126,6 +139,52 @@ export const KnowledgeSources: CollectionConfig = {
       admin: {
         description: "Verplicht voor type PDF — het document dat de AI uitleest.",
         condition: (_d, s) => s?.type === "pdf",
+      },
+    },
+    {
+      // Helpdesk MVP 1.0 (2026-07-25): publieke zichtbaarheid in de
+      // "Handleidingen"-sidebar op de homepage — LOS van de AI-retrieval
+      // hierboven. De AI mag intern altijd alle geïndexeerde bronnen als
+      // onderbouwing gebruiken (retrieval/prompting blijft ongewijzigd);
+      // dit veld bepaalt uitsluitend of een bron ook ALS DOCUMENT aan
+      // bezoekers getoond/gekoppeld mag worden (zowel in de sidebar als in
+      // de "Bekijk handleiding(en)"-lijst onder een AI-antwoord). Bewust
+      // standaard UIT: een beheerder moet een bron expliciet vrijgeven voor
+      // publieke weergave, i.p.v. dat alles automatisch zichtbaar wordt
+      // zodra het geïndexeerd is (bv. een los werkdocument of PDF met
+      // gevoelige schermafbeeldingen hoort niet automatisch in de sidebar).
+      name: "zichtbaar",
+      type: "checkbox",
+      defaultValue: false,
+      label: "Zichtbaar in Handleidingen-sidebar",
+      admin: {
+        description:
+          "Alleen bronnen die hier aangevinkt zijn, verschijnen voor bezoekers in de 'Handleidingen'-sidebar en in de bronvermelding onder een AI-antwoord. Heeft geen invloed op wat de AI intern mag gebruiken om te antwoorden.",
+      },
+    },
+    {
+      // Hergebruikt de bestaande, al publiek leesbare Categories-collectie
+      // (payload/collections/Categories.ts, ook gebruikt door Articles) —
+      // één gedeelde taxonomie i.p.v. een tweede, losse categorie-opsomming.
+      // Optioneel: een bron zonder categorie verschijnt simpelweg niet in de
+      // per-categorie sidebar (maar kan wel gevonden worden via het
+      // zoekveld daar, en blijft gewoon bruikbaar voor de AI).
+      name: "categorie",
+      type: "relationship",
+      relationTo: "categories",
+      label: "Categorie (Handleidingen-sidebar)",
+      admin: {
+        description: "Bepaalt onder welke uitklapbare categorie deze bron in de sidebar verschijnt.",
+        condition: (_d, s) => Boolean(s?.zichtbaar),
+      },
+    },
+    {
+      name: "volgorde",
+      type: "number",
+      label: "Volgorde (Handleidingen-sidebar)",
+      admin: {
+        description: "Laag = hoger in de lijst binnen de categorie. Leeg = alfabetisch op titel, onderaan.",
+        condition: (_d, s) => Boolean(s?.zichtbaar),
       },
     },
     {

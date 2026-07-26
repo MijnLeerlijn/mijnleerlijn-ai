@@ -79,9 +79,8 @@ export default function Footer() {
 
         <GradientAccent className="mt-8 w-full" />
 
-        <div className="mt-4 flex flex-col gap-2 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 text-xs text-white/60">
           <p>© 2026 MijnLeerlijn | Onderdeel van sCoolsuite B.V. | Privacy</p>
-          <p>Prototype — nog geen definitieve content</p>
         </div>
       </div>
     </footer>

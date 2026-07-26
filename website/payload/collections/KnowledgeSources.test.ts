@@ -85,3 +85,28 @@ describe("KnowledgeSources — veld 'variantContext'", () => {
     expect(veld.required).toBeFalsy();
   });
 });
+
+describe("KnowledgeSources — Helpdesk MVP 1.0: publieke zichtbaarheid", () => {
+  it("'zichtbaar' is een checkbox, standaard UIT (een beheerder moet expliciet vrijgeven)", () => {
+    const veld = veldByNaam("zichtbaar") as Extract<Field, { type: "checkbox" }>;
+
+    expect(veld.type).toBe("checkbox");
+    expect(veld.defaultValue).toBe(false);
+  });
+
+  it("'categorie' is een optionele relatie naar de bestaande categories-collectie (zelfde taxonomie als Articles)", () => {
+    const veld = veldByNaam("categorie") as Extract<Field, { type: "relationship" }>;
+
+    expect(veld.type).toBe("relationship");
+    expect(veld.relationTo).toBe("categories");
+    expect(veld.hasMany).toBeFalsy();
+    expect(veld.required).toBeFalsy();
+  });
+
+  it("'volgorde' is een optioneel getalveld", () => {
+    const veld = veldByNaam("volgorde") as Extract<Field, { type: "number" }>;
+
+    expect(veld.type).toBe("number");
+    expect(veld.required).toBeFalsy();
+  });
+});

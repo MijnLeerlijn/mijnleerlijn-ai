@@ -116,6 +116,13 @@ export async function processQuestion(
     collection: "assistant-conversations",
     overrideAccess: true,
     data: {
+      // Helpdesk MVP 1.0: assistant-conversations kreeg een nieuw verplicht
+      // "source"-veld (assistant/helpdesk) om intern gebruik (dit bestand)
+      // te onderscheiden van de publieke helpdesk-homepage (zie
+      // lib/assistant/process-public-question.ts). Ondanks een defaultValue
+      // op het veld zelf verwacht Payload's gegenereerde create-datatype dit
+      // expliciet — geen gedragswijziging, alleen expliciet gemaakt.
+      source: "assistant",
       question: opties.question,
       hasAnswer: uitkomst.type === "answered",
       answer: uitkomst.answer,

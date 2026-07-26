@@ -43,7 +43,13 @@ function isPrivateBlobUrl(url: string): boolean {
   }
 }
 
-async function resolveerBestandsUrl(payload: Payload, mediaId: number): Promise<string | null> {
+/**
+ * Geëxporteerd (was intern) voor Helpdesk MVP 1.0: de publieke
+ * "Openen"/"Download PDF"-koppelingen (app/api/knowledge/download/[id]/route.ts)
+ * hebben exact dezelfde signed-URL-resolutie nodig als het indexeren
+ * hierboven — geen tweede, licht-afwijkende kopie van deze logica.
+ */
+export async function resolveerBestandsUrl(payload: Payload, mediaId: number): Promise<string | null> {
   const media = await payload.findByID({ collection: "media", id: mediaId, overrideAccess: true, depth: 0 });
   const url = media?.url;
   if (!url) return null;

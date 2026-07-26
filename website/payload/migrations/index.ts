@@ -9,6 +9,7 @@ import * as migration_20260723_163206_add_assistant_conversations from './202607
 import * as migration_20260723_171526_add_manual_sync_fields from './20260723_171526_add_manual_sync_fields';
 import * as migration_20260724_122940_add_knowledge_source_priority from './20260724_122940_add_knowledge_source_priority';
 import * as migration_20260725_121240_add_assistant_eval_and_source_purpose from './20260725_121240_add_assistant_eval_and_source_purpose';
+import * as migration_20260725_203557_helpdesk_mvp_manual_visibility from './20260725_203557_helpdesk_mvp_manual_visibility';
 
 export const migrations = [
   {
@@ -64,6 +65,11 @@ export const migrations = [
   {
     up: migration_20260725_121240_add_assistant_eval_and_source_purpose.up,
     down: migration_20260725_121240_add_assistant_eval_and_source_purpose.down,
-    name: '20260725_121240_add_assistant_eval_and_source_purpose'
+    name: '20260725_121240_add_assistant_eval_and_source_purpose',
+  },
+  {
+    up: migration_20260725_203557_helpdesk_mvp_manual_visibility.up,
+    down: migration_20260725_203557_helpdesk_mvp_manual_visibility.down,
+    name: '20260725_203557_helpdesk_mvp_manual_visibility'
   },
 ];

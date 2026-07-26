@@ -17,6 +17,17 @@ const soortVraagOpties = [
 interface ContactFormProps {
   /** Voorgevuld vanuit de "geen betrouwbaar antwoord"-flow (zie NoAnswerState / /contact?onderwerp=…). */
   initieelOnderwerp?: string;
+  /**
+   * Helpdesk MVP 1.0: voorgevuld door HelpdeskChat wanneer het formulier
+   * automatisch verschijnt (👎 "Ik kom er niet uit", of geen antwoord) —
+   * de oorspronkelijke vraag + het AI-antwoord + de getoonde bronnen, al
+   * samengevoegd tot leesbare tekst, zodat de bezoeker alleen nog hoeft aan
+   * te vullen wat er nog ontbreekt (zie de opdracht: "de gebruiker hoeft
+   * alleen nog aanvullende informatie toe te voegen").
+   */
+  initieleUitleg?: string;
+  /** Helpdesk MVP 1.0: de pagina-URL waar de vraag gesteld is. */
+  initieleUrl?: string;
 }
 
 // Zie docs/UX-DESIGN.md scherm 5 en docs/SECURITY-AND-PRIVACY.md. Verstuurt
@@ -25,7 +36,7 @@ interface ContactFormProps {
 // "website"-veld is een honeypot: onzichtbaar voor mensen (via CSS, niet
 // via `hidden`/`display:none`, wat sommige bots negeren), maar bots die elk
 // veld invullen lopen er wel in.
-export default function ContactForm({ initieelOnderwerp }: ContactFormProps) {
+export default function ContactForm({ initieelOnderwerp, initieleUitleg, initieleUrl }: ContactFormProps) {
   const { showToast } = useToast();
   const [versturen, setVersturen] = useState(false);
   const [verstuurd, setVerstuurd] = useState(false);
@@ -119,7 +130,14 @@ export default function ContactForm({ initieelOnderwerp }: ContactFormProps) {
             placeholder="Korte samenvatting"
             defaultValue={initieelOnderwerp}
           />
-          <ContactField label="Uitleg van het probleem" name="uitleg" required multiline rows={4} />
+          <ContactField
+            label="Uitleg van het probleem"
+            name="uitleg"
+            required
+            multiline
+            rows={initieleUitleg ? 8 : 4}
+            defaultValue={initieleUitleg}
+          />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ContactField label="Wat verwacht je?" name="verwacht" multiline rows={3} />
             <ContactField label="Wat zie je daadwerkelijk?" name="ziet" multiline rows={3} />
@@ -128,6 +146,7 @@ export default function ContactForm({ initieelOnderwerp }: ContactFormProps) {
             label="URL van de softwarepagina"
             name="url"
             placeholder="https://mijnleerlijn.nl/..."
+            defaultValue={initieleUrl}
           />
 
           <div>

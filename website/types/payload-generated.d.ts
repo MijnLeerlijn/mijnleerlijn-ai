@@ -722,6 +722,18 @@ export interface KnowledgeSource {
    */
   file?: (number | null) | Media;
   /**
+   * Alleen bronnen die hier aangevinkt zijn, verschijnen voor bezoekers in de 'Handleidingen'-sidebar en in de bronvermelding onder een AI-antwoord. Heeft geen invloed op wat de AI intern mag gebruiken om te antwoorden.
+   */
+  zichtbaar?: boolean | null;
+  /**
+   * Bepaalt onder welke uitklapbare categorie deze bron in de sidebar verschijnt.
+   */
+  categorie?: (number | null) | Category;
+  /**
+   * Laag = hoger in de lijst binnen de categorie. Leeg = alfabetisch op titel, onderaan.
+   */
+  volgorde?: number | null;
+  /**
    * Voor alle typen behalve PDF: link naar de video, website, release notes, handleiding, FAQ of het interne document. Alternatief voor 'Directe inhoud' hieronder — vul één van beide in.
    */
   url?: string | null;
@@ -818,13 +830,14 @@ export interface KnowledgeSource {
   createdAt: string;
 }
 /**
- * Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant).
+ * Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant én de publieke helpdesk-homepage).
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "assistant-conversations".
  */
 export interface AssistantConversation {
   id: number;
+  source: 'assistant' | 'helpdesk';
   question: string;
   /**
    * False = 'Dat weet ik niet' — te weinig/geen betrouwbare bron gevonden.
@@ -855,7 +868,10 @@ export interface AssistantConversation {
   answerTimeMs?: number | null;
   feedbackRating: 'geen' | 'nuttig' | 'niet_nuttig';
   feedbackMissing?: string | null;
-  user: number | User;
+  /**
+   * Leeg bij een anonieme vraag via de publieke helpdesk-homepage (source: 'helpdesk').
+   */
+  user?: (number | null) | User;
   updatedAt: string;
   createdAt: string;
 }
@@ -1565,6 +1581,9 @@ export interface KnowledgeSourcesSelect<T extends boolean = true> {
   type?: T;
   priority?: T;
   file?: T;
+  zichtbaar?: T;
+  categorie?: T;
+  volgorde?: T;
   url?: T;
   content?: T;
   purpose?: T;
@@ -1605,6 +1624,7 @@ export interface KnowledgeSourcesSelect<T extends boolean = true> {
  * via the `definition` "assistant-conversations_select".
  */
 export interface AssistantConversationsSelect<T extends boolean = true> {
+  source?: T;
   question?: T;
   hasAnswer?: T;
   answer?: T;

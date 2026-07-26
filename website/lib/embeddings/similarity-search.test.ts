@@ -645,3 +645,176 @@ describe("searchKnowledgePhased — gefaseerd zoeken op Knowledge Source-priorit
     expect(ids).toHaveLength(new Set(ids).size);
   });
 });
+
+// Livegang-afwerking: controle van de gewenste werking van het
+// achtergrondverhaal ("Kennisbasis MijnLeerlijn — achtergrondverhaal voor de
+// Helpdesk AI", purpose "background-model") t.o.v. handleidingen
+// (bronrol "manual") — zie het gesprek. Live geverifieerd tegen de echte
+// database (3 representatieve vragen, zie scratch-test-retrieval-
+// achtergrond.ts, sindsdien verwijderd): het achtergrondverhaal komt puur
+// via retrieval mee (geen forced-include), zit in dezelfde prioriteitstier
+// (priority "core") als de meeste handleidingen, en verliest een tie-break
+// bij gelijke score altijd van een handleiding (BRONROL_RANG in
+// similarity-search.ts: manual=1 vóór background-model=2) — dat is precies
+// "handleiding leidt bij concrete stappen, achtergrond bij visie/samenhang"
+// uit lib/assistant/answer.ts's systeeminstructie. Geen codewijziging nodig
+// gebleken; deze tests leggen het geverifieerde gedrag vast.
+describe("searchKnowledgePhased — achtergrondverhaal (background-model) vs. handleidingen (manual)", () => {
+  const DREMPEL = 0.5;
+
+  function embeddingVoorScore(score: number): number[] {
+    return [score, Math.sqrt(1 - score * score), 0];
+  }
+
+  beforeEach(() => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0, 0]);
+  });
+
+  it("1. Visie-/adviesvraag: het achtergrondverhaal scoort hoog en zit in de context", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 9,
+          title: "Kennisbasis MijnLeerlijn — achtergrondverhaal voor de Helpdesk AI",
+          type: "intern_document",
+          purpose: "background-model",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.4), // bron zelf lager — het hoofdstuk hieronder is de echte match
+          chapters: [
+            {
+              title: "1. De kernfilosofie: MijnLeerlijn is een middel, geen doel",
+              embedding: embeddingVoorScore(0.9),
+            },
+          ],
+        },
+        {
+          id: 21,
+          title: "Handmatig leerdoelen toevoegen aan leerlingen",
+          type: "pdf",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.3),
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "Wat is de visie van MijnLeerlijn op leerdoelgericht werken?",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    const top = resultaat.hits[0];
+    expect(top?.id).toBe(9);
+    expect(top?.bronrol).toBe("background-model");
+  });
+
+  it("2. Concrete knop-/stappenvraag: een handleiding staat bovenaan, het achtergrondverhaal levert nooit de stappen zelf", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 9,
+          title: "Kennisbasis MijnLeerlijn — achtergrondverhaal voor de Helpdesk AI",
+          type: "intern_document",
+          purpose: "background-model",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.4),
+          chapters: [
+            { title: "4.3 Handmatig koppelen van losse doelen", embedding: embeddingVoorScore(0.75) },
+          ],
+        },
+        {
+          id: 21,
+          title: "Handmatig leerdoelen toevoegen aan leerlingen",
+          type: "pdf",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.82),
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "Hoe voeg ik handmatig een leerdoel toe aan een leerling?",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    const top = resultaat.hits[0];
+    expect(top?.id).toBe(21);
+    expect(top?.bronrol).toBe("manual");
+    // Het achtergrondverhaal mag WEL meedoen als denkkader (score 75% haalt de drempel ruim),
+    // maar staat niet bovenaan voor een pure stappenvraag.
+    expect(resultaat.hits.some((h) => h.id === 9 && h.bronrol === "background-model")).toBe(true);
+  });
+
+  it("3. Gecombineerde vraag (achtergrond + handleiding beide nodig): allebei zitten in de context", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 9,
+          title: "Kennisbasis MijnLeerlijn — achtergrondverhaal voor de Helpdesk AI",
+          type: "intern_document",
+          purpose: "background-model",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.4),
+          chapters: [{ title: "2. De cyclus van MijnLeerlijn", embedding: embeddingVoorScore(0.78) }],
+        },
+        {
+          id: 18,
+          title: "Doelenset koppelen aan leerlingen",
+          type: "pdf",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.8),
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "Waarom werkt MijnLeerlijn met een doelencyclus en hoe koppel ik een doelenset aan een leerling?",
+      limiet: 10,
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.hits.some((h) => h.id === 9 && h.bronrol === "background-model")).toBe(true);
+    expect(resultaat.hits.some((h) => h.id === 18 && h.bronrol === "manual")).toBe(true);
+  });
+
+  it("4. Bij een (bijna) gelijke score wint de handleiding altijd de tie-break van het achtergrondverhaal", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        {
+          id: 9,
+          title: "Achtergrondverhaal",
+          type: "intern_document",
+          purpose: "background-model",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.8),
+        },
+        {
+          id: 21,
+          title: "Handleiding",
+          type: "pdf",
+          priority: "core",
+          embeddingStatus: "indexed",
+          embedding: embeddingVoorScore(0.8), // exact gelijke score
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, {
+      query: "iets",
+      limiet: 1, // slechts 1 plek: bij gelijke score beslist de tie-break wie 'm krijgt
+      drempelVoorVoldoende: DREMPEL,
+    });
+
+    expect(resultaat.hits).toHaveLength(1);
+    expect(resultaat.hits[0]?.id).toBe(21);
+    expect(resultaat.hits[0]?.bronrol).toBe("manual");
+  });
+});

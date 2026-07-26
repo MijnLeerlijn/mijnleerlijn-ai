@@ -4,29 +4,28 @@ import { useEffect, useState } from "react";
 import NextLink from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Search, Menu, X } from "lucide-react";
-import Link from "@/components/atoms/Link";
-import IconButton from "@/components/atoms/IconButton";
-import MobileNavigation from "@/components/organisms/MobileNavigation";
+import Button from "@/components/atoms/Button";
 
-const navItems = [
-  { label: "Categorieën", href: "/#ontdek" },
-  { label: "Updates", href: "/#updates" },
-  { label: "Contact", href: "/contact" },
-];
-
+// Helpdesk MVP 1.0 (2026-07-25): opzettelijk vereenvoudigd tot uitsluitend
+// logo + één knop — "de chatbot is de homepage", zie het akkoord op het
+// wireframevoorstel. De eerdere Categorieën/Updates/Contact-navigatie en het
+// bijbehorende mobiele hamburgermenu (MobileNavigation) zijn hier bewust
+// verwijderd, niet verborgen: met nog maar één link is een apart uitklapbaar
+// mobiel menu overbodige complexiteit. Contact loopt voortaan inline via de
+// chat (zie HelpdeskChat), niet meer via een aparte geadverteerde nav-link.
 export default function Header() {
   const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
-  const naarZoekveld = () => {
-    const zoekveld = document.getElementById("zoekveld");
-    if (zoekveld) {
-      zoekveld.focus();
-      zoekveld.scrollIntoView({ behavior: "smooth", block: "center" });
+  // Zelfde patroon als de vroegere zoek-scroll-behavior: scroll naar de
+  // sidebar als die al op de pagina staat (de homepage), anders naar de
+  // homepage navigeren met een anchor.
+  const naarHandleidingen = () => {
+    const sidebar = document.getElementById("handleidingen");
+    if (sidebar) {
+      sidebar.scrollIntoView({ behavior: "smooth", block: "start" });
     } else {
-      router.push("/zoeken");
+      router.push("/#handleidingen");
     }
   };
 
@@ -56,33 +55,10 @@ export default function Header() {
           />
         </NextLink>
 
-        <nav className="hidden items-center gap-8 md:flex" aria-label="Hoofdnavigatie">
-          {navItems.map((item) => (
-            <Link key={item.label} href={item.href} className="py-1 text-base text-grijs-900">
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-2">
-          <IconButton
-            icon={Search}
-            aria-label="Zoeken"
-            className="text-grijs-600 hover:text-[var(--variant-accent)]"
-            onClick={naarZoekveld}
-          />
-          <IconButton
-            icon={menuOpen ? X : Menu}
-            aria-label={menuOpen ? "Sluit menu" : "Open menu"}
-            aria-expanded={menuOpen}
-            aria-controls="mobiel-menu"
-            className="text-grijs-900 md:hidden"
-            onClick={() => setMenuOpen((v) => !v)}
-          />
-        </div>
+        <Button variant="secondary" size="compact" onClick={naarHandleidingen}>
+          Handleidingen
+        </Button>
       </div>
-
-      <MobileNavigation items={navItems} open={menuOpen} onClose={() => setMenuOpen(false)} />
     </header>
   );
 }
