@@ -43,19 +43,58 @@ process.env.PAYLOAD_MIGRATING = "true";
 // bestand, uitsluitend gegate op deze batch: -1-conditie — dit script dekt
 // dus het volledige interactieve oppervlak van `payload migrate` in deze
 // versie.
+// Diagnostiek (2026-07-27, tijdelijk): geeft alleen geschoonde
+// database-identificatie terug, nooit de volledige DATABASE_URI (die
+// gebruikersnaam/wachtwoord bevat). Gebruikt uitsluitend
+// `new URL(...).hostname` — geen andere delen van de connection string
+// worden ooit gelezen of gelogd. Als het eerste hostsegment niet als
+// Neon-endpoint (`ep-...`) herkenbaar is, wordt niets van de host getoond.
+function geschoondeEndpointId(): string {
+  const uri = process.env.DATABASE_URI;
+  if (!uri) return "onbekend";
+  try {
+    const eersteSegment = new URL(uri).hostname.split(".")[0];
+    return eersteSegment?.startsWith("ep-") ? eersteSegment : "onbekend";
+  } catch {
+    return "onbekend";
+  }
+}
+
 async function run() {
   const payload = await getPayload({ config });
 
-  let heeftDevModeMarker = false;
+  // Diagnostiek (2026-07-27, tijdelijk): puur read-only SELECT's
+  // (current_database()/current_user zijn Postgres-sessie-introspectie,
+  // geen tabeltoegang, geen schrijfactie) om vast te stellen welke exacte
+  // database/omgeving deze build daadwerkelijk raakt. Mislukt dit, dan
+  // gaat de eigenlijke veiligheidscontrole hieronder gewoon door — dit is
+  // aanvullende informatie, geen vereiste voor de kernfunctie.
+  try {
+    const identiteit = (await payload.db.execute({
+      drizzle: payload.db.drizzle,
+      raw: "SELECT current_database() AS database, current_user AS gebruiker",
+    })) as { rows: { database?: string; gebruiker?: string }[] };
+    const rij = identiteit.rows[0];
+    console.log(`[migrate-preflight] endpoint: ${geschoondeEndpointId()}`);
+    console.log(`[migrate-preflight] database: ${rij?.database ?? "onbekend"}`);
+    console.log(`[migrate-preflight] gebruiker: ${rij?.gebruiker ?? "onbekend"}`);
+  } catch (error) {
+    console.error(
+      "[migrate-preflight] Kon database-identiteit niet ophalen (niet-fataal):",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+
+  let devModeRecords: { name: unknown; batch: unknown }[] = [];
   try {
     const resultaat = await payload.find({
       collection: "payload-migrations",
       where: { batch: { equals: -1 } },
-      limit: 1,
+      limit: 0,
       overrideAccess: true,
       depth: 0,
     });
-    heeftDevModeMarker = resultaat.docs.length > 0;
+    devModeRecords = resultaat.docs.map((doc) => ({ name: doc.name, batch: doc.batch }));
   } catch (error) {
     // De payload-migrations-tabel bestaat mogelijk nog niet (allereerste
     // migratie ooit op deze database) — dat is geen dev-mode-marker, gewoon
@@ -68,7 +107,12 @@ async function run() {
     }
   }
 
-  if (heeftDevModeMarker) {
+  console.log(`[migrate-preflight] aantal batch=-1 records: ${devModeRecords.length}`);
+  for (const record of devModeRecords) {
+    console.log(`[migrate-preflight] record: name=${record.name} batch=${record.batch}`);
+  }
+
+  if (devModeRecords.length > 0) {
     console.error(
       "[migrate-preflight] GEBLOKKEERD: de payload-migrations-tabel bevat een batch: -1-record " +
         "(geschreven door `next dev`'s dynamische schema-push naar deze database).\n\n" +
