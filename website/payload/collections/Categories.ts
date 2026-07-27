@@ -42,5 +42,15 @@ export const Categories: CollectionConfig = {
       ],
     },
     { name: "description", type: "textarea", required: true, label: "Uitleg" },
+    {
+      name: "volgorde",
+      type: "number",
+      label: "Volgorde",
+      admin: {
+        position: "sidebar",
+        description:
+          "Bepaalt de volgorde van categorieën op de publieke downloadpagina. Laag = eerder. Leeg = alfabetisch, onderaan. Wordt beheerd via de 'Downloadcategorieën'-pagina in het menu.",
+      },
+    },
   ],
 };

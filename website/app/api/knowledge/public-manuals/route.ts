@@ -35,6 +35,20 @@ interface SidebarItem {
   volgorde: number | null;
 }
 
+// Gedeeld tussen items ÉN categorieën (Downloadbeheer/Downloadcategorieën,
+// 2026-07-27): numerieke `volgorde` wint, `volgorde` altijd vóór geen-
+// `volgorde`, tie-break op `localeCompare(title, "nl")`. Categorieën
+// gebruikten hiervoor `sort: "title"` (puur alfabetisch) — nu hetzelfde
+// principe als items, met hun nieuwe `volgorde`-veld (Categories.ts).
+function vergelijkOpVolgorde(a: { volgorde: number | null; title: string }, b: { volgorde: number | null; title: string }): number {
+  if (a.volgorde !== null && b.volgorde !== null && a.volgorde !== b.volgorde) {
+    return a.volgorde - b.volgorde;
+  }
+  if (a.volgorde !== null && b.volgorde === null) return -1;
+  if (a.volgorde === null && b.volgorde !== null) return 1;
+  return a.title.localeCompare(b.title, "nl");
+}
+
 export async function GET() {
   const payload = await getPayload({ config });
   const variant = await getActiveVariant();
@@ -78,7 +92,6 @@ export async function GET() {
     }),
     payload.find({
       collection: "categories",
-      sort: "title",
       limit: 100,
       overrideAccess: true,
       depth: 0,
@@ -122,16 +135,11 @@ export async function GET() {
     itemsPerCategorie.set(categorieId, lijst);
   }
 
-  const result = categorieen.docs
+  const result = [...categorieen.docs]
+    .map((c) => ({ ...c, volgorde: c.volgorde ?? null }))
+    .sort(vergelijkOpVolgorde)
     .map((categorie) => {
-      const items = (itemsPerCategorie.get(categorie.id) ?? []).sort((a, b) => {
-        if (a.volgorde !== null && b.volgorde !== null && a.volgorde !== b.volgorde) {
-          return a.volgorde - b.volgorde;
-        }
-        if (a.volgorde !== null && b.volgorde === null) return -1;
-        if (a.volgorde === null && b.volgorde !== null) return 1;
-        return a.title.localeCompare(b.title, "nl");
-      });
+      const items = (itemsPerCategorie.get(categorie.id) ?? []).sort(vergelijkOpVolgorde);
       return {
         id: categorie.id,
         slug: categorie.slug,

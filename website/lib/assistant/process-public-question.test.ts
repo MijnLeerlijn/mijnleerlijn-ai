@@ -6,7 +6,7 @@ import {
   type SearchHit,
   type PhasedSearchResultaat,
 } from "@/lib/embeddings/similarity-search";
-import { generateStructuredOutputWithUsage } from "@/services/ai-client";
+import { generateStructuredOutputWithUsage, generateStructuredOutput } from "@/services/ai-client";
 import { rewriteSearchQuery } from "./rewrite-query";
 
 // Zelfde mockingpatroon als lib/assistant/process-question.test.ts — deze
@@ -17,12 +17,19 @@ import { rewriteSearchQuery } from "./rewrite-query";
 vi.mock("@/lib/embeddings/similarity-search", () => ({ searchKnowledgePhased: vi.fn() }));
 vi.mock("@/services/ai-client", () => ({
   generateStructuredOutputWithUsage: vi.fn(),
+  // Kennisbasis MijnLeerlijn — fase 1: bepaal-intentie.ts gebruikt de
+  // niet-usage-variant. Standaard "geen-match" (lege kandidaten), zodat
+  // bestaande tests hieronder die geen kennisbasis-onderwerpen zaaien
+  // ongewijzigd blijven werken — bepaal-intentie.ts slaat deze aanroep
+  // sowieso over als er geen gepubliceerde onderwerpen zijn.
+  generateStructuredOutput: vi.fn(),
   getAiModelId: () => "gpt-4o-test",
 }));
 vi.mock("./rewrite-query", () => ({ rewriteSearchQuery: vi.fn() }));
 
 const mockSearch = vi.mocked(searchKnowledgePhased);
 const mockGenerate = vi.mocked(generateStructuredOutputWithUsage);
+const mockIntentie = vi.mocked(generateStructuredOutput);
 const mockRewrite = vi.mocked(rewriteSearchQuery);
 const USAGE = { inputTokens: 100, outputTokens: 40, totalTokens: 140 };
 
@@ -69,6 +76,7 @@ function maakSeed() {
 beforeEach(() => {
   mockSearch.mockReset();
   mockGenerate.mockReset();
+  mockIntentie.mockReset();
   mockRewrite.mockReset();
   mockRewrite.mockImplementation(async (question) => question);
 });
@@ -375,5 +383,63 @@ describe("processPublicQuestion — relevante handleidingstappen (Handleidingbou
 
     const record = collection("assistant-conversations")[0]!;
     expect(record.steps).toEqual([{ handleidingId: 10, stepId: "stap-a", stepNummer: 1 }]);
+  });
+});
+
+function maakKennisbasisSeed(onderwerpen: { id: number; [key: string]: unknown }[]) {
+  return { ...maakSeed(), "kennisbasis-onderwerpen": onderwerpen };
+}
+
+describe("processPublicQuestion — Kennisbasis MijnLeerlijn intentiebepaling (fase 1)", () => {
+  it("geeft een clarification-uitkomst terug en slaat retrieval/antwoordgeneratie helemaal over bij een onduidelijke vraag", async () => {
+    const { payload, collection } = maakFakePayload(
+      maakKennisbasisSeed([
+        { id: 1, onderwerp: "A", officieleTerm: "A-term", status: "gepubliceerd" },
+        { id: 2, onderwerp: "B", officieleTerm: "B-term", status: "gepubliceerd" },
+      ])
+    );
+    mockIntentie.mockResolvedValue({
+      kandidaten: [1, 2],
+      gekozenId: null,
+      verduidelijkingsvraag: "Bedoel je A of B?",
+    });
+
+    const uitkomst = await processPublicQuestion(payload, { question: "ambigue vraag" });
+
+    expect(uitkomst).toMatchObject({ type: "clarification", question: "Bedoel je A of B?" });
+    expect(mockSearch).not.toHaveBeenCalled();
+    expect(mockGenerate).not.toHaveBeenCalled();
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.hasAnswer).toBe(false);
+  });
+
+  it("gebruikt de officiële term van het opgeloste onderwerp als zoekvraag i.p.v. rewriteSearchQuery", async () => {
+    const { payload } = maakFakePayload(
+      maakKennisbasisSeed([
+        { id: 1, onderwerp: "A", officieleTerm: "Leerdoel toevoegen aan leerling", status: "gepubliceerd" },
+      ])
+    );
+    mockIntentie.mockResolvedValue({ kandidaten: [1], gekozenId: 1, verduidelijkingsvraag: null });
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+
+    await processPublicQuestion(payload, { question: "Hoe koppel ik een leerling aan doelen?" });
+
+    expect(mockSearch).toHaveBeenCalledWith(
+      payload,
+      expect.objectContaining({ query: "Leerdoel toevoegen aan leerling" })
+    );
+    expect(mockRewrite).not.toHaveBeenCalled();
+  });
+
+  it("valt terug op de bestaande rewriteSearchQuery-flow zonder gepubliceerde kennisbasis-onderwerpen (regressie)", async () => {
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+    const { payload } = maakFakePayload(maakSeed());
+
+    await processPublicQuestion(payload, { question: "een vraag" });
+
+    expect(mockIntentie).not.toHaveBeenCalled();
+    expect(mockRewrite).toHaveBeenCalledWith("een vraag");
   });
 });

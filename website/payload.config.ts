@@ -21,6 +21,7 @@ import { SupportThreads } from "./payload/collections/SupportThreads";
 import { KnowledgeDrafts } from "./payload/collections/KnowledgeDrafts";
 import { KnowledgeSources } from "./payload/collections/KnowledgeSources";
 import { Handleidingen } from "./payload/collections/Handleidingen";
+import { KennisbasisOnderwerpen } from "./payload/collections/KennisbasisOnderwerpen";
 import { AssistantConversations } from "./payload/collections/AssistantConversations";
 import { AssistantEvalQuestions } from "./payload/collections/AssistantEvalQuestions";
 import { AssistantEvalRuns } from "./payload/collections/AssistantEvalRuns";
@@ -82,6 +83,26 @@ export default buildConfig({
     user: Users.slug,
     importMap: { baseDir: path.resolve(dirname, "app", "(payload)", "admin") },
     meta: { titleSuffix: " — MijnLeerlijn Beheer" },
+    // Downloadbeheer (2026-07-27): eerste volledige custom admin-views in
+    // dit project (zie payload/components/DownloadbeheerView.tsx en
+    // -DownloadcategorieenView.tsx) — vervangt het per-document zetten van
+    // zichtbaar/categorie/volgorde op Handleidingen/KnowledgeSources door
+    // twee centrale beheerpagina's. `views` registreert de pagina's zelf;
+    // `afterNavLinks` voegt de menu-links toe (custom views krijgen die
+    // niet automatisch).
+    components: {
+      afterNavLinks: ["@/payload/components/DownloadNavLinks#DownloadNavLinks"],
+      views: {
+        downloadbeheer: {
+          Component: "@/payload/components/DownloadbeheerView#DownloadbeheerView",
+          path: "/download-beheer",
+        },
+        downloadcategorieen: {
+          Component: "@/payload/components/DownloadcategorieenView#DownloadcategorieenView",
+          path: "/download-categorieen",
+        },
+      },
+    },
   },
   collections: [
     Users,
@@ -98,6 +119,7 @@ export default buildConfig({
     KnowledgeDrafts,
     KnowledgeSources,
     Handleidingen,
+    KennisbasisOnderwerpen,
     AssistantConversations,
     AssistantEvalQuestions,
     AssistantEvalRuns,

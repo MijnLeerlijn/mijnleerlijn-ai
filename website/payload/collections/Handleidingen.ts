@@ -56,13 +56,22 @@ export const Handleidingen: CollectionConfig = {
       admin: { description: "Voor de publieke URL: /handleidingen/{slug}" },
     },
     { name: "korteOmschrijving", type: "textarea", required: true, label: "Korte omschrijving" },
+    // categorie/zichtbaarInSidebar/volgorde: bewust admin.hidden (NIET
+    // field-level `hidden`, dat zou ze ook uit de API halen) — deze drie
+    // publicatie-instellingen worden voortaan uitsluitend beheerd via de
+    // "Downloadbeheer"-pagina (payload/components/DownloadbeheerView.tsx),
+    // niet meer per document. De velden en hun waarden blijven ongewijzigd
+    // bestaan, alleen de admin-formulier-rendering verdwijnt. `categorie`
+    // is daarom ook niet meer `required`: een nieuwe handleiding moet nu
+    // aanmaakbaar zijn zonder categorie (die wijs je daarna toe via
+    // Downloadbeheer) — zie de bijbehorende migratie die de NOT NULL-
+    // constraint op deze kolom laat vallen.
     {
       name: "categorie",
       type: "relationship",
       relationTo: "categories",
-      required: true,
       label: "Categorie",
-      admin: { position: "sidebar" },
+      admin: { position: "sidebar", hidden: true },
     },
     {
       name: "variantContext",
@@ -104,6 +113,7 @@ export const Handleidingen: CollectionConfig = {
       label: "Zichtbaar in Handleidingen-sidebar",
       admin: {
         position: "sidebar",
+        hidden: true,
         description:
           "Alleen bronnen die hier aangevinkt zijn, verschijnen voor bezoekers in de 'Handleidingen'-sidebar. Heeft geen invloed op wat de AI intern mag gebruiken om te antwoorden.",
       },
@@ -114,6 +124,7 @@ export const Handleidingen: CollectionConfig = {
       label: "Volgorde (Handleidingen-sidebar)",
       admin: {
         position: "sidebar",
+        hidden: true,
         description: "Laag = hoger in de lijst binnen de categorie. Leeg = alfabetisch op titel, onderaan.",
       },
     },

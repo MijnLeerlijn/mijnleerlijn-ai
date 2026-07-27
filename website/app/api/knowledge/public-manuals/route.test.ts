@@ -202,6 +202,42 @@ describe("GET /api/knowledge/public-manuals", () => {
     expect(data.categories).toHaveLength(0);
   });
 
+  it("Downloadbeheer: sorteert categorieën op volgorde i.p.v. alfabetisch", async () => {
+    seed(
+      [
+        { id: 1, title: "Bron in Zebra", zichtbaar: true, categorie: 10 },
+        { id: 2, title: "Bron in Aap", zichtbaar: true, categorie: 20 },
+      ],
+      [
+        { id: 10, slug: "zebra", title: "Zebra-categorie", icon: "Rocket", volgorde: 1 },
+        { id: 20, slug: "aap", title: "Aap-categorie", icon: "Rocket", volgorde: 2 },
+      ]
+    );
+
+    const response = await GET();
+    const data = await response.json();
+
+    expect(data.categories.map((c: { slug: string }) => c.slug)).toEqual(["zebra", "aap"]);
+  });
+
+  it("Downloadbeheer: categorieën zonder volgorde vallen terug op alfabetisch, na categorieën mét volgorde", async () => {
+    seed(
+      [
+        { id: 1, title: "Bron in Zonder volgorde", zichtbaar: true, categorie: 10 },
+        { id: 2, title: "Bron in Met volgorde", zichtbaar: true, categorie: 20 },
+      ],
+      [
+        { id: 10, slug: "zonder-volgorde", title: "Zonder volgorde", icon: "Rocket", volgorde: null },
+        { id: 20, slug: "met-volgorde", title: "Met volgorde", icon: "Rocket", volgorde: 5 },
+      ]
+    );
+
+    const response = await GET();
+    const data = await response.json();
+
+    expect(data.categories.map((c: { slug: string }) => c.slug)).toEqual(["met-volgorde", "zonder-volgorde"]);
+  });
+
   it("Handleidingbouwer: verbergt een gepubliceerde handleiding met zichtbaarInSidebar=false", async () => {
     seed(
       [],

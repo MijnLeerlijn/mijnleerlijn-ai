@@ -81,6 +81,7 @@ export interface Config {
     'knowledge-drafts': KnowledgeDraft;
     'knowledge-sources': KnowledgeSource;
     handleidingen: Handleidingen;
+    'kennisbasis-onderwerpen': KennisbasisOnderwerpen;
     'assistant-conversations': AssistantConversation;
     'assistant-eval-questions': AssistantEvalQuestion;
     'assistant-eval-runs': AssistantEvalRun;
@@ -106,6 +107,7 @@ export interface Config {
     'knowledge-drafts': KnowledgeDraftsSelect<false> | KnowledgeDraftsSelect<true>;
     'knowledge-sources': KnowledgeSourcesSelect<false> | KnowledgeSourcesSelect<true>;
     handleidingen: HandleidingenSelect<false> | HandleidingenSelect<true>;
+    'kennisbasis-onderwerpen': KennisbasisOnderwerpenSelect<false> | KennisbasisOnderwerpenSelect<true>;
     'assistant-conversations': AssistantConversationsSelect<false> | AssistantConversationsSelect<true>;
     'assistant-eval-questions': AssistantEvalQuestionsSelect<false> | AssistantEvalQuestionsSelect<true>;
     'assistant-eval-runs': AssistantEvalRunsSelect<false> | AssistantEvalRunsSelect<true>;
@@ -313,6 +315,10 @@ export interface Category {
   icon: string;
   color: 'blauw' | 'groen' | 'oranje' | 'geel' | 'rood';
   description: string;
+  /**
+   * Bepaalt de volgorde van categorieën op de publieke downloadpagina. Laag = eerder. Leeg = alfabetisch, onderaan. Wordt beheerd via de 'Downloadcategorieën'-pagina in het menu.
+   */
+  volgorde?: number | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -848,7 +854,7 @@ export interface Handleidingen {
    */
   slug: string;
   korteOmschrijving: string;
-  categorie: number | Category;
+  categorie?: (number | null) | Category;
   /**
    * Leeg = relevant voor alle varianten (standaard).
    */
@@ -957,6 +963,65 @@ export interface Handleidingen {
     | number
     | boolean
     | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Functiegerichte term- en synoniemkennis voor intentiebepaling door de AI Helpdesk — een ANDER brontype dan het narratieve achtergrondverhaal (dat blijft apart bestaan als kennisbron). Bepaalt welke MijnLeerlijn-functie een leerkracht bedoelt, vóórdat er naar een handleiding gezocht wordt.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "kennisbasis-onderwerpen".
+ */
+export interface KennisbasisOnderwerpen {
+  id: number;
+  /**
+   * Korte interne titel, bv. 'Doelen koppelen aan één leerling'.
+   */
+  onderwerp: string;
+  doel?: string | null;
+  /**
+   * Wordt als zoekvraag gebruikt zodra dit onderwerp herkend is — i.p.v. de letterlijke formulering van de gebruiker.
+   */
+  officieleTerm: string;
+  /**
+   * Bv. 'doelen', 'leerdoelen', 'leerling', 'kind', 'koppelen', 'toewijzen'.
+   */
+  synoniemen?: string[] | null;
+  /**
+   * Echte voorbeeldformuleringen — sterk signaal voor de intentiebepaling.
+   */
+  voorbeeldvragen?: string[] | null;
+  /**
+   * Alleen gebruikt door de AI om de intentie te bepalen — nooit rechtstreeks aan de gebruiker getoond.
+   */
+  toelichting?: string | null;
+  /**
+   * Structured handleidingen én/of PDF-bronnen die dit onderwerp uitvoeren. Polymorf omdat lang niet elk onderwerp al een structured handleiding heeft.
+   */
+  gekoppeldeHandleidingen?:
+    | (
+        | {
+            relationTo: 'handleidingen';
+            value: number | Handleidingen;
+          }
+        | {
+            relationTo: 'knowledge-sources';
+            value: number | KnowledgeSource;
+          }
+      )[]
+    | null;
+  /**
+   * Als dit onderwerp met een ander onderwerp verward kan worden: de vraag die de assistent moet stellen om dat te verduidelijken, bv. 'Wil je doelen aan één leerling koppelen, of een doelenset aan meerdere leerlingen?'. Wordt letterlijk gebruikt als hij is ingevuld, i.p.v. dat de AI er zelf een verzint.
+   */
+  verduidelijkingsvraag?: string | null;
+  /**
+   * Tie-break wanneer meerdere onderwerpen plausibel lijken. Hoger = eerder gekozen.
+   */
+  prioriteit?: number | null;
+  /**
+   * Alleen 'Gepubliceerd' onderwerpen doen mee in de intentiebepaling.
+   */
+  status: 'concept' | 'gepubliceerd';
   updatedAt: string;
   createdAt: string;
 }
@@ -1281,6 +1346,10 @@ export interface PayloadLockedDocument {
         value: number | Handleidingen;
       } | null)
     | ({
+        relationTo: 'kennisbasis-onderwerpen';
+        value: number | KennisbasisOnderwerpen;
+      } | null)
+    | ({
         relationTo: 'assistant-conversations';
         value: number | AssistantConversation;
       } | null)
@@ -1406,6 +1475,7 @@ export interface CategoriesSelect<T extends boolean = true> {
   icon?: T;
   color?: T;
   description?: T;
+  volgorde?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1811,6 +1881,24 @@ export interface HandleidingenSelect<T extends boolean = true> {
   embeddingModel?: T;
   embeddingTextHash?: T;
   embedding?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "kennisbasis-onderwerpen_select".
+ */
+export interface KennisbasisOnderwerpenSelect<T extends boolean = true> {
+  onderwerp?: T;
+  doel?: T;
+  officieleTerm?: T;
+  synoniemen?: T;
+  voorbeeldvragen?: T;
+  toelichting?: T;
+  gekoppeldeHandleidingen?: T;
+  verduidelijkingsvraag?: T;
+  prioriteit?: T;
+  status?: T;
   updatedAt?: T;
   createdAt?: T;
 }

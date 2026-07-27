@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Ongeldige aanvraag." }, { status: 400 });
   }
-  const { question } = (body ?? {}) as { question?: unknown };
+  const { question, previousQuestion } = (body ?? {}) as { question?: unknown; previousQuestion?: unknown };
 
   if (typeof question !== "string" || !question.trim()) {
     return NextResponse.json({ error: "question is verplicht." }, { status: 400 });
@@ -49,10 +49,19 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  if (previousQuestion !== undefined && (typeof previousQuestion !== "string" || previousQuestion.length > MAX_VRAAG_LENGTE)) {
+    return NextResponse.json({ error: "previousQuestion is ongeldig." }, { status: 400 });
+  }
 
   try {
     const payload = await getPayload({ config });
-    const resultaat = await processPublicQuestion(payload, { question: question.trim() });
+    // previousQuestion: alleen gezet als de bezoeker een verduidelijkingsvraag
+    // (type "clarification") beantwoordt — zie bepaal-intentie.ts en
+    // HelpdeskChat.tsx.
+    const resultaat = await processPublicQuestion(payload, {
+      question: question.trim(),
+      previousQuestion: previousQuestion ? previousQuestion.trim() : undefined,
+    });
 
     if (resultaat.type === "failed") {
       payload.logger.error(`[api/helpdesk/ask] mislukt: ${resultaat.foutmelding}`);

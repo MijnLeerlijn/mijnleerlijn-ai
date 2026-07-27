@@ -67,6 +67,33 @@ describe("POST /api/helpdesk/ask", () => {
     expect(data.answer).toBe("Antwoord.");
   });
 
+  it("geeft previousQuestion door aan de pijplijn wanneer meegestuurd (vervolg op een verduidelijkingsvraag)", async () => {
+    mockProcess.mockResolvedValue({
+      type: "clarification",
+      conversationId: 2,
+      question: "Wil je doelen aan één leerling koppelen, of een doelenset aan meerdere leerlingen?",
+    });
+
+    const response = await POST(
+      maakRequest({ body: { question: "en aan meerdere?", previousQuestion: "Hoe koppel ik doelen?" } })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockProcess).toHaveBeenCalledWith(expect.anything(), {
+      question: "en aan meerdere?",
+      previousQuestion: "Hoe koppel ik doelen?",
+    });
+    const data = await response.json();
+    expect(data.type).toBe("clarification");
+  });
+
+  it("weigert een ongeldige previousQuestion met 400", async () => {
+    const response = await POST(maakRequest({ body: { question: "vraag", previousQuestion: 123 } }));
+
+    expect(response.status).toBe(400);
+    expect(mockProcess).not.toHaveBeenCalled();
+  });
+
   it("geeft een 502 terug wanneer de RAG-pijplijn mislukt", async () => {
     mockProcess.mockResolvedValue({ type: "failed", foutmelding: "OpenAI: server error" });
 

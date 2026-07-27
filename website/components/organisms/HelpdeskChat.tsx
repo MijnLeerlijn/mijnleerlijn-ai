@@ -49,8 +49,14 @@ interface Antwoord {
 interface Bericht {
   id: string;
   vraag: string;
-  status: "laden" | "klaar" | "fout";
+  status: "laden" | "klaar" | "fout" | "verduidelijking";
   antwoord?: Antwoord;
+  // Kennisbasis MijnLeerlijn — fase 1 (2026-07-27): tussenvraag van de AI
+  // omdat de gestelde vraag tussen 2+ MijnLeerlijn-functies ambigu was. Geen
+  // "geen antwoord" — dus bewust geen stappen/manuals-blok en geen
+  // contactformulier-auto-trigger, zie ook de toelichting bij
+  // pendingClarification hieronder.
+  verduidelijkingsvraag?: string;
   foutmelding?: string;
   feedback?: "nuttig" | "niet_nuttig";
   toonContact: boolean;
@@ -78,6 +84,13 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
   const [berichten, setBerichten] = useState<Bericht[]>([]);
   const [vraag, setVraag] = useState("");
   const [vergroteAfbeelding, setVergroteAfbeelding] = useState<PublicStepImage | null>(null);
+  // Kennisbasis MijnLeerlijn — fase 1 (2026-07-27): onthoudt de vraag die tot
+  // een verduidelijkingsvraag leidde, zodat die als previousQuestion meegaat
+  // bij de eerstvolgende vraag (zie process-public-question.ts). Wordt altijd
+  // na precies één gebruik geleegd — bewust geen herhaalde verduidelijking:
+  // de server kiest bij een nog steeds onduidelijk vervolg zelf de beste
+  // kandidaat i.p.v. nogmaals te vragen.
+  const [pendingClarification, setPendingClarification] = useState<string | null>(null);
   const bezig = berichten.some((b) => b.status === "laden");
 
   function samengesteldeUitleg(bericht: Bericht): string {
@@ -105,6 +118,9 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
     const schoon = tekst.trim();
     if (!schoon || bezig) return;
 
+    const previousQuestion = pendingClarification;
+    setPendingClarification(null);
+
     const id = crypto.randomUUID();
     setBerichten((huidig) => [...huidig, { id, vraag: schoon, status: "laden", toonContact: false }]);
 
@@ -112,7 +128,7 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
       const res = await fetch("/api/helpdesk/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: schoon }),
+        body: JSON.stringify(previousQuestion ? { question: schoon, previousQuestion } : { question: schoon }),
       });
       const data = await res.json();
 
@@ -129,6 +145,16 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
                       : "De assistent is nu niet bereikbaar. Probeer het later opnieuw.",
                 }
               : b
+          )
+        );
+        return;
+      }
+
+      if (data.type === "clarification") {
+        setPendingClarification(schoon);
+        setBerichten((huidig) =>
+          huidig.map((b) =>
+            b.id === id ? { ...b, status: "verduidelijking", verduidelijkingsvraag: data.question } : b
           )
         );
         return;
@@ -210,6 +236,12 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
             {bericht.status === "fout" && (
               <div className="max-w-[85%] rounded-xl border border-rood/20 bg-rood/5 p-4 text-sm text-grijs-900 sm:max-w-[70%]">
                 {bericht.foutmelding}
+              </div>
+            )}
+
+            {bericht.status === "verduidelijking" && (
+              <div className="max-w-[85%] rounded-xl border border-grijs-200 border-t-2 border-t-[var(--variant-accent)] bg-white p-5 text-sm text-grijs-900 shadow-sm sm:max-w-[70%]">
+                {bericht.verduidelijkingsvraag}
               </div>
             )}
 

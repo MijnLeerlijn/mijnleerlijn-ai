@@ -148,16 +148,21 @@ export const KnowledgeSources: CollectionConfig = {
       // onderbouwing gebruiken (retrieval/prompting blijft ongewijzigd);
       // dit veld bepaalt uitsluitend of een bron ook ALS DOCUMENT aan
       // bezoekers getoond/gekoppeld mag worden (zowel in de sidebar als in
-      // de "Bekijk handleiding(en)"-lijst onder een AI-antwoord). Bewust
-      // standaard UIT: een beheerder moet een bron expliciet vrijgeven voor
-      // publieke weergave, i.p.v. dat alles automatisch zichtbaar wordt
-      // zodra het geïndexeerd is (bv. een los werkdocument of PDF met
-      // gevoelige schermafbeeldingen hoort niet automatisch in de sidebar).
+      // de "Bekijk handleiding(en)"-lijst onder een AI-antwoord).
+      //
+      // Downloadbeheer (2026-07-27): dit veld, `categorie` en `volgorde`
+      // hieronder zijn admin.hidden — bewust NIET field-level `hidden` (dat
+      // zou ze ook uit de API halen). Deze drie publicatie-instellingen
+      // worden voortaan uitsluitend beheerd via de "Downloadbeheer"-pagina
+      // (payload/components/DownloadbeheerView.tsx), niet meer per document.
+      // De condition tussen deze drie velden is vervallen — ze zijn hier
+      // toch niet meer zichtbaar.
       name: "zichtbaar",
       type: "checkbox",
       defaultValue: false,
       label: "Zichtbaar in Handleidingen-sidebar",
       admin: {
+        hidden: true,
         description:
           "Alleen bronnen die hier aangevinkt zijn, verschijnen voor bezoekers in de 'Handleidingen'-sidebar en in de bronvermelding onder een AI-antwoord. Heeft geen invloed op wat de AI intern mag gebruiken om te antwoorden.",
       },
@@ -174,8 +179,8 @@ export const KnowledgeSources: CollectionConfig = {
       relationTo: "categories",
       label: "Categorie (Handleidingen-sidebar)",
       admin: {
+        hidden: true,
         description: "Bepaalt onder welke uitklapbare categorie deze bron in de sidebar verschijnt.",
-        condition: (_d, s) => Boolean(s?.zichtbaar),
       },
     },
     {
@@ -183,8 +188,8 @@ export const KnowledgeSources: CollectionConfig = {
       type: "number",
       label: "Volgorde (Handleidingen-sidebar)",
       admin: {
+        hidden: true,
         description: "Laag = hoger in de lijst binnen de categorie. Leeg = alfabetisch op titel, onderaan.",
-        condition: (_d, s) => Boolean(s?.zichtbaar),
       },
     },
     {

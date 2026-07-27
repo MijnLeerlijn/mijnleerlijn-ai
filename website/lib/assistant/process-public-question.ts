@@ -5,6 +5,7 @@ import { naarRelatiefMediaPad } from "@/lib/format/media-url";
 import { buildContext, type ContextItem } from "./build-context";
 import { genereerAssistentAntwoord, MIN_SIMILARITY_VOOR_ANTWOORD } from "./answer";
 import { rewriteSearchQuery } from "./rewrite-query";
+import { bepaalIntentie } from "./bepaal-intentie";
 
 // Publieke, anonieme tegenhanger van process-question.ts — Helpdesk MVP 1.0.
 // process-question.ts (het interne /assistant-scherm) blijft VOLLEDIG
@@ -73,6 +74,12 @@ export type ProcessPublicQuestionUitkomst =
       manuals: PublicManual[];
       steps: PublicStep[];
     }
+  // Kennisbasis MijnLeerlijn — fase 1 (bepaalIntentie) vond 2+ écht
+  // verschillende, even plausibele onderwerpen — GEEN "geen antwoord": dit
+  // is een bewuste tussenvraag, geen contactformulier-trigger, geen
+  // stappen/manuals-blok. HelpdeskChat.tsx onthoudt de oorspronkelijke
+  // vraag en stuurt die als `previousQuestion` mee bij de volgende vraag.
+  | { type: "clarification"; conversationId: number; question: string }
   | { type: "failed"; foutmelding: string };
 
 interface ZichtbareBron {
@@ -203,10 +210,56 @@ async function bepaalRelevanteStappen(payload: Payload, contextItems: ContextIte
 
 export async function processPublicQuestion(
   payload: Payload,
-  opties: { question: string }
+  opties: { question: string; previousQuestion?: string }
 ): Promise<ProcessPublicQuestionUitkomst> {
   const begin = Date.now();
-  const zoekvraag = await rewriteSearchQuery(opties.question);
+
+  // Kennisbasis MijnLeerlijn — fase 1 (2026-07-28): vóór de bestaande
+  // rewrite/retrieval-flow wordt eerst bepaald welke MijnLeerlijn-functie
+  // bedoeld is. `previousQuestion` (alleen gezet bij het vervolg op een
+  // eerdere verduidelijkingsvraag, zie HelpdeskChat.tsx) wordt aan de
+  // oorspronkelijke vraag geplakt zodat zowel de intentiebepaling als het
+  // uiteindelijke antwoord de volledige context hebben — er is bewust maar
+  // één verduidelijkingsronde: bepaalIntentie() vraagt zelf nooit twee keer
+  // door (zie het commentaar daar), dus deze functie hoeft dat niet apart
+  // te bewaken.
+  const effectieveVraag = opties.previousQuestion
+    ? `${opties.previousQuestion} — ${opties.question}`
+    : opties.question;
+
+  const intentie = await bepaalIntentie(payload, effectieveVraag);
+
+  if (intentie.type === "onduidelijk") {
+    const record = await payload.create({
+      collection: "assistant-conversations",
+      overrideAccess: true,
+      data: {
+        source: "helpdesk",
+        question: effectieveVraag,
+        hasAnswer: false,
+        answer: intentie.vraag,
+        reasoning: "Kennisbasis MijnLeerlijn: vraag was tussen meerdere onderwerpen ambigu, verduidelijking gevraagd.",
+        confidence: 0,
+        sources: [],
+        steps: [],
+        model: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        answerTimeMs: Date.now() - begin,
+        feedbackRating: "geen",
+        user: null,
+      },
+    });
+    return { type: "clarification", conversationId: record.id, question: intentie.vraag };
+  }
+
+  // "opgelost": de officiële term stuurt de zoekvraag i.p.v. de letterlijke
+  // formulering van de gebruiker — dit is de kern van "beide phrasing-
+  // varianten leiden tot dezelfde handleiding". "geen-match": ongewijzigd
+  // de bestaande rewriteSearchQuery-flow.
+  const zoekvraag =
+    intentie.type === "opgelost" ? intentie.officieleTerm : await rewriteSearchQuery(effectieveVraag);
 
   let resultaat: Awaited<ReturnType<typeof searchKnowledgePhased>>;
   let contextItems: ContextItem[];
@@ -223,7 +276,7 @@ export async function processPublicQuestion(
   }
 
   const heeftStructuredStappen = contextItems.some((item) => item.type === "handleiding-step");
-  const uitkomst = await genereerAssistentAntwoord(opties.question, contextItems, { heeftStructuredStappen });
+  const uitkomst = await genereerAssistentAntwoord(effectieveVraag, contextItems, { heeftStructuredStappen });
   if (uitkomst.type === "failed") {
     return uitkomst;
   }
@@ -236,7 +289,7 @@ export async function processPublicQuestion(
     overrideAccess: true,
     data: {
       source: "helpdesk",
-      question: opties.question,
+      question: effectieveVraag,
       hasAnswer: uitkomst.type === "answered",
       answer: uitkomst.answer,
       reasoning: uitkomst.reasoning,

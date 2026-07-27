@@ -20,12 +20,16 @@
     "migrate:create": "payload migrate:create",
     "seed": "node --env-file=.env node_modules/.bin/tsx payload/seed/index.ts",
     "seed:eval-questions": "node --env-file=.env node_modules/.bin/tsx payload/seed/eval-questions.ts",
+    "seed:kennisbasis-onderwerpen": "node --env-file=.env node_modules/.bin/tsx payload/seed/kennisbasis-onderwerpen.ts",
     "import:handleidingen": "node --env-file=.env node_modules/.bin/tsx payload/import-handleidingen/index.ts",
     "import:kennisbasis": "node --env-file=.env node_modules/.bin/tsx payload/import-kennisbasis/index.ts",
     "upload:handleidingen": "node --env-file=.env node_modules/.bin/tsx payload/upload-manuals-to-blob/index.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.18",
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "@payloadcms/db-postgres": "^3.86.0",
     "@payloadcms/next": "^3.86.0",
     "@payloadcms/richtext-lexical": "^3.86.0",

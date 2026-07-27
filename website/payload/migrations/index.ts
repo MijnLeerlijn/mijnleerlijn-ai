@@ -12,6 +12,8 @@ import * as migration_20260725_121240_add_assistant_eval_and_source_purpose from
 import * as migration_20260725_203557_helpdesk_mvp_manual_visibility from './20260725_203557_helpdesk_mvp_manual_visibility';
 import * as migration_20260726_084003_handleidingen_en_voorbeeldvragen from './20260726_084003_handleidingen_en_voorbeeldvragen';
 import * as migration_20260726_085845_assistant_conversations_steps from './20260726_085845_assistant_conversations_steps';
+import * as migration_20260727_055935_download_beheer from './20260727_055935_download_beheer';
+import * as migration_20260727_084413_kennisbasis_onderwerpen from './20260727_084413_kennisbasis_onderwerpen';
 
 export const migrations = [
   {
@@ -82,6 +84,16 @@ export const migrations = [
   {
     up: migration_20260726_085845_assistant_conversations_steps.up,
     down: migration_20260726_085845_assistant_conversations_steps.down,
-    name: '20260726_085845_assistant_conversations_steps'
+    name: '20260726_085845_assistant_conversations_steps',
+  },
+  {
+    up: migration_20260727_055935_download_beheer.up,
+    down: migration_20260727_055935_download_beheer.down,
+    name: '20260727_055935_download_beheer',
+  },
+  {
+    up: migration_20260727_084413_kennisbasis_onderwerpen.up,
+    down: migration_20260727_084413_kennisbasis_onderwerpen.down,
+    name: '20260727_084413_kennisbasis_onderwerpen'
   },
 ];
