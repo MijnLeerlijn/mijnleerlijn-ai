@@ -8,7 +8,6 @@
     "build": "next build",
     "build:production": "npm run migrate:preflight && payload migrate && next build",
     "migrate:preflight": "node --env-file-if-exists=.env node_modules/.bin/tsx payload/migrate-preflight.ts",
-    "check:kennisbasis-onderwerpen": "node --env-file-if-exists=.env node_modules/.bin/tsx payload/check-kennisbasis-onderwerpen.ts",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
