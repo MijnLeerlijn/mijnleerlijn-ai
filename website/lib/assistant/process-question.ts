@@ -144,6 +144,11 @@ export async function processQuestion(
       answerTimeMs,
       feedbackRating: "geen",
       user: opties.userId,
+      // AI Verbetercentrum: verplicht veld, alleen relevant voor de publieke
+      // helpdesk-flow (zie process-public-question.ts) — hier altijd "nieuw",
+      // zelfde reden als bij "source" hierboven (defaultValue volstaat niet
+      // voor Payload's gegenereerde create-datatype).
+      verbeterStatus: "nieuw",
     },
   });
 

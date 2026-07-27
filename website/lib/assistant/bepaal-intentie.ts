@@ -36,12 +36,28 @@ export interface KennisbasisOnderwerpDoc {
   verduidelijkingsvraag?: string | null;
   prioriteit?: number | null;
   status: string;
+  updatedAt?: string;
 }
 
+// AI Verbetercentrum (2026-07-27): `kandidaten` en `kennisbasisVersion`
+// worden op ELKE uitkomst meegegeven (ook "geen-match") zodat
+// process-public-question.ts altijd kan vastleggen welke onderwerpen
+// overwogen zijn en tegen welke stand van de kennisbasis — nodig om
+// achteraf te kunnen reconstrueren "waarom" de AI tot een antwoord kwam.
+// `gebruikteSynoniem` is uitsluitend informatief (analytics in het
+// Verbetercentrum) en beïnvloedt de beslislogica hieronder niet.
 export type IntentieUitkomst =
-  | { type: "opgelost"; onderwerpId: number; onderwerp: string; officieleTerm: string }
-  | { type: "onduidelijk"; vraag: string }
-  | { type: "geen-match" };
+  | {
+      type: "opgelost";
+      onderwerpId: number;
+      onderwerp: string;
+      officieleTerm: string;
+      kandidaten: number[];
+      gebruikteSynoniem: string | null;
+      kennisbasisVersion: string | null;
+    }
+  | { type: "onduidelijk"; vraag: string; kandidaten: number[]; kennisbasisVersion: string | null }
+  | { type: "geen-match"; kandidaten: number[]; kennisbasisVersion: string | null };
 
 const SYSTEEMPROMPT = `Je bepaalt welke MijnLeerlijn-functie een leerkracht bedoelt, op basis van een lijst beheerde onderwerpen (elk met een officiële term, synoniemen en voorbeeldvragen).
 
@@ -50,13 +66,23 @@ Regels:
 2. Is er precies één duidelijke winnaar (ook als de gebruiker een synoniem gebruikt in plaats van de officiële term)? Zet die in "gekozenId". Wees hier niet te terughoudend — bij een vraag die overduidelijk naar één onderwerp wijst, kies die gewoon.
 3. Passen 2+ onderwerpen ongeveer even goed EN leiden ze tot merkbaar verschillende handelingen? Laat "gekozenId" leeg (null) en formuleer in "verduidelijkingsvraag" een korte, vriendelijke vraag die het onderscheid duidelijk maakt.
 4. Past niets goed genoeg? Laat "kandidaten" leeg — verzin nooit een kandidaat alleen omdat er geen beter alternatief is.
-5. Antwoord uitsluitend met het gevraagde gestructureerde object.`;
+5. Als je een duidelijke winnaar kiest ("gekozenId" gezet): geef in "gebruikteSynoniem" het woord/de formulering uit de vraag dat de match veroorzaakte (bv. de synoniem die de gebruiker gebruikte i.p.v. de officiële term), of null als de gebruiker al de officiële term gebruikte. Puur ter info, geen invloed op je keuze.
+6. Antwoord uitsluitend met het gevraagde gestructureerde object.`;
 
 const IntentieSchema = z.object({
   kandidaten: z.array(z.number()),
   gekozenId: z.number().nullable(),
   verduidelijkingsvraag: z.string().nullable(),
+  gebruikteSynoniem: z.string().nullable(),
 });
+
+function bepaalKennisbasisVersion(onderwerpen: KennisbasisOnderwerpDoc[]): string | null {
+  const tijdstippen = onderwerpen
+    .map((o) => (o.updatedAt ? new Date(o.updatedAt).getTime() : NaN))
+    .filter((t) => !Number.isNaN(t));
+  if (tijdstippen.length === 0) return null;
+  return new Date(Math.max(...tijdstippen)).toISOString();
+}
 
 function logInDevelopment(vraag: string, uitkomst: IntentieUitkomst): void {
   if (isProduction()) return;
@@ -98,8 +124,9 @@ export async function bepaalIntentie(payload: Payload, vraag: string): Promise<I
     .catch(() => null);
 
   const onderwerpen = (onderwerpenRes?.docs ?? []) as KennisbasisOnderwerpDoc[];
+  const kennisbasisVersion = bepaalKennisbasisVersion(onderwerpen);
   if (onderwerpen.length === 0) {
-    const uitkomst: IntentieUitkomst = { type: "geen-match" };
+    const uitkomst: IntentieUitkomst = { type: "geen-match", kandidaten: [], kennisbasisVersion };
     logInDevelopment(vraag, uitkomst);
     return uitkomst;
   }
@@ -115,13 +142,21 @@ export async function bepaalIntentie(payload: Payload, vraag: string): Promise<I
     const kandidaten = result.kandidaten.filter((id) => onderwerpen.some((o) => o.id === id));
 
     if (kandidaten.length === 0) {
-      uitkomst = { type: "geen-match" };
+      uitkomst = { type: "geen-match", kandidaten, kennisbasisVersion };
     } else if (kandidaten.length === 1 || result.gekozenId !== null) {
       const gekozenId = result.gekozenId ?? kandidaten[0]!;
       const onderwerp = onderwerpen.find((o) => o.id === gekozenId);
       uitkomst = onderwerp
-        ? { type: "opgelost", onderwerpId: onderwerp.id, onderwerp: onderwerp.onderwerp, officieleTerm: onderwerp.officieleTerm }
-        : { type: "geen-match" };
+        ? {
+            type: "opgelost",
+            onderwerpId: onderwerp.id,
+            onderwerp: onderwerp.onderwerp,
+            officieleTerm: onderwerp.officieleTerm,
+            kandidaten,
+            gebruikteSynoniem: result.gebruikteSynoniem?.trim() || null,
+            kennisbasisVersion,
+          }
+        : { type: "geen-match", kandidaten, kennisbasisVersion };
     } else {
       // 2+ echte kandidaten, geen duidelijke winnaar — gebruik een vooraf
       // door de beheerder geschreven verduidelijkingsvraag als die bestaat
@@ -136,14 +171,22 @@ export async function bepaalIntentie(payload: Payload, vraag: string): Promise<I
       const vraagTekst = vooraf?.verduidelijkingsvraag?.trim() || result.verduidelijkingsvraag?.trim();
 
       if (vraagTekst) {
-        uitkomst = { type: "onduidelijk", vraag: vraagTekst };
+        uitkomst = { type: "onduidelijk", vraag: vraagTekst, kandidaten, kennisbasisVersion };
       } else {
         const beste = [...kandidaatOnderwerpen].sort((a, b) => (b.prioriteit ?? 0) - (a.prioriteit ?? 0))[0]!;
-        uitkomst = { type: "opgelost", onderwerpId: beste.id, onderwerp: beste.onderwerp, officieleTerm: beste.officieleTerm };
+        uitkomst = {
+          type: "opgelost",
+          onderwerpId: beste.id,
+          onderwerp: beste.onderwerp,
+          officieleTerm: beste.officieleTerm,
+          kandidaten,
+          gebruikteSynoniem: null,
+          kennisbasisVersion,
+        };
       }
     }
   } catch {
-    uitkomst = { type: "geen-match" };
+    uitkomst = { type: "geen-match", kandidaten: [], kennisbasisVersion };
   }
 
   logInDevelopment(vraag, uitkomst);

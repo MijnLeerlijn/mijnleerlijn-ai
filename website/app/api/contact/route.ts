@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getPayload } from "payload";
+import config from "@/payload.config";
 import { createContactSubmission } from "@/services/payload";
 import { uploadBijlage } from "@/services/storage";
 import { verzendEmail } from "@/services/email";
@@ -60,6 +62,14 @@ export async function POST(request: NextRequest) {
   const expected = String(form.get("verwacht") ?? "").trim() || undefined;
   const actual = String(form.get("ziet") ?? "").trim() || undefined;
   const pageUrl = String(form.get("url") ?? "").trim() || undefined;
+  // AI Verbetercentrum (2026-07-27): puur een numerieke koppeling naar het
+  // helpdesk-gesprek (HelpdeskChat.tsx → ContactForm.tsx) — geen nieuwe
+  // persoonsgegevens, alleen gebruikt voor de non-blocking side-update
+  // hieronder. Optioneel: leeg bij het interne /assistant-scherm of als
+  // loggen van het gesprek zelf al mislukte.
+  const conversationIdRaw = String(form.get("conversationId") ?? "").trim();
+  const conversationId =
+    conversationIdRaw && Number.isFinite(Number(conversationIdRaw)) ? Number(conversationIdRaw) : null;
 
   const verplicht = { teacherName, schoolName, email, requestType, subject, problemDescription };
   const ontbrekend = Object.entries(verplicht).filter(([, waarde]) => !waarde);
@@ -123,6 +133,24 @@ export async function POST(request: NextRequest) {
         onderwerp: `Nieuwe contactmelding: ${subject}`,
         tekst: `${teacherName} (${schoolName}, ${email}) heeft een nieuwe melding ingediend.\n\nSoort vraag: ${requestType}\nOnderwerp: ${subject}\n\n${problemDescription}\n\nMelding-ID: ${id}`,
       });
+    }
+
+    // AI Verbetercentrum: non-blocking — een mislukking hier mag de al
+    // succesvolle contactinzending nooit ongedaan maken of vertragen met een
+    // foutrespons. contact-submissions krijgt zelf geen nieuw veld (geen
+    // omgekeerde koppeling, geen extra persoonsgegevens-oppervlak).
+    if (conversationId !== null) {
+      try {
+        const payload = await getPayload({ config });
+        await payload.update({
+          collection: "assistant-conversations",
+          id: conversationId,
+          overrideAccess: true,
+          data: { contactFormSubmitted: true },
+        });
+      } catch (error) {
+        console.error("[api/contact] Koppelen aan helpdesk-gesprek mislukt (contactinzending blijft geldig):", error);
+      }
     }
 
     return NextResponse.json({ ok: true, id });

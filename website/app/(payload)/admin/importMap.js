@@ -33,9 +33,11 @@ import { AnalyzeNewThreadsButton as AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd
 import { SemanticSearchTester as SemanticSearchTester_1ddc55405c03875741beea8d02298f60 } from '@/payload/components/SemanticSearchTester'
 import { AssistantEvalTester as AssistantEvalTester_83894a343bb1003bd731f09ba8a0ced5 } from '@/payload/components/AssistantEvalTester'
 import { DownloadNavLinks as DownloadNavLinks_1a93fcbdb3c12082b9126a39d56dc277 } from '@/payload/components/DownloadNavLinks'
+import { VerbetercentrumNavLinks as VerbetercentrumNavLinks_b8410a15ee14a3c85c7ef32e3339e925 } from '@/payload/components/VerbetercentrumNavLinks'
 import { VercelBlobClientUploadHandler as VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e } from '@payloadcms/storage-vercel-blob/client'
 import { DownloadbeheerView as DownloadbeheerView_9006cb59708b73f3b1db204b481d4309 } from '@/payload/components/DownloadbeheerView'
 import { DownloadcategorieenView as DownloadcategorieenView_d58a0bdd58073aa9f9f13884b4ec75ae } from '@/payload/components/DownloadcategorieenView'
+import { VerbetercentrumView as VerbetercentrumView_979d8b5a54663f241da850b0beee9455 } from '@/payload/components/VerbetercentrumView'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -75,8 +77,10 @@ export const importMap = {
   "@/payload/components/SemanticSearchTester#SemanticSearchTester": SemanticSearchTester_1ddc55405c03875741beea8d02298f60,
   "@/payload/components/AssistantEvalTester#AssistantEvalTester": AssistantEvalTester_83894a343bb1003bd731f09ba8a0ced5,
   "@/payload/components/DownloadNavLinks#DownloadNavLinks": DownloadNavLinks_1a93fcbdb3c12082b9126a39d56dc277,
+  "@/payload/components/VerbetercentrumNavLinks#VerbetercentrumNavLinks": VerbetercentrumNavLinks_b8410a15ee14a3c85c7ef32e3339e925,
   "@payloadcms/storage-vercel-blob/client#VercelBlobClientUploadHandler": VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e,
   "@/payload/components/DownloadbeheerView#DownloadbeheerView": DownloadbeheerView_9006cb59708b73f3b1db204b481d4309,
   "@/payload/components/DownloadcategorieenView#DownloadcategorieenView": DownloadcategorieenView_d58a0bdd58073aa9f9f13884b4ec75ae,
+  "@/payload/components/VerbetercentrumView#VerbetercentrumView": VerbetercentrumView_979d8b5a54663f241da850b0beee9455,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }

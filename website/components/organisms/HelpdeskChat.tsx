@@ -39,7 +39,11 @@ interface PublicStep {
 }
 
 interface Antwoord {
-  conversationId: number;
+  // AI Verbetercentrum (2026-07-27): kan `null` zijn als het loggen van het
+  // gesprek zelf mislukte (non-blocking — zie process-public-question.ts).
+  // Zonder conversationId is er geen record om feedback aan te koppelen,
+  // dus verbergt de UI dan de 👍/👎-knoppen.
+  conversationId: number | null;
   hasAnswer: boolean;
   answer: string;
   manuals: PublicManual[];
@@ -192,7 +196,7 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
   }
 
   async function geefFeedback(bericht: Bericht, rating: "nuttig" | "niet_nuttig") {
-    if (!bericht.antwoord || bericht.feedback) return;
+    if (!bericht.antwoord || bericht.antwoord.conversationId === null || bericht.feedback) return;
     setBerichten((huidig) =>
       huidig.map((b) =>
         b.id === bericht.id
@@ -334,45 +338,47 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
                   </div>
                 )}
 
-                <div className="mt-4 flex items-center gap-4 border-t border-grijs-100 pt-4">
-                  <button
-                    type="button"
-                    disabled={Boolean(bericht.feedback)}
-                    onClick={() => geefFeedback(bericht, "nuttig")}
-                    className={`flex items-center gap-1.5 text-sm transition-colors duration-[120ms] ${
-                      bericht.feedback === "nuttig"
-                        ? "font-medium text-groen"
-                        : bericht.feedback
-                          ? "text-grijs-300"
-                          : "text-grijs-500 hover:text-groen"
-                    }`}
-                  >
-                    <ThumbsUp size={16} aria-hidden />
-                    Dit heeft mij geholpen
-                  </button>
-                  <button
-                    type="button"
-                    disabled={Boolean(bericht.feedback)}
-                    onClick={() => geefFeedback(bericht, "niet_nuttig")}
-                    className={`flex items-center gap-1.5 text-sm transition-colors duration-[120ms] ${
-                      bericht.feedback === "niet_nuttig"
-                        ? "font-medium text-rood"
-                        : bericht.feedback
-                          ? "text-grijs-300"
-                          : "text-grijs-500 hover:text-rood"
-                    }`}
-                  >
-                    <ThumbsDown size={16} aria-hidden />
-                    Ik kom er niet uit
-                  </button>
-                  {bericht.feedback && (
-                    <span className="text-sm text-grijs-500">
-                      {bericht.feedback === "nuttig"
-                        ? "Bedankt voor je feedback!"
-                        : "Bedankt, we kijken ernaar."}
-                    </span>
-                  )}
-                </div>
+                {bericht.antwoord.conversationId !== null && (
+                  <div className="mt-4 flex items-center gap-4 border-t border-grijs-100 pt-4">
+                    <button
+                      type="button"
+                      disabled={Boolean(bericht.feedback)}
+                      onClick={() => geefFeedback(bericht, "nuttig")}
+                      className={`flex items-center gap-1.5 text-sm transition-colors duration-[120ms] ${
+                        bericht.feedback === "nuttig"
+                          ? "font-medium text-groen"
+                          : bericht.feedback
+                            ? "text-grijs-300"
+                            : "text-grijs-500 hover:text-groen"
+                      }`}
+                    >
+                      <ThumbsUp size={16} aria-hidden />
+                      Dit heeft mij geholpen
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(bericht.feedback)}
+                      onClick={() => geefFeedback(bericht, "niet_nuttig")}
+                      className={`flex items-center gap-1.5 text-sm transition-colors duration-[120ms] ${
+                        bericht.feedback === "niet_nuttig"
+                          ? "font-medium text-rood"
+                          : bericht.feedback
+                            ? "text-grijs-300"
+                            : "text-grijs-500 hover:text-rood"
+                      }`}
+                    >
+                      <ThumbsDown size={16} aria-hidden />
+                      Ik kom er niet uit
+                    </button>
+                    {bericht.feedback && (
+                      <span className="text-sm text-grijs-500">
+                        {bericht.feedback === "nuttig"
+                          ? "Bedankt voor je feedback!"
+                          : "Bedankt, we kijken ernaar."}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {!bericht.antwoord.hasAnswer && (
                   <p className="mt-1 text-xs text-grijs-500">
@@ -387,6 +393,7 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
                       initieelOnderwerp={bericht.vraag.slice(0, 120)}
                       initieleUitleg={samengesteldeUitleg(bericht)}
                       initieleUrl={typeof window !== "undefined" ? window.location.href : undefined}
+                      conversationId={bericht.antwoord.conversationId}
                     />
                   </div>
                 )}

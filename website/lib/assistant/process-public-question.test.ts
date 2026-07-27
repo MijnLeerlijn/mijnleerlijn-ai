@@ -176,14 +176,143 @@ describe("processPublicQuestion — publiek-veilige bronnenlijst", () => {
     expect(mockGenerate).not.toHaveBeenCalled();
   });
 
-  it("geeft een failed-uitkomst terug wanneer de retrievalfase mislukt, zonder gesprek te loggen", async () => {
+  it("geeft een failed-uitkomst terug wanneer de retrievalfase mislukt, en logt de mislukking best-effort (AI Verbetercentrum)", async () => {
     mockSearch.mockRejectedValue(new Error("Ontbrekende verplichte omgevingsvariabele: OPENAI_API_KEY."));
     const { payload, collection } = maakFakePayload(maakSeed());
 
     const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
 
     expect(uitkomst).toMatchObject({ type: "failed", foutmelding: expect.stringContaining("OPENAI_API_KEY") });
-    expect(collection("assistant-conversations")).toHaveLength(0);
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.hasAnswer).toBe(false);
+    expect(record.reasoning).toContain("OPENAI_API_KEY");
+  });
+
+  it("logt ook een mislukking wanneer de antwoordgeneratie zelf faalt (na een geslaagde retrieval)", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
+      ])
+    );
+    mockGenerate.mockRejectedValue(new Error("OpenAI: server error"));
+    const { payload, collection } = maakFakePayload(maakSeed());
+
+    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+
+    expect(uitkomst.type).toBe("failed");
+    expect(collection("assistant-conversations")).toHaveLength(1);
+  });
+});
+
+describe("processPublicQuestion — non-blocking logging (AI Verbetercentrum)", () => {
+  it("geeft het echte antwoord terug met conversationId null als het wegschrijven van het gesprek zelf mislukt", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
+      ])
+    );
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Een echt antwoord.", reasoning: "..." },
+      usage: USAGE,
+    });
+    const { payload } = maakFakePayload(maakSeed());
+    payload.create = vi.fn().mockRejectedValue(new Error("database niet bereikbaar"));
+
+    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+
+    expect(uitkomst).toMatchObject({ type: "answered", conversationId: null, answer: "Een echt antwoord." });
+  });
+
+  it("geeft conversationId null terug voor een clarification-antwoord als loggen mislukt, zonder de vraag te breken", async () => {
+    const { payload } = maakFakePayload(
+      maakKennisbasisSeed([
+        { id: 1, onderwerp: "A", officieleTerm: "A-term", status: "gepubliceerd" },
+        { id: 2, onderwerp: "B", officieleTerm: "B-term", status: "gepubliceerd" },
+      ])
+    );
+    mockIntentie.mockResolvedValue({
+      kandidaten: [1, 2],
+      gekozenId: null,
+      verduidelijkingsvraag: "Bedoel je A of B?",
+      gebruikteSynoniem: null,
+    });
+    payload.create = vi.fn().mockRejectedValue(new Error("database niet bereikbaar"));
+
+    const uitkomst = await processPublicQuestion(payload, { question: "ambigue vraag" });
+
+    expect(uitkomst).toEqual({ type: "clarification", conversationId: null, question: "Bedoel je A of B?" });
+  });
+});
+
+describe("processPublicQuestion — question/previousQuestion en AI Verbetercentrum-velden", () => {
+  it("slaat question en previousQuestion apart op i.p.v. samengevoegd", async () => {
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+    const { payload, collection } = maakFakePayload(maakSeed());
+
+    await processPublicQuestion(payload, {
+      question: "en aan meerdere?",
+      previousQuestion: "Hoe koppel ik doelen?",
+    });
+
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.question).toBe("en aan meerdere?");
+    expect(record.previousQuestion).toBe("Hoe koppel ik doelen?");
+  });
+
+  it("legt intentieType, gekoppeld onderwerp, kandidaten en officiële term vast bij een opgelost onderwerp", async () => {
+    const { payload, collection } = maakFakePayload(
+      maakKennisbasisSeed([
+        { id: 1, onderwerp: "A", officieleTerm: "Leerdoel toevoegen aan leerling", status: "gepubliceerd" },
+      ])
+    );
+    mockIntentie.mockResolvedValue({
+      kandidaten: [1],
+      gekozenId: 1,
+      verduidelijkingsvraag: null,
+      gebruikteSynoniem: "doelen",
+    });
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+
+    await processPublicQuestion(payload, { question: "Hoe koppel ik een leerling aan doelen?" });
+
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.intentieType).toBe("opgelost");
+    expect(record.kennisbasisOnderwerp).toBe(1);
+    expect(record.kennisbasisKandidaten).toEqual([1]);
+    expect(record.gebruikteOfficieleTerm).toBe("Leerdoel toevoegen aan leerling");
+    expect(record.gebruikteSynoniem).toBe("doelen");
+    expect(record.verbeterStatus).toBe("nieuw");
+  });
+
+  it("zet geenHandleidingGevonden op true als er geen manuals en geen stappen gevonden zijn", async () => {
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+    const { payload, collection } = maakFakePayload(maakSeed());
+
+    await processPublicQuestion(payload, { question: "vraag" });
+
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.geenHandleidingGevonden).toBe(true);
+  });
+
+  it("zet geenHandleidingGevonden op false zodra er een zichtbare handleiding gevonden is", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([
+        { type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" },
+      ])
+    );
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "..." },
+      usage: USAGE,
+    });
+    const { payload, collection } = maakFakePayload(maakSeed());
+
+    await processPublicQuestion(payload, { question: "vraag" });
+
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.geenHandleidingGevonden).toBe(false);
   });
 });
 

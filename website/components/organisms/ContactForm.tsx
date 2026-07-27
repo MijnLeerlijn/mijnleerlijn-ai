@@ -29,6 +29,15 @@ interface ContactFormProps {
   initieleUitleg?: string;
   /** Helpdesk MVP 1.0: de pagina-URL waar de vraag gesteld is. */
   initieleUrl?: string;
+  /**
+   * AI Verbetercentrum (2026-07-27): het bijbehorende assistant-conversations-ID
+   * (puur numeriek, geen persoonsgegevens) — als gezet, markeert
+   * app/api/contact/route.ts non-blocking dat het contactformulier voor dit
+   * gesprek daadwerkelijk verstuurd is. `null`/onbekend als loggen van het
+   * gesprek zelf al mislukte, of als dit formulier los van een gesprek
+   * gebruikt wordt.
+   */
+  conversationId?: number | null;
 }
 
 // Zie docs/UX-DESIGN.md scherm 5 en docs/SECURITY-AND-PRIVACY.md. Verstuurt
@@ -37,7 +46,12 @@ interface ContactFormProps {
 // "website"-veld is een honeypot: onzichtbaar voor mensen (via CSS, niet
 // via `hidden`/`display:none`, wat sommige bots negeren), maar bots die elk
 // veld invullen lopen er wel in.
-export default function ContactForm({ initieelOnderwerp, initieleUitleg, initieleUrl }: ContactFormProps) {
+export default function ContactForm({
+  initieelOnderwerp,
+  initieleUitleg,
+  initieleUrl,
+  conversationId,
+}: ContactFormProps) {
   const { showToast } = useToast();
   const [versturen, setVersturen] = useState(false);
   const [verstuurd, setVerstuurd] = useState(false);
@@ -96,6 +110,8 @@ export default function ContactForm({ initieelOnderwerp, initieleUitleg, initiel
         <label htmlFor="website">Laat dit veld leeg</label>
         <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" />
       </div>
+
+      {conversationId != null && <input type="hidden" name="conversationId" value={conversationId} />}
 
       <div>
         <h2 className="text-h3 font-semibold text-grijs-900">Wie ben je</h2>

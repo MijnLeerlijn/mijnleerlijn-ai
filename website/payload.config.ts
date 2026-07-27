@@ -91,7 +91,13 @@ export default buildConfig({
     // `afterNavLinks` voegt de menu-links toe (custom views krijgen die
     // niet automatisch).
     components: {
-      afterNavLinks: ["@/payload/components/DownloadNavLinks#DownloadNavLinks"],
+      afterNavLinks: [
+        "@/payload/components/DownloadNavLinks#DownloadNavLinks",
+        // AI Verbetercentrum (2026-07-27): zelfde patroon als Downloadbeheer
+        // hierboven — custom view + eigen nav-linkcomponent, zie
+        // payload/components/VerbetercentrumView.tsx/-NavLinks.tsx.
+        "@/payload/components/VerbetercentrumNavLinks#VerbetercentrumNavLinks",
+      ],
       views: {
         downloadbeheer: {
           Component: "@/payload/components/DownloadbeheerView#DownloadbeheerView",
@@ -100,6 +106,10 @@ export default buildConfig({
         downloadcategorieen: {
           Component: "@/payload/components/DownloadcategorieenView#DownloadcategorieenView",
           path: "/download-categorieen",
+        },
+        verbetercentrum: {
+          Component: "@/payload/components/VerbetercentrumView#VerbetercentrumView",
+          path: "/verbetercentrum",
         },
       },
     },

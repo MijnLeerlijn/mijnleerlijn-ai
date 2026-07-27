@@ -5,7 +5,8 @@ import { naarRelatiefMediaPad } from "@/lib/format/media-url";
 import { buildContext, type ContextItem } from "./build-context";
 import { genereerAssistentAntwoord, MIN_SIMILARITY_VOOR_ANTWOORD } from "./answer";
 import { rewriteSearchQuery } from "./rewrite-query";
-import { bepaalIntentie } from "./bepaal-intentie";
+import { bepaalIntentie, type IntentieUitkomst } from "./bepaal-intentie";
+import { ANSWER_PROMPT_VERSION, RETRIEVAL_VERSION } from "./versions";
 
 // Publieke, anonieme tegenhanger van process-question.ts — Helpdesk MVP 1.0.
 // process-question.ts (het interne /assistant-scherm) blijft VOLLEDIG
@@ -63,7 +64,12 @@ export interface PublicStep {
 export type ProcessPublicQuestionUitkomst =
   | {
       type: "answered" | "no-answer";
-      conversationId: number;
+      // AI Verbetercentrum (2026-07-27): kan `null` zijn als het wegschrijven
+      // van het audit-record zelf mislukt — dat mag de gebruiker nooit zijn
+      // antwoord kosten (non-blocking logging, zie loggenConversatie
+      // hieronder). HelpdeskChat.tsx verbergt dan alleen de
+      // feedbackknoppen (er is geen record om feedback aan te koppelen).
+      conversationId: number | null;
       // Los van `type` op de JSON-respons meegegeven: HelpdeskChat.tsx (het
       // enige frontend-component dat deze respons rechtstreeks leest) toont
       // hierop het automatische contactformulier bij "geen antwoord" — een
@@ -79,7 +85,7 @@ export type ProcessPublicQuestionUitkomst =
   // is een bewuste tussenvraag, geen contactformulier-trigger, geen
   // stappen/manuals-blok. HelpdeskChat.tsx onthoudt de oorspronkelijke
   // vraag en stuurt die als `previousQuestion` mee bij de volgende vraag.
-  | { type: "clarification"; conversationId: number; question: string }
+  | { type: "clarification"; conversationId: number | null; question: string }
   | { type: "failed"; foutmelding: string };
 
 interface ZichtbareBron {
@@ -208,6 +214,70 @@ async function bepaalRelevanteStappen(payload: Payload, contextItems: ContextIte
   return stappen;
 }
 
+// AI Verbetercentrum (2026-07-27): schrijft het auditrecord non-blocking —
+// een mislukte log (bv. een tijdelijke databasehapering) mag de bezoeker
+// nooit zijn al-berekende antwoord kosten. Bij een fout: server-side loggen
+// en `null` teruggeven i.p.v. de aanroeper te laten crashen.
+async function loggenConversatie(payload: Payload, data: Record<string, unknown>): Promise<number | null> {
+  try {
+    const record = await payload.create({
+      collection: "assistant-conversations",
+      overrideAccess: true,
+      data,
+    } as Parameters<typeof payload.create>[0]);
+    return record.id;
+  } catch (error) {
+    console.error("[process-public-question] Loggen van conversatie mislukt (antwoord blijft ongewijzigd):", error);
+    return null;
+  }
+}
+
+/** Gedeelde intentie-gerelateerde velden voor elk conversatierecord — zelfde vorm ongeacht welke branch logt. */
+function intentieVelden(intentie: IntentieUitkomst) {
+  return {
+    intentieType: intentie.type,
+    kennisbasisOnderwerp: intentie.type === "opgelost" ? intentie.onderwerpId : null,
+    kennisbasisKandidaten: intentie.kandidaten,
+    gebruikteOfficieleTerm: intentie.type === "opgelost" ? intentie.officieleTerm : null,
+    gebruikteSynoniem: intentie.type === "opgelost" ? intentie.gebruikteSynoniem : null,
+    promptVersion: ANSWER_PROMPT_VERSION,
+    retrievalVersion: RETRIEVAL_VERSION,
+    kennisbasisVersion: intentie.kennisbasisVersion,
+  };
+}
+
+/** Best-effort logging voor de twee mislukking-paden (retrieval- en AI-fouten) — vandaag logden die helemaal niets. */
+async function loggenMislukking(
+  payload: Payload,
+  opties: { question: string; previousQuestion?: string },
+  intentie: IntentieUitkomst,
+  begin: number,
+  foutmelding: string
+): Promise<void> {
+  await loggenConversatie(payload, {
+    source: "helpdesk",
+    question: opties.question,
+    previousQuestion: opties.previousQuestion ?? null,
+    hasAnswer: false,
+    answer: "(geen antwoord — technische fout)",
+    reasoning: `Mislukt: ${foutmelding}`,
+    confidence: 0,
+    sources: [],
+    steps: [],
+    model: null,
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    answerTimeMs: Date.now() - begin,
+    feedbackRating: "geen",
+    user: null,
+    contactFormSubmitted: false,
+    geenHandleidingGevonden: true,
+    verbeterStatus: "nieuw",
+    ...intentieVelden(intentie),
+  });
+}
+
 export async function processPublicQuestion(
   payload: Payload,
   opties: { question: string; previousQuestion?: string }
@@ -230,28 +300,29 @@ export async function processPublicQuestion(
   const intentie = await bepaalIntentie(payload, effectieveVraag);
 
   if (intentie.type === "onduidelijk") {
-    const record = await payload.create({
-      collection: "assistant-conversations",
-      overrideAccess: true,
-      data: {
-        source: "helpdesk",
-        question: effectieveVraag,
-        hasAnswer: false,
-        answer: intentie.vraag,
-        reasoning: "Kennisbasis MijnLeerlijn: vraag was tussen meerdere onderwerpen ambigu, verduidelijking gevraagd.",
-        confidence: 0,
-        sources: [],
-        steps: [],
-        model: null,
-        inputTokens: null,
-        outputTokens: null,
-        totalTokens: null,
-        answerTimeMs: Date.now() - begin,
-        feedbackRating: "geen",
-        user: null,
-      },
+    const conversationId = await loggenConversatie(payload, {
+      source: "helpdesk",
+      question: opties.question,
+      previousQuestion: opties.previousQuestion ?? null,
+      hasAnswer: false,
+      answer: intentie.vraag,
+      reasoning: "Kennisbasis MijnLeerlijn: vraag was tussen meerdere onderwerpen ambigu, verduidelijking gevraagd.",
+      confidence: 0,
+      sources: [],
+      steps: [],
+      model: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      answerTimeMs: Date.now() - begin,
+      feedbackRating: "geen",
+      user: null,
+      contactFormSubmitted: false,
+      geenHandleidingGevonden: false,
+      verbeterStatus: "nieuw",
+      ...intentieVelden(intentie),
     });
-    return { type: "clarification", conversationId: record.id, question: intentie.vraag };
+    return { type: "clarification", conversationId, question: intentie.vraag };
   }
 
   // "opgelost": de officiële term stuurt de zoekvraag i.p.v. de letterlijke
@@ -272,55 +343,59 @@ export async function processPublicQuestion(
     contextItems = await buildContext(payload, resultaat.hits);
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);
+    await loggenMislukking(payload, opties, intentie, begin, boodschap);
     return { type: "failed", foutmelding: boodschap };
   }
 
   const heeftStructuredStappen = contextItems.some((item) => item.type === "handleiding-step");
   const uitkomst = await genereerAssistentAntwoord(effectieveVraag, contextItems, { heeftStructuredStappen });
   if (uitkomst.type === "failed") {
+    await loggenMislukking(payload, opties, intentie, begin, uitkomst.foutmelding);
     return uitkomst;
   }
 
   const manuals = uitkomst.type === "answered" ? await bepaalPubliekeManuals(payload, contextItems) : [];
   const steps = uitkomst.type === "answered" ? await bepaalRelevanteStappen(payload, contextItems) : [];
+  const geenHandleidingGevonden = manuals.length === 0 && steps.length === 0;
 
-  const record = await payload.create({
-    collection: "assistant-conversations",
-    overrideAccess: true,
-    data: {
-      source: "helpdesk",
-      question: effectieveVraag,
-      hasAnswer: uitkomst.type === "answered",
-      answer: uitkomst.answer,
-      reasoning: uitkomst.reasoning,
-      confidence: uitkomst.confidence,
-      sources: contextItems.map((item) => ({
-        label: item.label,
-        refCollection: item.refCollection,
-        refId: item.refId,
-        title: item.title,
-        chapterTitle: item.chapterTitle,
-        similarity: item.similarity,
-        url: item.url,
-      })),
-      steps: steps.map((stap) => ({
-        handleidingId: stap.handleidingId,
-        stepId: stap.stepId,
-        stepNummer: stap.stepNummer,
-      })),
-      model: uitkomst.model,
-      inputTokens: uitkomst.usage.inputTokens,
-      outputTokens: uitkomst.usage.outputTokens,
-      totalTokens: uitkomst.usage.totalTokens,
-      answerTimeMs: Date.now() - begin,
-      feedbackRating: "geen",
-      user: null,
-    },
+  const conversationId = await loggenConversatie(payload, {
+    source: "helpdesk",
+    question: opties.question,
+    previousQuestion: opties.previousQuestion ?? null,
+    hasAnswer: uitkomst.type === "answered",
+    answer: uitkomst.answer,
+    reasoning: uitkomst.reasoning,
+    confidence: uitkomst.confidence,
+    sources: contextItems.map((item) => ({
+      label: item.label,
+      refCollection: item.refCollection,
+      refId: item.refId,
+      title: item.title,
+      chapterTitle: item.chapterTitle,
+      similarity: item.similarity,
+      url: item.url,
+    })),
+    steps: steps.map((stap) => ({
+      handleidingId: stap.handleidingId,
+      stepId: stap.stepId,
+      stepNummer: stap.stepNummer,
+    })),
+    model: uitkomst.model,
+    inputTokens: uitkomst.usage.inputTokens,
+    outputTokens: uitkomst.usage.outputTokens,
+    totalTokens: uitkomst.usage.totalTokens,
+    answerTimeMs: Date.now() - begin,
+    feedbackRating: "geen",
+    user: null,
+    contactFormSubmitted: false,
+    geenHandleidingGevonden,
+    verbeterStatus: "nieuw",
+    ...intentieVelden(intentie),
   });
 
   return {
     type: uitkomst.type,
-    conversationId: record.id,
+    conversationId,
     hasAnswer: uitkomst.type === "answered",
     answer: uitkomst.answer,
     manuals,

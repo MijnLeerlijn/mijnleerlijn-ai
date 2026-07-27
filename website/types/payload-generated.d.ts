@@ -1076,6 +1076,33 @@ export interface AssistantConversation {
    * Leeg bij een anonieme vraag via de publieke helpdesk-homepage (source: 'helpdesk').
    */
   user?: (number | null) | User;
+  /**
+   * Alleen gezet als dit een vervolg is op een eerdere verduidelijkingsvraag.
+   */
+  previousQuestion?: string | null;
+  intentieType?: ('opgelost' | 'onduidelijk' | 'geen-match') | null;
+  kennisbasisOnderwerp?: (number | null) | KennisbasisOnderwerpen;
+  /**
+   * Alle onderwerpen die de intentiebepaling overwoog, niet alleen het gekozen onderwerp.
+   */
+  kennisbasisKandidaten?: (number | KennisbasisOnderwerpen)[] | null;
+  gebruikteOfficieleTerm?: string | null;
+  /**
+   * Best-effort: welke synoniem/formulering de AI herkende. Puur informatief.
+   */
+  gebruikteSynoniem?: string | null;
+  contactFormSubmitted?: boolean | null;
+  geenHandleidingGevonden?: boolean | null;
+  verbeterStatus: 'nieuw' | 'beoordeeld' | 'opgelost' | 'genegeerd';
+  /**
+   * Zie lib/assistant/versions.ts.
+   */
+  promptVersion?: string | null;
+  retrievalVersion?: string | null;
+  /**
+   * Meest recente wijzigingsdatum onder de overwogen kennisbasis-onderwerpen.
+   */
+  kennisbasisVersion?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1941,6 +1968,18 @@ export interface AssistantConversationsSelect<T extends boolean = true> {
   feedbackRating?: T;
   feedbackMissing?: T;
   user?: T;
+  previousQuestion?: T;
+  intentieType?: T;
+  kennisbasisOnderwerp?: T;
+  kennisbasisKandidaten?: T;
+  gebruikteOfficieleTerm?: T;
+  gebruikteSynoniem?: T;
+  contactFormSubmitted?: T;
+  geenHandleidingGevonden?: T;
+  verbeterStatus?: T;
+  promptVersion?: T;
+  retrievalVersion?: T;
+  kennisbasisVersion?: T;
   updatedAt?: T;
   createdAt?: T;
 }

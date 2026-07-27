@@ -149,5 +149,104 @@ export const AssistantConversations: CollectionConfig = {
         description: "Leeg bij een anonieme vraag via de publieke helpdesk-homepage (source: 'helpdesk').",
       },
     },
+    // AI Verbetercentrum (2026-07-27): onderstaande velden leggen de
+    // uitkomst van lib/assistant/bepaal-intentie.ts vast — die ging tot nu
+    // toe volledig verloren zodra de functie return deed. Allemaal
+    // readOnly: schrijven gebeurt uitsluitend via de eigen
+    // app/api/verbetercentrum/*-routes (overrideAccess: true), nooit via dit
+    // standaard admin-formulier — zelfde reden als bij `feedbackRating`
+    // hierboven (de collectie zelf staat op create/update: () => false).
+    {
+      name: "previousQuestion",
+      type: "text",
+      label: "Vervolgvraag op",
+      admin: {
+        readOnly: true,
+        description: "Alleen gezet als dit een vervolg is op een eerdere verduidelijkingsvraag.",
+      },
+    },
+    {
+      name: "intentieType",
+      type: "select",
+      label: "Intentiebepaling",
+      options: [
+        { label: "Opgelost", value: "opgelost" },
+        { label: "Verduidelijkingsvraag gesteld", value: "onduidelijk" },
+        { label: "Geen match", value: "geen-match" },
+      ],
+      admin: { readOnly: true },
+    },
+    {
+      name: "kennisbasisOnderwerp",
+      type: "relationship",
+      relationTo: "kennisbasis-onderwerpen",
+      label: "Gekoppeld kennisbasis-onderwerp",
+      admin: { readOnly: true },
+    },
+    {
+      name: "kennisbasisKandidaten",
+      type: "relationship",
+      relationTo: "kennisbasis-onderwerpen",
+      hasMany: true,
+      label: "Overwogen kennisbasis-onderwerpen",
+      admin: {
+        readOnly: true,
+        description: "Alle onderwerpen die de intentiebepaling overwoog, niet alleen het gekozen onderwerp.",
+      },
+    },
+    { name: "gebruikteOfficieleTerm", type: "text", label: "Gebruikte officiële term", admin: { readOnly: true } },
+    {
+      name: "gebruikteSynoniem",
+      type: "text",
+      label: "Gebruikte synoniem",
+      admin: {
+        readOnly: true,
+        description: "Best-effort: welke synoniem/formulering de AI herkende. Puur informatief.",
+      },
+    },
+    {
+      name: "contactFormSubmitted",
+      type: "checkbox",
+      defaultValue: false,
+      label: "Contactformulier verstuurd",
+      admin: { readOnly: true },
+    },
+    {
+      name: "geenHandleidingGevonden",
+      type: "checkbox",
+      defaultValue: false,
+      label: "Geen handleiding gevonden",
+      admin: { readOnly: true },
+    },
+    {
+      name: "verbeterStatus",
+      type: "select",
+      required: true,
+      defaultValue: "nieuw",
+      label: "Status (AI Verbetercentrum)",
+      options: [
+        { label: "Nieuw", value: "nieuw" },
+        { label: "Beoordeeld", value: "beoordeeld" },
+        { label: "Opgelost", value: "opgelost" },
+        { label: "Genegeerd", value: "genegeerd" },
+      ],
+      admin: { readOnly: true },
+    },
+    {
+      name: "promptVersion",
+      type: "text",
+      label: "Promptversie",
+      admin: { readOnly: true, description: "Zie lib/assistant/versions.ts." },
+    },
+    { name: "retrievalVersion", type: "text", label: "Retrievalversie", admin: { readOnly: true } },
+    {
+      name: "kennisbasisVersion",
+      type: "text",
+      label: "Kennisbasisversie",
+      admin: {
+        readOnly: true,
+        description: "Meest recente wijzigingsdatum onder de overwogen kennisbasis-onderwerpen.",
+      },
+    },
   ],
 };

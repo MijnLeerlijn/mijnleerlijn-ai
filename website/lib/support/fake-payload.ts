@@ -72,9 +72,15 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
       if (opts.limit) docs = docs.slice(0, opts.limit);
       return { docs };
     },
-    findByID: async (opts: { collection: string; id: number }) => {
+    findByID: async (opts: { collection: string; id: number; disableErrors?: boolean }) => {
       const doc = arr(opts.collection).find((d) => d.id === opts.id);
-      if (!doc) throw new Error(`Niet gevonden: ${opts.collection}/${opts.id}`);
+      if (!doc) {
+        // AI Verbetercentrum: `disableErrors: true` geeft `undefined` terug
+        // i.p.v. te gooien — zelfde optie als de echte Payload local API,
+        // gebruikt door routes die zelf een nette 404 willen teruggeven.
+        if (opts.disableErrors) return undefined;
+        throw new Error(`Niet gevonden: ${opts.collection}/${opts.id}`);
+      }
       return doc;
     },
     create: async (opts: { collection: string; data: Record<string, unknown> }) => {
