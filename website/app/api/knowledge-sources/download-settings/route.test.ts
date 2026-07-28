@@ -103,13 +103,91 @@ describe("POST /api/knowledge-sources/download-settings", () => {
     mockVerify.mockResolvedValue({ user: { id: 1, role: "admin" }, cookieAanwezig: true });
 
     const response = await POST(
-      maakRequest({ cookie: "geldig", body: { id: 5, downloadVisible: true, title: "Andere titel" } })
+      maakRequest({ cookie: "geldig", body: { id: 5, downloadVisible: true, content: "Ander veld" } })
     );
     const data = await response.json();
 
     expect(response.status).toBe(400);
-    expect(data.error).toContain("title");
+    expect(data.error).toContain("content");
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("staat een redacteur toe de publieke titel te wijzigen", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
+    mockUpdate.mockResolvedValue({});
+
+    const response = await POST(
+      maakRequest({ cookie: "geldig", body: { id: 5, title: "  Nieuwe titel  " } })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledWith({
+      collection: "knowledge-sources",
+      id: 5,
+      overrideAccess: true,
+      data: { title: "Nieuwe titel" },
+    });
+  });
+
+  it("weigert een lege titel", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 1, role: "admin" }, cookieAanwezig: true });
+
+    const response = await POST(maakRequest({ cookie: "geldig", body: { id: 5, title: "   " } }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("staat een redacteur toe de volgorde te wijzigen (voorheen admin-only, nu via dezelfde route)", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
+    mockUpdate.mockResolvedValue({});
+
+    const response = await POST(maakRequest({ cookie: "geldig", body: { id: 5, volgorde: 2 } }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledWith({
+      collection: "knowledge-sources",
+      id: 5,
+      overrideAccess: true,
+      data: { volgorde: 2 },
+    });
+  });
+
+  it("staat volgorde: null toe (leeg maken)", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 1, role: "admin" }, cookieAanwezig: true });
+    mockUpdate.mockResolvedValue({});
+
+    await POST(maakRequest({ cookie: "geldig", body: { id: 5, volgorde: null } }));
+
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { volgorde: null } }));
+  });
+
+  it("weigert een ongeldige volgorde (niet getal, niet null)", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 1, role: "admin" }, cookieAanwezig: true });
+
+    const response = await POST(maakRequest({ cookie: "geldig", body: { id: 5, volgorde: "3" } }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("wijzigt zichtbaarheid, categorie, titel en volgorde tegelijk", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 1, role: "admin" }, cookieAanwezig: true });
+    mockUpdate.mockResolvedValue({});
+
+    await POST(
+      maakRequest({
+        cookie: "geldig",
+        body: { id: 5, downloadVisible: true, downloadCategory: 3, title: "Titel", volgorde: 1 },
+      })
+    );
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      collection: "knowledge-sources",
+      id: 5,
+      overrideAccess: true,
+      data: { zichtbaar: true, categorie: 3, title: "Titel", volgorde: 1 },
+    });
   });
 
   it("weigert een aanvraag zonder id", async () => {

@@ -6,12 +6,12 @@ import { Button, CheckboxInput, Gutter, SelectInput, toast } from "@payloadcms/u
 // Downloadbeheer (2026-07-27): één centrale tabel voor alle publicatie-
 // instellingen van downloadbare items — zowel gestructureerde Handleidingen
 // als PDF-bronnen (KnowledgeSources). Vervangt het moeten openen van elk
-// document apart om zichtbaarheid/categorie/volgorde te zetten; die drie
-// velden zijn daarom admin.hidden gemaakt op beide onderliggende
-// collecties (zie Handleidingen.ts/KnowledgeSources.ts) — de data zelf
-// blijft ongewijzigd, alleen de bewerkplek verhuist hierheen. Bewerken van
-// de daadwerkelijke INHOUD blijft in de eigen collectie-editor (zie de
-// "Bewerken"-link per rij).
+// document apart om titel/zichtbaarheid/categorie/volgorde te zetten; die
+// velden zijn daarom admin.hidden gemaakt op beide onderliggende collecties
+// (zie Handleidingen.ts/KnowledgeSources.ts) — de data zelf blijft
+// ongewijzigd, alleen de bewerkplek verhuist hierheen. Bewerken van de
+// daadwerkelijke bestandsinhoud/stappen blijft in de eigen collectie-editor
+// (zie de "Bewerken"-link per rij).
 //
 // Eén centrale "Opslaan"-knop i.p.v. auto-save per veld: bij tientallen
 // rijen voorkomt dit een stortvloed aan losse netwerkverzoeken en losse
@@ -142,6 +142,7 @@ export function DownloadbeheerView() {
               credentials: "include",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
+                titel: r.titel,
                 categorie: r.categorie,
                 zichtbaarInSidebar: r.zichtbaar,
                 volgorde: r.volgorde,
@@ -153,32 +154,26 @@ export function DownloadbeheerView() {
 
           // PDF (knowledge-sources): KnowledgeSources.ts staat `update:
           // adminOnly` — een rechtstreekse PATCH hierheen geeft een
-          // redacteur (niet-admin) altijd een 403. Zichtbaar/categorie
-          // lopen daarom via de gecontroleerde download-settings-route
-          // (overrideAccess: true, maar uitsluitend deze twee velden — zie
-          // die route). Volgorde blijft bewust ongewijzigd via de directe
-          // PATCH lopen (dus nog steeds adminOnly, precies zoals voorheen)
-          // en telt NIET mee als mislukking: een redacteur die alleen
-          // zichtbaarheid/categorie wijzigt, mag daarvoor geen foutmelding
-          // krijgen over een veld dat die mogelijk niet eens aanraakte.
+          // redacteur (niet-admin) altijd een 403. Titel/zichtbaar/
+          // categorie/volgorde lopen daarom allemaal via dezelfde
+          // gecontroleerde download-settings-route (overrideAccess: true,
+          // uitsluitend deze vier velden — zie die route). De losse,
+          // stil-falende directe PATCH voor `volgorde` is vervallen: die
+          // vereiste voorheen adminrechten, nu geldt overal dezelfde
+          // isEditor-toegang als voor zichtbaar/categorie.
           const res = await fetch("/api/knowledge-sources/download-settings", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: r.id, downloadVisible: r.zichtbaar, downloadCategory: r.categorie }),
+            body: JSON.stringify({
+              id: r.id,
+              title: r.titel,
+              downloadVisible: r.zichtbaar,
+              downloadCategory: r.categorie,
+              volgorde: r.volgorde,
+            }),
           });
           if (!res.ok) throw new Error(String(r.id));
-
-          await fetch(`/api/knowledge-sources/${r.id}`, {
-            method: "PATCH",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ volgorde: r.volgorde }),
-          }).catch(() => {
-            // Stil falen: volgorde vereist adminrechten (ongewijzigd
-            // bestaand gedrag) — de downloadinstelling hierboven is al
-            // succesvol opgeslagen, ongeacht deze uitkomst.
-          });
         })
       );
 
@@ -200,8 +195,8 @@ export function DownloadbeheerView() {
         <div>
           <h1 style={{ marginBottom: "0.25rem" }}>Downloadbeheer</h1>
           <p style={{ color: "var(--theme-elevation-500)", margin: 0 }}>
-            Zichtbaarheid, categorie en volgorde van alle handleidingen en PDF&apos;s op de publieke
-            downloadpagina — de inhoud zelf pas je aan via &ldquo;Bewerken&rdquo;.
+            Titel, zichtbaarheid, categorie en volgorde van alle handleidingen en PDF&apos;s op de publieke
+            downloadpagina — de bestandsinhoud/stappen pas je aan via &ldquo;Bewerken&rdquo;.
           </p>
         </div>
         <Button
@@ -238,7 +233,22 @@ export function DownloadbeheerView() {
                 }}
               >
                 <td style={{ padding: "0.5rem" }}>{rij.type === "handleiding" ? "Handleiding" : "PDF"}</td>
-                <td style={{ padding: "0.5rem" }}>{rij.titel}</td>
+                <td style={{ padding: "0.5rem" }}>
+                  <input
+                    type="text"
+                    value={rij.titel}
+                    onChange={(e) => werkRijBij(rij.key, { titel: e.target.value })}
+                    style={{
+                      width: "100%",
+                      minWidth: 220,
+                      padding: "0.4rem",
+                      border: "1px solid var(--theme-elevation-150)",
+                      borderRadius: "4px",
+                      background: "var(--theme-input-bg)",
+                      color: "inherit",
+                    }}
+                  />
+                </td>
                 <td style={{ padding: "0.5rem" }}>
                   <SelectInput
                     path={`categorie-${rij.key}`}

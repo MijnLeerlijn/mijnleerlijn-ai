@@ -17,7 +17,11 @@ import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/aut
 // In plaats daarvan: deze smalle, eigen route met `overrideAccess: true`,
 // die uitsluitend de twee downloadinstellingen mag wijzigen — analoog aan
 // de app/api/verbetercentrum/*-routes.
-const TOEGESTANE_VELDEN = new Set(["id", "downloadVisible", "downloadCategory"]);
+// Titel + volgorde (2026-07-28): Downloadbeheer beheert nu ook de publieke
+// titel en sorteervolgorde van PDF-bronnen vanuit dezelfde ene, gecontroleerde
+// route — de losse, admin-only PATCH naar /api/knowledge-sources/:id voor
+// `volgorde` (met een stille .catch()) is vervallen, zie DownloadbeheerView.tsx.
+const TOEGESTANE_VELDEN = new Set(["id", "downloadVisible", "downloadCategory", "title", "volgorde"]);
 
 export async function POST(request: NextRequest) {
   const payload = await getPayload({ config });
@@ -40,9 +44,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Ongeldige aanvraag." }, { status: 400 });
   }
 
-  // Expliciete velden-allowlist: elk veld buiten id/downloadVisible/
-  // downloadCategory wordt geweigerd, ook als de waarde er verder geldig
-  // uitziet — deze route mag structureel niets anders kunnen wijzigen.
+  // Expliciete velden-allowlist: elk veld buiten TOEGESTANE_VELDEN wordt
+  // geweigerd, ook als de waarde er verder geldig uitziet — deze route mag
+  // structureel niets anders kunnen wijzigen.
   const onbekendeSleutel = Object.keys(body as Record<string, unknown>).find(
     (sleutel) => !TOEGESTANE_VELDEN.has(sleutel)
   );
@@ -53,17 +57,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { id, downloadVisible, downloadCategory } = body as {
+  const { id, downloadVisible, downloadCategory, title, volgorde } = body as {
     id?: unknown;
     downloadVisible?: unknown;
     downloadCategory?: unknown;
+    title?: unknown;
+    volgorde?: unknown;
   };
 
   if (typeof id !== "number") {
     return NextResponse.json({ error: "id is verplicht." }, { status: 400 });
   }
-  if (downloadVisible === undefined && downloadCategory === undefined) {
-    return NextResponse.json({ error: "downloadVisible en/of downloadCategory is verplicht." }, { status: 400 });
+  if (
+    downloadVisible === undefined &&
+    downloadCategory === undefined &&
+    title === undefined &&
+    volgorde === undefined
+  ) {
+    return NextResponse.json(
+      { error: "downloadVisible, downloadCategory, title en/of volgorde is verplicht." },
+      { status: 400 }
+    );
   }
   if (downloadVisible !== undefined && typeof downloadVisible !== "boolean") {
     return NextResponse.json({ error: "downloadVisible moet een boolean zijn." }, { status: 400 });
@@ -71,13 +85,21 @@ export async function POST(request: NextRequest) {
   if (downloadCategory !== undefined && downloadCategory !== null && typeof downloadCategory !== "number") {
     return NextResponse.json({ error: "downloadCategory moet een getal of null zijn." }, { status: 400 });
   }
+  if (title !== undefined && (typeof title !== "string" || !title.trim())) {
+    return NextResponse.json({ error: "title moet een niet-lege tekst zijn." }, { status: 400 });
+  }
+  if (volgorde !== undefined && volgorde !== null && typeof volgorde !== "number") {
+    return NextResponse.json({ error: "volgorde moet een getal of null zijn." }, { status: 400 });
+  }
 
   // Handmatig opgebouwd, nooit een spread van de ruwe body — zo kan deze
-  // schrijfactie structureel nooit meer dan deze twee velden raken, ook al
-  // zou de validatie hierboven ooit een gat vertonen.
+  // schrijfactie structureel nooit meer dan deze velden raken, ook al zou
+  // de validatie hierboven ooit een gat vertonen.
   const data: Record<string, unknown> = {};
   if (downloadVisible !== undefined) data.zichtbaar = downloadVisible;
   if (downloadCategory !== undefined) data.categorie = downloadCategory;
+  if (title !== undefined) data.title = (title as string).trim();
+  if (volgorde !== undefined) data.volgorde = volgorde;
 
   try {
     await payload.update({

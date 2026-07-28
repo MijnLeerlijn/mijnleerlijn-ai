@@ -30,18 +30,6 @@ interface Categorie {
   volgorde: number | null;
 }
 
-async function telInGebruik(categorieId: number): Promise<number> {
-  const [handleidingen, bronnen] = await Promise.all([
-    fetch(`/api/handleidingen?where[categorie][equals]=${categorieId}&limit=0`, {
-      credentials: "include",
-    }).then((r) => r.json()),
-    fetch(`/api/knowledge-sources?where[categorie][equals]=${categorieId}&limit=0`, {
-      credentials: "include",
-    }).then((r) => r.json()),
-  ]);
-  return (handleidingen.totalDocs ?? 0) + (bronnen.totalDocs ?? 0);
-}
-
 export function DownloadcategorieenView() {
   const [categorieen, setCategorieen] = useState<Categorie[]>([]);
   const [status, setStatus] = useState<"laden" | "klaar" | "fout">("laden");
@@ -116,11 +104,16 @@ export function DownloadcategorieenView() {
     const schoon = nieuweTitel.trim();
     if (!schoon || schoon === opgeslagenTitels.current[categorie.id]) return;
     try {
-      const res = await fetch(`/api/categories/${categorie.id}`, {
-        method: "PATCH",
+      // Downloadcategorieën-fix (2026-07-28): gecontroleerde beheerroute
+      // i.p.v. rechtstreeks PATCH naar /api/categories/:id — zie
+      // app/api/download-categories/rename/route.ts voor de reden
+      // (dezelfde categorie van opslagfouten als eerder bij
+      // knowledge-sources).
+      const res = await fetch("/api/download-categories/rename", {
+        method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: schoon }),
+        body: JSON.stringify({ id: categorie.id, title: schoon }),
       });
       if (!res.ok) throw new Error();
       opgeslagenTitels.current[categorie.id] = schoon;
@@ -132,20 +125,22 @@ export function DownloadcategorieenView() {
   }
 
   async function verwijder(categorie: Categorie) {
-    const inGebruik = await telInGebruik(categorie.id);
-    if (inGebruik > 0) {
-      toast.error(
-        `"${categorie.title}" is nog in gebruik door ${inGebruik} item(en) — wijs eerst een andere categorie toe via Downloadbeheer voordat je deze verwijdert.`
-      );
-      return;
-    }
     if (!window.confirm(`Categorie "${categorie.title}" verwijderen?`)) return;
     try {
-      const res = await fetch(`/api/categories/${categorie.id}`, {
-        method: "DELETE",
+      // Server-side gebruikscontrole zit in de route zelf (niet meer
+      // client-side telInGebruik() vooraf — race-condition-gevoelig en
+      // gaf geen betrouwbare foutmelding bij een druk-op-druk-scenario).
+      const res = await fetch("/api/download-categories/delete", {
+        method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: categorie.id }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        toast.error(data?.error || "Verwijderen is mislukt.");
+        return;
+      }
       toast.success(`Categorie "${categorie.title}" verwijderd.`);
       await laad();
     } catch {
