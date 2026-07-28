@@ -98,17 +98,22 @@ export default buildConfig({
         // payload/components/VerbetercentrumView.tsx/-NavLinks.tsx.
         "@/payload/components/VerbetercentrumNavLinks#VerbetercentrumNavLinks",
       ],
+      // Admin-shell-fix (2026-07-28): Component wijst naar de nieuwe
+      // server-wrappers in AdminViewShell.tsx (renderen de standaard
+      // Payload-adminshell via <DefaultTemplate> om de ongewijzigde
+      // content-componenten heen), niet meer rechtstreeks naar de
+      // "use client"-viewcomponenten — zie AdminViewShell.tsx voor de reden.
       views: {
         downloadbeheer: {
-          Component: "@/payload/components/DownloadbeheerView#DownloadbeheerView",
+          Component: "@/payload/components/AdminViewShell#DownloadbeheerViewShell",
           path: "/download-beheer",
         },
         downloadcategorieen: {
-          Component: "@/payload/components/DownloadcategorieenView#DownloadcategorieenView",
+          Component: "@/payload/components/AdminViewShell#DownloadcategorieenViewShell",
           path: "/download-categorieen",
         },
         verbetercentrum: {
-          Component: "@/payload/components/VerbetercentrumView#VerbetercentrumView",
+          Component: "@/payload/components/AdminViewShell#VerbetercentrumViewShell",
           path: "/verbetercentrum",
         },
       },

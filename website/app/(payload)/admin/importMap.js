@@ -35,9 +35,9 @@ import { AssistantEvalTester as AssistantEvalTester_83894a343bb1003bd731f09ba8a0
 import { DownloadNavLinks as DownloadNavLinks_1a93fcbdb3c12082b9126a39d56dc277 } from '@/payload/components/DownloadNavLinks'
 import { VerbetercentrumNavLinks as VerbetercentrumNavLinks_b8410a15ee14a3c85c7ef32e3339e925 } from '@/payload/components/VerbetercentrumNavLinks'
 import { VercelBlobClientUploadHandler as VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e } from '@payloadcms/storage-vercel-blob/client'
-import { DownloadbeheerView as DownloadbeheerView_9006cb59708b73f3b1db204b481d4309 } from '@/payload/components/DownloadbeheerView'
-import { DownloadcategorieenView as DownloadcategorieenView_d58a0bdd58073aa9f9f13884b4ec75ae } from '@/payload/components/DownloadcategorieenView'
-import { VerbetercentrumView as VerbetercentrumView_979d8b5a54663f241da850b0beee9455 } from '@/payload/components/VerbetercentrumView'
+import { DownloadbeheerViewShell as DownloadbeheerViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { DownloadcategorieenViewShell as DownloadcategorieenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { VerbetercentrumViewShell as VerbetercentrumViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -79,8 +79,8 @@ export const importMap = {
   "@/payload/components/DownloadNavLinks#DownloadNavLinks": DownloadNavLinks_1a93fcbdb3c12082b9126a39d56dc277,
   "@/payload/components/VerbetercentrumNavLinks#VerbetercentrumNavLinks": VerbetercentrumNavLinks_b8410a15ee14a3c85c7ef32e3339e925,
   "@payloadcms/storage-vercel-blob/client#VercelBlobClientUploadHandler": VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e,
-  "@/payload/components/DownloadbeheerView#DownloadbeheerView": DownloadbeheerView_9006cb59708b73f3b1db204b481d4309,
-  "@/payload/components/DownloadcategorieenView#DownloadcategorieenView": DownloadcategorieenView_d58a0bdd58073aa9f9f13884b4ec75ae,
-  "@/payload/components/VerbetercentrumView#VerbetercentrumView": VerbetercentrumView_979d8b5a54663f241da850b0beee9455,
+  "@/payload/components/AdminViewShell#DownloadbeheerViewShell": DownloadbeheerViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#DownloadcategorieenViewShell": DownloadcategorieenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#VerbetercentrumViewShell": VerbetercentrumViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }
