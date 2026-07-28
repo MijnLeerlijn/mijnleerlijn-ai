@@ -6,6 +6,7 @@ import { buildContext, type ContextItem } from "./build-context";
 import { genereerAssistentAntwoord, MIN_SIMILARITY_VOOR_ANTWOORD } from "./answer";
 import { rewriteSearchQuery } from "./rewrite-query";
 import { bepaalIntentie, type IntentieUitkomst } from "./bepaal-intentie";
+import { haalCentraleKennisbasisOp, type CentraleKennisbasis } from "./kennisbasis-context";
 import { ANSWER_PROMPT_VERSION, RETRIEVAL_VERSION } from "./versions";
 
 // Publieke, anonieme tegenhanger van process-question.ts — Helpdesk MVP 1.0.
@@ -246,11 +247,31 @@ function intentieVelden(intentie: IntentieUitkomst) {
   };
 }
 
+/**
+ * Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28): gedeelde velden voor de
+ * centrale kennisbasis, zelfde vorm ongeacht welke branch logt — zie
+ * lib/assistant/kennisbasis-context.ts. `tegenstrijdigheid` is alleen ooit
+ * niet-null wanneer genereerAssistentAntwoord() daadwerkelijk is aangeroepen
+ * (dus nooit bij de "onduidelijk"-branch of een retrieval-mislukking, die
+ * nooit bij de AI-aanroep komen).
+ */
+function centraleKennisbasisVelden(
+  centraleKennisbasis: CentraleKennisbasis | null,
+  tegenstrijdigheid: string | null = null
+) {
+  return {
+    centraleKennisbasisGebruikt: centraleKennisbasis !== null,
+    centraleKennisbasisVersion: centraleKennisbasis?.versie ?? null,
+    tegenstrijdigheid,
+  };
+}
+
 /** Best-effort logging voor de twee mislukking-paden (retrieval- en AI-fouten) — vandaag logden die helemaal niets. */
 async function loggenMislukking(
   payload: Payload,
   opties: { question: string; previousQuestion?: string },
   intentie: IntentieUitkomst,
+  centraleKennisbasis: CentraleKennisbasis | null,
   begin: number,
   foutmelding: string
 ): Promise<void> {
@@ -275,6 +296,7 @@ async function loggenMislukking(
     geenHandleidingGevonden: true,
     verbeterStatus: "nieuw",
     ...intentieVelden(intentie),
+    ...centraleKennisbasisVelden(centraleKennisbasis),
   });
 }
 
@@ -321,9 +343,19 @@ export async function processPublicQuestion(
       geenHandleidingGevonden: false,
       verbeterStatus: "nieuw",
       ...intentieVelden(intentie),
+      ...centraleKennisbasisVelden(null),
     });
     return { type: "clarification", conversationId, question: intentie.vraag };
   }
+
+  // Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28): de centrale kennisbasis
+  // wordt vanaf hier ALTIJD opgehaald (ongeacht intentieType — "opgelost" of
+  // "geen-match" hebben allebei baat bij de achtergrondcontext) en zo
+  // dadelijk gegarandeerd meegestuurd naar genereerAssistentAntwoord(),
+  // ongeacht de similarity-score van de opgehaalde handleidingen/bronnen.
+  // haalCentraleKennisbasisOp() faalt nooit hard (geeft null terug), dus dit
+  // kan nooit de rest van de flow blokkeren.
+  const centraleKennisbasis = await haalCentraleKennisbasisOp(payload);
 
   // "opgelost": de officiële term stuurt de zoekvraag i.p.v. de letterlijke
   // formulering van de gebruiker — dit is de kern van "beide phrasing-
@@ -343,14 +375,17 @@ export async function processPublicQuestion(
     contextItems = await buildContext(payload, resultaat.hits);
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);
-    await loggenMislukking(payload, opties, intentie, begin, boodschap);
+    await loggenMislukking(payload, opties, intentie, centraleKennisbasis, begin, boodschap);
     return { type: "failed", foutmelding: boodschap };
   }
 
   const heeftStructuredStappen = contextItems.some((item) => item.type === "handleiding-step");
-  const uitkomst = await genereerAssistentAntwoord(effectieveVraag, contextItems, { heeftStructuredStappen });
+  const uitkomst = await genereerAssistentAntwoord(effectieveVraag, contextItems, {
+    heeftStructuredStappen,
+    centraleKennisbasis,
+  });
   if (uitkomst.type === "failed") {
-    await loggenMislukking(payload, opties, intentie, begin, uitkomst.foutmelding);
+    await loggenMislukking(payload, opties, intentie, centraleKennisbasis, begin, uitkomst.foutmelding);
     return uitkomst;
   }
 
@@ -391,6 +426,7 @@ export async function processPublicQuestion(
     geenHandleidingGevonden,
     verbeterStatus: "nieuw",
     ...intentieVelden(intentie),
+    ...centraleKennisbasisVelden(centraleKennisbasis, uitkomst.tegenstrijdigheid),
   });
 
   return {

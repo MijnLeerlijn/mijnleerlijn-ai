@@ -83,6 +83,19 @@ describe("computeStats — percentages per intentietype en feedback", () => {
     expect(stats.percentageNegatieveFeedback).toBe(25);
     expect(stats.percentageContactformulierGebruikt).toBe(25);
   });
+
+  it("berekent het percentage gedetecteerde tegenstrijdigheden (Fase 4)", () => {
+    const docs = [
+      maakDoc({ tegenstrijdigheid: "De kennisbasis en de handleiding spreken elkaar tegen." }),
+      maakDoc({ tegenstrijdigheid: null }),
+      maakDoc({ tegenstrijdigheid: "   " }), // whitespace-only telt niet mee
+      maakDoc({ tegenstrijdigheid: undefined }),
+    ];
+
+    const stats = computeStats(docs, NU);
+
+    expect(stats.percentageTegenstrijdigheden).toBe(25);
+  });
 });
 
 describe("computeStats — gemiddelde confidence", () => {

@@ -6,5 +6,12 @@
 // retrieval-algoritme materieel verandert. Nooit importeren in answer.ts of
 // similarity-search.ts zelf — dat zou die bestanden onnodig aan dit
 // analytics-detail koppelen.
-export const ANSWER_PROMPT_VERSION = "v1";
-export const RETRIEVAL_VERSION = "v1";
+// v2 (2026-07-28, Fase 4): systeemprompt kreeg de regels 13-14 voor het
+// centrale Kennisbasis MijnLeerlijn-blok (visie/betekenis, term nooit
+// overschrijven, tegenstrijdigheid-rapportage) en het antwoordschema het
+// nieuwe veld "tegenstrijdigheid".
+export const ANSWER_PROMPT_VERSION = "v2";
+// v2 (2026-07-28, Fase 4): searchKnowledgePhased sluit bronnen met bronrol
+// "background-model" nu uit (die rol wordt vervuld door de gegarandeerde
+// centrale-kennisbasis-Global, niet meer door reguliere retrieval).
+export const RETRIEVAL_VERSION = "v2";

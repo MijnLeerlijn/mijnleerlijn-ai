@@ -118,3 +118,98 @@ describe("genereerAssistentAntwoord — fout bij AI", () => {
     expect(uitkomst).toMatchObject({ type: "failed", foutmelding: "OpenAI: rate limit exceeded" });
   });
 });
+
+// Kennisbasis MijnLeerlijn — Fase 4: het centrale-kennisbasisblok is altijd
+// aanwezig in de prompt wanneer meegegeven (los van de confidence-drempel,
+// die uitsluitend op contextItems[0]?.similarity blijft gebaseerd), de
+// meegegeven officiële term wordt nooit overschreven, en een door het model
+// gerapporteerde tegenstrijdigheid komt terecht in de uitkomst.
+describe("genereerAssistentAntwoord — centrale Kennisbasis MijnLeerlijn (Fase 4)", () => {
+  it("neemt het kennisbasisblok, gelabeld en met versie, op in de prompt-context wanneer meegegeven", async () => {
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "Op basis van bron 1.", tegenstrijdigheid: null },
+      usage: GEEN_USAGE,
+    });
+
+    await genereerAssistentAntwoord("Wat is de visie van MijnLeerlijn?", [maakContextItem()], {
+      centraleKennisbasis: { tekst: "## Kernfilosofie\nMijnLeerlijn is een middel, geen doel.", versie: "v1" },
+    });
+
+    const aanroep = mockGenerate.mock.calls[0]![0];
+    expect(aanroep.userPrompt).toContain("Centrale Kennisbasis MijnLeerlijn");
+    expect(aanroep.userPrompt).toContain("v1");
+    expect(aanroep.userPrompt).toContain("## Kernfilosofie");
+    expect(aanroep.userPrompt).toContain("MijnLeerlijn is een middel, geen doel.");
+  });
+
+  it("voegt geen kennisbasisblok toe aan de prompt wanneer niet meegegeven (achterwaarts compatibel)", async () => {
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "Op basis van bron 1.", tegenstrijdigheid: null },
+      usage: GEEN_USAGE,
+    });
+
+    await genereerAssistentAntwoord("vraag", [maakContextItem()]);
+
+    const aanroep = mockGenerate.mock.calls[0]![0];
+    expect(aanroep.userPrompt).not.toContain("Centrale Kennisbasis MijnLeerlijn");
+  });
+
+  it("de confidence-drempel blijft uitsluitend op de opgehaalde bronnen gebaseerd — het kennisbasisblok telt niet mee", async () => {
+    // similarity 0.2 ligt onder MIN_SIMILARITY_VOOR_ANTWOORD: het model wordt
+    // NIET aangeroepen, ook al is er een kennisbasisblok meegegeven.
+    const uitkomst = await genereerAssistentAntwoord(
+      "vraag",
+      [maakContextItem({ similarity: 0.2 })],
+      { centraleKennisbasis: { tekst: "Kennisbasistekst.", versie: "v1" } }
+    );
+
+    expect(uitkomst.type).toBe("no-answer");
+    expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it("geeft tegenstrijdigheid: null terug bij een normale, niet-conflicterende vraag", async () => {
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "Op basis van bron 1.", tegenstrijdigheid: null },
+      usage: GEEN_USAGE,
+    });
+
+    const uitkomst = await genereerAssistentAntwoord("vraag", [maakContextItem()], {
+      centraleKennisbasis: { tekst: "Kennisbasistekst.", versie: "v1" },
+    });
+
+    expect(uitkomst).toMatchObject({ type: "answered", tegenstrijdigheid: null });
+  });
+
+  it("geeft de door het model gerapporteerde tegenstrijdigheid door in de uitkomst", async () => {
+    mockGenerate.mockResolvedValue({
+      object: {
+        hasAnswer: true,
+        answer: "Antwoord, voorzichtig geformuleerd.",
+        reasoning: "Op basis van bron 1, met een kanttekening.",
+        tegenstrijdigheid:
+          "De centrale kennisbasis noemt een andere aanpak dan de geraadpleegde handleiding voor dit scenario.",
+      },
+      usage: GEEN_USAGE,
+    });
+
+    const uitkomst = await genereerAssistentAntwoord("vraag", [maakContextItem()], {
+      centraleKennisbasis: { tekst: "Kennisbasistekst.", versie: "v1" },
+    });
+
+    expect(uitkomst).toMatchObject({
+      type: "answered",
+      tegenstrijdigheid: "De centrale kennisbasis noemt een andere aanpak dan de geraadpleegde handleiding voor dit scenario.",
+    });
+  });
+
+  it("trimt een lege/whitespace-only tegenstrijdigheid naar null", async () => {
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "Reden.", tegenstrijdigheid: "   " },
+      usage: GEEN_USAGE,
+    });
+
+    const uitkomst = await genereerAssistentAntwoord("vraag", [maakContextItem()]);
+
+    expect(uitkomst).toMatchObject({ tegenstrijdigheid: null });
+  });
+});

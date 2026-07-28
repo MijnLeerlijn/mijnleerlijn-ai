@@ -62,6 +62,10 @@ interface ConversatieDoc {
   gebruikteOfficieleTerm?: string | null;
   gebruikteSynoniem?: string | null;
   verbeterStatus: "nieuw" | "beoordeeld" | "opgelost" | "genegeerd";
+  // Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28)
+  centraleKennisbasisGebruikt?: boolean | null;
+  centraleKennisbasisVersion?: string | null;
+  tegenstrijdigheid?: string | null;
   createdAt: string;
 }
 
@@ -185,6 +189,7 @@ function Dashboard({ stats }: { stats: VerbetercentrumStats | null }) {
       <div style={{ gridColumn: "span 2" }}>
         <Percentagebalk label="Negatieve feedback" percentage={stats.percentageNegatieveFeedback} />
         <Percentagebalk label="Contactformulier gebruikt" percentage={stats.percentageContactformulierGebruikt} />
+        <Percentagebalk label="Tegenstrijdigheden gedetecteerd" percentage={stats.percentageTegenstrijdigheden} />
       </div>
     </div>
   );
@@ -270,20 +275,47 @@ function BeslisprocesBlok({ rij }: { rij: ConversatieDoc }) {
           </ul>
         )}
       </div>
-      <div>
-        <strong>Gebruikte stappen</strong>
-        {(rij.steps ?? []).length === 0 ? (
-          <p style={{ margin: "0.2rem 0", color: "var(--theme-elevation-500)" }}>Geen structured stappen getoond.</p>
-        ) : (
-          <ul style={{ margin: "0.2rem 0", paddingLeft: "1.1rem" }}>
-            {(rij.steps ?? []).map((stap) => (
-              <li key={`${stap.handleidingId}-${stap.stepId}`}>
-                Handleiding #{stap.handleidingId} — stap {stap.stepNummer}
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Kennisbasis MijnLeerlijn — Fase 4: kennisbasisgebruik en geraadpleegde
+          handleidingen bewust als één gekoppeld blok (niet los van elkaar),
+          zodat direct zichtbaar is of een antwoord uit de centrale
+          kennisbasis, uit handleidingen, of uit beide voortkomt. */}
+      <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px" }}>
+          <strong>Centrale kennisbasis</strong>
+          <p style={{ margin: "0.2rem 0" }}>
+            {rij.centraleKennisbasisGebruikt
+              ? `✅ Gebruikt (versie ${rij.centraleKennisbasisVersion ?? "onbekend"})`
+              : "— Niet gebruikt (nog niet gepubliceerd op het moment van de vraag)"}
+          </p>
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <strong>Geraadpleegde handleidingen</strong>
+          {(rij.steps ?? []).length === 0 ? (
+            <p style={{ margin: "0.2rem 0", color: "var(--theme-elevation-500)" }}>Geen structured stappen getoond.</p>
+          ) : (
+            <ul style={{ margin: "0.2rem 0", paddingLeft: "1.1rem" }}>
+              {(rij.steps ?? []).map((stap) => (
+                <li key={`${stap.handleidingId}-${stap.stepId}`}>
+                  Handleiding #{stap.handleidingId} — stap {stap.stepNummer}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
+      {rij.tegenstrijdigheid && (
+        <div
+          style={{
+            padding: "0.6rem 0.8rem",
+            background: "var(--theme-warning-100, #fdf3d7)",
+            border: "1px solid var(--theme-warning-500, #e0b400)",
+            borderRadius: "4px",
+          }}
+        >
+          <strong>⚠️ Tegenstrijdigheid gedetecteerd</strong>
+          <p style={{ margin: "0.2rem 0" }}>{rij.tegenstrijdigheid}</p>
+        </div>
+      )}
       <div>
         <strong>Antwoord</strong>
         <p style={{ margin: "0.2rem 0", whiteSpace: "pre-wrap" }}>{rij.answer || "(geen antwoord)"}</p>
@@ -741,6 +773,7 @@ export function VerbetercentrumView() {
             ["contactformulierGebruikt", "Contactformulier gebruikt"],
             ["geenHandleidingGevonden", "Geen handleiding gevonden"],
             ["nogNietBeoordeeld", "Nog niet beoordeeld"],
+            ["tegenstrijdigheidGedetecteerd", "Tegenstrijdigheid gedetecteerd"],
           ] as const
         ).map(([veld, label]) => (
           <label key={veld} style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.85rem" }}>

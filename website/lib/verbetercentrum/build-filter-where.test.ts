@@ -71,4 +71,10 @@ describe("buildFilterWhereParams", () => {
 
     expect(params).toEqual([["where[and][0][intentieType][equals]", "geen-match"]]);
   });
+
+  it("bouwt een 'exists'-clause voor tegenstrijdigheid gedetecteerd (Fase 4)", () => {
+    const params = buildFilterWhereParams(metOverrides({ tegenstrijdigheidGedetecteerd: true }));
+
+    expect(params).toEqual([["where[and][0][tegenstrijdigheid][exists]", "true"]]);
+  });
 });

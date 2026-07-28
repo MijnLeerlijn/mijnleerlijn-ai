@@ -447,7 +447,20 @@ export async function searchKnowledgePhased(
   opties: { query: string; limiet?: number; drempelVoorVoldoende: number }
 ): Promise<PhasedSearchResultaat> {
   const limiet = opties.limiet ?? STANDAARD_ZOEKLIMIET;
-  const gescoord = await scoorKandidaten(payload, opties.query);
+  const alleGescoord = await scoorKandidaten(payload, opties.query);
+
+  // Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28): bronnen met bronrol
+  // "background-model" (het oude achtergrondverhaal-record, knowledge-
+  // sources purpose="background-model") worden hier uitgesloten — die rol
+  // wordt nu volledig vervuld door de gegarandeerde centrale-kennisbasis-
+  // Global (zie lib/assistant/kennisbasis-context.ts, altijd meegestuurd in
+  // process-public-question.ts, ongeacht similarity-score). Zonder deze
+  // uitsluiting zou dezelfde inhoud dubbel (en mogelijk inconsistent, als de
+  // twee bronnen ooit uiteenlopen) in de prompt terechtkomen. Bewust NIET
+  // toegepast op searchKnowledge() hierboven — dat blijft het neutrale
+  // diagnostische hulpmiddel dat alle bronnen even zwaar weegt (zie het
+  // commentaar daar).
+  const gescoord = alleGescoord.filter((k) => k.bronrol !== "background-model");
 
   const core = gescoord.filter((k) => isPrioriteit(k, "core"));
   const secondary = gescoord.filter((k) => isPrioriteit(k, "secondary"));

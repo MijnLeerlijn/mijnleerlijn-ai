@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildContext, contextItemsNaarPrompt } from "./build-context";
+import { buildContext, contextItemsNaarPrompt, kennisbasisBlokNaarPrompt } from "./build-context";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import type { SearchHit } from "@/lib/embeddings/similarity-search";
 
@@ -208,5 +208,15 @@ describe("contextItemsNaarPrompt", () => {
 
     expect(prompt).toContain('[Bron 1: Handleiding "Bron A"]');
     expect(prompt).toContain("Tekst A.");
+  });
+});
+
+describe("kennisbasisBlokNaarPrompt", () => {
+  it("labelt het blok duidelijk als centrale kennisbasis, met versie, en bevat de tekst", () => {
+    const blok = kennisbasisBlokNaarPrompt({ tekst: "## Kop\nInhoud.", versie: "2026-07-28T10:00:00.000Z" });
+
+    expect(blok).toContain("Centrale Kennisbasis MijnLeerlijn");
+    expect(blok).toContain("2026-07-28T10:00:00.000Z");
+    expect(blok).toContain("## Kop\nInhoud.");
   });
 });

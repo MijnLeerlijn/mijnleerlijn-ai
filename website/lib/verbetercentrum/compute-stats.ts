@@ -14,6 +14,8 @@ export interface ConversatieVoorStats {
   kennisbasisOnderwerp?: number | { id: number; onderwerp?: string | null } | null;
   gebruikteSynoniem?: string | null;
   steps?: { handleidingId: number }[] | null;
+  /** Kennisbasis MijnLeerlijn — Fase 4: door de AI gerapporteerd conflict, zie answer.ts. */
+  tegenstrijdigheid?: string | null;
   createdAt: string;
 }
 
@@ -32,6 +34,8 @@ export interface VerbetercentrumStats {
   gemiddeldeConfidence: number;
   percentageNegatieveFeedback: number;
   percentageContactformulierGebruikt: number;
+  /** Kennisbasis MijnLeerlijn — Fase 4: percentage gesprekken met een door de AI gerapporteerde tegenstrijdigheid. */
+  percentageTegenstrijdigheden: number;
   meestGesteldeVragen: AantalMetLabel[];
   meestGebruikteOnderwerpen: AantalMetLabel[];
   meestGebruikteHandleidingen: AantalMetLabel[];
@@ -78,6 +82,7 @@ export function computeStats(docs: ConversatieVoorStats[], nu: Date = new Date()
   const geenMatch = docs.filter((d) => d.intentieType === "geen-match").length;
   const negatieveFeedback = docs.filter((d) => d.feedbackRating === "niet_nuttig").length;
   const contactformulierGebruikt = docs.filter((d) => d.contactFormSubmitted).length;
+  const tegenstrijdigheden = docs.filter((d) => d.tegenstrijdigheid?.trim()).length;
 
   // Confidence is alleen een zinvolle retrieval-score bij een echt antwoord
   // (bv. 0 bij een clarification of een mislukking) — meetellen zou het
@@ -126,6 +131,7 @@ export function computeStats(docs: ConversatieVoorStats[], nu: Date = new Date()
     gemiddeldeConfidence,
     percentageNegatieveFeedback: percentage(negatieveFeedback, totaal),
     percentageContactformulierGebruikt: percentage(contactformulierGebruikt, totaal),
+    percentageTegenstrijdigheden: percentage(tegenstrijdigheden, totaal),
     meestGesteldeVragen,
     meestGebruikteOnderwerpen,
     meestGebruikteHandleidingen,

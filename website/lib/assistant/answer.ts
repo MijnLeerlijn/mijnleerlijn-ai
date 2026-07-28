@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { generateStructuredOutputWithUsage, getAiModelId } from "@/services/ai-client";
-import { contextItemsNaarPrompt, type ContextItem } from "./build-context";
+import { contextItemsNaarPrompt, kennisbasisBlokNaarPrompt, type ContextItem } from "./build-context";
 
 // Kern-antwoordlogica van de AI-assistent (Sprint 5) — geen Payload-
 // afhankelijkheid, puur testbaar. lib/assistant/process-question.ts roept
@@ -69,6 +69,10 @@ Regels voor bronnen en conflicten tussen bronnen:
 11. reasoning: leg in één tot twee zinnen uit welke bron(nen) je antwoord onderbouwen, of waarom je geen antwoord kon geven.
 12. Schrijf in het Nederlands, feitelijk en vriendelijk, geen overbodige inleidende zinnen.
 
+Het centrale Kennisbasis MijnLeerlijn-blok (indien meegegeven, gelabeld "[Centrale Kennisbasis MijnLeerlijn]"):
+13. Gebruik dit blok uitsluitend voor visie, betekenis, samenhang en productlogica — nooit voor concrete klik-stappen, schermnamen of knoplabels (zelfde regel als bronrol "achtergrondmodel" in regel 6 hierboven). De officiële term/configuratie die al voorafgaand aan de zoekopdracht is vastgesteld en in de vraag/context verwerkt is, blijft ALTIJD leidend — dit blok mag die nooit stilzwijgend overschrijven of tegenspreken alsof het de nieuwe waarheid is.
+14. Signaleer je een inhoudelijke tegenspraak tussen dit blok en een andere bron, of tussen dit blok en de al vastgestelde officiële term/configuratie: los dat NOOIT stilzwijgend zelf op. Formuleer je antwoord dan voorzichtig (bijv. "hierover lijken de bronnen elkaar op dit punt tegen te spreken") en vul het veld "tegenstrijdigheid" met een korte, feitelijke omschrijving (max. 1-2 zinnen) van het geconstateerde conflict. Is er geen tegenspraak, laat "tegenstrijdigheid" dan leeg (null) — verzin nooit een tegenstrijdigheid die er niet is.
+
 Antwoord uitsluitend met het gevraagde gestructureerde object.`;
 }
 
@@ -78,6 +82,12 @@ const AntwoordSchema = z.object({
   hasAnswer: z.boolean(),
   answer: z.string(),
   reasoning: z.string(),
+  // Kennisbasis MijnLeerlijn — Fase 4: alleen gevuld wanneer het model zelf
+  // een inhoudelijke tegenspraak signaleert tussen het kennisbasisblok en
+  // een andere bron/de al vastgestelde officiële term (regel 14 hierboven).
+  // Geen invloed op hasAnswer/confidence — puur signalering voor het AI
+  // Verbetercentrum, nooit stilzwijgend "opgelost".
+  tegenstrijdigheid: z.string().nullable(),
 });
 
 const AntwoordValidatieSchema = z.object({ reasoning: z.string().min(1) });
@@ -98,6 +108,7 @@ export type AssistantAntwoordUitkomst =
       confidence: number;
       model: string;
       usage: UsageInfo;
+      tegenstrijdigheid: string | null;
     }
   | {
       type: "no-answer";
@@ -106,13 +117,18 @@ export type AssistantAntwoordUitkomst =
       confidence: number;
       model: string;
       usage: UsageInfo;
+      tegenstrijdigheid: string | null;
     }
   | { type: "failed"; foutmelding: string };
 
 export async function genereerAssistentAntwoord(
   vraag: string,
   contextItems: ContextItem[],
-  opties?: { heeftStructuredStappen?: boolean }
+  opties?: {
+    heeftStructuredStappen?: boolean;
+    /** Kennisbasis MijnLeerlijn — Fase 4: gegarandeerde achtergrondcontext, altijd meegestuurd ongeacht similarity-score (zie kennisbasis-context.ts). */
+    centraleKennisbasis?: { tekst: string; versie: string } | null;
+  }
 ): Promise<AssistantAntwoordUitkomst> {
   const besteScore = contextItems[0]?.similarity ?? 0;
   const confidence = Math.round(besteScore * 100);
@@ -128,6 +144,7 @@ export async function genereerAssistentAntwoord(
       confidence,
       model: getAiModelId(),
       usage: GEEN_USAGE,
+      tegenstrijdigheid: null,
     };
   }
 
@@ -135,10 +152,13 @@ export async function genereerAssistentAntwoord(
   let usage: UsageInfo;
   try {
     const systemPrompt = bouwSysteemprompt(Boolean(opties?.heeftStructuredStappen));
+    const kennisbasisBlok = opties?.centraleKennisbasis
+      ? `${kennisbasisBlokNaarPrompt(opties.centraleKennisbasis)}\n\n`
+      : "";
     const resultaat = await generateStructuredOutputWithUsage({
       schema: AntwoordSchema,
       systemPrompt,
-      userPrompt: `Vraag: ${vraag}\n\nContext:\n${contextItemsNaarPrompt(contextItems)}`,
+      userPrompt: `Vraag: ${vraag}\n\nContext:\n${kennisbasisBlok}${contextItemsNaarPrompt(contextItems)}`,
     });
     object = resultaat.object;
     usage = resultaat.usage;
@@ -146,6 +166,8 @@ export async function genereerAssistentAntwoord(
     const boodschap = error instanceof Error ? error.message : String(error);
     return { type: "failed", foutmelding: boodschap };
   }
+
+  const tegenstrijdigheid = object.tegenstrijdigheid?.trim() || null;
 
   const validatie = AntwoordValidatieSchema.safeParse(object);
   if (!validatie.success || !object.hasAnswer || !object.answer.trim()) {
@@ -158,6 +180,7 @@ export async function genereerAssistentAntwoord(
       confidence,
       model: getAiModelId(),
       usage,
+      tegenstrijdigheid,
     };
   }
 
@@ -168,5 +191,6 @@ export async function genereerAssistentAntwoord(
     confidence,
     model: getAiModelId(),
     usage,
+    tegenstrijdigheid,
   };
 }

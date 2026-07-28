@@ -498,7 +498,7 @@ describe("searchKnowledgePhased — gefaseerd zoeken op Knowledge Source-priorit
     expect(resultaat.hits.map((h) => h.id)).toEqual([2, 3, 1]); // core (2) > secondary (3) > reference (1)
   });
 
-  it("4b. Vergelijkbare scores, zelfde prioriteit: release note > handleiding > achtergrondmodel > FAQ > support (bronrol-tie-break)", async () => {
+  it("4b. Vergelijkbare scores, zelfde prioriteit: release note > handleiding > FAQ > support (bronrol-tie-break; achtergrondmodel is uitgesloten, zie Fase 4)", async () => {
     const gedeeldeScore = embeddingVoorScore(0.8);
     const { payload } = maakFakePayload({
       "knowledge-sources": [
@@ -541,16 +541,16 @@ describe("searchKnowledgePhased — gefaseerd zoeken op Knowledge Source-priorit
     });
 
     // limiet ruim hoger dan het totaal aantal kandidaten: dwingt volledige
-    // escalatie af, zodat alle vijf meedoen en de bronrol-tie-break puur
-    // getest wordt (alle vier Knowledge Sources hebben dezelfde prioriteit
-    // "core", dus die tie-break heeft hier geen effect — precies bedoeld).
+    // escalatie af, zodat alle overige kandidaten meedoen en de bronrol-
+    // tie-break puur getest wordt. Id 4 (achtergrondmodel) wordt door de
+    // Fase 4-uitsluiting nooit kandidaat, ongeacht zijn score.
     const resultaat = await searchKnowledgePhased(payload, {
       query: "iets",
       limiet: 10,
       drempelVoorVoldoende: DREMPEL,
     });
 
-    expect(resultaat.hits.map((h) => h.id)).toEqual([2, 3, 4, 1, 5]);
+    expect(resultaat.hits.map((h) => h.id)).toEqual([2, 3, 1, 5]);
   });
 
   it("5. Geen regressie: Articles en Knowledge Drafts blijven vindbaar, ongeacht de fasering op Knowledge Sources", async () => {
@@ -646,20 +646,15 @@ describe("searchKnowledgePhased — gefaseerd zoeken op Knowledge Source-priorit
   });
 });
 
-// Livegang-afwerking: controle van de gewenste werking van het
-// achtergrondverhaal ("Kennisbasis MijnLeerlijn — achtergrondverhaal voor de
-// Helpdesk AI", purpose "background-model") t.o.v. handleidingen
-// (bronrol "manual") — zie het gesprek. Live geverifieerd tegen de echte
-// database (3 representatieve vragen, zie scratch-test-retrieval-
-// achtergrond.ts, sindsdien verwijderd): het achtergrondverhaal komt puur
-// via retrieval mee (geen forced-include), zit in dezelfde prioriteitstier
-// (priority "core") als de meeste handleidingen, en verliest een tie-break
-// bij gelijke score altijd van een handleiding (BRONROL_RANG in
-// similarity-search.ts: manual=1 vóór background-model=2) — dat is precies
-// "handleiding leidt bij concrete stappen, achtergrond bij visie/samenhang"
-// uit lib/assistant/answer.ts's systeeminstructie. Geen codewijziging nodig
-// gebleken; deze tests leggen het geverifieerde gedrag vast.
-describe("searchKnowledgePhased — achtergrondverhaal (background-model) vs. handleidingen (manual)", () => {
+// Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28): het achtergrondverhaal
+// ("Kennisbasis MijnLeerlijn — achtergrondverhaal voor de Helpdesk AI",
+// purpose "background-model") komt NIET MEER via deze retrieval mee — die
+// rol wordt nu volledig vervuld door de gegarandeerde centrale-kennisbasis-
+// Global (lib/assistant/kennisbasis-context.ts, altijd meegestuurd,
+// ongeacht similarity-score). Vóór deze wijziging kwam het achtergrondverhaal
+// puur via retrieval mee (zie git-historie voor het eerder geverifieerde
+// gedrag); deze tests leggen het NIEUWE, bewuste uitsluitingsgedrag vast.
+describe("searchKnowledgePhased — achtergrondverhaal (background-model) wordt uitgesloten", () => {
   const DREMPEL = 0.5;
 
   function embeddingVoorScore(score: number): number[] {
@@ -670,7 +665,7 @@ describe("searchKnowledgePhased — achtergrondverhaal (background-model) vs. ha
     mockGenerateEmbedding.mockResolvedValue([1, 0, 0]);
   });
 
-  it("1. Visie-/adviesvraag: het achtergrondverhaal scoort hoog en zit in de context", async () => {
+  it("1. Visie-/adviesvraag: het achtergrondverhaal verschijnt niet meer, ook niet bij een torenhoge score", async () => {
     const { payload } = maakFakePayload({
       "knowledge-sources": [
         {
@@ -680,11 +675,11 @@ describe("searchKnowledgePhased — achtergrondverhaal (background-model) vs. ha
           purpose: "background-model",
           priority: "core",
           embeddingStatus: "indexed",
-          embedding: embeddingVoorScore(0.4), // bron zelf lager — het hoofdstuk hieronder is de echte match
+          embedding: embeddingVoorScore(0.4),
           chapters: [
             {
               title: "1. De kernfilosofie: MijnLeerlijn is een middel, geen doel",
-              embedding: embeddingVoorScore(0.9),
+              embedding: embeddingVoorScore(0.9), // zeer hoge score — zou vóór de wijziging bovenaan staan
             },
           ],
         },
@@ -705,12 +700,11 @@ describe("searchKnowledgePhased — achtergrondverhaal (background-model) vs. ha
       drempelVoorVoldoende: DREMPEL,
     });
 
-    const top = resultaat.hits[0];
-    expect(top?.id).toBe(9);
-    expect(top?.bronrol).toBe("background-model");
+    expect(resultaat.hits.some((h) => h.id === 9 && h.bronrol === "background-model")).toBe(false);
+    expect(resultaat.hits[0]?.id).toBe(21);
   });
 
-  it("2. Concrete knop-/stappenvraag: een handleiding staat bovenaan, het achtergrondverhaal levert nooit de stappen zelf", async () => {
+  it("2. Concrete knop-/stappenvraag: een handleiding staat bovenaan, het achtergrondverhaal verschijnt niet", async () => {
     const { payload } = maakFakePayload({
       "knowledge-sources": [
         {
@@ -745,12 +739,10 @@ describe("searchKnowledgePhased — achtergrondverhaal (background-model) vs. ha
     const top = resultaat.hits[0];
     expect(top?.id).toBe(21);
     expect(top?.bronrol).toBe("manual");
-    // Het achtergrondverhaal mag WEL meedoen als denkkader (score 75% haalt de drempel ruim),
-    // maar staat niet bovenaan voor een pure stappenvraag.
-    expect(resultaat.hits.some((h) => h.id === 9 && h.bronrol === "background-model")).toBe(true);
+    expect(resultaat.hits.some((h) => h.id === 9)).toBe(false);
   });
 
-  it("3. Gecombineerde vraag (achtergrond + handleiding beide nodig): allebei zitten in de context", async () => {
+  it("3. Gecombineerde vraag (achtergrond + handleiding beide relevant): alleen de handleiding zit in de context", async () => {
     const { payload } = maakFakePayload({
       "knowledge-sources": [
         {
@@ -780,42 +772,28 @@ describe("searchKnowledgePhased — achtergrondverhaal (background-model) vs. ha
       drempelVoorVoldoende: DREMPEL,
     });
 
-    expect(resultaat.hits.some((h) => h.id === 9 && h.bronrol === "background-model")).toBe(true);
+    expect(resultaat.hits.some((h) => h.id === 9)).toBe(false);
     expect(resultaat.hits.some((h) => h.id === 18 && h.bronrol === "manual")).toBe(true);
   });
 
-  it("4. Bij een (bijna) gelijke score wint de handleiding altijd de tie-break van het achtergrondverhaal", async () => {
+  it("4. searchKnowledge() (het neutrale diagnostische hulpmiddel) blijft ONGEWIJZIGD — achtergrondverhaal telt daar nog gewoon mee", async () => {
     const { payload } = maakFakePayload({
       "knowledge-sources": [
         {
           id: 9,
-          title: "Achtergrondverhaal",
+          title: "Kennisbasis MijnLeerlijn — achtergrondverhaal voor de Helpdesk AI",
           type: "intern_document",
           purpose: "background-model",
           priority: "core",
           embeddingStatus: "indexed",
-          embedding: embeddingVoorScore(0.8),
-        },
-        {
-          id: 21,
-          title: "Handleiding",
-          type: "pdf",
-          priority: "core",
-          embeddingStatus: "indexed",
-          embedding: embeddingVoorScore(0.8), // exact gelijke score
+          embedding: embeddingVoorScore(0.9),
         },
       ],
     });
 
-    const resultaat = await searchKnowledgePhased(payload, {
-      query: "iets",
-      limiet: 1, // slechts 1 plek: bij gelijke score beslist de tie-break wie 'm krijgt
-      drempelVoorVoldoende: DREMPEL,
-    });
+    const hits = await searchKnowledge(payload, { query: "iets", limiet: 10 });
 
-    expect(resultaat.hits).toHaveLength(1);
-    expect(resultaat.hits[0]?.id).toBe(21);
-    expect(resultaat.hits[0]?.bronrol).toBe("manual");
+    expect(hits.some((h) => h.id === 9 && h.bronrol === "background-model")).toBe(true);
   });
 });
 

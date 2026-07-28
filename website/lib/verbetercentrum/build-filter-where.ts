@@ -18,6 +18,8 @@ export interface VerbetercentrumFilterState {
   lageConfidenceGrens: number;
   geenHandleidingGevonden: boolean;
   nogNietBeoordeeld: boolean;
+  /** Kennisbasis MijnLeerlijn — Fase 4: alleen gesprekken met een door de AI gerapporteerde tegenstrijdigheid tussen de centrale kennisbasis en een andere bron/de vastgestelde term. */
+  tegenstrijdigheidGedetecteerd: boolean;
 }
 
 // "Nog geen kennisbasis-item" (intentieType: geen-match) staat standaard
@@ -30,6 +32,7 @@ export const STANDAARD_FILTERS: VerbetercentrumFilterState = {
   lageConfidenceGrens: 50,
   geenHandleidingGevonden: false,
   nogNietBeoordeeld: false,
+  tegenstrijdigheidGedetecteerd: false,
 };
 
 /** Geeft URLSearchParams-entries terug voor de actieve filters — leeg als er geen enkel filter actief is. */
@@ -47,6 +50,7 @@ export function buildFilterWhereParams(filters: VerbetercentrumFilterState): [st
   if (filters.lageConfidence) voegClauseToe("confidence", "less_than", String(filters.lageConfidenceGrens));
   if (filters.geenHandleidingGevonden) voegClauseToe("geenHandleidingGevonden", "equals", "true");
   if (filters.nogNietBeoordeeld) voegClauseToe("verbeterStatus", "equals", "nieuw");
+  if (filters.tegenstrijdigheidGedetecteerd) voegClauseToe("tegenstrijdigheid", "exists", "true");
 
   return params;
 }

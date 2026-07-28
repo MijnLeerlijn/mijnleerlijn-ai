@@ -177,10 +177,15 @@ export const AssistantConversations: CollectionConfig = {
       admin: { readOnly: true },
     },
     {
+      // Label verduidelijkt (2026-07-28, Fase 4) — kolomnaam/relatie
+      // ONGEWIJZIGD (nog steeds "kennisbasis-onderwerpen", geen
+      // migratierisico). Verwijst naar het intentie-/officiële-term-record
+      // uit de (in de UI hernoemde) Helpdesk-onderwerpen-collectie — dat is
+      // een ANDER brontype dan de centrale Kennisbasis MijnLeerlijn-Global.
       name: "kennisbasisOnderwerp",
       type: "relationship",
       relationTo: "kennisbasis-onderwerpen",
-      label: "Gekoppeld kennisbasis-onderwerp",
+      label: "Gekoppeld Helpdesk-onderwerp",
       admin: { readOnly: true },
     },
     {
@@ -188,7 +193,7 @@ export const AssistantConversations: CollectionConfig = {
       type: "relationship",
       relationTo: "kennisbasis-onderwerpen",
       hasMany: true,
-      label: "Overwogen kennisbasis-onderwerpen",
+      label: "Overwogen Helpdesk-onderwerpen",
       admin: {
         readOnly: true,
         description: "Alle onderwerpen die de intentiebepaling overwoog, niet alleen het gekozen onderwerp.",
@@ -240,12 +245,54 @@ export const AssistantConversations: CollectionConfig = {
     },
     { name: "retrievalVersion", type: "text", label: "Retrievalversie", admin: { readOnly: true } },
     {
+      // Label verduidelijkt (2026-07-28, Fase 4) — dit is de versie van de
+      // Helpdesk-onderwerpen-collectie (intentiebepaling), NIET van de
+      // centrale Kennisbasis MijnLeerlijn-Global (zie
+      // centraleKennisbasisVersion hieronder). Kolomnaam ongewijzigd.
       name: "kennisbasisVersion",
       type: "text",
-      label: "Kennisbasisversie",
+      label: "Helpdesk-onderwerpen-versie",
       admin: {
         readOnly: true,
-        description: "Meest recente wijzigingsdatum onder de overwogen kennisbasis-onderwerpen.",
+        description: "Meest recente wijzigingsdatum onder de overwogen Helpdesk-onderwerpen (intentiebepaling).",
+      },
+    },
+    // Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28): legt per vraag expliciet
+    // vast of/welke stand van de centrale Kennisbasis MijnLeerlijn-Global is
+    // meegestuurd als achtergrondcontext, en of het taalmodel daarbij een
+    // tegenstrijdigheid signaleerde — zie lib/assistant/kennisbasis-context.ts
+    // en lib/assistant/answer.ts. Samen met de al bestaande `sources`/
+    // `steps`-velden hierboven (welke handleidingen geraadpleegd/getoond
+    // zijn) blijft zo zichtbaar of een antwoord uit de centrale kennisbasis,
+    // uit handleidingen, of uit beide voortkomt.
+    {
+      name: "centraleKennisbasisGebruikt",
+      type: "checkbox",
+      defaultValue: false,
+      label: "Centrale kennisbasis gebruikt",
+      admin: {
+        readOnly: true,
+        description:
+          "True wanneer de gepubliceerde stand van Kennisbasis MijnLeerlijn als achtergrondcontext is meegestuurd.",
+      },
+    },
+    {
+      name: "centraleKennisbasisVersion",
+      type: "text",
+      label: "Centrale-kennisbasisversie",
+      admin: {
+        readOnly: true,
+        description: "Tijdstempel van de gepubliceerde Kennisbasis MijnLeerlijn-stand op het moment van de vraag.",
+      },
+    },
+    {
+      name: "tegenstrijdigheid",
+      type: "textarea",
+      label: "Gedetecteerde tegenstrijdigheid",
+      admin: {
+        readOnly: true,
+        description:
+          "Door het taalmodel gerapporteerd conflict tussen de centrale kennisbasis en een andere bron/de vastgestelde officiële term. Leeg = geen tegenstrijdigheid gedetecteerd.",
       },
     },
   ],

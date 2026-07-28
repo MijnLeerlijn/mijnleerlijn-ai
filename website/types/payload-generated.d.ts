@@ -1102,9 +1102,21 @@ export interface AssistantConversation {
   promptVersion?: string | null;
   retrievalVersion?: string | null;
   /**
-   * Meest recente wijzigingsdatum onder de overwogen kennisbasis-onderwerpen.
+   * Meest recente wijzigingsdatum onder de overwogen Helpdesk-onderwerpen (intentiebepaling).
    */
   kennisbasisVersion?: string | null;
+  /**
+   * True wanneer de gepubliceerde stand van Kennisbasis MijnLeerlijn als achtergrondcontext is meegestuurd.
+   */
+  centraleKennisbasisGebruikt?: boolean | null;
+  /**
+   * Tijdstempel van de gepubliceerde Kennisbasis MijnLeerlijn-stand op het moment van de vraag.
+   */
+  centraleKennisbasisVersion?: string | null;
+  /**
+   * Door het taalmodel gerapporteerd conflict tussen de centrale kennisbasis en een andere bron/de vastgestelde officiële term. Leeg = geen tegenstrijdigheid gedetecteerd.
+   */
+  tegenstrijdigheid?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1982,6 +1994,9 @@ export interface AssistantConversationsSelect<T extends boolean = true> {
   promptVersion?: T;
   retrievalVersion?: T;
   kennisbasisVersion?: T;
+  centraleKennisbasisGebruikt?: T;
+  centraleKennisbasisVersion?: T;
+  tegenstrijdigheid?: T;
   updatedAt?: T;
   createdAt?: T;
 }

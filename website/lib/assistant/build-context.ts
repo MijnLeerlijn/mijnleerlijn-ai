@@ -238,3 +238,16 @@ export function contextItemsNaarPrompt(items: ContextItem[]): string {
     })
     .join("\n\n");
 }
+
+/**
+ * Kennisbasis MijnLeerlijn — Fase 4: het centrale-kennisbasisblok is bewust
+ * GEEN ContextItem en verschijnt dus nooit in `items`/`contextItemsNaarPrompt`
+ * hierboven — dat zou het ook laten meetellen in answer.ts's confidence-
+ * gate (gebaseerd op `contextItems[0]?.similarity`), terwijl dit blok altijd
+ * gegarandeerd aanwezig moet zijn, los van elke similarity-score. Aparte,
+ * duidelijk gelabelde tekst die vóór de genummerde bronblokken in de prompt
+ * komt te staan — zie answer.ts.
+ */
+export function kennisbasisBlokNaarPrompt(kennisbasis: { tekst: string; versie: string }): string {
+  return `[Centrale Kennisbasis MijnLeerlijn — achtergrondcontext voor visie, betekenis, samenhang en productlogica (versie ${kennisbasis.versie})]\n${kennisbasis.tekst}`;
+}

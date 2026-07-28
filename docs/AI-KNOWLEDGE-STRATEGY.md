@@ -77,16 +77,31 @@ De systeeminstructie van het model moet expliciet vastleggen:
 5. Wees eerlijk en behulpzaam bij het doorverwijzen naar het contactformulier — dit is geen "falen", maar het gewenste eindpunt wanneer de kennisbank het antwoord niet heeft.
 6. Houd rekening met de terminologie van de actieve variant in de formulering van het antwoord.
 
-## Achtergrondverhaal vs. handleidingen (huidige, geïmplementeerde werking)
+## Centrale Kennisbasis MijnLeerlijn vs. Helpdesk-onderwerpen vs. handleidingen (Fase 4, 2026-07-28)
 
-Deze sectie beschrijft, expliciet ter voorkoming van verwarring, hoe de **daadwerkelijk gebouwde** Helpdesk MVP 1.0 vandaag omgaat met het achtergronddocument "Kennisbasis MijnLeerlijn — achtergrondverhaal voor de Helpdesk AI" (een `KnowledgeSource` met `purpose = background-model`) ten opzichte van handleidingen (`purpose = manual`). Geverifieerd en akkoord bevonden — zie `lib/embeddings/similarity-search.ts` en `lib/assistant/answer.ts` voor de code.
+Deze sectie beschrijft de **daadwerkelijk gebouwde**, huidige drielaags-architectuur van de Helpdesk AI. Vervangt de eerdere sectie "Achtergrondverhaal vs. handleidingen" (Helpdesk MVP 1.0) — die beschreef een bewust NIET-forced-include-ontwerp; dat is met Fase 4 bewust teruggedraaid naar een gegarandeerde, altijd-aanwezige achtergrondlaag. Zie `lib/assistant/kennisbasis-context.ts`, `lib/assistant/build-context.ts`, `lib/assistant/answer.ts` en `lib/assistant/process-public-question.ts` voor de code.
 
-- **Rolverdeling**: het achtergrondverhaal bepaalt visie, samenhang en de redenatie achter een route ("waarom werkt MijnLeerlijn zo"); handleidingen bepalen schermnamen, knoppen en concrete stappen. Bij een vraag over een concrete producthandeling zijn handleidingen leidend — het achtergrondverhaal mag daarbij nooit zelf klik-voor-klik-stappen verzinnen (systeeminstructieregels 5–7 in `lib/assistant/answer.ts`).
-- **Geen forced-include**: het achtergrondverhaal wordt **niet standaard volledig meegestuurd** naar het taalmodel. Het komt uitsluitend mee via dezelfde semantische zoekopdracht (`searchKnowledgePhased`) als elke andere bron, op basis van de overeenkomstscore van zijn eigen hoofdstukken met de gestelde vraag.
-- **Prioriteit**: het achtergrondverhaal staat in dezelfde prioriteitstier ("core") als de meeste handleidingen, maar verliest een tie-break bij een (nagenoeg) gelijke overeenkomstscore altijd van een handleiding (`BRONROL_RANG` in `similarity-search.ts`) — bij twijfel krijgt de concrete bron voorrang.
-- **Praktijk**: doordat het document zelf al fijnmazig is opgeknipt in losse hoofdstukken, komt het in de praktijk ook bij concrete stappenvragen vaak mee als denkkader, zonder de bovenste (leidende) positie van de bijbehorende handleiding over te nemen — geverifieerd met representatieve testvragen, zie de regressietests hieronder.
+Drie afzonderlijke bronnen, elk met een eigen, niet-overlappende rol:
 
-Regressietests die dit gedrag vastleggen: `lib/embeddings/similarity-search.test.ts`, describe-blok "achtergrondverhaal (background-model) vs. handleidingen (manual)" — een visievraag, een concrete stappenvraag en een gecombineerde vraag.
+1. **Helpdesk-onderwerpen** (collectie `kennisbasis-onderwerpen`, in de UI hernoemd naar "Helpdesk-onderwerpen") — kleine, handmatig beheerde configuratie (officiële term/synoniemen/voorbeeldvragen per functie). Deterministisch, code-gestuurd via `lib/assistant/bepaal-intentie.ts`: bepaalt de **intentie** en de **officiële term** die de zoekvraag stuurt, en (bij 2+ plausibele kandidaten) de verduidelijkingsvraag. Géén embeddings, géén semantische retrieval — een kleine, volledig in de prompt gestufte lijst.
+2. **Centrale Kennisbasis MijnLeerlijn** (Payload **Global**, singleton, `payload/globals/KennisbasisMijnleerlijn.ts`) — het volledige narratieve achtergrondverhaal (visie, samenhang, productlogica, begrippenkader). **Gegarandeerd, forced-include**: bij elke vraag (behalve een "onduidelijk"-verduidelijkingsvraag, die nooit tot een antwoord komt) haalt `haalCentraleKennisbasisOp()` de **gepubliceerde** stand op en stuurt die, als apart gelabeld promptblok, altijd mee — ongeacht enige similarity-score. Bewust géén onderdeel meer van de gewone semantische retrieval: `searchKnowledgePhased()` sluit bronnen met bronrol `background-model` expliciet uit (zie `lib/embeddings/similarity-search.ts`), zodat dezelfde inhoud niet dubbel (en mogelijk inconsistent) via twee kanalen tegelijk in de prompt terechtkomt.
+3. **Handleidingen** (Handleidingbouwer-stappen + PDF-knowledge-sources) — blijven de leidende bron voor schermnamen, knoppen en concrete klik-stappen, gevonden via de bestaande gefaseerde semantische retrieval (ongewijzigd).
+
+**Volgorde in de pijplijn** (`process-public-question.ts`):
+
+1. `bepaalIntentie()` — intentie + officiële term (Helpdesk-onderwerpen), of een verduidelijkingsvraag.
+2. `haalCentraleKennisbasisOp()` — de gepubliceerde centrale kennisbasis, altijd opgehaald (behalve bij "onduidelijk").
+3. Zoekvraag = de officiële term (bij "opgelost") of de herschreven vraag (bij "geen-match").
+4. `searchKnowledgePhased()` — gefaseerde semantische retrieval over handleidingen/overige bronnen (`background-model` uitgesloten).
+5. `genereerAssistentAntwoord()` — de centrale kennisbasis staat als eerste, apart gelabeld blok in de prompt-context, vóór de genummerde bronblokken.
+
+**Confidence-drempel ongewijzigd**: `MIN_SIMILARITY_VOOR_ANTWOORD` in `lib/assistant/answer.ts` blijft uitsluitend gebaseerd op de score van de beste **opgehaalde** (handleiding/knowledge-source-)bron — de centrale kennisbasis telt daar bewust niet in mee. Zonder een voldoende sterke handleiding/bron antwoordt de AI dus nog steeds niet, ook al is de centrale kennisbasis wél beschikbaar — "de AI mag nooit antwoorden geven zonder bron" blijft onverkort gelden voor concrete producthandelingen.
+
+**Officiële term nooit stilzwijgend overschreven**: de systeeminstructie in `answer.ts` (regels 13-14) legt expliciet vast dat de centrale kennisbasis uitsluitend voor visie/betekenis/samenhang/productlogica dient, nooit voor klik-stappen, en dat de al-vastgestelde officiële term/configuratie (stap 1 hierboven) altijd leidend blijft. Signaleert het model een inhoudelijke tegenspraak tussen de centrale kennisbasis en een andere bron of de vastgestelde configuratie, dan lost het dat nooit stilzwijgend op: het antwoord wordt voorzichtig geformuleerd én het conflict wordt vastgelegd in het nieuwe `tegenstrijdigheid`-veld (zichtbaar en filterbaar in het AI Verbetercentrum).
+
+**Structuurbehoud in de prompt**: de centrale kennisbasis wordt niet plat naar ononderbroken tekst omgezet — `richTextNaarGestructureerdeTekst()` (`lib/assistant/kennisbasis-richtext.ts`) behoudt koppen (`## `/`### `) en lijst-items (`- `), zodat de AI de hoofdstukindeling van het document blijft herkennen.
+
+Regressietests: `lib/embeddings/similarity-search.test.ts` (background-model uitgesloten van `searchKnowledgePhased`, `searchKnowledge()` zelf ongewijzigd), `lib/assistant/kennisbasis-context.test.ts`, `lib/assistant/answer.test.ts` (kennisbasisblok altijd aanwezig wanneer meegegeven, confidence-gate ongewijzigd, tegenstrijdigheid-veld), `lib/assistant/kennisbasis-richtext.test.ts` (round-trip-verliesvrijheid), `lib/assistant/process-public-question.test.ts` (logging).
 
 ## Verplichte tests (samenvoegfunctie-pariteit)
 
