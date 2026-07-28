@@ -135,19 +135,49 @@ export function DownloadbeheerView() {
     setOpslaan(true);
     try {
       const resultaten = await Promise.allSettled(
-        teBewaren.map((r) => {
-          const collectie = r.type === "handleiding" ? "handleidingen" : "knowledge-sources";
-          const body =
-            r.type === "handleiding"
-              ? { categorie: r.categorie, zichtbaarInSidebar: r.zichtbaar, volgorde: r.volgorde }
-              : { categorie: r.categorie, zichtbaar: r.zichtbaar, volgorde: r.volgorde };
-          return fetch(`/api/${collectie}/${r.id}`, {
+        teBewaren.map(async (r) => {
+          if (r.type === "handleiding") {
+            const res = await fetch(`/api/handleidingen/${r.id}`, {
+              method: "PATCH",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                categorie: r.categorie,
+                zichtbaarInSidebar: r.zichtbaar,
+                volgorde: r.volgorde,
+              }),
+            });
+            if (!res.ok) throw new Error(String(r.id));
+            return;
+          }
+
+          // PDF (knowledge-sources): KnowledgeSources.ts staat `update:
+          // adminOnly` — een rechtstreekse PATCH hierheen geeft een
+          // redacteur (niet-admin) altijd een 403. Zichtbaar/categorie
+          // lopen daarom via de gecontroleerde download-settings-route
+          // (overrideAccess: true, maar uitsluitend deze twee velden — zie
+          // die route). Volgorde blijft bewust ongewijzigd via de directe
+          // PATCH lopen (dus nog steeds adminOnly, precies zoals voorheen)
+          // en telt NIET mee als mislukking: een redacteur die alleen
+          // zichtbaarheid/categorie wijzigt, mag daarvoor geen foutmelding
+          // krijgen over een veld dat die mogelijk niet eens aanraakte.
+          const res = await fetch("/api/knowledge-sources/download-settings", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: r.id, downloadVisible: r.zichtbaar, downloadCategory: r.categorie }),
+          });
+          if (!res.ok) throw new Error(String(r.id));
+
+          await fetch(`/api/knowledge-sources/${r.id}`, {
             method: "PATCH",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }).then((res) => {
-            if (!res.ok) throw new Error(String(r.id));
+            body: JSON.stringify({ volgorde: r.volgorde }),
+          }).catch(() => {
+            // Stil falen: volgorde vereist adminrechten (ongewijzigd
+            // bestaand gedrag) — de downloadinstelling hierboven is al
+            // succesvol opgeslagen, ongeacht deze uitkomst.
           });
         })
       );
