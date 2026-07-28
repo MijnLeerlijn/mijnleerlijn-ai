@@ -15,6 +15,7 @@ import * as migration_20260726_085845_assistant_conversations_steps from './2026
 import * as migration_20260727_055935_download_beheer from './20260727_055935_download_beheer';
 import * as migration_20260727_084413_kennisbasis_onderwerpen from './20260727_084413_kennisbasis_onderwerpen';
 import * as migration_20260727_124555_verbetercentrum_velden from './20260727_124555_verbetercentrum_velden';
+import * as migration_20260728_095922_kennisbasis_mijnleerlijn_global from './20260728_095922_kennisbasis_mijnleerlijn_global';
 
 export const migrations = [
   {
@@ -100,6 +101,11 @@ export const migrations = [
   {
     up: migration_20260727_124555_verbetercentrum_velden.up,
     down: migration_20260727_124555_verbetercentrum_velden.down,
-    name: '20260727_124555_verbetercentrum_velden'
+    name: '20260727_124555_verbetercentrum_velden',
+  },
+  {
+    up: migration_20260728_095922_kennisbasis_mijnleerlijn_global.up,
+    down: migration_20260728_095922_kennisbasis_mijnleerlijn_global.down,
+    name: '20260728_095922_kennisbasis_mijnleerlijn_global'
   },
 ];

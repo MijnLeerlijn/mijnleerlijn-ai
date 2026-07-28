@@ -126,12 +126,14 @@ export interface Config {
     'knowledge-search': KnowledgeSearch;
     'assistant-eval': AssistantEval;
     'helpdesk-voorbeeldvragen': HelpdeskVoorbeeldvragen;
+    'kennisbasis-mijnleerlijn': KennisbasisMijnleerlijn;
   };
   globalsSelect: {
     'gmail-connection': GmailConnectionSelect<false> | GmailConnectionSelect<true>;
     'knowledge-search': KnowledgeSearchSelect<false> | KnowledgeSearchSelect<true>;
     'assistant-eval': AssistantEvalSelect<false> | AssistantEvalSelect<true>;
     'helpdesk-voorbeeldvragen': HelpdeskVoorbeeldvragenSelect<false> | HelpdeskVoorbeeldvragenSelect<true>;
+    'kennisbasis-mijnleerlijn': KennisbasisMijnleerlijnSelect<false> | KennisbasisMijnleerlijnSelect<true>;
   };
   locale: null;
   widgets: {
@@ -967,7 +969,7 @@ export interface Handleidingen {
   createdAt: string;
 }
 /**
- * Functiegerichte term- en synoniemkennis voor intentiebepaling door de AI Helpdesk — een ANDER brontype dan het narratieve achtergrondverhaal (dat blijft apart bestaan als kennisbron). Bepaalt welke MijnLeerlijn-functie een leerkracht bedoelt, vóórdat er naar een handleiding gezocht wordt.
+ * Functiegerichte term- en synoniemkennis voor intentiebepaling door de AI Helpdesk — een ANDER brontype dan de centrale Kennisbasis MijnLeerlijn (het narratieve achtergrondverhaal, zie dat menu-item). Bepaalt welke MijnLeerlijn-functie een leerkracht bedoelt, vóórdat er naar een handleiding gezocht wordt.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "kennisbasis-onderwerpen".
@@ -2182,6 +2184,37 @@ export interface HelpdeskVoorbeeldvragen {
   createdAt?: string | null;
 }
 /**
+ * Het centrale achtergrondverhaal voor de Helpdesk AI — visie, samenhang en productlogica. Wordt bij elke helpdeskvraag als vaste achtergrondcontext gebruikt (naast de handleidingen voor concrete stappen). Alleen de gepubliceerde stand wordt door de AI gelezen.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "kennisbasis-mijnleerlijn".
+ */
+export interface KennisbasisMijnleerlijn {
+  id: number;
+  titel: string;
+  /**
+   * De volledige tekst van het achtergrondverhaal. Koppen en lijsten blijven herkenbaar voor de AI — zie lib/assistant/kennisbasis-context.ts.
+   */
+  inhoud: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  };
+  _status?: ('draft' | 'published') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "gmail-connection_select".
  */
@@ -2226,6 +2259,18 @@ export interface HelpdeskVoorbeeldvragenSelect<T extends boolean = true> {
         tekst?: T;
         id?: T;
       };
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "kennisbasis-mijnleerlijn_select".
+ */
+export interface KennisbasisMijnleerlijnSelect<T extends boolean = true> {
+  titel?: T;
+  inhoud?: T;
+  _status?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

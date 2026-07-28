@@ -15,15 +15,22 @@ import { adminOnly, anyEditor } from "../access/roles";
 // `kennisbasis`) — het menu heet voor de gebruiker gewoon "Kennisbasis
 // MijnLeerlijn" (admin.group hieronder), maar in code/schema mag nooit
 // verwarring ontstaan met de bestaande achtergrondbron.
+// UI-hernoeming (2026-07-28): slug bewust ONGEWIJZIGD gelaten (was en blijft
+// "kennisbasis-onderwerpen") — een slug-rename zou een risicovolle tabel-/
+// FK-rename-migratie op productiedata vereisen. Alleen labels.plural en
+// admin.group zijn aangepast, zodat "Kennisbasis MijnLeerlijn" als naam nu
+// uitsluitend voor de nieuwe, echte centrale Kennisbasis-Global gebruikt
+// wordt (zie payload/globals/KennisbasisMijnleerlijn.ts) — deze collectie is
+// en blijft uitsluitend intentie-/officiële-termconfiguratie.
 export const KennisbasisOnderwerpen: CollectionConfig = {
   slug: "kennisbasis-onderwerpen",
-  labels: { singular: "Onderwerp", plural: "Kennisbasis MijnLeerlijn" },
+  labels: { singular: "Helpdesk-onderwerp", plural: "Helpdesk-onderwerpen" },
   admin: {
     useAsTitle: "onderwerp",
     defaultColumns: ["onderwerp", "officieleTerm", "status", "prioriteit"],
-    group: "Kennisbasis MijnLeerlijn",
+    group: "Beheer",
     description:
-      "Functiegerichte term- en synoniemkennis voor intentiebepaling door de AI Helpdesk — een ANDER brontype dan het narratieve achtergrondverhaal (dat blijft apart bestaan als kennisbron). Bepaalt welke MijnLeerlijn-functie een leerkracht bedoelt, vóórdat er naar een handleiding gezocht wordt.",
+      "Functiegerichte term- en synoniemkennis voor intentiebepaling door de AI Helpdesk — een ANDER brontype dan de centrale Kennisbasis MijnLeerlijn (het narratieve achtergrondverhaal, zie dat menu-item). Bepaalt welke MijnLeerlijn-functie een leerkracht bedoelt, vóórdat er naar een handleiding gezocht wordt.",
   },
   access: {
     read: anyEditor,
