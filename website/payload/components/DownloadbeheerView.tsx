@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Button, CheckboxInput, Gutter, SelectInput, toast } from "@payloadcms/ui";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Button, CheckboxInput, Gutter, SelectInput, TextInput, toast } from "@payloadcms/ui";
 
 // Downloadbeheer (2026-07-27): één centrale tabel voor alle publicatie-
 // instellingen van downloadbare items — zowel gestructureerde Handleidingen
@@ -70,6 +70,16 @@ export function DownloadbeheerView() {
   const [categorieen, setCategorieen] = useState<CategorieOptie[]>([]);
   const [status, setStatus] = useState<"laden" | "klaar" | "fout">("laden");
   const [opslaan, setOpslaan] = useState(false);
+
+  // Nieuwe PDF toevoegen (2026-07-28): titel + bestand in één stap, direct
+  // vanuit Downloadbeheer — zie app/api/knowledge-sources/upload-file/route.ts.
+  const [nieuweTitel, setNieuweTitel] = useState("");
+  const [nieuwBestand, setNieuwBestand] = useState<File | null>(null);
+  const [nieuwUploaden, setNieuwUploaden] = useState(false);
+  const nieuwBestandInputRef = useRef<HTMLInputElement>(null);
+  // Vervangen van een bestaand PDF-bestand: bijhouden welke rij (key) op dit
+  // moment aan het uploaden is, zodat alleen díe rij's knop "Bezig…" toont.
+  const [vervangBezig, setVervangBezig] = useState<string | null>(null);
 
   async function laadAlles() {
     setStatus("laden");
@@ -189,6 +199,59 @@ export function DownloadbeheerView() {
     }
   }
 
+  async function voegPdfToe() {
+    const titel = nieuweTitel.trim();
+    if (!titel || !nieuwBestand) return;
+    setNieuwUploaden(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", nieuwBestand);
+      formData.set("title", titel);
+      const res = await fetch("/api/knowledge-sources/upload-file", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error || "Uploaden mislukt.");
+      }
+      toast.success(`PDF "${titel}" toegevoegd.`);
+      setNieuweTitel("");
+      setNieuwBestand(null);
+      if (nieuwBestandInputRef.current) nieuwBestandInputRef.current.value = "";
+      await laadAlles();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Uploaden mislukt.");
+    } finally {
+      setNieuwUploaden(false);
+    }
+  }
+
+  async function vervangPdf(rij: Rij, bestand: File) {
+    setVervangBezig(rij.key);
+    try {
+      const formData = new FormData();
+      formData.set("file", bestand);
+      formData.set("knowledgeSourceId", String(rij.id));
+      const res = await fetch("/api/knowledge-sources/upload-file", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error || "Vervangen mislukt.");
+      }
+      toast.success(`PDF van "${rij.titel}" vervangen.`);
+      await laadAlles();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Vervangen mislukt.");
+    } finally {
+      setVervangBezig(null);
+    }
+  }
+
   return (
     <Gutter>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
@@ -208,6 +271,42 @@ export function DownloadbeheerView() {
         </Button>
       </div>
 
+      <div
+        style={{
+          display: "flex",
+          gap: "0.5rem",
+          alignItems: "flex-end",
+          margin: "0 0 1.5rem",
+          padding: "1rem",
+          border: "1px solid var(--theme-elevation-150)",
+          borderRadius: "4px",
+          background: "var(--theme-input-bg)",
+        }}
+      >
+        <div style={{ flex: 1, maxWidth: 320 }}>
+          <TextInput
+            path="nieuwePdfTitel"
+            label="Nieuwe PDF toevoegen"
+            value={nieuweTitel}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setNieuweTitel(e.target.value)}
+            placeholder="Publieke titel van de handleiding"
+          />
+        </div>
+        <input
+          ref={nieuwBestandInputRef}
+          type="file"
+          accept="application/pdf"
+          onChange={(e) => setNieuwBestand(e.target.files?.[0] ?? null)}
+        />
+        <Button
+          buttonStyle="secondary"
+          disabled={!nieuweTitel.trim() || !nieuwBestand || nieuwUploaden}
+          onClick={voegPdfToe}
+        >
+          {nieuwUploaden ? "Bezig met uploaden…" : "+ Toevoegen"}
+        </Button>
+      </div>
+
       {status === "laden" && <p>Laden…</p>}
       {status === "fout" && <p style={{ color: "var(--theme-error-500)" }}>Ophalen mislukt. Herlaad de pagina.</p>}
 
@@ -220,6 +319,7 @@ export function DownloadbeheerView() {
               <th style={{ padding: "0.5rem", minWidth: 220 }}>Categorie</th>
               <th style={{ padding: "0.5rem", textAlign: "center" }}>Download zichtbaar</th>
               <th style={{ padding: "0.5rem", width: 100 }}>Volgorde</th>
+              <th style={{ padding: "0.5rem" }}>PDF-bestand</th>
               <th style={{ padding: "0.5rem" }}>Bewerken</th>
             </tr>
           </thead>
@@ -285,6 +385,26 @@ export function DownloadbeheerView() {
                       color: "inherit",
                     }}
                   />
+                </td>
+                <td style={{ padding: "0.5rem" }}>
+                  {rij.type === "pdf" && (
+                    <label style={{ cursor: vervangBezig === rij.key ? "default" : "pointer" }}>
+                      <span style={{ color: "var(--theme-text-500)", textDecoration: "underline" }}>
+                        {vervangBezig === rij.key ? "Bezig met vervangen…" : "Vervang PDF"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        disabled={vervangBezig !== null}
+                        onChange={(e) => {
+                          const bestand = e.target.files?.[0];
+                          e.target.value = "";
+                          if (bestand) vervangPdf(rij, bestand);
+                        }}
+                        style={{ display: "none" }}
+                      />
+                    </label>
+                  )}
                 </td>
                 <td style={{ padding: "0.5rem" }}>
                   <a
