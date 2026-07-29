@@ -24,9 +24,15 @@ export interface GeuploadBestand {
   filename: string;
   mimeType: string;
   sizeBytes: number;
+  /** De (private, niet rechtstreeks fetch()-bare) Blob-URL — nodig om op een Payload-document te zetten, zie uploadDownloadBestand. */
+  url: string;
 }
 
 const ATTACHMENT_PREFIX = "contact-attachments";
+// Downloadbeheer (2026-07-29): eigen prefix voor PDF's die beheerders direct
+// uploaden/vervangen vanuit Downloadbeheer — los van contact-attachments,
+// zelfde opslagmodel. Zie app/api/knowledge-sources/upload-file/route.ts.
+const DOWNLOAD_PREFIX = "downloads";
 const DOWNLOAD_URL_GELDIGHEID_MS = 5 * 60 * 1000; // 5 minuten
 
 /**
@@ -40,10 +46,17 @@ export function blobAuthOptions(): { token: string } | Record<string, never> {
   return token ? { token } : {};
 }
 
-export async function uploadBijlage(bestand: File): Promise<GeuploadBestand> {
-  const storageKey = `${ATTACHMENT_PREFIX}/${crypto.randomUUID()}-${bestand.name}`;
+/**
+ * Gedeelde private-upload-logica — één beveiligingsmodel voor alles wat via
+ * deze module wordt opgeslagen (contactbijlagen, downloadbeheer-PDF's, ...),
+ * uitsluitend van elkaar onderscheiden door de prefix. Nooit rechtstreeks
+ * exporteren: elke aanroeper krijgt een eigen, benoemde functie hieronder,
+ * zodat een prefix nooit per ongeluk verward kan worden.
+ */
+async function uploadNaarPrivateBlob(bestand: File, prefix: string): Promise<GeuploadBestand> {
+  const storageKey = `${prefix}/${crypto.randomUUID()}-${bestand.name}`;
 
-  await put(storageKey, bestand, {
+  const resultaat = await put(storageKey, bestand, {
     access: "private",
     ...blobAuthOptions(),
     addRandomSuffix: false,
@@ -55,7 +68,29 @@ export async function uploadBijlage(bestand: File): Promise<GeuploadBestand> {
     filename: bestand.name,
     mimeType: bestand.type || "application/octet-stream",
     sizeBytes: bestand.size,
+    url: resultaat.url,
   };
+}
+
+export async function uploadBijlage(bestand: File): Promise<GeuploadBestand> {
+  return uploadNaarPrivateBlob(bestand, ATTACHMENT_PREFIX);
+}
+
+/**
+ * Downloadbeheer (2026-07-29): PDF's die beheerders direct uploaden/
+ * vervangen — zie app/api/knowledge-sources/upload-file/route.ts. Bewust
+ * NIET via de vercelBlobStorage-plugin (payload.config.ts): die ondersteunt
+ * alleen 'public'-toegang, terwijl de productie-Blob-store private is (zie
+ * de uitgebreide analyse in de route zelf). Zelfde rechtstreekse
+ * @vercel/blob-aanpak als lib/knowledge/sync-manuals.ts al gebruikt voor
+ * handleidingen — de resulterende `url` wordt handmatig op een Media-
+ * document gezet (`filesRequiredOnCreate: false` in Media.ts bestaat al
+ * precies hiervoor); het bestaande `resolveerBestandsUrl()` (lib/knowledge/
+ * process-source.ts) herkent zo'n private Blob-URL automatisch en genereert
+ * er pas bij een daadwerkelijke download een kortlevende signed URL voor.
+ */
+export async function uploadDownloadBestand(bestand: File): Promise<GeuploadBestand> {
+  return uploadNaarPrivateBlob(bestand, DOWNLOAD_PREFIX);
 }
 
 /** Kortlevende signed download-URL — pas genereren op het moment dat een melding daadwerkelijk geopend wordt. */

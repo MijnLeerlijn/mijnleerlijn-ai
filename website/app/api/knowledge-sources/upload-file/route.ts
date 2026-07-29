@@ -3,32 +3,90 @@ import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isEditor } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
+import { uploadDownloadBestand, verwijderBijlage } from "@/services/storage";
+import { privateBlobPathname } from "@/lib/knowledge/process-source";
+import type { Payload } from "payload";
 
-// Downloadbeheer — PDF direct uploaden/vervangen (2026-07-28): tot nu toe
-// kon een beheerder een PDF alleen koppelen door eerst naar de Media-
-// collectie te gaan en daar te uploaden — dit is de gecontroleerde route
-// die Downloadbeheer direct laat uploaden, zonder die omweg. Hergebruikt
-// bewust Payload's EIGEN upload-mechanisme (payload.create met een
-// `file`-optie op de `media`-collectie) — dat triggert dezelfde
-// vercelBlobStorage-plugin (payload.config.ts) die ook normale admin-
-// uploads gebruikt, dus geen eigen Blob-code hier.
+// Downloadbeheer — PDF direct uploaden/vervangen (2026-07-28, herzien
+// 2026-07-29): een beheerder kon voorheen een PDF alleen koppelen door eerst
+// naar de Media-collectie te gaan en daar te uploaden — dit is de
+// gecontroleerde route die Downloadbeheer direct laat uploaden, zonder die
+// omweg.
 //
-// "Geen dubbele bestanden bij vervangen": we maken eerst het NIEUWE
-// media-document aan en koppelen dat aan de knowledge-source, en
-// verwijderen PAS DAARNA het oude media-document — nooit andersom, zodat
-// er nooit een moment is waarop de download niets heeft. Het verwijderen
-// van een media-document triggert zelf weer de plugin's eigen
-// `handleDelete`-hook, die de onderliggende Blob ook daadwerkelijk
-// verwijdert (zie node_modules/@payloadcms/storage-vercel-blob/dist/
-// adapter.js) — er hoeft dus geen aparte Blob-delete-aanroep in deze route.
+// Bewust GEEN gebruik van Payload's `file`-optie op `payload.create()` meer
+// (de oorspronkelijke versie deed dat wel): dat triggert de gedeelde
+// vercelBlobStorage-plugin (payload.config.ts), die uitsluitend 'public'-
+// toegang ondersteunt (hardcoded in de plugin, zie node_modules/
+// @payloadcms/storage-vercel-blob/dist/index.js: `access: 'public'`). De
+// productie-Blob-store (mijnleerlijn-media) is echter een PRIVATE store —
+// live geverifieerd op 2026-07-29: elke upload via de plugin faalt daar met
+// "Vercel Blob: Cannot use public access on a private store", ook via de
+// normale Media-admin-UI (dus geen bug specifiek aan deze route, een
+// plugin-brede beperking). De Blob-store blijft bewust private (opdracht:
+// "Maak mijnleerlijn-media niet publiek").
+//
+// In plaats daarvan: exact hetzelfde patroon als lib/knowledge/
+// sync-manuals.ts al gebruikt voor handleidingen — rechtstreeks uploaden via
+// @vercel/blob (services/storage.ts, `access: 'private'`, dezelfde
+// BLOB_READ_WRITE_TOKEN), en het resultaat handmatig op een Media-document
+// zetten (`filesRequiredOnCreate: false` in Media.ts bestaat al precies
+// hiervoor). Het bestaande resolveerBestandsUrl() (lib/knowledge/
+// process-source.ts) herkent zo'n private Blob-URL automatisch aan het
+// hostnamepatroon en genereert er pas bij een daadwerkelijke download een
+// kortlevende signed URL voor (app/api/knowledge/download/[id]/route.ts) —
+// die twee bestanden zijn dus NIET aangepast, ze werken al correct met dit
+// opslagpatroon.
+//
+// Volgorde + rollback (verplicht: nooit een weesrecord of verweesde blob):
+//   1. Nieuw bestand uploaden (private Blob).
+//      - Mislukt dit → niets aangemaakt, direct 500, klaar.
+//   2. Nieuw media-document aanmaken dat naar die Blob wijst.
+//      - Mislukt dit → de zojuist geüploade Blob weer verwijderen, dan 500.
+//   3. Koppelen: nieuwe knowledge-source aanmaken (create-flow) of het
+//      bestaande item se `file`-veld bijwerken (replace-flow).
+//      - Mislukt dit → het nieuwe media-document ÉN de nieuwe Blob weer
+//        verwijderen, dan 500. Het OUDE bestand (bij vervangen) is op dit
+//        punt nog volledig intact — nooit aangeraakt vóór succesvol koppelen.
+//   4. (Alleen replace-flow) Nu pas het OUDE media-document en de oude Blob
+//      verwijderen — non-fataal bij falen (best effort): de vervanging is
+//      op dit punt al geslaagd en zichtbaar, een opruimfout mag dat niet
+//      alsnog als mislukking rapporteren.
+//
+// "Geen dubbele bestanden bij vervangen" volgt automatisch uit stap 3+4: er
+// is nooit een moment waarop het downloaditem geen werkend bestand heeft, en
+// het oude bestand verdwijnt pas nadat het nieuwe al gegarandeerd werkt.
 //
 // Bestaande downloadfunctionaliteit blijft ongewijzigd werken: deze route
 // wijzigt uitsluitend `knowledge-sources.file` (dezelfde relatie die
-// app/api/knowledge/download/[id]/route.ts al gebruikt) — de download-URL
-// zelf (/api/knowledge/download/:id) en de resolutielogica
-// (lib/knowledge/process-source.ts) blijven volledig ongemoeid.
+// app/api/knowledge/download/[id]/route.ts al gebruikt) en raakt nooit een
+// bestaand media-document/bestaande Blob-URL vóór een geslaagde vervanging.
 
 const MAX_BESTANDSGROOTTE = 25 * 1024 * 1024; // 25MB — ruim boven de grootste bestaande handleiding-PDF's.
+
+async function ruimVerweesdeBlobOp(storageKey: string, reden: string) {
+  await verwijderBijlage(storageKey).catch((error) => {
+    console.error(`[api/knowledge-sources/upload-file] Opruimen verweesde blob (${reden}) mislukt:`, error);
+  });
+}
+
+/** Best effort: het OUDE bestand van een geslaagde vervanging opruimen — een fout hier mag de al geslaagde vervanging nooit alsnog als mislukking rapporteren. */
+async function ruimOudBestandOp(payload: Payload, oudeMediaId: number | string) {
+  const oudeMedia = await payload
+    .findByID({ collection: "media", id: oudeMediaId, overrideAccess: true, depth: 0 })
+    .catch(() => null);
+
+  await payload.delete({ collection: "media", id: oudeMediaId, overrideAccess: true }).catch((error) => {
+    console.error("[api/knowledge-sources/upload-file] Opruimen oud media-document mislukt:", error);
+  });
+
+  if (oudeMedia?.url) {
+    try {
+      await verwijderBijlage(privateBlobPathname(oudeMedia.url));
+    } catch (error) {
+      console.error("[api/knowledge-sources/upload-file] Opruimen oude blob mislukt:", error);
+    }
+  }
+}
 
 export async function POST(request: NextRequest) {
   const payload = await getPayload({ config });
@@ -73,9 +131,6 @@ export async function POST(request: NextRequest) {
   const knowledgeSourceIdRaw = formData.get("knowledgeSourceId");
   const titelRaw = formData.get("title");
 
-  const buffer = Buffer.from(await bestand.arrayBuffer());
-  const fileData = { data: buffer, mimetype: bestand.type, name: bestand.name, size: bestand.size };
-
   try {
     if (typeof knowledgeSourceIdRaw === "string" && knowledgeSourceIdRaw.trim()) {
       // Vervangen van het bestand bij een bestaand downloaditem.
@@ -92,27 +147,43 @@ export async function POST(request: NextRequest) {
       }
       const oudeMediaId = typeof bestaand.file === "object" ? bestaand.file?.id : bestaand.file;
 
-      const nieuweMedia = await payload.create({
-        collection: "media",
-        overrideAccess: true,
-        file: fileData,
-        data: { altText: `Downloadbestand: ${bestaand.title}`, mediaType: "download" },
-      });
+      const geupload = await uploadDownloadBestand(bestand);
 
-      await payload.update({
-        collection: "knowledge-sources",
-        id: knowledgeSourceId,
-        overrideAccess: true,
-        data: { file: nieuweMedia.id },
-      });
-
-      if (oudeMediaId) {
-        await payload.delete({ collection: "media", id: oudeMediaId, overrideAccess: true }).catch((error) => {
-          // Non-fataal: het nieuwe bestand is al gekoppeld en werkt — het
-          // opruimen van het oude bestand mag de gebruiker nooit alsnog een
-          // foutmelding opleveren over iets dat al geslaagd is.
-          console.error("[api/knowledge-sources/upload-file] Opruimen oud bestand mislukt:", error);
+      let nieuweMedia;
+      try {
+        nieuweMedia = await payload.create({
+          collection: "media",
+          overrideAccess: true,
+          data: {
+            altText: `Downloadbestand: ${bestaand.title}`,
+            mediaType: "download",
+            filename: geupload.filename,
+            mimeType: geupload.mimeType,
+            filesize: geupload.sizeBytes,
+            url: geupload.url,
+          },
         });
+      } catch (error) {
+        await ruimVerweesdeBlobOp(geupload.storageKey, "media-document aanmaken mislukt");
+        throw error;
+      }
+
+      try {
+        await payload.update({
+          collection: "knowledge-sources",
+          id: knowledgeSourceId,
+          overrideAccess: true,
+          data: { file: nieuweMedia.id },
+        });
+      } catch (error) {
+        await payload.delete({ collection: "media", id: nieuweMedia.id, overrideAccess: true }).catch(() => {});
+        await ruimVerweesdeBlobOp(geupload.storageKey, "koppelen aan downloaditem mislukt");
+        throw error;
+      }
+
+      // Pas NU, na een bevestigd geslaagde koppeling, het oude bestand opruimen.
+      if (oudeMediaId) {
+        await ruimOudBestandOp(payload, oudeMediaId);
       }
 
       return NextResponse.json({ ok: true, id: knowledgeSourceId, mediaId: nieuweMedia.id });
@@ -124,29 +195,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Titel is verplicht bij een nieuw downloaditem." }, { status: 400 });
     }
 
-    const nieuweMedia = await payload.create({
-      collection: "media",
-      overrideAccess: true,
-      file: fileData,
-      data: { altText: `Downloadbestand: ${titel}`, mediaType: "download" },
-    });
+    const geupload = await uploadDownloadBestand(bestand);
+
+    let nieuweMedia;
+    try {
+      nieuweMedia = await payload.create({
+        collection: "media",
+        overrideAccess: true,
+        data: {
+          altText: `Downloadbestand: ${titel}`,
+          mediaType: "download",
+          filename: geupload.filename,
+          mimeType: geupload.mimeType,
+          filesize: geupload.sizeBytes,
+          url: geupload.url,
+        },
+      });
+    } catch (error) {
+      await ruimVerweesdeBlobOp(geupload.storageKey, "media-document aanmaken mislukt");
+      throw error;
+    }
 
     // zichtbaar bewust false: de nieuwe rij verschijnt direct in
     // Downloadbeheer, waar de beheerder categorie/volgorde/zichtbaarheid
     // zelf instelt en expliciet bevestigt vóórdat het item publiek wordt.
-    const nieuweBron = await payload.create({
-      collection: "knowledge-sources",
-      overrideAccess: true,
-      data: {
-        title: titel,
-        type: "pdf",
-        priority: "core",
-        file: nieuweMedia.id,
-        zichtbaar: false,
-        status: "new",
-        embeddingStatus: "pending",
-      },
-    });
+    let nieuweBron;
+    try {
+      nieuweBron = await payload.create({
+        collection: "knowledge-sources",
+        overrideAccess: true,
+        data: {
+          title: titel,
+          type: "pdf",
+          priority: "core",
+          file: nieuweMedia.id,
+          zichtbaar: false,
+          status: "new",
+          embeddingStatus: "pending",
+        },
+      });
+    } catch (error) {
+      await payload.delete({ collection: "media", id: nieuweMedia.id, overrideAccess: true }).catch(() => {});
+      await ruimVerweesdeBlobOp(geupload.storageKey, "knowledge-source aanmaken mislukt");
+      throw error;
+    }
 
     return NextResponse.json({ ok: true, id: nieuweBron.id, mediaId: nieuweMedia.id });
   } catch (error) {

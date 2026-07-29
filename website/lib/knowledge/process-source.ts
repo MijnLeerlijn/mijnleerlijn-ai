@@ -35,12 +35,24 @@ function isAbsoluteUrl(url: string): boolean {
  * herhaald herindexeren (dagen/maanden later) blijft werken, i.p.v. één keer
  * een vaste maar op termijn verlopen signed URL op te slaan.
  */
-function isPrivateBlobUrl(url: string): boolean {
+export function isPrivateBlobUrl(url: string): boolean {
   try {
     return new URL(url).hostname.endsWith(".private.blob.vercel-storage.com");
   } catch {
     return false;
   }
+}
+
+/**
+ * Herleidt de ruwe Blob-sleutel (pathname) uit een private Blob-URL — zie de
+ * uitgebreide toelichting bij het gebruik hieronder in resolveerBestandsUrl
+ * (waarom decodeURIComponent verplicht is). Geëxporteerd zodat
+ * app/api/knowledge-sources/upload-file/route.ts dezelfde, al eerder
+ * gebugfixte logica hergebruikt bij het opruimen van een vervangen bestand,
+ * i.p.v. een tweede, licht-afwijkende kopie te onderhouden.
+ */
+export function privateBlobPathname(url: string): string {
+  return decodeURIComponent(new URL(url).pathname).replace(/^\//, "");
 }
 
 /**
@@ -68,7 +80,7 @@ export async function resolveerBestandsUrl(payload: Payload, mediaId: number): P
     // ruwe variant toevallig identiek, dus leek dit eerder te werken — voor
     // "Analyse (1).pdf" en elk ander bestand met spaties/haakjes/komma's
     // NIET. decodeURIComponent() herstelt de ruwe sleutel.
-    const pathname = decodeURIComponent(new URL(url).pathname).replace(/^\//, "");
+    const pathname = privateBlobPathname(url);
     payload.logger.info(
       `[process-source] media ${mediaId}: private Blob-URL gedetecteerd, genereer signed download-URL voor pathname="${pathname}"`
     );
