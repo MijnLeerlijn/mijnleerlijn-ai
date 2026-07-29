@@ -3,15 +3,11 @@ import config from "@/payload.config";
 import HelpdeskChat from "@/components/organisms/HelpdeskChat";
 import HandleidingenSidebar from "@/components/organisms/HandleidingenSidebar";
 import GradientAccent from "@/components/atoms/GradientAccent";
-
-interface VoorbeeldvraagRij {
-  tekst: string;
-}
+import { haalTop5VoorbeeldVragen } from "@/lib/helpdesk/top5-voorbeeldvragen";
 
 async function haalVoorbeeldvragen(): Promise<string[]> {
   const payload = await getPayload({ config });
-  const global = await payload.findGlobal({ slug: "helpdesk-voorbeeldvragen", overrideAccess: true, depth: 0 });
-  return ((global.vragen ?? []) as VoorbeeldvraagRij[]).map((v) => v.tekst).filter(Boolean);
+  return haalTop5VoorbeeldVragen(payload);
 }
 
 // Helpdesk MVP 1.0 (2026-07-25): de homepage IS de chatbot — zie het
@@ -34,8 +30,8 @@ export default async function Home() {
       <div className="max-w-[720px]">
         <h1 className="text-h1 font-bold text-grijs-900">Waar kunnen we je mee helpen?</h1>
         <p className="mt-2 text-base text-grijs-600">
-          Stel je vraag over MijnLeerlijn. De assistent zoekt direct in onze handleidingen en
-          kennisbank.
+          Stel je vraag aan de MijnLeerlijn Assistent. De assistent zoekt automatisch in onze
+          handleidingen en kennisbank om je zo goed mogelijk te helpen.
         </p>
         <GradientAccent className="mt-4 w-16" />
       </div>

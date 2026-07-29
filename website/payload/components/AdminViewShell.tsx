@@ -4,6 +4,7 @@ import { DefaultTemplate } from "@payloadcms/next/templates";
 import { DownloadbeheerView } from "./DownloadbeheerView";
 import { DownloadcategorieenView } from "./DownloadcategorieenView";
 import { VerbetercentrumView } from "./VerbetercentrumView";
+import { HelpdeskVragenView } from "./HelpdeskVragenView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -70,6 +71,14 @@ export function VerbetercentrumViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="verbetercentrum">
       <VerbetercentrumView />
+    </InAdminShell>
+  );
+}
+
+export function HelpdeskVragenViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="helpdeskVragen">
+      <HelpdeskVragenView />
     </InAdminShell>
   );
 }

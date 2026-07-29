@@ -17,6 +17,7 @@ import * as migration_20260727_084413_kennisbasis_onderwerpen from './20260727_0
 import * as migration_20260727_124555_verbetercentrum_velden from './20260727_124555_verbetercentrum_velden';
 import * as migration_20260728_095922_kennisbasis_mijnleerlijn_global from './20260728_095922_kennisbasis_mijnleerlijn_global';
 import * as migration_20260728_134927_verbetercentrum_kennisbasis_velden from './20260728_134927_verbetercentrum_kennisbasis_velden';
+import * as migration_20260729_120000_helpdesk_vragen from './20260729_120000_helpdesk_vragen';
 
 export const migrations = [
   {
@@ -113,5 +114,10 @@ export const migrations = [
     up: migration_20260728_134927_verbetercentrum_kennisbasis_velden.up,
     down: migration_20260728_134927_verbetercentrum_kennisbasis_velden.down,
     name: '20260728_134927_verbetercentrum_kennisbasis_velden'
+  },
+  {
+    up: migration_20260729_120000_helpdesk_vragen.up,
+    down: migration_20260729_120000_helpdesk_vragen.down,
+    name: '20260729_120000_helpdesk_vragen',
   },
 ];

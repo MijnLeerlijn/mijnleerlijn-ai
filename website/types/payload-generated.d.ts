@@ -82,6 +82,7 @@ export interface Config {
     'knowledge-sources': KnowledgeSource;
     handleidingen: Handleidingen;
     'kennisbasis-onderwerpen': KennisbasisOnderwerpen;
+    'helpdesk-vragen': HelpdeskVragen;
     'assistant-conversations': AssistantConversation;
     'assistant-eval-questions': AssistantEvalQuestion;
     'assistant-eval-runs': AssistantEvalRun;
@@ -108,6 +109,7 @@ export interface Config {
     'knowledge-sources': KnowledgeSourcesSelect<false> | KnowledgeSourcesSelect<true>;
     handleidingen: HandleidingenSelect<false> | HandleidingenSelect<true>;
     'kennisbasis-onderwerpen': KennisbasisOnderwerpenSelect<false> | KennisbasisOnderwerpenSelect<true>;
+    'helpdesk-vragen': HelpdeskVragenSelect<false> | HelpdeskVragenSelect<true>;
     'assistant-conversations': AssistantConversationsSelect<false> | AssistantConversationsSelect<true>;
     'assistant-eval-questions': AssistantEvalQuestionsSelect<false> | AssistantEvalQuestionsSelect<true>;
     'assistant-eval-runs': AssistantEvalRunsSelect<false> | AssistantEvalRunsSelect<true>;
@@ -125,14 +127,12 @@ export interface Config {
     'gmail-connection': GmailConnection;
     'knowledge-search': KnowledgeSearch;
     'assistant-eval': AssistantEval;
-    'helpdesk-voorbeeldvragen': HelpdeskVoorbeeldvragen;
     'kennisbasis-mijnleerlijn': KennisbasisMijnleerlijn;
   };
   globalsSelect: {
     'gmail-connection': GmailConnectionSelect<false> | GmailConnectionSelect<true>;
     'knowledge-search': KnowledgeSearchSelect<false> | KnowledgeSearchSelect<true>;
     'assistant-eval': AssistantEvalSelect<false> | AssistantEvalSelect<true>;
-    'helpdesk-voorbeeldvragen': HelpdeskVoorbeeldvragenSelect<false> | HelpdeskVoorbeeldvragenSelect<true>;
     'kennisbasis-mijnleerlijn': KennisbasisMijnleerlijnSelect<false> | KennisbasisMijnleerlijnSelect<true>;
   };
   locale: null;
@@ -1028,6 +1028,39 @@ export interface KennisbasisOnderwerpen {
   createdAt: string;
 }
 /**
+ * Vragen die bezoekers daadwerkelijk aan de Helpdesk-assistent gesteld hebben (automatisch geteld bij elke 'Verstuur'-klik), plus handmatig toegevoegde vragen. Bepaalt de 'Meest gestelde vragen' op de homepage — zie de beheerpagina 'Helpdesk-vragen' voor vastzetten/verbergen/toevoegen.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "helpdesk-vragen".
+ */
+export interface HelpdeskVragen {
+  id: number;
+  vraag: string;
+  /**
+   * Alleen voor matching bij het tellen — getrimd, kleine letters, enkele spaties. Nooit handmatig aanpassen.
+   */
+  vraagNormalized: string;
+  aantalGesteld: number;
+  /**
+   * Leeg voor handmatig toegevoegde vragen die nog nooit gesteld zijn.
+   */
+  laatstGebruiktOp?: string | null;
+  /**
+   * Vastgezette vragen staan altijd vooraan in de publieke Top 5, ongeacht het aantal keer gesteld.
+   */
+  pinned?: boolean | null;
+  /**
+   * Laag = eerder getoond. Leeg = onderaan bij de andere vastgezette vragen.
+   */
+  pinVolgorde?: number | null;
+  /**
+   * Sluit deze vraag uit van de publieke Top 5 — blijft wel zichtbaar/beheerbaar hier.
+   */
+  verborgen?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant én de publieke helpdesk-homepage).
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1389,6 +1422,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'kennisbasis-onderwerpen';
         value: number | KennisbasisOnderwerpen;
+      } | null)
+    | ({
+        relationTo: 'helpdesk-vragen';
+        value: number | HelpdeskVragen;
       } | null)
     | ({
         relationTo: 'assistant-conversations';
@@ -1945,6 +1982,21 @@ export interface KennisbasisOnderwerpenSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "helpdesk-vragen_select".
+ */
+export interface HelpdeskVragenSelect<T extends boolean = true> {
+  vraag?: T;
+  vraagNormalized?: T;
+  aantalGesteld?: T;
+  laatstGebruiktOp?: T;
+  pinned?: T;
+  pinVolgorde?: T;
+  verborgen?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "assistant-conversations_select".
  */
 export interface AssistantConversationsSelect<T extends boolean = true> {
@@ -2179,26 +2231,6 @@ export interface AssistantEval {
   createdAt?: string | null;
 }
 /**
- * De klikbare voorbeeldvragen onder het invoerveld op de helpdesk-homepage.
- *
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "helpdesk-voorbeeldvragen".
- */
-export interface HelpdeskVoorbeeldvragen {
-  id: number;
-  /**
-   * Worden direct verstuurd zodra een bezoeker erop klikt.
-   */
-  vragen?:
-    | {
-        tekst: string;
-        id?: string | null;
-      }[]
-    | null;
-  updatedAt?: string | null;
-  createdAt?: string | null;
-}
-/**
  * Het centrale achtergrondverhaal voor de Helpdesk AI — visie, samenhang en productlogica. Wordt bij elke helpdeskvraag als vaste achtergrondcontext gebruikt (naast de handleidingen voor concrete stappen). Alleen de gepubliceerde stand wordt door de AI gelezen.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -2259,21 +2291,6 @@ export interface KnowledgeSearchSelect<T extends boolean = true> {
  * via the `definition` "assistant-eval_select".
  */
 export interface AssistantEvalSelect<T extends boolean = true> {
-  updatedAt?: T;
-  createdAt?: T;
-  globalType?: T;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "helpdesk-voorbeeldvragen_select".
- */
-export interface HelpdeskVoorbeeldvragenSelect<T extends boolean = true> {
-  vragen?:
-    | T
-    | {
-        tekst?: T;
-        id?: T;
-      };
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

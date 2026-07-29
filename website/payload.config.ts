@@ -22,13 +22,13 @@ import { KnowledgeDrafts } from "./payload/collections/KnowledgeDrafts";
 import { KnowledgeSources } from "./payload/collections/KnowledgeSources";
 import { Handleidingen } from "./payload/collections/Handleidingen";
 import { KennisbasisOnderwerpen } from "./payload/collections/KennisbasisOnderwerpen";
+import { HelpdeskVragen } from "./payload/collections/HelpdeskVragen";
 import { AssistantConversations } from "./payload/collections/AssistantConversations";
 import { AssistantEvalQuestions } from "./payload/collections/AssistantEvalQuestions";
 import { AssistantEvalRuns } from "./payload/collections/AssistantEvalRuns";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
 import { AssistantEval } from "./payload/globals/AssistantEval";
-import { HelpdeskVoorbeeldvragen } from "./payload/globals/HelpdeskVoorbeeldvragen";
 import { KennisbasisMijnleerlijn } from "./payload/globals/KennisbasisMijnleerlijn";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -98,6 +98,9 @@ export default buildConfig({
         // hierboven — custom view + eigen nav-linkcomponent, zie
         // payload/components/VerbetercentrumView.tsx/-NavLinks.tsx.
         "@/payload/components/VerbetercentrumNavLinks#VerbetercentrumNavLinks",
+        // Homepage-herontwerp (2026-07-29): zelfde patroon, zie
+        // payload/components/HelpdeskVragenView.tsx/-NavLinks.tsx.
+        "@/payload/components/HelpdeskVragenNavLinks#HelpdeskVragenNavLinks",
       ],
       // Admin-shell-fix (2026-07-28): Component wijst naar de nieuwe
       // server-wrappers in AdminViewShell.tsx (renderen de standaard
@@ -116,6 +119,10 @@ export default buildConfig({
         verbetercentrum: {
           Component: "@/payload/components/AdminViewShell#VerbetercentrumViewShell",
           path: "/verbetercentrum",
+        },
+        helpdeskVragen: {
+          Component: "@/payload/components/AdminViewShell#HelpdeskVragenViewShell",
+          path: "/helpdesk-vragen",
         },
       },
     },
@@ -136,15 +143,29 @@ export default buildConfig({
     KnowledgeSources,
     Handleidingen,
     KennisbasisOnderwerpen,
+    HelpdeskVragen,
     AssistantConversations,
     AssistantEvalQuestions,
     AssistantEvalRuns,
   ],
-  globals: [GmailConnection, KnowledgeSearch, AssistantEval, HelpdeskVoorbeeldvragen, KennisbasisMijnleerlijn],
+  globals: [GmailConnection, KnowledgeSearch, AssistantEval, KennisbasisMijnleerlijn],
   editor: lexicalEditor(),
   db: postgresAdapter({
     pool: { connectionString: requireEnv("DATABASE_URI") },
     migrationDir: path.resolve(dirname, "payload", "migrations"),
+    // Homepage-herontwerp (2026-07-29): `push` (Payload's dev-mode live
+    // schema-sync, vergelijkbaar met `prisma db push`) staat hier uit.
+    // Ontdekt tijdens lokaal testen: na het verwijderen van de oude Global
+    // HelpdeskVoorbeeldvragen uit deze config (de onderliggende tabellen
+    // blijven bewust bestaan, zie payload/globals/HelpdeskVoorbeeldvragen.ts)
+    // bood push bij ELKE aanvraag opnieuw aan om die tabellen te
+    // verwijderen ("DATA LOSS WARNING"), en liet — zonder interactieve
+    // terminal om te bevestigen/weigeren — elke pagina daardoor 15-60+
+    // seconden hangen. `payload migrate` (dit project se eigen, al
+    // gevestigde workflow — zie payload/migrations/) blijft de enige manier
+    // om het lokale schema bij te werken; production (build:production)
+    // gebruikte push toch al nooit.
+    push: false,
   }),
   typescript: {
     outputFile: path.resolve(dirname, "types", "payload-generated.d.ts"),

@@ -3,6 +3,7 @@ import { getPayload } from "payload";
 import config from "@/payload.config";
 import { processPublicQuestion } from "@/lib/assistant/process-public-question";
 import { maakRateLimiter } from "@/lib/contact/validate";
+import { registreerGesteldeVraag } from "@/lib/helpdesk/registreer-gestelde-vraag";
 
 const MAX_VRAAG_LENGTE = 1000;
 
@@ -55,13 +56,31 @@ export async function POST(request: NextRequest) {
 
   try {
     const payload = await getPayload({ config });
-    // previousQuestion: alleen gezet als de bezoeker een verduidelijkingsvraag
-    // (type "clarification") beantwoordt — zie bepaal-intentie.ts en
-    // HelpdeskChat.tsx.
-    const resultaat = await processPublicQuestion(payload, {
-      question: question.trim(),
-      previousQuestion: previousQuestion ? previousQuestion.trim() : undefined,
-    });
+
+    // Telt deze vraag mee voor "Meest gestelde vragen" op de homepage
+    // (lib/helpdesk/top5-voorbeeldvragen.ts) — elke aanvraag hier is per
+    // definitie een bevestigde "Verstuur"-actie (klikken op een
+    // voorbeeldvraag vult alleen het invoerveld, zie HelpdeskChat.tsx).
+    // Parallel, niet-blokkerend t.o.v. het genereren van het antwoord —
+    // allSettled i.p.v. all: registreerGesteldeVraag heeft weliswaar al een
+    // eigen try/catch (mag dus in de praktijk nooit rejecten), maar een
+    // onverwachte fout hier mag hoe dan ook nooit het al-berekende antwoord
+    // laten mislukken, ook niet als die eigen bescherming ooit zou falen.
+    const [, procesUitslag] = await Promise.allSettled([
+      registreerGesteldeVraag(payload, question.trim()),
+      // previousQuestion: alleen gezet als de bezoeker een verduidelijkingsvraag
+      // (type "clarification") beantwoordt — zie bepaal-intentie.ts en
+      // HelpdeskChat.tsx.
+      processPublicQuestion(payload, {
+        question: question.trim(),
+        previousQuestion: previousQuestion ? previousQuestion.trim() : undefined,
+      }),
+    ]);
+
+    if (procesUitslag.status === "rejected") {
+      throw procesUitslag.reason;
+    }
+    const resultaat = procesUitslag.value;
 
     if (resultaat.type === "failed") {
       payload.logger.error(`[api/helpdesk/ask] mislukt: ${resultaat.foutmelding}`);

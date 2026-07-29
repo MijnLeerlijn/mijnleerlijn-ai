@@ -3,31 +3,23 @@
 import { useEffect, useState } from "react";
 import NextLink from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import Button from "@/components/atoms/Button";
 
 // Helpdesk MVP 1.0 (2026-07-25): opzettelijk vereenvoudigd tot uitsluitend
-// logo + één knop — "de chatbot is de homepage", zie het akkoord op het
+// het logo — "de chatbot is de homepage", zie het akkoord op het
 // wireframevoorstel. De eerdere Categorieën/Updates/Contact-navigatie en het
 // bijbehorende mobiele hamburgermenu (MobileNavigation) zijn hier bewust
-// verwijderd, niet verborgen: met nog maar één link is een apart uitklapbaar
-// mobiel menu overbodige complexiteit. Contact loopt voortaan inline via de
-// chat (zie HelpdeskChat), niet meer via een aparte geadverteerde nav-link.
+// verwijderd, niet verborgen: met geen enkele link meer is een apart
+// uitklapbaar mobiel menu overbodige complexiteit. Contact loopt voortaan
+// inline via de chat (zie HelpdeskChat), niet meer via een aparte
+// geadverteerde nav-link.
+//
+// Homepage-herontwerp (2026-07-29): de "Handleidingen"-knop (scrollte naar
+// de sidebar) is verwijderd — de homepage moet uitsluitend uitstralen dat je
+// met een AI-assistent praat, geen aparte navigatie naar "zelf zoeken"
+// aanbieden. De Handleidingen-sidebar zelf (components/organisms/
+// HandleidingenSidebar.tsx) blijft ongewijzigd op de pagina staan.
 export default function Header() {
-  const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
-
-  // Zelfde patroon als de vroegere zoek-scroll-behavior: scroll naar de
-  // sidebar als die al op de pagina staat (de homepage), anders naar de
-  // homepage navigeren met een anchor.
-  const naarHandleidingen = () => {
-    const sidebar = document.getElementById("handleidingen");
-    if (sidebar) {
-      sidebar.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else {
-      router.push("/#handleidingen");
-    }
-  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 80);
@@ -54,10 +46,6 @@ export default function Header() {
             priority
           />
         </NextLink>
-
-        <Button variant="secondary" size="compact" onClick={naarHandleidingen}>
-          Handleidingen
-        </Button>
       </div>
     </header>
   );

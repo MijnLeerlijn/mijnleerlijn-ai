@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { processPublicQuestion } from "@/lib/assistant/process-public-question";
+import { registreerGesteldeVraag } from "@/lib/helpdesk/registreer-gestelde-vraag";
 
 vi.mock("payload", () => ({
   getPayload: vi
@@ -13,8 +14,10 @@ vi.mock("@/lib/assistant/process-public-question", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/assistant/process-public-question")>();
   return { ...echt, processPublicQuestion: vi.fn() };
 });
+vi.mock("@/lib/helpdesk/registreer-gestelde-vraag", () => ({ registreerGesteldeVraag: vi.fn() }));
 
 const mockProcess = vi.mocked(processPublicQuestion);
+const mockRegistreer = vi.mocked(registreerGesteldeVraag);
 
 function maakRequest(opties: { body?: unknown; ip?: string } = {}) {
   return new NextRequest("http://localhost:3000/api/helpdesk/ask", {
@@ -29,6 +32,8 @@ function maakRequest(opties: { body?: unknown; ip?: string } = {}) {
 
 beforeEach(() => {
   mockProcess.mockReset();
+  mockRegistreer.mockReset();
+  mockRegistreer.mockResolvedValue(undefined);
 });
 
 // Geen sessiecontrole te testen (bewust, zie het commentaar in route.ts) —
@@ -120,5 +125,40 @@ describe("POST /api/helpdesk/ask", () => {
 
     const geblokkeerd = await POST(maakRequest({ body: { question: "één te veel" }, ip }));
     expect(geblokkeerd.status).toBe(429);
+  });
+
+  // Homepage-herontwerp (2026-07-29): telt "Meest gestelde vragen" — elke
+  // aanvraag hier is per definitie een bevestigde "Verstuur"-actie.
+  it("telt de gestelde vraag mee via registreerGesteldeVraag", async () => {
+    mockProcess.mockResolvedValue({
+      type: "answered",
+      conversationId: 1,
+      hasAnswer: true,
+      answer: "Antwoord.",
+      manuals: [],
+      steps: [],
+    });
+
+    await POST(maakRequest({ body: { question: "Hoe maak ik een doelenset aan?" } }));
+
+    expect(mockRegistreer).toHaveBeenCalledWith(expect.anything(), "Hoe maak ik een doelenset aan?");
+  });
+
+  it("blokkeert het antwoord niet als het tellen zelf onverwacht mislukt (registreerGesteldeVraag rejecteert, in de praktijk voorkomen door zijn eigen try/catch)", async () => {
+    mockRegistreer.mockRejectedValue(new Error("Tellen mislukt"));
+    mockProcess.mockResolvedValue({
+      type: "answered",
+      conversationId: 1,
+      hasAnswer: true,
+      answer: "Antwoord.",
+      manuals: [],
+      steps: [],
+    });
+
+    const response = await POST(maakRequest({ body: { question: "vraag" } }));
+
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.answer).toBe("Antwoord.");
   });
 });

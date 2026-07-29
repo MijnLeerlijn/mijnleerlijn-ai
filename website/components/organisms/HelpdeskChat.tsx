@@ -191,8 +191,13 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
     await stelVraag(tekst);
   }
 
+  // Homepage-herontwerp (2026-07-29): vult voortaan alleen het invoerveld
+  // i.p.v. de vraag direct te versturen — de bezoeker kan de voorgestelde
+  // vraag nog aanpassen, en de telling voor "Meest gestelde vragen"
+  // (app/api/helpdesk/ask/route.ts → lib/helpdesk/registreer-gestelde-vraag.ts)
+  // gaat pas omhoog bij een echte, bevestigde "Verstuur"-klik.
   function klikVoorbeeldvraag(tekst: string) {
-    stelVraag(tekst);
+    setVraag(tekst);
   }
 
   async function geefFeedback(bericht: Bericht, rating: "nuttig" | "niet_nuttig") {
@@ -219,9 +224,37 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
     <div className="flex flex-col">
       <div className="flex flex-col gap-6">
         {berichten.length === 0 && (
-          <p className="rounded-xl border border-dashed border-grijs-200 bg-grijs-50 p-6 text-sm text-grijs-500">
-            Stel hieronder je vraag. Bijvoorbeeld: &ldquo;Hoe maak ik een doelenset aan?&rdquo;
-          </p>
+          <div className="rounded-xl border border-dashed border-grijs-200 bg-grijs-50 p-6">
+            <p className="text-sm font-semibold text-grijs-900">
+              Hoe duidelijker je vraag, hoe beter het antwoord.
+            </p>
+            <p className="mt-2 text-sm leading-6 text-grijs-600">
+              Beschrijf zo concreet mogelijk:
+            </p>
+            <ul className="mt-1 list-inside list-disc text-sm leading-6 text-grijs-600">
+              <li>waar je bent in MijnLeerlijn;</li>
+              <li>wat je probeert te doen;</li>
+              <li>wat er gebeurt;</li>
+              <li>wat je had verwacht.</li>
+            </ul>
+            <p className="mt-2 text-sm leading-6 text-grijs-600">
+              Zo kan de assistent je veel gerichter helpen.
+            </p>
+
+            <div className="mt-4 flex flex-col gap-2 border-t border-grijs-200 pt-4 text-sm">
+              <p className="flex items-start gap-2 text-grijs-500">
+                <span aria-hidden>❌</span>
+                <span>Niet: &ldquo;Ik zie een leerling niet.&rdquo;</span>
+              </p>
+              <p className="flex items-start gap-2 text-grijs-900">
+                <span aria-hidden>✅</span>
+                <span>
+                  Wel: &ldquo;Als ik naar het Leerdoelenoverzicht ga, mis ik één leerling. De
+                  leerling staat wel in mijn groep, maar verschijnt niet in het overzicht.&rdquo;
+                </span>
+              </p>
+            </div>
+          </div>
         )}
 
         {berichten.map((bericht) => (
@@ -353,7 +386,7 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
                       }`}
                     >
                       <ThumbsUp size={16} aria-hidden />
-                      Dit heeft mij geholpen
+                      Dit antwoord hielp mij
                     </button>
                     <button
                       type="button"
@@ -368,7 +401,7 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
                       }`}
                     >
                       <ThumbsDown size={16} aria-hidden />
-                      Ik kom er niet uit
+                      Dit antwoord hielp mij niet
                     </button>
                     {bericht.feedback && (
                       <span className="text-sm text-grijs-500">
@@ -408,7 +441,7 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
           type="text"
           value={vraag}
           onChange={(e) => setVraag(e.target.value)}
-          placeholder="Typ je vraag..."
+          placeholder="Beschrijf zo duidelijk mogelijk waar je tegenaan loopt..."
           aria-label="Typ je vraag"
           disabled={bezig}
           className="h-12"
@@ -419,18 +452,23 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
       </form>
 
       {voorbeeldvragen.length > 0 && berichten.length === 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {voorbeeldvragen.map((tekst) => (
-            <button
-              key={tekst}
-              type="button"
-              onClick={() => klikVoorbeeldvraag(tekst)}
-              disabled={bezig}
-              className="rounded-full border border-grijs-200 bg-white px-3 py-1.5 text-xs text-grijs-600 transition-colors duration-[120ms] hover:border-[var(--variant-accent)] hover:text-[var(--variant-accent)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {tekst}
-            </button>
-          ))}
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-grijs-500">
+            Meest gestelde vragen
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {voorbeeldvragen.map((tekst) => (
+              <button
+                key={tekst}
+                type="button"
+                onClick={() => klikVoorbeeldvraag(tekst)}
+                disabled={bezig}
+                className="rounded-full border border-grijs-200 bg-white px-3 py-1.5 text-xs text-grijs-600 transition-colors duration-[120ms] hover:border-[var(--variant-accent)] hover:text-[var(--variant-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {tekst}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
