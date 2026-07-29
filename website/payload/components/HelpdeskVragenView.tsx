@@ -126,22 +126,23 @@ export function HelpdeskVragenView() {
     try {
       const resultaten = await Promise.allSettled(
         teBewaren.map(async (r) => {
-          // vraagNormalized meesturen zodra de tekst wijzigt: anders raakt
-          // deze rij los van toekomstige, echte bezoekersvragen met dezelfde
-          // (nieuwe) formulering — die zouden dan een nieuwe, aparte rij
-          // krijgen i.p.v. de telling van deze rij voort te zetten.
+          // vraagNormalized wordt server-side afgeleid uit `vraag` (zie de
+          // beforeValidate-hook in payload/collections/HelpdeskVragen.ts) —
+          // hoeft hier niet meer meegestuurd te worden.
           const res = await fetch(`/api/helpdesk-vragen/${r.id}`, {
             method: "PATCH",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               vraag: r.vraag,
-              vraagNormalized: r.vraag.trim().replace(/\s+/g, " ").toLowerCase(),
               pinned: r.pinned,
               verborgen: r.verborgen,
             }),
           });
-          if (!res.ok) throw new Error(String(r.id));
+          if (!res.ok) {
+            const data = (await res.json().catch(() => null)) as { errors?: { message?: string }[] } | null;
+            throw new Error(data?.errors?.[0]?.message || String(r.id));
+          }
         })
       );
       const mislukt = resultaten.filter((r) => r.status === "rejected").length;
@@ -161,14 +162,15 @@ export function HelpdeskVragenView() {
     if (!tekst) return;
     setToevoegen(true);
     try {
-      const genormaliseerd = tekst.toLowerCase().replace(/\s+/g, " ");
+      // vraagNormalized wordt server-side afgeleid uit `vraag` (zie de
+      // beforeValidate-hook in payload/collections/HelpdeskVragen.ts) —
+      // hoeft hier niet meer meegestuurd te worden.
       const res = await fetch("/api/helpdesk-vragen", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           vraag: tekst,
-          vraagNormalized: genormaliseerd,
           aantalGesteld: 0,
           pinned: false,
           verborgen: false,

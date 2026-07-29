@@ -1,5 +1,7 @@
-import type { CollectionConfig } from "payload";
+import type { CollectionBeforeValidateHook, CollectionConfig } from "payload";
+import { ValidationError } from "payload";
 import { anyEditor } from "../access/roles";
+import { normaliseerVraag } from "@/lib/helpdesk/registreer-gestelde-vraag";
 
 // Homepage-herontwerp (2026-07-29): vervangt de vaste, handmatig bijgehouden
 // lijst in payload/globals/HelpdeskVoorbeeldvragen.ts (max. 6 rijen, door
@@ -17,6 +19,64 @@ import { anyEditor } from "../access/roles";
 // `verborgen` is nodig omdat vragen automatisch uit echte, ongemodereerde
 // bezoekersinvoer ontstaan — een beheerder moet een vraag uit de publieke
 // Top 5 kunnen weren zonder de tellinggeschiedenis te verliezen.
+//
+// Bugfix (2026-07-29, live gevonden in productie): `vraagNormalized` is een
+// verborgen, systeembeheerd veld — bij handmatig aanmaken/wijzigen via
+// Payload's EIGEN admin-formulier (niet de aangepaste beheerpagina
+// HelpdeskVragenView.tsx, die het voorheen altijd zelf al meestuurde) werd
+// het nooit ingevuld, waardoor de verplichte-veldvalidatie faalde met "The
+// following field is invalid: Vraag (genormaliseerd)". Geëxporteerd als
+// losse functie (i.p.v. een inline hook) zodat dit rechtstreeks, zonder een
+// echte Payload-instantie, getest kan worden — zie HelpdeskVragen.test.ts.
+//
+// beforeValidate i.p.v. beforeChange: dat laatste draait PAS NA Payload's
+// eigen veldvalidatie (create → validate → beforeChange → opslaan), dus zou
+// de fout niet voorkomen — beforeValidate draait ervóór.
+//
+// Bewust dezelfde normaliseerVraag() als lib/helpdesk/
+// registreer-gestelde-vraag.ts (geïmporteerd, niet opnieuw geïmplementeerd)
+// — anders zou een handmatig toegevoegde vraag nooit matchen met dezelfde,
+// later automatisch getelde vraag.
+export const vulVraagNormalizedIn: CollectionBeforeValidateHook = async ({ data, originalDoc, req }) => {
+  if (!data || typeof data.vraag !== "string" || !data.vraag.trim()) {
+    // Laat Payload's eigen required-validatie op `vraag` de fout geven —
+    // geen dubbele/verwarrende foutmelding over het verborgen veld.
+    return data;
+  }
+
+  const genormaliseerd = normaliseerVraag(data.vraag);
+  data.vraagNormalized = genormaliseerd;
+
+  // Alleen daadwerkelijk controleren op duplicaten wanneer de
+  // genormaliseerde vorm ook echt verandert (nieuw record, of een bestaand
+  // record waarvan de vraagtekst inhoudelijk wijzigt) — scheelt een
+  // overbodige query bij elke opslag van uitsluitend pinned/verborgen.
+  if (genormaliseerd !== originalDoc?.vraagNormalized) {
+    const bestaand = await req.payload.find({
+      collection: "helpdesk-vragen",
+      where: { vraagNormalized: { equals: genormaliseerd } },
+      limit: 1,
+      overrideAccess: true,
+      depth: 0,
+    });
+    const conflict = bestaand.docs.find((doc) => doc.id !== originalDoc?.id);
+    if (conflict) {
+      throw new ValidationError({
+        collection: "helpdesk-vragen",
+        errors: [
+          {
+            path: "vraag",
+            message: `Deze vraag bestaat al: "${conflict.vraag}". Pas de bestaande vraag aan (bv. vastzetten) i.p.v. een duplicaat aan te maken.`,
+          },
+        ],
+        req,
+      });
+    }
+  }
+
+  return data;
+};
+
 export const HelpdeskVragen: CollectionConfig = {
   slug: "helpdesk-vragen",
   labels: { singular: "Helpdesk-vraag", plural: "Helpdesk-vragen" },
@@ -33,17 +93,19 @@ export const HelpdeskVragen: CollectionConfig = {
     update: anyEditor,
     delete: anyEditor,
   },
+  hooks: {
+    beforeValidate: [vulVraagNormalizedIn],
+  },
   fields: [
     { name: "vraag", type: "text", required: true, label: "Vraag" },
     {
       name: "vraagNormalized",
       type: "text",
-      required: true,
       unique: true,
       label: "Vraag (genormaliseerd)",
       admin: {
         hidden: true,
-        description: "Alleen voor matching bij het tellen — getrimd, kleine letters, enkele spaties. Nooit handmatig aanpassen.",
+        description: "Alleen voor matching bij het tellen — getrimd, kleine letters, enkele spaties. Wordt automatisch bijgehouden, nooit handmatig aanpassen.",
       },
     },
     {
