@@ -40,17 +40,21 @@ type Status = "laden" | "klaar" | "fout";
 // van een opengeklapte categorie gebruiken de eigen kleur, dus de kleur
 // helpt onderscheiden i.p.v. puur decoratief te zijn. "blauw" blijft de
 // terugvalwaarde voor een categorie zonder (geldige) kleur.
-const TERUGVALKLEUR: CategorieKleur = "blauw";
+const TERUGVALKLEUR: CategorieKleur = "blue";
 
 // Statische klasse-per-kleur (geen dynamische `bg-${kleur}` template-string
 // — Tailwind v4 herkent alleen letterlijk voorkomende klassen, zelfde reden
 // als de KLEUREN-lookup in components/atoms/CategorieIcoon.tsx).
 const OPEN_ACHTERGROND: Record<CategorieKleur, string> = {
-  blauw: "bg-blauw/6",
-  groen: "bg-groen/6",
-  oranje: "bg-oranje/6",
-  geel: "bg-geel/6",
-  rood: "bg-rood/6",
+  blue: "bg-blauw/6",
+  green: "bg-groen/6",
+  red: "bg-rood/6",
+  orange: "bg-oranje/6",
+  yellow: "bg-geel/6",
+  purple: "bg-purple-500/6",
+  teal: "bg-teal-500/6",
+  pink: "bg-pink-500/6",
+  slate: "bg-slate-500/6",
 };
 
 export default function HandleidingenSidebar() {

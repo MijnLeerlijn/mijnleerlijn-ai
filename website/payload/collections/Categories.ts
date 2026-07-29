@@ -26,19 +26,32 @@ export const Categories: CollectionConfig = {
       type: "text",
       required: true,
       label: "Icoon",
-      admin: { description: "Naam van een Lucide-icoon, bijv. 'Target'." },
+      admin: {
+        description:
+          "Naam van een Lucide-icoon (kebab-case, bijv. 'rocket'). Kies via de Downloadcategorieën-beheerpagina — iedere naam uit de Lucide-iconenbibliotheek is geldig; onbekende namen vallen bij weergave veilig terug op een standaardicoon.",
+      },
     },
     {
       name: "color",
       type: "select",
       required: true,
       label: "Kleur",
+      // Categorie-uiterlijk (2026-07-29): uitgebreid van 5 naar 9 stabiele,
+      // Engelse waarden (migratie 20260729_150000_categorie_kleuren_uitbreiden
+      // hernoemt de onderliggende Postgres-ENUM 1-op-1, bestaande categorieën
+      // behouden hun kleur). Kies via de Downloadcategorieën-beheerpagina
+      // (visuele kleurenkiezer, geen dropdown) — deze `options` bepalen alleen
+      // wat geldig is, niet hoe je kiest.
       options: [
-        { label: "Blauw", value: "blauw" },
-        { label: "Groen", value: "groen" },
-        { label: "Oranje", value: "oranje" },
-        { label: "Geel", value: "geel" },
-        { label: "Rood", value: "rood" },
+        { label: "Blauw", value: "blue" },
+        { label: "Groen", value: "green" },
+        { label: "Rood", value: "red" },
+        { label: "Oranje", value: "orange" },
+        { label: "Geel", value: "yellow" },
+        { label: "Paars", value: "purple" },
+        { label: "Teal", value: "teal" },
+        { label: "Roze", value: "pink" },
+        { label: "Leigrijs", value: "slate" },
       ],
     },
     { name: "description", type: "textarea", required: true, label: "Uitleg" },

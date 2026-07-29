@@ -312,10 +312,10 @@ export interface Category {
   title: string;
   slug: string;
   /**
-   * Naam van een Lucide-icoon, bijv. 'Target'.
+   * Naam van een Lucide-icoon (kebab-case, bijv. 'rocket'). Kies via de Downloadcategorieën-beheerpagina — iedere naam uit de Lucide-iconenbibliotheek is geldig; onbekende namen vallen bij weergave veilig terug op een standaardicoon.
    */
   icon: string;
-  color: 'blauw' | 'groen' | 'oranje' | 'geel' | 'rood';
+  color: 'blue' | 'green' | 'red' | 'orange' | 'yellow' | 'purple' | 'teal' | 'pink' | 'slate';
   description: string;
   /**
    * Bepaalt de volgorde van categorieën op de publieke downloadpagina. Laag = eerder. Leeg = alfabetisch, onderaan. Wordt beheerd via de 'Downloadcategorieën'-pagina in het menu.
@@ -1037,9 +1037,9 @@ export interface HelpdeskVragen {
   id: number;
   vraag: string;
   /**
-   * Alleen voor matching bij het tellen — getrimd, kleine letters, enkele spaties. Nooit handmatig aanpassen.
+   * Alleen voor matching bij het tellen — getrimd, kleine letters, enkele spaties. Wordt automatisch bijgehouden, nooit handmatig aanpassen.
    */
-  vraagNormalized: string;
+  vraagNormalized?: string | null;
   aantalGesteld: number;
   /**
    * Leeg voor handmatig toegevoegde vragen die nog nooit gesteld zijn.

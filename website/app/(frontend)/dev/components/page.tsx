@@ -241,7 +241,7 @@ export default function ComponentsDevPage() {
               />
             </div>
             <div className="w-56">
-              <KennisKaart titel="Doelen & Planning" icoon="Target" kleur="blauw" href="#" />
+              <KennisKaart titel="Doelen & Planning" icoon="Target" kleur="blue" href="#" />
             </div>
           </Row>
           <Row label="UpdateCard / RecentCard">
@@ -384,15 +384,15 @@ export default function ComponentsDevPage() {
 
         <Section titel="Edge cases — lange Nederlandse woorden & ontbrekende data">
           <Row label="Categorie-icoon met onbekende naam (valt terug op FileText)">
-            <CategorieIcoon naam="OnbekendIcoon" kleur="blauw" />
-            <CategorieIcoon naam="Target" kleur="rood" />
+            <CategorieIcoon naam="OnbekendIcoon" kleur="blue" />
+            <CategorieIcoon naam="Target" kleur="red" />
           </Row>
           <Row label="Lang woord in een smalle kaart">
             <div className="w-40">
               <KennisKaart
                 titel="Onvindbaarheidsregistratieformulieren"
                 icoon="Target"
-                kleur="groen"
+                kleur="green"
                 href="#"
               />
             </div>

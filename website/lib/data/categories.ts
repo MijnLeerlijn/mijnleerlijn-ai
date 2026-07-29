@@ -1,4 +1,8 @@
-export type CategorieKleur = "blauw" | "groen" | "oranje" | "geel" | "rood";
+// Categorie-uiterlijk (2026-07-29): uitgebreid van 5 Nederlandse naar 9
+// Engelse, stabiele waarden — zie payload/migrations/
+// 20260729_150000_categorie_kleuren_uitbreiden.ts (hernoemt de onderliggende
+// Postgres-ENUM 1-op-1) en lib/data/categorie-kleuren.ts (labels/hex).
+export type CategorieKleur = "blue" | "green" | "red" | "orange" | "yellow" | "purple" | "teal" | "pink" | "slate";
 
 export interface Categorie {
   slug: string;
@@ -15,7 +19,7 @@ export const categorieen: Categorie[] = [
     slug: "starten",
     titel: "Starten met MijnLeerlijn",
     icoon: "Rocket",
-    kleur: "blauw",
+    kleur: "blue",
     uitleg:
       "De eerste stappen: een hoofdprofiel aanmaken en kiezen hoe je wilt starten — vanuit de methode of vanuit je eigen doelen.",
   },
@@ -23,7 +27,7 @@ export const categorieen: Categorie[] = [
     slug: "doelen-planning",
     titel: "Doelen & Planning",
     icoon: "Target",
-    kleur: "blauw",
+    kleur: "blue",
     uitleg:
       "Doelensets aanmaken, koppelen aan groepen of leerlingen, en de Doelenplanner gebruiken om onderwijs vanuit inzicht vorm te geven.",
   },
@@ -31,28 +35,28 @@ export const categorieen: Categorie[] = [
     slug: "leerlingen-groepen",
     titel: "Leerlingen & Groepen",
     icoon: "Users",
-    kleur: "groen",
+    kleur: "green",
     uitleg: "Groepen samenstellen, leerkrachten en leerlingen toevoegen, en leerlingprofielen beheren.",
   },
   {
     slug: "vaardigheden",
     titel: "Vaardigheden",
     icoon: "Award",
-    kleur: "groen",
+    kleur: "green",
     uitleg: "Vaardighedensets aanmaken en toevoegen om naast leerdoelen ook vaardigheden te volgen.",
   },
   {
     slug: "documenten-media",
     titel: "Documenten & Media",
     icoon: "FileText",
-    kleur: "oranje",
+    kleur: "orange",
     uitleg: "Documenten toevoegen aan een leerling en overzicht houden over wat er is vastgelegd.",
   },
   {
     slug: "analyse-rapportage",
     titel: "Analyse & Rapportage",
     icoon: "BarChart3",
-    kleur: "geel",
+    kleur: "yellow",
     uitleg:
       "Voortgang analyseren op leerling-, groeps- en schoolniveau, en het doelenoverzicht gebruiken voor onderbouwde keuzes.",
   },
@@ -60,7 +64,7 @@ export const categorieen: Categorie[] = [
     slug: "notities",
     titel: "Notities",
     icoon: "StickyNote",
-    kleur: "geel",
+    kleur: "yellow",
     uitleg:
       "Notities vastleggen bij een leerling of groep, zodat belangrijke observaties niet verloren gaan.",
   },
@@ -68,7 +72,7 @@ export const categorieen: Categorie[] = [
     slug: "beheer-instellingen",
     titel: "Beheer & Instellingen",
     icoon: "Settings",
-    kleur: "rood",
+    kleur: "red",
     uitleg:
       "Statussets, rollen en overige instellingen die de basis van jullie MijnLeerlijn-omgeving bepalen.",
   },
@@ -76,7 +80,7 @@ export const categorieen: Categorie[] = [
     slug: "acties-downloads",
     titel: "Acties & Downloads",
     icoon: "Download",
-    kleur: "rood",
+    kleur: "red",
     uitleg:
       "Acties genereren en toevoegen bij leerdoelen, en overzichten downloaden voor gebruik buiten MijnLeerlijn.",
   },
@@ -84,7 +88,7 @@ export const categorieen: Categorie[] = [
     slug: "onderwijsvarianten",
     titel: "Onderwijsvarianten & Maatwerk",
     icoon: "Layers",
-    kleur: "blauw",
+    kleur: "blue",
     uitleg:
       "Hoe MijnLeerlijn meegroeit met jullie onderwijsconcept, van een reguliere methode tot montessori- of daltononderwijs.",
   },
