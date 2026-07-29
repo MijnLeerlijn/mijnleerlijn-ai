@@ -152,6 +152,8 @@ describe("POST /api/knowledge-sources/upload-file", () => {
           mimeType: GEUPLOAD.mimeType,
           filesize: GEUPLOAD.sizeBytes,
           url: GEUPLOAD.url,
+          focalX: 50,
+          focalY: 50,
         },
       });
       expect(mockCreate).toHaveBeenNthCalledWith(2, {
@@ -275,6 +277,8 @@ describe("POST /api/knowledge-sources/upload-file", () => {
           mimeType: GEUPLOAD_VERVANGING.mimeType,
           filesize: GEUPLOAD_VERVANGING.sizeBytes,
           url: GEUPLOAD_VERVANGING.url,
+          focalX: 50,
+          focalY: 50,
         },
       });
       expect(mockUpdate).toHaveBeenCalledWith({

@@ -161,6 +161,16 @@ export async function POST(request: NextRequest) {
             mimeType: geupload.mimeType,
             filesize: geupload.sizeBytes,
             url: geupload.url,
+            // Verplicht: zonder focalX/focalY denkt Payload's eigen
+            // generateFileData (shouldReupload()) dat het focuspunt is
+            // gewijzigd t.o.v. een (niet-bestaand) vorig focuspunt, en
+            // probeert het de URL zelf ongeauthenticeerd te fetchen om het
+            // bestand "opnieuw te uploaden" — faalt op een private Blob-URL
+            // ("Failed to fetch file from ..."), live geverifieerd op
+            // 2026-07-29. sync-manuals.ts's maakMediaDoc() zet deze zelfde
+            // twee velden om precies deze reden.
+            focalX: 50,
+            focalY: 50,
           },
         });
       } catch (error) {
@@ -209,6 +219,8 @@ export async function POST(request: NextRequest) {
           mimeType: geupload.mimeType,
           filesize: geupload.sizeBytes,
           url: geupload.url,
+          focalX: 50,
+          focalY: 50,
         },
       });
     } catch (error) {
