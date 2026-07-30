@@ -101,6 +101,9 @@ export default buildConfig({
         // Homepage-herontwerp (2026-07-29): zelfde patroon, zie
         // payload/components/HelpdeskVragenView.tsx/-NavLinks.tsx.
         "@/payload/components/HelpdeskVragenNavLinks#HelpdeskVragenNavLinks",
+        // Multi-brand variants (2026-07-30): zelfde patroon, zie
+        // payload/components/VariantenView.tsx/-NavLinks.tsx.
+        "@/payload/components/VariantenNavLinks#VariantenNavLinks",
       ],
       // Admin-shell-fix (2026-07-28): Component wijst naar de nieuwe
       // server-wrappers in AdminViewShell.tsx (renderen de standaard
@@ -123,6 +126,10 @@ export default buildConfig({
         helpdeskVragen: {
           Component: "@/payload/components/AdminViewShell#HelpdeskVragenViewShell",
           path: "/helpdesk-vragen",
+        },
+        varianten: {
+          Component: "@/payload/components/AdminViewShell#VariantenViewShell",
+          path: "/varianten",
         },
       },
     },

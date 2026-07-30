@@ -1,6 +1,40 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Variant } from "@/types/variant";
 import { processPublicQuestion } from "./process-public-question";
 import { maakFakePayload } from "@/lib/support/fake-payload";
+
+// Multi-brand variants (2026-07-30): `variant` is nu verplicht in
+// processPublicQuestion() se opties — deze tests testen de bestaande
+// (variant-onafhankelijke) pijplijnlogica, dus één neutrale mock-variant
+// voor alle aanroepen hieronder; variant-scoping zelf wordt apart getest in
+// similarity-search.test.ts/bepaal-intentie.test.ts.
+const MOCK_VARIANT: Variant = {
+  id: "1",
+  slug: "mijnleerlijn",
+  name: "MijnLeerlijn",
+  status: "actief",
+  actief: true,
+  domain: { type: "custom_domain", value: "mijnleerlijn.chat", domainStatus: "custom_domain" },
+  branding: {
+    logoUrl: "/brand/logo-kleur.svg",
+    accentColor: "#1588c9",
+    productName: "MijnLeerlijn",
+    tagline: "Onderwijs vanuit Inzicht",
+    isPlaceholder: false,
+  },
+  educationType: "algemeen",
+  terminologyDictionary: [],
+  websiteTeksten: {
+    welkomsttitel: "Waar kunnen we je mee helpen?",
+    welkomsttekst: "Stel je vraag aan de MijnLeerlijn Assistent.",
+    zoekveldPlaceholder: "Beschrijf zo duidelijk mogelijk waar je tegenaan loopt…",
+    helpdeskIntro: "Hoe duidelijker je vraag, hoe beter het antwoord.",
+    contactTekst: "Kom je er niet uit? Vul het formulier in.",
+    footerTekst: "© 2026 MijnLeerlijn | Onderdeel van sCoolsuite B.V. | Privacy",
+  },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  createdBy: "system",
+};
 import {
   searchKnowledgePhased,
   type SearchHit,
@@ -109,7 +143,7 @@ describe("processPublicQuestion — publiek-veilige bronnenlijst", () => {
     });
     const { payload, collection } = maakFakePayload(maakSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "Hoe maak ik een profiel?" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "Hoe maak ik een profiel?" });
 
     expect(uitkomst.type).toBe("answered");
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
@@ -132,7 +166,7 @@ describe("processPublicQuestion — publiek-veilige bronnenlijst", () => {
     });
     const { payload } = maakFakePayload(maakSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     expect(uitkomst.type).toBe("answered");
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
@@ -151,7 +185,7 @@ describe("processPublicQuestion — publiek-veilige bronnenlijst", () => {
     });
     const { payload } = maakFakePayload(maakSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     expect(uitkomst.type).toBe("answered");
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
@@ -167,7 +201,7 @@ describe("processPublicQuestion — publiek-veilige bronnenlijst", () => {
     );
     const { payload } = maakFakePayload(maakSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "onduidelijke vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "onduidelijke vraag" });
 
     expect(uitkomst.type).toBe("no-answer");
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
@@ -180,7 +214,7 @@ describe("processPublicQuestion — publiek-veilige bronnenlijst", () => {
     mockSearch.mockRejectedValue(new Error("Ontbrekende verplichte omgevingsvariabele: OPENAI_API_KEY."));
     const { payload, collection } = maakFakePayload(maakSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     expect(uitkomst).toMatchObject({ type: "failed", foutmelding: expect.stringContaining("OPENAI_API_KEY") });
     const record = collection("assistant-conversations")[0]!;
@@ -197,7 +231,7 @@ describe("processPublicQuestion — publiek-veilige bronnenlijst", () => {
     mockGenerate.mockRejectedValue(new Error("OpenAI: server error"));
     const { payload, collection } = maakFakePayload(maakSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     expect(uitkomst.type).toBe("failed");
     expect(collection("assistant-conversations")).toHaveLength(1);
@@ -218,7 +252,7 @@ describe("processPublicQuestion — non-blocking logging (AI Verbetercentrum)", 
     const { payload } = maakFakePayload(maakSeed());
     payload.create = vi.fn().mockRejectedValue(new Error("database niet bereikbaar"));
 
-    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     expect(uitkomst).toMatchObject({ type: "answered", conversationId: null, answer: "Een echt antwoord." });
   });
@@ -238,7 +272,7 @@ describe("processPublicQuestion — non-blocking logging (AI Verbetercentrum)", 
     });
     payload.create = vi.fn().mockRejectedValue(new Error("database niet bereikbaar"));
 
-    const uitkomst = await processPublicQuestion(payload, { question: "ambigue vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "ambigue vraag" });
 
     expect(uitkomst).toEqual({ type: "clarification", conversationId: null, question: "Bedoel je A of B?" });
   });
@@ -250,7 +284,7 @@ describe("processPublicQuestion — question/previousQuestion en AI Verbetercent
     mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
     const { payload, collection } = maakFakePayload(maakSeed());
 
-    await processPublicQuestion(payload, {
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT,
       question: "en aan meerdere?",
       previousQuestion: "Hoe koppel ik doelen?",
     });
@@ -275,7 +309,7 @@ describe("processPublicQuestion — question/previousQuestion en AI Verbetercent
     mockSearch.mockResolvedValue(maakFaseResultaat([]));
     mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
 
-    await processPublicQuestion(payload, { question: "Hoe koppel ik een leerling aan doelen?" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "Hoe koppel ik een leerling aan doelen?" });
 
     const record = collection("assistant-conversations")[0]!;
     expect(record.intentieType).toBe("opgelost");
@@ -291,7 +325,7 @@ describe("processPublicQuestion — question/previousQuestion en AI Verbetercent
     mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
     const { payload, collection } = maakFakePayload(maakSeed());
 
-    await processPublicQuestion(payload, { question: "vraag" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     const record = collection("assistant-conversations")[0]!;
     expect(record.geenHandleidingGevonden).toBe(true);
@@ -309,7 +343,7 @@ describe("processPublicQuestion — question/previousQuestion en AI Verbetercent
     });
     const { payload, collection } = maakFakePayload(maakSeed());
 
-    await processPublicQuestion(payload, { question: "vraag" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     const record = collection("assistant-conversations")[0]!;
     expect(record.geenHandleidingGevonden).toBe(false);
@@ -330,7 +364,7 @@ describe("processPublicQuestion — centrale Kennisbasis MijnLeerlijn (Fase 4)",
     mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
     const { payload, collection } = maakFakePayload(maakSeed());
 
-    await processPublicQuestion(payload, { question: "vraag" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     const record = collection("assistant-conversations")[0]!;
     expect(record.centraleKennisbasisGebruikt).toBe(false);
@@ -354,7 +388,7 @@ describe("processPublicQuestion — centrale Kennisbasis MijnLeerlijn (Fase 4)",
       gebruikteSynoniem: null,
     });
 
-    await processPublicQuestion(payload, { question: "iets vaags" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "iets vaags" });
 
     expect(findGlobalSpy).not.toHaveBeenCalled();
     const record = collection("assistant-conversations")[0]!;
@@ -386,7 +420,7 @@ describe("processPublicQuestion — centrale Kennisbasis MijnLeerlijn (Fase 4)",
       updatedAt: "2026-07-28T10:00:00.000Z",
     });
 
-    await processPublicQuestion(payload, { question: "Wat is de visie van MijnLeerlijn?" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "Wat is de visie van MijnLeerlijn?" });
 
     const promptAanroep = mockGenerate.mock.calls[0]![0] as { userPrompt: string };
     expect(promptAanroep.userPrompt).toContain("Centrale Kennisbasis MijnLeerlijn");
@@ -414,7 +448,7 @@ describe("processPublicQuestion — centrale Kennisbasis MijnLeerlijn (Fase 4)",
     });
     const { payload, collection } = maakFakePayload(maakSeed());
 
-    await processPublicQuestion(payload, { question: "vraag" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     const record = collection("assistant-conversations")[0]!;
     expect(record.tegenstrijdigheid).toBe("De kennisbasis en de handleiding spreken elkaar hier tegen.");
@@ -474,7 +508,7 @@ describe("processPublicQuestion — relevante handleidingstappen (Handleidingbou
     });
     const { payload } = maakFakePayload(maakHandleidingSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "Hoe open ik hoofdgebiedprofielen?" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "Hoe open ik hoofdgebiedprofielen?" });
 
     expect(uitkomst.type).toBe("answered");
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
@@ -513,7 +547,7 @@ describe("processPublicQuestion — relevante handleidingstappen (Handleidingbou
     });
     const { payload } = maakFakePayload(maakHandleidingSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
     expect(uitkomst.steps).toHaveLength(1);
@@ -540,7 +574,7 @@ describe("processPublicQuestion — relevante handleidingstappen (Handleidingbou
     });
     const { payload } = maakFakePayload(maakHandleidingSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
     expect(uitkomst.steps).toEqual([]);
@@ -566,7 +600,7 @@ describe("processPublicQuestion — relevante handleidingstappen (Handleidingbou
     });
     const { payload } = maakFakePayload(maakHandleidingSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
     expect(uitkomst.steps[0]?.images).toEqual([]);
@@ -587,7 +621,7 @@ describe("processPublicQuestion — relevante handleidingstappen (Handleidingbou
     );
     const { payload } = maakFakePayload(maakHandleidingSeed());
 
-    const uitkomst = await processPublicQuestion(payload, { question: "onduidelijke vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "onduidelijke vraag" });
 
     if (uitkomst.type !== "answered" && uitkomst.type !== "no-answer") return;
     expect(uitkomst.steps).toEqual([]);
@@ -613,7 +647,7 @@ describe("processPublicQuestion — relevante handleidingstappen (Handleidingbou
     });
     const { payload, collection } = maakFakePayload(maakHandleidingSeed());
 
-    await processPublicQuestion(payload, { question: "vraag" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
 
     const record = collection("assistant-conversations")[0]!;
     expect(record.steps).toEqual([{ handleidingId: 10, stepId: "stap-a", stepNummer: 1 }]);
@@ -638,7 +672,7 @@ describe("processPublicQuestion — Kennisbasis MijnLeerlijn intentiebepaling (f
       verduidelijkingsvraag: "Bedoel je A of B?",
     });
 
-    const uitkomst = await processPublicQuestion(payload, { question: "ambigue vraag" });
+    const uitkomst = await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "ambigue vraag" });
 
     expect(uitkomst).toMatchObject({ type: "clarification", question: "Bedoel je A of B?" });
     expect(mockSearch).not.toHaveBeenCalled();
@@ -657,7 +691,7 @@ describe("processPublicQuestion — Kennisbasis MijnLeerlijn intentiebepaling (f
     mockSearch.mockResolvedValue(maakFaseResultaat([]));
     mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
 
-    await processPublicQuestion(payload, { question: "Hoe koppel ik een leerling aan doelen?" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "Hoe koppel ik een leerling aan doelen?" });
 
     expect(mockSearch).toHaveBeenCalledWith(
       payload,
@@ -671,7 +705,7 @@ describe("processPublicQuestion — Kennisbasis MijnLeerlijn intentiebepaling (f
     mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
     const { payload } = maakFakePayload(maakSeed());
 
-    await processPublicQuestion(payload, { question: "een vraag" });
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "een vraag" });
 
     expect(mockIntentie).not.toHaveBeenCalled();
     expect(mockRewrite).toHaveBeenCalledWith("een vraag");

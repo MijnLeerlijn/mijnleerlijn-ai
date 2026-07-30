@@ -945,3 +945,86 @@ describe("searchKnowledgePhased — Handleidingbouwer (handleidingen/handleiding
     expect(resultaat.hits[0]?.bronrol).toBe("release-note");
   });
 });
+
+// Multi-brand variants (2026-07-30): de expliciet in
+// docs/AI-KNOWLEDGE-STRATEGY.md geëiste "variant-lekkage-test" — een bron
+// die uitsluitend aan variant A gekoppeld is, mag NOOIT terugkomen bij een
+// zoekopdracht voor variant B. Een bron zonder variantContext (centraal)
+// komt bij elke variant terug.
+describe("searchKnowledgePhased — variant-scoping", () => {
+  const DREMPEL = 0.5;
+
+  beforeEach(() => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0, 0]);
+  });
+
+  it("sluit een kennisbron die uitsluitend aan een ANDERE variant gekoppeld is uit", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        { id: 1, title: "Alleen variant A", priority: "core", embeddingStatus: "indexed", embedding: [1, 0, 0], variantContext: [1] },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, { query: "iets", drempelVoorVoldoende: DREMPEL, variantId: "2" });
+
+    expect(resultaat.hits).toHaveLength(0);
+  });
+
+  it("neemt een kennisbron zonder variantContext (centraal) mee, ongeacht de opgegeven variant", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        { id: 1, title: "Centraal", priority: "core", embeddingStatus: "indexed", embedding: [1, 0, 0] },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, { query: "iets", drempelVoorVoldoende: DREMPEL, variantId: "2" });
+
+    expect(resultaat.hits.map((h) => h.id)).toEqual([1]);
+  });
+
+  it("neemt een kennisbron mee die expliciet aan de opgegeven variant gekoppeld is", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        { id: 1, title: "Variant A", priority: "core", embeddingStatus: "indexed", embedding: [1, 0, 0], variantContext: [1] },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, { query: "iets", drempelVoorVoldoende: DREMPEL, variantId: "1" });
+
+    expect(resultaat.hits.map((h) => h.id)).toEqual([1]);
+  });
+
+  it("past geen variant-filter toe wanneer geen variantId is opgegeven (interne /assistant-pijplijn)", async () => {
+    const { payload } = maakFakePayload({
+      "knowledge-sources": [
+        { id: 1, title: "Alleen variant A", priority: "core", embeddingStatus: "indexed", embedding: [1, 0, 0], variantContext: [1] },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, { query: "iets", drempelVoorVoldoende: DREMPEL });
+
+    expect(resultaat.hits.map((h) => h.id)).toEqual([1]);
+  });
+
+  it("sluit een variant-specifiek artikel en een variant-specifieke handleiding van een andere variant uit", async () => {
+    const { payload } = maakFakePayload({
+      articles: [
+        { id: 10, title: "Artikel variant A", embeddingStatus: "indexed", embedding: [1, 0, 0], variantContext: [1] },
+      ],
+      handleidingen: [
+        {
+          id: 20,
+          titel: "Handleiding variant A",
+          status: "gepubliceerd",
+          embeddingStatus: "indexed",
+          embedding: [1, 0, 0],
+          variantContext: [1],
+        },
+      ],
+    });
+
+    const resultaat = await searchKnowledgePhased(payload, { query: "iets", drempelVoorVoldoende: DREMPEL, variantId: "2" });
+
+    expect(resultaat.hits).toHaveLength(0);
+  });
+});

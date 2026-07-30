@@ -24,6 +24,7 @@ interface HelpdeskVraagDoc {
   pinned: boolean;
   pinVolgorde: number | null;
   verborgen: boolean;
+  variantContext?: number[] | null;
 }
 
 interface Rij {
@@ -34,7 +35,13 @@ interface Rij {
   pinned: boolean;
   pinVolgorde: number | null;
   verborgen: boolean;
+  variantContext: number[];
   gewijzigd: boolean;
+}
+
+interface VariantOptie {
+  id: number;
+  name: string;
 }
 
 const MAX_OP_HOMEPAGE = 5;
@@ -48,6 +55,7 @@ function naarRij(doc: HelpdeskVraagDoc): Rij {
     pinned: Boolean(doc.pinned),
     pinVolgorde: doc.pinVolgorde ?? null,
     verborgen: Boolean(doc.verborgen),
+    variantContext: doc.variantContext ?? [],
     gewijzigd: false,
   };
 }
@@ -93,11 +101,14 @@ export function HelpdeskVragenView() {
   const [opslaan, setOpslaan] = useState(false);
   const [nieuweVraag, setNieuweVraag] = useState("");
   const [toevoegen, setToevoegen] = useState(false);
+  const [varianten, setVarianten] = useState<VariantOptie[]>([]);
 
   async function laadAlles() {
     setStatus("laden");
     try {
-      const res = await fetch("/api/helpdesk-vragen?limit=1000&sort=-aantalGesteld", { credentials: "include" });
+      const res = await fetch("/api/helpdesk-vragen?limit=1000&sort=-aantalGesteld&depth=0", {
+        credentials: "include",
+      });
       if (!res.ok) throw new Error(`Ophalen mislukt (${res.status}).`);
       const data = (await res.json()) as { docs: HelpdeskVraagDoc[] };
       setRijen(data.docs.map(naarRij));
@@ -107,9 +118,33 @@ export function HelpdeskVragenView() {
     }
   }
 
+  async function laadVarianten() {
+    try {
+      const res = await fetch("/api/variants?limit=100&sort=name&depth=0", { credentials: "include" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { docs: VariantOptie[] };
+      setVarianten(data.docs);
+    } catch {
+      // Niet kritiek — zonder deze lijst toont de tabel gewoon geen
+      // variant-toggles, de rest van de pagina blijft werken.
+    }
+  }
+
   useEffect(() => {
     laadAlles();
+    laadVarianten();
   }, []);
+
+  function toggleVariant(rijId: number, variantId: number) {
+    setRijen((huidig) =>
+      huidig.map((r) => {
+        if (r.id !== rijId) return r;
+        const heeft = r.variantContext.includes(variantId);
+        const variantContext = heeft ? r.variantContext.filter((v) => v !== variantId) : [...r.variantContext, variantId];
+        return { ...r, variantContext, gewijzigd: true };
+      })
+    );
+  }
 
   const opHomepage = useMemo(() => bepaalOpHomepage(rijen), [rijen]);
 
@@ -137,6 +172,7 @@ export function HelpdeskVragenView() {
               vraag: r.vraag,
               pinned: r.pinned,
               verborgen: r.verborgen,
+              variantContext: r.variantContext,
             }),
           });
           if (!res.ok) {
@@ -256,6 +292,7 @@ export function HelpdeskVragenView() {
               <th style={{ padding: "0.5rem" }}>Laatst gebruikt</th>
               <th style={{ padding: "0.5rem", textAlign: "center" }}>Vastgezet</th>
               <th style={{ padding: "0.5rem", textAlign: "center" }}>Verborgen</th>
+              <th style={{ padding: "0.5rem" }}>Varianten</th>
               <th style={{ padding: "0.5rem", textAlign: "center" }}>Op homepage</th>
               <th style={{ padding: "0.5rem" }}>Verwijderen</th>
             </tr>
@@ -263,7 +300,7 @@ export function HelpdeskVragenView() {
           <tbody>
             {rijen.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: "1rem", color: "var(--theme-elevation-500)" }}>
+                <td colSpan={8} style={{ padding: "1rem", color: "var(--theme-elevation-500)" }}>
                   Nog geen vragen — ze verschijnen automatisch zodra bezoekers de assistent gebruiken, of voeg er
                   hierboven zelf een toe.
                 </td>
@@ -308,6 +345,40 @@ export function HelpdeskVragenView() {
                     checked={rij.verborgen}
                     onToggle={(e) => werkRijBij(rij.id, { verborgen: e.target.checked })}
                   />
+                </td>
+                <td style={{ padding: "0.5rem" }}>
+                  {varianten.length === 0 ? (
+                    <span style={{ color: "var(--theme-elevation-400)", fontSize: 12 }}>—</span>
+                  ) : (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
+                      {varianten.map((v) => {
+                        const actief = rij.variantContext.includes(v.id);
+                        return (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => toggleVariant(rij.id, v.id)}
+                            title={actief ? `Alleen zichtbaar bij ${v.name} (klik om te verwijderen)` : `Voeg ${v.name} toe`}
+                            style={{
+                              fontSize: 11,
+                              padding: "0.15rem 0.5rem",
+                              borderRadius: 999,
+                              border: actief ? "1px solid var(--theme-success-500)" : "1px solid var(--theme-elevation-150)",
+                              background: actief ? "var(--theme-success-100)" : "var(--theme-input-bg)",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {v.name}
+                          </button>
+                        );
+                      })}
+                      {rij.variantContext.length === 0 && (
+                        <span style={{ fontSize: 11, color: "var(--theme-elevation-500)", alignSelf: "center" }}>
+                          Alle varianten
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </td>
                 <td style={{ padding: "0.5rem", textAlign: "center" }}>
                   {opHomepage.has(rij.id) ? "✓" : ""}

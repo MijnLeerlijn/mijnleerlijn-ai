@@ -23,6 +23,8 @@ export interface PayloadVariantDoc {
   name: string;
   slug: string;
   status: "concept" | "actief" | "gearchiveerd";
+  /** Multi-brand variants (2026-07-30): bepaalt bereikbaarheid, los van `status`. */
+  actief?: boolean | null;
   educationType: string;
   domain: { type: "custom_domain" | "subdomain" | "slug_path"; value: string; domainStatus: string };
   branding: {
@@ -33,6 +35,14 @@ export interface PayloadVariantDoc {
     isPlaceholder: boolean;
   };
   terminologyDictionary?: { centralTerm: string; variantTerm: string }[];
+  websiteTeksten?: {
+    welkomsttitel?: string | null;
+    welkomsttekst?: string | null;
+    zoekveldPlaceholder?: string | null;
+    helpdeskIntro?: string | null;
+    contactTekst?: string | null;
+    footerTekst?: string | null;
+  } | null;
   contactEmail?: string | null;
 }
 

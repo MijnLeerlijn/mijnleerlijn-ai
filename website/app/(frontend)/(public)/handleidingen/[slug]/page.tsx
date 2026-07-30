@@ -9,6 +9,7 @@ import { naarRelatiefMediaPad } from "@/lib/format/media-url";
 import HandleidingStappenLijst, {
   type HandleidingStapVoorPagina,
 } from "@/components/organisms/HandleidingStappenLijst";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
 interface HandleidingPaginaProps {
   params: Promise<{ slug: string }>;
@@ -60,9 +61,11 @@ async function haalHandleiding(slug: string) {
 
 export async function generateMetadata({ params }: HandleidingPaginaProps): Promise<Metadata> {
   const { slug } = await params;
-  const handleiding = await haalHandleiding(slug);
+  const [handleiding, variant] = await Promise.all([haalHandleiding(slug), getActiveVariant()]);
   return {
-    title: handleiding ? `${handleiding.titel} — MijnLeerlijn` : "Handleiding niet gevonden — MijnLeerlijn",
+    title: handleiding
+      ? `${handleiding.titel} — ${variant.branding.productName}`
+      : `Handleiding niet gevonden — ${variant.branding.productName}`,
   };
 }
 

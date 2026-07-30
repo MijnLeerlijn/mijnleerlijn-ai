@@ -73,6 +73,16 @@ Zolang definitieve merkbestanden voor een variant ontbreken (van toepassing op M
 3. Placeholder-accentkleur: erft het MijnLeerlijn-kleurenpalet ([DESIGN-SYSTEM.md](DESIGN-SYSTEM.md)) — er wordt nooit een kleur "verzonnen" die niet uit het brandbook of een aangeleverd variant-brandbook komt.
 4. Content en AI-functionaliteit werken volledig ook met placeholder-branding — branding-onvolledigheid mag de functionele test van het multi-variant-model niet blokkeren.
 
+## Nieuwe publieke functionaliteit — variant is een architectuurprincipe, geen toevoeging achteraf
+
+**Variant is een website-breed concept, geen AI-specifieke of losse toevoeging.** Elke nieuwe publieke pagina of component moet **vanaf het begin** de actieve variant gebruiken — niet er later bij bouwen. Concreet:
+
+- Server components roepen `getActiveVariant()` aan (`lib/variant/get-active-variant.ts`), client components gebruiken `useVariant()` (`providers/VariantProvider.tsx`) — dit zijn de **enige** centrale plekken waar variant-informatie vandaan komt. Nieuwe code bouwt nooit een eigen, parallelle manier om de actieve variant te bepalen.
+- Publiek zichtbare tekst (titels, introteksten, placeholders, foutmeldingen, metadata) hoort niet hardcoded in een component te staan als de tekst per variant kan/moet verschillen — gebruik `variant.branding.productName` en/of `variant.websiteTeksten.*` (zie [DATA-MODEL.md](DATA-MODEL.md) §Variant). Interne admin-teksten, logging, databasevelden en code-comments hoeven **niet** variant-bewust te zijn.
+- Content- en kennisretrieval die een nieuwe collectie introduceert die ooit variant-specifiek kan zijn, gebruikt het vaste `variantContext`-patroon (zie [DATA-MODEL.md](DATA-MODEL.md) §`variantContext`) — leeg = centraal/gedeeld, gevuld = uitsluitend die variant(en). Elke publieke zoek-/retrievalquery op zo'n collectie filtert altijd op "leeg OF bevat de actieve variant": kennis van de ene variant mag nooit doorsijpelen naar het antwoord van een andere variant.
+- Hostname-/pad-resolutie (welke variant hoort bij dit verzoek) loopt uitsluitend via de `VariantResolver`-interface (`lib/variant/variant-resolver.ts`) — nieuwe code roept nooit rechtstreeks een concrete implementatie aan, zodat de resolutiestrategie later vervangen kan worden (bijv. Edge Config) zonder de rest van de applicatie te wijzigen.
+- De standaardvariant (MijnLeerlijn) blijft altijd bereikbaar: elke nieuwe plek die de actieve variant bepaalt, moet bij een niet-gevonden of niet-actieve standaardvariant terugvallen op de vaste `defaultVariant` (`config/variants.ts`) in plaats van de publieke site te laten breken. Voor elke andere variant geldt dit expliciet **niet** — die mag zichtbaar falen bij een configuratiefout.
+
 ## Nieuwe variant toevoegen (stappenplan voor redacteuren)
 
 1. Maak een nieuwe `Variant` aan in de beheeromgeving: naam, slug, onderwijstype.

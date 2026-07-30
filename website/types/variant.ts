@@ -26,15 +26,32 @@ export interface TerminologyEntry {
   variantTerm: string;
 }
 
+// Multi-brand variants (2026-07-30): optionele, publiek zichtbare teksten
+// per variant — zie payload/collections/Variants.ts se `websiteTeksten` en
+// lib/variant/default-website-teksten.ts voor de fallback-logica. Op dit
+// niveau (na services/payload.ts's mapVariant()) altijd volledig ingevuld,
+// nooit een leeg veld — consumers hoeven zelf geen fallback te schrijven.
+export interface WebsiteTeksten {
+  welkomsttitel: string;
+  welkomsttekst: string;
+  zoekveldPlaceholder: string;
+  helpdeskIntro: string;
+  contactTekst: string;
+  footerTekst: string;
+}
+
 export interface Variant {
   id: string;
   slug: string;
   name: string;
   status: VariantStatus;
+  /** Bepaalt bereikbaarheid (hostname-resolutie/AI) — los van `status`, zie Variants.ts. */
+  actief: boolean;
   domain: VariantDomain;
   branding: VariantBranding;
   educationType: string;
   terminologyDictionary: TerminologyEntry[];
+  websiteTeksten: WebsiteTeksten;
   contactEmail?: string;
   createdAt: string;
   createdBy: string;

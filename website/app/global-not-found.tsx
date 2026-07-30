@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Pagina niet gevonden — MijnLeerlijn",
-};
+// Multi-brand variants (2026-07-30): dit scherm rendert buiten
+// app/(frontend)/layout.tsx om (eigen <html>/<body>), maar proxy.ts se
+// x-variant-slug-header staat al op elk request dat hier terechtkomt (de
+// matcher sluit alleen statische bestanden uit) — getActiveVariant() leest
+// die header rechtstreeks via next/headers, onafhankelijk van welke layout
+// rendert, dus werkt hier net zo goed.
+export async function generateMetadata(): Promise<Metadata> {
+  const variant = await getActiveVariant();
+  return { title: `Pagina niet gevonden — ${variant.branding.productName}` };
+}
 
 // Vereist zodra de app meerdere root layouts heeft (app/(frontend)/layout.tsx
 // en app/(payload)/layout.tsx, geen gedeelde top-level app/layout.tsx meer) —

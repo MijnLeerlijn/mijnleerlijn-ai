@@ -121,5 +121,22 @@ export const KennisbasisOnderwerpen: CollectionConfig = {
       ],
       admin: { description: "Alleen 'Gepubliceerd' onderwerpen doen mee in de intentiebepaling." },
     },
+    {
+      // Multi-brand variants (2026-07-30): zelfde vaste patroon als
+      // Articles/Handleidingen/KnowledgeSources — zie docs/DATA-MODEL.md
+      // §VariantOverride. Dit onderwerp bepaalt mee welke zoekvraag
+      // lib/assistant/bepaal-intentie.ts genereert (via officieleTerm), dus
+      // moet net als de andere brontypes variant-gescoped kunnen worden om
+      // kennislekkage tussen varianten te voorkomen.
+      name: "variantContext",
+      type: "relationship",
+      relationTo: "variants",
+      hasMany: true,
+      label: "Variantcontext",
+      admin: {
+        position: "sidebar",
+        description: "Leeg = algemeen onderwerp, geldig voor alle varianten. Ingevuld = alleen voor die variant(en).",
+      },
+    },
   ],
 };

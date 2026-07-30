@@ -4,6 +4,7 @@ import config from "@/payload.config";
 import type { Article, ContentBlock, Section, VariantOverride } from "@/types/content";
 import type { Variant } from "@/types/variant";
 import { registreerOpgelosteMedia } from "@/lib/data/media";
+import { STANDAARD_WEBSITETEKSTEN, standaardFooterTekst } from "@/lib/variant/default-website-teksten";
 import type {
   PayloadArticleDoc,
   PayloadCategoryDoc,
@@ -147,12 +148,28 @@ export function mapArticle(doc: PayloadArticleDoc): ArticleWithContent {
   };
 }
 
+// Multi-brand variants (2026-07-30): enige plek die een leeg
+// websiteTeksten-veld op de standaardtekst laat terugvallen — zie
+// lib/variant/default-website-teksten.ts. Consumers lezen na mapVariant()
+// altijd een volledig ingevuld object, nooit een lege string.
+function mapWebsiteTeksten(doc: PayloadVariantDoc["websiteTeksten"]): Variant["websiteTeksten"] {
+  return {
+    welkomsttitel: doc?.welkomsttitel?.trim() || STANDAARD_WEBSITETEKSTEN.welkomsttitel,
+    welkomsttekst: doc?.welkomsttekst?.trim() || STANDAARD_WEBSITETEKSTEN.welkomsttekst,
+    zoekveldPlaceholder: doc?.zoekveldPlaceholder?.trim() || STANDAARD_WEBSITETEKSTEN.zoekveldPlaceholder,
+    helpdeskIntro: doc?.helpdeskIntro?.trim() || STANDAARD_WEBSITETEKSTEN.helpdeskIntro,
+    contactTekst: doc?.contactTekst?.trim() || STANDAARD_WEBSITETEKSTEN.contactTekst,
+    footerTekst: doc?.footerTekst?.trim() || standaardFooterTekst(),
+  };
+}
+
 export function mapVariant(doc: PayloadVariantDoc): Variant {
   return {
     id: String(doc.id),
     slug: doc.slug,
     name: doc.name,
     status: doc.status,
+    actief: Boolean(doc.actief),
     domain: doc.domain as Variant["domain"],
     branding: {
       logoUrl: mediaUrl(doc.branding.logo) || "/brand/logo-kleur.svg",
@@ -163,6 +180,7 @@ export function mapVariant(doc: PayloadVariantDoc): Variant {
     },
     educationType: doc.educationType,
     terminologyDictionary: doc.terminologyDictionary ?? [],
+    websiteTeksten: mapWebsiteTeksten(doc.websiteTeksten),
     contactEmail: doc.contactEmail ?? undefined,
     createdAt: new Date().toISOString(),
     createdBy: "payload",

@@ -125,6 +125,17 @@ Terugzetten ("rollback") maakt altijd een **nieuwe** versie op basis van een oud
 
 De volledige prioriteits-/samenvoegregels (in welke volgorde dit wordt toegepast, en hoe `verbergen` cascadeert) staan in [CONTENT-MODEL.md](CONTENT-MODEL.md) §Samenvoegalgoritme en worden geïmplementeerd als één gedeelde functie — zie [ARCHITECTURE.md](ARCHITECTURE.md) §Eén gedeelde samenvoegfunctie.
 
+## `variantContext` — vast patroon voor variant-specifieke content
+
+Naast `VariantOverride` (afwijkingen op bestaande centrale content, hierboven) bestaat er een tweede, eenvoudiger patroon voor content die **uitsluitend** voor één of meer varianten bestaat en geen centrale tegenhanger heeft (bijv. een eigen kennisbron, een eigen kennisbasis-onderwerp, een eigen veelgestelde vraag): een relatieveld `variantContext` (relatie → `Variant`, meervoudig/`hasMany`).
+
+- **Leeg** (`variantContext = []`) = centraal/algemeen, zichtbaar en bruikbaar voor **alle** varianten.
+- **Gevuld** = uitsluitend zichtbaar/bruikbaar voor de genoemde variant(en) — nooit voor andere varianten, ook niet impliciet.
+
+Dit is een **vast patroon**, geen ad-hoc oplossing per collectie: elke contentcollectie die ooit variant-specifiek kan worden, krijgt dit veld op exact dezelfde manier. Toegepast op: `KnowledgeSources`, `Articles`, `Handleidingen`, `KennisbasisOnderwerpen`, `HelpdeskVragen`. Retrieval- en zoekcode die deze collecties bevraagt, filtert altijd op "leeg OF bevat de actieve variant" — nooit op alleen "bevat de actieve variant", anders verdwijnt centrale/gedeelde content voor elke variant. Dit veld wordt **niet met terugwerkende kracht** toegevoegd aan collecties zonder concrete aanleiding (bijv. `Users`, `Media`, `ContactSubmissions`) — pas zodra een collectie daadwerkelijk variant-specifiek moet kunnen zijn, en dan volgens dit vastgelegde patroon.
+
+`variantContext` en `VariantOverride` zijn complementair: `VariantOverride` wijzigt hoe een **centraal** element binnen een variant verschijnt; `variantContext` bepaalt of een element **an sich** binnen een variant zichtbaar is.
+
 ## Terminologie-woordenboek
 
 Onderdeel van `Variant` (zie hieronder), geen aparte entiteit: een lijst `{ centralTerm, variantTerm }`-paren. Wordt als vervangingslaag toegepast op alle getoonde centrale tekst binnen die variant, tenzij een specifieke `VariantOverride.termOverridesApplied = false` dit voor dat element uitschakelt.
@@ -136,11 +147,13 @@ Onderdeel van `Variant` (zie hieronder), geen aparte entiteit: een lijst `{ cent
 | `id` | id | |
 | `slug` | string | Gebruikt in de pad-gebaseerde fallback-route |
 | `name` | string | Productnaam, bijv. "MijnMonti" |
-| `status` | enum: `concept` \| `actief` \| `gearchiveerd` | |
+| `status` | enum: `concept` \| `actief` \| `gearchiveerd` | Redactionele levenscyclus-indicator, zie [MULTI-VARIANT-STRATEGY.md](MULTI-VARIANT-STRATEGY.md) §Levenscyclus |
+| `actief` | boolean | **Los van `status`**: de enige schakelaar die hostname-/pad-resolutie en de AI daadwerkelijk raadplegen om te bepalen of bezoekers de variant kunnen bereiken. Standaard `false`. De standaardvariant (MijnLeerlijn) blijft altijd bereikbaar, ook als dit veld per ongeluk op `false` staat — expliciete veiligheidsuitzondering, zie [ARCHITECTURE.md](ARCHITECTURE.md) §Variant-herkenningsmechanisme |
 | `domain` | object | `{ type: custom_domain \| subdomain \| slug_path, value, domainStatus }` |
 | `branding` | object | `{ logoUrl, accentColor, productName, tagline, isPlaceholder }` — `isPlaceholder = true` zolang definitieve merkbestanden ontbreken, zie [MULTI-VARIANT-STRATEGY.md](MULTI-VARIANT-STRATEGY.md) |
 | `educationType` | string | Bijv. "montessori", "dalton", "vrijeschool", "algemeen" |
 | `terminologyDictionary` | array | `[{ centralTerm, variantTerm }]` |
+| `websiteTeksten` | object | Optionele overrides van publiek zichtbare copy: `{ welkomsttitel, welkomsttekst, zoekveldPlaceholder, helpdeskIntro, contactTekst, footerTekst }`. Leeg veld → valt terug op de MijnLeerlijn-standaardtekst (per veld afzonderlijk, niet alles-of-niets); `footerTekst` valt bij leeg terug op een tekst met het **actuele** jaartal (nooit hardcoded), een zelf ingevulde `footerTekst` wordt altijd letterlijk gebruikt |
 | `contactEmail` | string (optioneel) | Override van het standaard helpdesk-adres |
 | `createdAt`, `createdBy` | | |
 

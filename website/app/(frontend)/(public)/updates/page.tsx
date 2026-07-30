@@ -3,8 +3,12 @@ import KnowledgeLayout from "@/components/layouts/KnowledgeLayout";
 import UpdateCard from "@/components/molecules/UpdateCard";
 import { getAllArticles, getUpdates } from "@/services/payload";
 import { formatDatumNL } from "@/lib/format/date";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
-export const metadata: Metadata = { title: "Updates — MijnLeerlijn" };
+export async function generateMetadata(): Promise<Metadata> {
+  const variant = await getActiveVariant();
+  return { title: `Updates — ${variant.branding.productName}` };
+}
 
 // Overzicht van alle inhoudelijke wijzigingen — de uitgelichte updates
 // (zoals op de homepage) plus een volledig chronologisch overzicht van alle

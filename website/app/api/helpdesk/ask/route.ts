@@ -4,6 +4,7 @@ import config from "@/payload.config";
 import { processPublicQuestion } from "@/lib/assistant/process-public-question";
 import { maakRateLimiter } from "@/lib/contact/validate";
 import { registreerGesteldeVraag } from "@/lib/helpdesk/registreer-gestelde-vraag";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
 const MAX_VRAAG_LENGTE = 1000;
 
@@ -56,6 +57,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const payload = await getPayload({ config });
+    // Multi-brand variants (2026-07-30): dezelfde functie als layout.tsx —
+    // bepaalt welke variant retrieval-scoping, terminologie/productnaam in
+    // de systeeminstructie en de tellingen per variant gebruiken.
+    const variant = await getActiveVariant();
 
     // Telt deze vraag mee voor "Meest gestelde vragen" op de homepage
     // (lib/helpdesk/top5-voorbeeldvragen.ts) — elke aanvraag hier is per
@@ -67,13 +72,14 @@ export async function POST(request: NextRequest) {
     // onverwachte fout hier mag hoe dan ook nooit het al-berekende antwoord
     // laten mislukken, ook niet als die eigen bescherming ooit zou falen.
     const [, procesUitslag] = await Promise.allSettled([
-      registreerGesteldeVraag(payload, question.trim()),
+      registreerGesteldeVraag(payload, question.trim(), variant.id),
       // previousQuestion: alleen gezet als de bezoeker een verduidelijkingsvraag
       // (type "clarification") beantwoordt — zie bepaal-intentie.ts en
       // HelpdeskChat.tsx.
       processPublicQuestion(payload, {
         question: question.trim(),
         previousQuestion: previousQuestion ? previousQuestion.trim() : undefined,
+        variant,
       }),
     ]);
 

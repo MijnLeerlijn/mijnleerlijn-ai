@@ -20,7 +20,9 @@ export async function generateMetadata({ params }: ArtikelPaginaProps): Promise<
   const variant = await getActiveVariant();
   const artikel = await getMergedArticleBySlug(slug, variant);
   return {
-    title: artikel ? `${artikel.article.title} — MijnLeerlijn` : "Artikel niet gevonden — MijnLeerlijn",
+    title: artikel
+      ? `${artikel.article.title} — ${variant.branding.productName}`
+      : `Artikel niet gevonden — ${variant.branding.productName}`,
   };
 }
 

@@ -1,4 +1,5 @@
 import type { Payload } from "payload";
+import type { Variant } from "@/types/variant";
 import { searchKnowledgePhased } from "@/lib/embeddings/similarity-search";
 import { richTextNaarPlatteTekst } from "@/lib/embeddings/embeddable-text";
 import { naarRelatiefMediaPad } from "@/lib/format/media-url";
@@ -269,7 +270,7 @@ function centraleKennisbasisVelden(
 /** Best-effort logging voor de twee mislukking-paden (retrieval- en AI-fouten) — vandaag logden die helemaal niets. */
 async function loggenMislukking(
   payload: Payload,
-  opties: { question: string; previousQuestion?: string },
+  opties: { question: string; previousQuestion?: string; variant: Variant },
   intentie: IntentieUitkomst,
   centraleKennisbasis: CentraleKennisbasis | null,
   begin: number,
@@ -277,6 +278,7 @@ async function loggenMislukking(
 ): Promise<void> {
   await loggenConversatie(payload, {
     source: "helpdesk",
+    variant: Number(opties.variant.id),
     question: opties.question,
     previousQuestion: opties.previousQuestion ?? null,
     hasAnswer: false,
@@ -300,9 +302,15 @@ async function loggenMislukking(
   });
 }
 
+// Multi-brand variants (2026-07-30): `variant` is verplicht — de publieke
+// Helpdesk-route (app/api/helpdesk/ask/route.ts) heeft 'm altijd via
+// getActiveVariant(). Stuurt retrieval-scoping (searchKnowledgePhased),
+// de systeeminstructie/terminologie (genereerAssistentAntwoord) en de
+// intentiebepaling (bepaalIntentie) — voorkomt dat kennis of terminologie
+// van een andere variant in dit antwoord terechtkomt.
 export async function processPublicQuestion(
   payload: Payload,
-  opties: { question: string; previousQuestion?: string }
+  opties: { question: string; previousQuestion?: string; variant: Variant }
 ): Promise<ProcessPublicQuestionUitkomst> {
   const begin = Date.now();
 
@@ -319,11 +327,12 @@ export async function processPublicQuestion(
     ? `${opties.previousQuestion} — ${opties.question}`
     : opties.question;
 
-  const intentie = await bepaalIntentie(payload, effectieveVraag);
+  const intentie = await bepaalIntentie(payload, effectieveVraag, opties.variant.id);
 
   if (intentie.type === "onduidelijk") {
     const conversationId = await loggenConversatie(payload, {
       source: "helpdesk",
+      variant: Number(opties.variant.id),
       question: opties.question,
       previousQuestion: opties.previousQuestion ?? null,
       hasAnswer: false,
@@ -371,6 +380,7 @@ export async function processPublicQuestion(
       query: zoekvraag,
       limiet: TOP_N,
       drempelVoorVoldoende: MIN_SIMILARITY_VOOR_ANTWOORD,
+      variantId: opties.variant.id,
     });
     contextItems = await buildContext(payload, resultaat.hits);
   } catch (error) {
@@ -383,6 +393,10 @@ export async function processPublicQuestion(
   const uitkomst = await genereerAssistentAntwoord(effectieveVraag, contextItems, {
     heeftStructuredStappen,
     centraleKennisbasis,
+    variant: {
+      productName: opties.variant.branding.productName,
+      terminologyDictionary: opties.variant.terminologyDictionary,
+    },
   });
   if (uitkomst.type === "failed") {
     await loggenMislukking(payload, opties, intentie, centraleKennisbasis, begin, uitkomst.foutmelding);
@@ -395,6 +409,7 @@ export async function processPublicQuestion(
 
   const conversationId = await loggenConversatie(payload, {
     source: "helpdesk",
+    variant: Number(opties.variant.id),
     question: opties.question,
     previousQuestion: opties.previousQuestion ?? null,
     hasAnswer: uitkomst.type === "answered",

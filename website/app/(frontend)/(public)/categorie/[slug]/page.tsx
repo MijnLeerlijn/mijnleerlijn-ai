@@ -7,6 +7,7 @@ import UpdateCard from "@/components/molecules/UpdateCard";
 import { getCategoryBySlug, getArticlesByCategory } from "@/services/payload";
 import { formatDatumNL } from "@/lib/format/date";
 import { focusRing } from "@/utils/focus-ring";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
 interface CategoriePaginaProps {
   params: Promise<{ slug: string }>;
@@ -14,9 +15,11 @@ interface CategoriePaginaProps {
 
 export async function generateMetadata({ params }: CategoriePaginaProps): Promise<Metadata> {
   const { slug } = await params;
-  const categorie = await getCategoryBySlug(slug);
+  const [categorie, variant] = await Promise.all([getCategoryBySlug(slug), getActiveVariant()]);
   return {
-    title: categorie ? `${categorie.titel} — MijnLeerlijn` : "Categorie niet gevonden — MijnLeerlijn",
+    title: categorie
+      ? `${categorie.titel} — ${variant.branding.productName}`
+      : `Categorie niet gevonden — ${variant.branding.productName}`,
   };
 }
 

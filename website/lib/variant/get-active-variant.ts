@@ -14,27 +14,49 @@ import { isProduction } from "@/config/env";
 // (app/(frontend)/error.tsx). Alleen in development, wanneer de database nog
 // niet gezaaid is, valt dit terug op de lokale standaardvariant, met een
 // zichtbare waarschuwing.
+//
+// Multi-brand variants (2026-07-30) — EXPLICIETE UITZONDERING op de regel
+// hierboven, alléén voor de standaardvariant zelf: als de opgeloste slug de
+// standaardvariant se slug is (defaultVariant.slug) én die niet gevonden
+// wordt of de opzoeking faalt, valt dit — OOK IN PRODUCTIE — terug op de
+// hardcoded `defaultVariant`, met een luide console.error (zichtbaar/
+// alerting, geen stille fout) i.p.v. de hele publieke site plat te leggen.
+// Een verkeerd geconfigureerde ANDERE variant blijft wél hard falen (kleine
+// blast radius, geen reden om de veiligheidsklep breder te maken dan nodig).
 export async function getActiveVariant(): Promise<Variant> {
   const headerList = await headers();
   const slug = headerList.get("x-variant-slug") ?? defaultVariant.slug;
+  const isDefaultSlug = slug === defaultVariant.slug;
 
   try {
     const variant = await getVariantBySlug(slug);
     if (variant) return variant;
-    if (isProduction()) {
+    if (isProduction() && !isDefaultSlug) {
       throw new Error(
         `Variant "${slug}" niet gevonden in Payload — is de database gezaaid? Zie payload/seed/index.ts.`
       );
     }
-    console.warn(
-      `[getActiveVariant] Variant "${slug}" niet gevonden in Payload — development-fallback naar de hardcoded standaardvariant. Draai "npm run seed" om dit op te lossen.`
-    );
+    if (isProduction()) {
+      console.error(
+        `[getActiveVariant] Standaardvariant "${slug}" niet gevonden in Payload — valt terug op de hardcoded standaardvariant zodat de site bereikbaar blijft. Controleer de "variants"-collectie.`
+      );
+    } else {
+      console.warn(
+        `[getActiveVariant] Variant "${slug}" niet gevonden in Payload — development-fallback naar de hardcoded standaardvariant. Draai "npm run seed" om dit op te lossen.`
+      );
+    }
     return defaultVariant;
   } catch (error) {
-    if (isProduction()) throw error;
-    console.warn(
-      `[getActiveVariant] Kon variant "${slug}" niet ophalen uit Payload (${error instanceof Error ? error.message : String(error)}) — development-fallback naar de hardcoded standaardvariant.`
-    );
+    if (isProduction() && !isDefaultSlug) throw error;
+    if (isProduction()) {
+      console.error(
+        `[getActiveVariant] Kon de standaardvariant "${slug}" niet ophalen uit Payload (${error instanceof Error ? error.message : String(error)}) — valt terug op de hardcoded standaardvariant zodat de site bereikbaar blijft.`
+      );
+    } else {
+      console.warn(
+        `[getActiveVariant] Kon variant "${slug}" niet ophalen uit Payload (${error instanceof Error ? error.message : String(error)}) — development-fallback naar de hardcoded standaardvariant.`
+      );
+    }
     return defaultVariant;
   }
 }

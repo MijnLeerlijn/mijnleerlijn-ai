@@ -108,6 +108,48 @@ describe("vulVraagNormalizedIn", () => {
     expect(result.vraagNormalized).toBe("deze vraag!");
   });
 
+  it("staat dezelfde vraagtekst toe in twee verschillende, niet-overlappende varianten", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 99, vraag: "Bestaande vraag", variantContext: [1] }] });
+    const data = { vraag: "Bestaande vraag", variantContext: [2] };
+
+    const result = await vulVraagNormalizedIn({
+      data,
+      originalDoc: undefined,
+      operation: "create",
+      req: maakReq(),
+    } as never);
+
+    expect(result.vraagNormalized).toBe("bestaande vraag");
+  });
+
+  it("gooit een ValidationError bij dezelfde vraagtekst binnen dezelfde (overlappende) variant", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 99, vraag: "Bestaande vraag", variantContext: [1, 2] }] });
+    const data = { vraag: "Bestaande vraag", variantContext: [2] };
+
+    await expect(
+      vulVraagNormalizedIn({
+        data,
+        originalDoc: undefined,
+        operation: "create",
+        req: maakReq(),
+      } as never)
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("gooit een ValidationError bij twee universele (variantContext-loze) rijen met dezelfde vraagtekst", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 99, vraag: "Bestaande vraag", variantContext: [] }] });
+    const data = { vraag: "Bestaande vraag" };
+
+    await expect(
+      vulVraagNormalizedIn({
+        data,
+        originalDoc: undefined,
+        operation: "create",
+        req: maakReq(),
+      } as never)
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
   it("laat data ongewijzigd wanneer vraag ontbreekt of leeg is (Payload's eigen required-validatie geeft de fout)", async () => {
     const dataLeeg = { vraag: "   " };
 

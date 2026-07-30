@@ -3,9 +3,14 @@ import type { Payload } from "payload";
 import { haalTop5VoorbeeldVragen } from "./top5-voorbeeldvragen";
 
 const mockFind = vi.fn();
+const VARIANT_ID = "1";
 
 function maakPayload(): Payload {
   return { find: mockFind } as unknown as Payload;
+}
+
+function variantFilter() {
+  return { or: [{ variantContext: { equals: VARIANT_ID } }, { variantContext: { exists: false } }] };
 }
 
 beforeEach(() => {
@@ -15,6 +20,8 @@ beforeEach(() => {
 // Homepage-herontwerp (2026-07-29): eerst vastgezette vragen, dan aangevuld
 // tot 5 met de meest gestelde — zie app/(frontend)/(public)/page.tsx en de
 // toelichting in payload/components/HelpdeskVragenView.tsx.
+// Multi-brand variants (2026-07-30): elke selectie is beperkt tot vragen
+// die leeg (universeel) of aan de opgegeven variant gekoppeld zijn.
 describe("haalTop5VoorbeeldVragen", () => {
   it("toont eerst alle vastgezette vragen, dan aangevuld met de meest gestelde", async () => {
     mockFind
@@ -23,7 +30,7 @@ describe("haalTop5VoorbeeldVragen", () => {
         docs: [{ vraag: "Meest gestelde vraag A" }, { vraag: "Meest gestelde vraag B" }, { vraag: "Meest gestelde vraag C" }],
       });
 
-    const resultaat = await haalTop5VoorbeeldVragen(maakPayload());
+    const resultaat = await haalTop5VoorbeeldVragen(maakPayload(), VARIANT_ID);
 
     expect(resultaat).toEqual([
       "Vastgezette vraag 1",
@@ -35,14 +42,14 @@ describe("haalTop5VoorbeeldVragen", () => {
     expect(mockFind).toHaveBeenCalledWith(
       expect.objectContaining({
         collection: "helpdesk-vragen",
-        where: { and: [{ pinned: { equals: true } }, { verborgen: { equals: false } }] },
+        where: { and: [{ pinned: { equals: true } }, { verborgen: { equals: false } }, variantFilter()] },
         limit: 5,
       })
     );
     expect(mockFind).toHaveBeenCalledWith(
       expect.objectContaining({
         collection: "helpdesk-vragen",
-        where: { and: [{ pinned: { equals: false } }, { verborgen: { equals: false } }] },
+        where: { and: [{ pinned: { equals: false } }, { verborgen: { equals: false } }, variantFilter()] },
         limit: 3,
       })
     );
@@ -55,7 +62,7 @@ describe("haalTop5VoorbeeldVragen", () => {
       ],
     });
 
-    const resultaat = await haalTop5VoorbeeldVragen(maakPayload());
+    const resultaat = await haalTop5VoorbeeldVragen(maakPayload(), VARIANT_ID);
 
     expect(resultaat).toEqual(["1", "2", "3", "4", "5"]);
     expect(mockFind).toHaveBeenCalledTimes(1);
@@ -66,7 +73,7 @@ describe("haalTop5VoorbeeldVragen", () => {
       .mockResolvedValueOnce({ docs: [] })
       .mockResolvedValueOnce({ docs: [{ vraag: "Populair" }] });
 
-    const resultaat = await haalTop5VoorbeeldVragen(maakPayload());
+    const resultaat = await haalTop5VoorbeeldVragen(maakPayload(), VARIANT_ID);
 
     expect(resultaat).toEqual(["Populair"]);
   });
@@ -74,7 +81,7 @@ describe("haalTop5VoorbeeldVragen", () => {
   it("geeft een lege lijst terug als er nog helemaal geen vragen zijn", async () => {
     mockFind.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
 
-    const resultaat = await haalTop5VoorbeeldVragen(maakPayload());
+    const resultaat = await haalTop5VoorbeeldVragen(maakPayload(), VARIANT_ID);
 
     expect(resultaat).toEqual([]);
   });

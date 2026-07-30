@@ -18,10 +18,19 @@ interface HelpdeskVraagRij {
 // vragen doen nooit mee. Zelfde return-vorm (string[]) als de vervangen
 // haalVoorbeeldvragen() in app/(frontend)/(public)/page.tsx, dus
 // HelpdeskChat's `voorbeeldvragen`-prop-contract blijft ongewijzigd.
-export async function haalTop5VoorbeeldVragen(payload: Payload): Promise<string[]> {
+//
+// Multi-brand variants (2026-07-30): `variantId` is verplicht — elke
+// selectie (vastgezet én meest gesteld) is beperkt tot vragen die leeg
+// (universeel) of aan déze variant gekoppeld zijn. Zelfde leeg-of-matcht-
+// variant-filter als overal elders in dit plan.
+function variantFilter(variantId: string) {
+  return { or: [{ variantContext: { equals: variantId } }, { variantContext: { exists: false } }] };
+}
+
+export async function haalTop5VoorbeeldVragen(payload: Payload, variantId: string): Promise<string[]> {
   const gepind = await payload.find({
     collection: "helpdesk-vragen",
-    where: { and: [{ pinned: { equals: true } }, { verborgen: { equals: false } }] },
+    where: { and: [{ pinned: { equals: true } }, { verborgen: { equals: false } }, variantFilter(variantId)] },
     sort: ["pinVolgorde", "-laatstGebruiktOp"],
     limit: MAX_VOORBEELDVRAGEN,
     overrideAccess: true,
@@ -36,7 +45,7 @@ export async function haalTop5VoorbeeldVragen(payload: Payload): Promise<string[
 
   const aanvulling = await payload.find({
     collection: "helpdesk-vragen",
-    where: { and: [{ pinned: { equals: false } }, { verborgen: { equals: false } }] },
+    where: { and: [{ pinned: { equals: false } }, { verborgen: { equals: false } }, variantFilter(variantId)] },
     sort: ["-aantalGesteld", "-laatstGebruiktOp"],
     limit: MAX_VOORBEELDVRAGEN - resultaat.length,
     overrideAccess: true,

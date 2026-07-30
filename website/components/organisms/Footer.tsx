@@ -9,6 +9,7 @@ import {
   type SocialIconProps,
 } from "@/components/atoms/SocialIcons";
 import { focusRingOnDark } from "@/utils/focus-ring";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
 const sitemap = [
   [
@@ -27,15 +28,16 @@ const socialIcons: { icon: ComponentType<SocialIconProps>; label: string }[] = [
   { icon: FacebookIcon, label: "Volg ons op Facebook" },
 ];
 
-export default function Footer() {
+export default async function Footer() {
+  const variant = await getActiveVariant();
   return (
     <footer className="mt-auto bg-donkerblauw pb-8 pt-12 lg:pt-16">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-8 lg:px-16">
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
           <div>
             <Image
-              src="/brand/logo-kleur.svg"
-              alt="MijnLeerlijn"
+              src={variant.branding.logoUrl}
+              alt={variant.branding.productName}
               width={161}
               height={31}
               className="h-8 w-auto brightness-0 invert"
@@ -80,7 +82,7 @@ export default function Footer() {
         <GradientAccent className="mt-8 w-full" />
 
         <div className="mt-4 text-xs text-white/60">
-          <p>© 2026 MijnLeerlijn | Onderdeel van sCoolsuite B.V. | Privacy</p>
+          <p>{variant.websiteTeksten.footerTekst}</p>
         </div>
       </div>
     </footer>

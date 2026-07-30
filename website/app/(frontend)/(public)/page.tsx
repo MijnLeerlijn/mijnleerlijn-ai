@@ -4,10 +4,11 @@ import HelpdeskChat from "@/components/organisms/HelpdeskChat";
 import HandleidingenSidebar from "@/components/organisms/HandleidingenSidebar";
 import GradientAccent from "@/components/atoms/GradientAccent";
 import { haalTop5VoorbeeldVragen } from "@/lib/helpdesk/top5-voorbeeldvragen";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
-async function haalVoorbeeldvragen(): Promise<string[]> {
+async function haalVoorbeeldvragen(variantId: string): Promise<string[]> {
   const payload = await getPayload({ config });
-  return haalTop5VoorbeeldVragen(payload);
+  return haalTop5VoorbeeldVragen(payload, variantId);
 }
 
 // Helpdesk MVP 1.0 (2026-07-25): de homepage IS de chatbot — zie het
@@ -23,16 +24,14 @@ async function haalVoorbeeldvragen(): Promise<string[]> {
 // (chat/sidebar) staat op lg: ernaast; daaronder stapelt de sidebar gewoon
 // onder de chat (geen sticky, geen aparte mobiele interactie).
 export default async function Home() {
-  const voorbeeldvragen = await haalVoorbeeldvragen();
+  const variant = await getActiveVariant();
+  const voorbeeldvragen = await haalVoorbeeldvragen(variant.id);
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 pb-16 pt-8 sm:px-8 sm:pt-12 lg:px-16">
       <div className="max-w-[720px]">
-        <h1 className="text-h1 font-bold text-grijs-900">Waar kunnen we je mee helpen?</h1>
-        <p className="mt-2 text-base text-grijs-600">
-          Stel je vraag aan de MijnLeerlijn Assistent. De assistent zoekt automatisch in onze
-          handleidingen en kennisbank om je zo goed mogelijk te helpen.
-        </p>
+        <h1 className="text-h1 font-bold text-grijs-900">{variant.websiteTeksten.welkomsttitel}</h1>
+        <p className="mt-2 text-base text-grijs-600">{variant.websiteTeksten.welkomsttekst}</p>
         <GradientAccent className="mt-4 w-16" />
       </div>
 

@@ -219,3 +219,59 @@ describe("bepaalIntentie — verduidelijkingsvraag bij echte ambiguïteit", () =
     expect(uitkomst).toMatchObject({ type: "opgelost", onderwerpId: 2, gebruikteSynoniem: null });
   });
 });
+
+// Multi-brand variants (2026-07-30): een variant-specifiek onderwerp mag
+// nooit de zoekvraag van een ANDERE variant sturen — algemene onderwerpen
+// (leeg variantContext) blijven bij elke variant meedoen.
+describe("bepaalIntentie — variant-scoping", () => {
+  it("negeert een onderwerp dat uitsluitend aan een ANDERE variant gekoppeld is", async () => {
+    const payload = seed([{ ...ONDERWERP_1, variantContext: [2] }]);
+
+    const uitkomst = await bepaalIntentie(payload, "Hoe koppel ik een leerling aan doelen?", "1");
+
+    expect(uitkomst).toEqual({ type: "geen-match", kandidaten: [], kennisbasisVersion: null });
+    expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it("neemt een algemeen onderwerp (leeg variantContext) mee, ongeacht de opgegeven variant", async () => {
+    const payload = seed([ONDERWERP_1]);
+    mockGenerate.mockResolvedValue({
+      kandidaten: [1],
+      gekozenId: 1,
+      verduidelijkingsvraag: null,
+      gebruikteSynoniem: null,
+    });
+
+    const uitkomst = await bepaalIntentie(payload, "Hoe koppel ik een leerling aan doelen?", "1");
+
+    expect(uitkomst).toMatchObject({ type: "opgelost", onderwerpId: 1 });
+  });
+
+  it("neemt een onderwerp mee dat expliciet aan de opgegeven variant gekoppeld is", async () => {
+    const payload = seed([{ ...ONDERWERP_1, variantContext: [1] }]);
+    mockGenerate.mockResolvedValue({
+      kandidaten: [1],
+      gekozenId: 1,
+      verduidelijkingsvraag: null,
+      gebruikteSynoniem: null,
+    });
+
+    const uitkomst = await bepaalIntentie(payload, "Hoe koppel ik een leerling aan doelen?", "1");
+
+    expect(uitkomst).toMatchObject({ type: "opgelost", onderwerpId: 1 });
+  });
+
+  it("negeert variant-scoping wanneer geen variantId is opgegeven (interne /assistant-pijplijn)", async () => {
+    const payload = seed([{ ...ONDERWERP_1, variantContext: [2] }]);
+    mockGenerate.mockResolvedValue({
+      kandidaten: [1],
+      gekozenId: 1,
+      verduidelijkingsvraag: null,
+      gebruikteSynoniem: null,
+    });
+
+    const uitkomst = await bepaalIntentie(payload, "Hoe koppel ik een leerling aan doelen?");
+
+    expect(uitkomst).toMatchObject({ type: "opgelost", onderwerpId: 1 });
+  });
+});

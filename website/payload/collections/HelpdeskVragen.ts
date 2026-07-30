@@ -37,6 +37,25 @@ import { normaliseerVraag } from "@/lib/helpdesk/registreer-gestelde-vraag";
 // registreer-gestelde-vraag.ts (geïmporteerd, niet opnieuw geïmplementeerd)
 // — anders zou een handmatig toegevoegde vraag nooit matchen met dezelfde,
 // later automatisch getelde vraag.
+//
+// Multi-brand variants (2026-07-30): de duplicaatcontrole hieronder was
+// oorspronkelijk (Fase 3, vóór varianten) kolombreed — elke andere rij met
+// dezelfde vraagNormalized gold als duplicaat. Nu twee varianten dezelfde
+// vraagtekst mogen hebben als twee aparte rijen (zie
+// lib/helpdesk/registreer-gestelde-vraag.ts), moet deze check ook
+// variant-bewust zijn: alleen een conflict wanneer de variant-sets
+// overlappen, of allebei leeg zijn (twee universele rijen met dezelfde
+// tekst is nog steeds een echt duplicaat). Ontdekt via een echte
+// (niet-gemockte) test: dezelfde vraagtekst in twee varianten werd hier
+// nog steeds afgewezen, óók nadat de kolombrede DB-unique-index al was
+// verwijderd.
+function variantIds(waarde: unknown): number[] {
+  if (!Array.isArray(waarde)) return [];
+  return waarde
+    .map((v) => (typeof v === "object" && v !== null ? Number((v as { id?: unknown }).id) : Number(v)))
+    .filter((n) => !Number.isNaN(n));
+}
+
 export const vulVraagNormalizedIn: CollectionBeforeValidateHook = async ({ data, originalDoc, req }) => {
   if (!data || typeof data.vraag !== "string" || !data.vraag.trim()) {
     // Laat Payload's eigen required-validatie op `vraag` de fout geven —
@@ -55,18 +74,24 @@ export const vulVraagNormalizedIn: CollectionBeforeValidateHook = async ({ data,
     const bestaand = await req.payload.find({
       collection: "helpdesk-vragen",
       where: { vraagNormalized: { equals: genormaliseerd } },
-      limit: 1,
+      limit: 100,
       overrideAccess: true,
       depth: 0,
     });
-    const conflict = bestaand.docs.find((doc) => doc.id !== originalDoc?.id);
+    const nieuweVarianten = variantIds(data.variantContext);
+    const conflict = bestaand.docs.find((doc) => {
+      if (doc.id === originalDoc?.id) return false;
+      const bestaandeVarianten = variantIds(doc.variantContext);
+      if (nieuweVarianten.length === 0 && bestaandeVarianten.length === 0) return true;
+      return nieuweVarianten.some((id) => bestaandeVarianten.includes(id));
+    });
     if (conflict) {
       throw new ValidationError({
         collection: "helpdesk-vragen",
         errors: [
           {
             path: "vraag",
-            message: `Deze vraag bestaat al: "${conflict.vraag}". Pas de bestaande vraag aan (bv. vastzetten) i.p.v. een duplicaat aan te maken.`,
+            message: `Deze vraag bestaat al binnen deze variant(en): "${conflict.vraag}". Pas de bestaande vraag aan (bv. vastzetten) i.p.v. een duplicaat aan te maken.`,
           },
         ],
         req,
@@ -101,7 +126,17 @@ export const HelpdeskVragen: CollectionConfig = {
     {
       name: "vraagNormalized",
       type: "text",
-      unique: true,
+      index: true,
+      // Multi-brand variants (2026-07-30): NIET meer uniek — uniciteit is nu
+      // per variant vereist (dezelfde vraagtekst mag in twee varianten twee
+      // aparte rijen/tellingen hebben, zie lib/helpdesk/registreer-gestelde-
+      // vraag.ts). Een kolombrede unique-constraint accepteert geen
+      // combinatie met het variantContext-hasMany-veld (aparte join-tabel),
+      // dus de deduplicatie binnen één variant loopt volledig via de
+      // find-vóór-create-logica in registreerGesteldeVraag() — al
+      // variant-gescoped. Ontdekt via een echte (niet-gemockte) test: twee
+      // identieke vraagteksten in twee varianten braken hier voorheen op de
+      // oude globale unique-index.
       label: "Vraag (genormaliseerd)",
       admin: {
         hidden: true,
@@ -141,6 +176,22 @@ export const HelpdeskVragen: CollectionConfig = {
       defaultValue: false,
       label: "Verborgen",
       admin: { description: "Sluit deze vraag uit van de publieke Top 5 — blijft wel zichtbaar/beheerbaar hier." },
+    },
+    {
+      // Multi-brand variants (2026-07-30): "Meest gestelde vragen" apart per
+      // variant, op verzoek — zelfde vaste patroon als overal elders. Een
+      // organisch (via de publieke Helpdesk) ontstane vraag krijgt altijd
+      // een gevulde variantContext (zie lib/helpdesk/registreer-gestelde-
+      // vraag.ts) — leeg blijft gereserveerd voor een bewust door een
+      // beheerder universeel vastgezette vraag, zichtbaar bij elke variant.
+      name: "variantContext",
+      type: "relationship",
+      relationTo: "variants",
+      hasMany: true,
+      label: "Variantcontext",
+      admin: {
+        description: "Leeg = getoond bij alle varianten (bv. een universeel vastgezette vraag). Ingevuld = alleen bij die variant(en).",
+      },
     },
   ],
 };

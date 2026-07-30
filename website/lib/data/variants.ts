@@ -1,4 +1,17 @@
-import type { Variant } from "@/types/variant";
+import type { Variant, WebsiteTeksten } from "@/types/variant";
+
+// Leeg websiteTeksten-blok — Payload's tekstvelden staan dan leeg, waardoor
+// mapVariant() (services/payload.ts) automatisch op de MijnLeerlijn-
+// standaardtekst terugvalt (zie lib/variant/default-website-teksten.ts).
+// Geen van deze drie seed-varianten heeft eigen websiteTeksten nodig.
+const LEGE_WEBSITETEKSTEN: WebsiteTeksten = {
+  welkomsttitel: "",
+  welkomsttekst: "",
+  zoekveldPlaceholder: "",
+  helpdeskIntro: "",
+  contactTekst: "",
+  footerTekst: "",
+};
 
 // Drie varianten uit de dummydataset — zie docs/MULTI-VARIANT-STRATEGY.md.
 // De actieve variant (accentkleur/logo, zie config/variants.ts en
@@ -12,7 +25,8 @@ export const varianten: Variant[] = [
     slug: "mijnleerlijn",
     name: "MijnLeerlijn",
     status: "actief",
-    domain: { type: "custom_domain", value: "mijnleerlijn.nl", domainStatus: "custom_domain" },
+    actief: true,
+    domain: { type: "custom_domain", value: "mijnleerlijn.chat", domainStatus: "custom_domain" },
     branding: {
       logoUrl: "/brand/logo-kleur.svg",
       accentColor: "#1588c9",
@@ -22,6 +36,7 @@ export const varianten: Variant[] = [
     },
     educationType: "algemeen",
     terminologyDictionary: [],
+    websiteTeksten: LEGE_WEBSITETEKSTEN,
     createdAt: "2026-01-01T00:00:00.000Z",
     createdBy: "system",
   },
@@ -30,6 +45,7 @@ export const varianten: Variant[] = [
     slug: "mijnmonti",
     name: "MijnMonti",
     status: "actief",
+    actief: true,
     domain: { type: "slug_path", value: "mijnmonti", domainStatus: "slug_path" },
     branding: {
       logoUrl: "/brand/logo-kleur.svg",
@@ -40,6 +56,7 @@ export const varianten: Variant[] = [
     },
     educationType: "montessori",
     terminologyDictionary: [{ centralTerm: "leerdoel", variantTerm: "ontwikkelingsdoel" }],
+    websiteTeksten: LEGE_WEBSITETEKSTEN,
     createdAt: "2026-04-01T00:00:00.000Z",
     createdBy: "system",
   },
@@ -48,6 +65,7 @@ export const varianten: Variant[] = [
     slug: "mijnd",
     name: "MijnD",
     status: "concept",
+    actief: false,
     domain: { type: "slug_path", value: "mijnd", domainStatus: "slug_path" },
     branding: {
       logoUrl: "/brand/logo-kleur.svg",
@@ -58,6 +76,7 @@ export const varianten: Variant[] = [
     },
     educationType: "dalton",
     terminologyDictionary: [{ centralTerm: "groep", variantTerm: "stamgroep" }],
+    websiteTeksten: LEGE_WEBSITETEKSTEN,
     createdAt: "2026-05-01T00:00:00.000Z",
     createdBy: "system",
   },

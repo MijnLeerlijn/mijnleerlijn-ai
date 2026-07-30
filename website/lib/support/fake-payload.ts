@@ -41,11 +41,23 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
         return (voorwaarde as Record<string, unknown>[]).some((sub) => matchWaar(doc, sub));
       }
       const waarde = doc[veld];
+      // Multi-brand variants (2026-07-30): `equals` op een hasMany-
+      // relatieveld (bv. variantContext) betekent in de echte Payload-query
+      // "bevat deze waarde", geen strikte gelijkheid — anders zou geen
+      // enkele variant-scoping-test hier ooit kunnen matchen.
       if (voorwaarde && typeof voorwaarde === "object" && "equals" in voorwaarde) {
-        return waarde === (voorwaarde as { equals: unknown }).equals;
+        const target = (voorwaarde as { equals: unknown }).equals;
+        if (Array.isArray(waarde)) return waarde.some((v) => String(v) === String(target));
+        return waarde === target;
       }
       if (voorwaarde && typeof voorwaarde === "object" && "in" in voorwaarde) {
         return (voorwaarde as { in: unknown[] }).in.includes(waarde);
+      }
+      // `exists: false` = leeg/niet gezet (undefined, null, of een lege
+      // array bij een hasMany-relatieveld); `exists: true` het omgekeerde.
+      if (voorwaarde && typeof voorwaarde === "object" && "exists" in voorwaarde) {
+        const isLeeg = waarde === undefined || waarde === null || (Array.isArray(waarde) && waarde.length === 0);
+        return (voorwaarde as { exists: boolean }).exists ? !isLeeg : isLeeg;
       }
       return true;
     });

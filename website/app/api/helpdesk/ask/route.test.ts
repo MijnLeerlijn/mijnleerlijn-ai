@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
+import type { Variant } from "@/types/variant";
 import { POST } from "./route";
 import { processPublicQuestion } from "@/lib/assistant/process-public-question";
 import { registreerGesteldeVraag } from "@/lib/helpdesk/registreer-gestelde-vraag";
+import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
 vi.mock("payload", () => ({
   getPayload: vi
@@ -15,9 +17,42 @@ vi.mock("@/lib/assistant/process-public-question", async (importOriginal) => {
   return { ...echt, processPublicQuestion: vi.fn() };
 });
 vi.mock("@/lib/helpdesk/registreer-gestelde-vraag", () => ({ registreerGesteldeVraag: vi.fn() }));
+vi.mock("@/lib/variant/get-active-variant", () => ({ getActiveVariant: vi.fn() }));
 
 const mockProcess = vi.mocked(processPublicQuestion);
 const mockRegistreer = vi.mocked(registreerGesteldeVraag);
+const mockGetActiveVariant = vi.mocked(getActiveVariant);
+
+// Multi-brand variants (2026-07-30): één neutrale mock-variant — deze tests
+// testen route-gedrag (validatie/foutafhandeling/rate limiting), niet
+// variant-scoping zelf (zie de aparte tests daarvoor elders).
+const MOCK_VARIANT: Variant = {
+  id: "1",
+  slug: "mijnleerlijn",
+  name: "MijnLeerlijn",
+  status: "actief",
+  actief: true,
+  domain: { type: "custom_domain", value: "mijnleerlijn.chat", domainStatus: "custom_domain" },
+  branding: {
+    logoUrl: "/brand/logo-kleur.svg",
+    accentColor: "#1588c9",
+    productName: "MijnLeerlijn",
+    tagline: "Onderwijs vanuit Inzicht",
+    isPlaceholder: false,
+  },
+  educationType: "algemeen",
+  terminologyDictionary: [],
+  websiteTeksten: {
+    welkomsttitel: "Waar kunnen we je mee helpen?",
+    welkomsttekst: "Stel je vraag aan de MijnLeerlijn Assistent.",
+    zoekveldPlaceholder: "Beschrijf zo duidelijk mogelijk waar je tegenaan loopt…",
+    helpdeskIntro: "Hoe duidelijker je vraag, hoe beter het antwoord.",
+    contactTekst: "Kom je er niet uit? Vul het formulier in.",
+    footerTekst: "© 2026 MijnLeerlijn | Onderdeel van sCoolsuite B.V. | Privacy",
+  },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  createdBy: "system",
+};
 
 function maakRequest(opties: { body?: unknown; ip?: string } = {}) {
   return new NextRequest("http://localhost:3000/api/helpdesk/ask", {
@@ -34,6 +69,8 @@ beforeEach(() => {
   mockProcess.mockReset();
   mockRegistreer.mockReset();
   mockRegistreer.mockResolvedValue(undefined);
+  mockGetActiveVariant.mockReset();
+  mockGetActiveVariant.mockResolvedValue(MOCK_VARIANT);
 });
 
 // Geen sessiecontrole te testen (bewust, zie het commentaar in route.ts) —
@@ -67,7 +104,10 @@ describe("POST /api/helpdesk/ask", () => {
     const response = await POST(maakRequest({ body: { question: "Hoe maak ik een profiel aan?" } }));
 
     expect(response.status).toBe(200);
-    expect(mockProcess).toHaveBeenCalledWith(expect.anything(), { question: "Hoe maak ik een profiel aan?" });
+    expect(mockProcess).toHaveBeenCalledWith(expect.anything(), {
+      question: "Hoe maak ik een profiel aan?",
+      variant: MOCK_VARIANT,
+    });
     const data = await response.json();
     expect(data.answer).toBe("Antwoord.");
   });
@@ -87,6 +127,7 @@ describe("POST /api/helpdesk/ask", () => {
     expect(mockProcess).toHaveBeenCalledWith(expect.anything(), {
       question: "en aan meerdere?",
       previousQuestion: "Hoe koppel ik doelen?",
+      variant: MOCK_VARIANT,
     });
     const data = await response.json();
     expect(data.type).toBe("clarification");
@@ -141,7 +182,7 @@ describe("POST /api/helpdesk/ask", () => {
 
     await POST(maakRequest({ body: { question: "Hoe maak ik een doelenset aan?" } }));
 
-    expect(mockRegistreer).toHaveBeenCalledWith(expect.anything(), "Hoe maak ik een doelenset aan?");
+    expect(mockRegistreer).toHaveBeenCalledWith(expect.anything(), "Hoe maak ik een doelenset aan?", MOCK_VARIANT.id);
   });
 
   it("blokkeert het antwoord niet als het tellen zelf onverwacht mislukt (registreerGesteldeVraag rejecteert, in de praktijk voorkomen door zijn eigen try/catch)", async () => {

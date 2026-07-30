@@ -158,6 +158,7 @@ async function run() {
     const id = await upsertBySlug(payload, "variants", v.slug, {
       name: v.name,
       status: v.status,
+      actief: v.actief,
       educationType: v.educationType,
       domain: v.domain,
       branding: {
@@ -167,6 +168,7 @@ async function run() {
         isPlaceholder: v.branding.isPlaceholder,
       },
       terminologyDictionary: v.terminologyDictionary,
+      websiteTeksten: v.websiteTeksten,
       contactEmail: v.contactEmail,
     });
     variantIdBySlug.set(v.slug, id);

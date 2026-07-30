@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import NextLink from "next/link";
 import Image from "next/image";
+import { useVariant } from "@/providers/VariantProvider";
 
 // Helpdesk MVP 1.0 (2026-07-25): opzettelijk vereenvoudigd tot uitsluitend
 // het logo — "de chatbot is de homepage", zie het akkoord op het
@@ -19,6 +20,7 @@ import Image from "next/image";
 // aanbieden. De Handleidingen-sidebar zelf (components/organisms/
 // HandleidingenSidebar.tsx) blijft ongewijzigd op de pagina staan.
 export default function Header() {
+  const variant = useVariant();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -36,10 +38,10 @@ export default function Header() {
           scrolled ? "h-14" : "h-16"
         }`}
       >
-        <NextLink href="/" className="flex items-center" aria-label="Naar de homepage van MijnLeerlijn">
+        <NextLink href="/" className="flex items-center" aria-label={`Naar de homepage van ${variant.branding.productName}`}>
           <Image
-            src="/brand/logo-kleur.svg"
-            alt="MijnLeerlijn"
+            src={variant.branding.logoUrl}
+            alt={variant.branding.productName}
             width={161}
             height={31}
             className={`w-auto transition-all duration-200 ${scrolled ? "h-6" : "h-7"}`}

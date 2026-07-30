@@ -5,6 +5,7 @@ import { registreerGesteldeVraag, normaliseerVraag } from "./registreer-gestelde
 const mockFind = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
+const VARIANT_ID = "1";
 
 function maakPayload(): Payload {
   return {
@@ -30,17 +31,25 @@ describe("normaliseerVraag", () => {
 // zie app/api/helpdesk/ask/route.ts, aangeroepen bij elke bevestigde
 // "Verstuur"-actie (klikken op een voorbeeldvraag vult alleen het
 // invoerveld, zie components/organisms/HelpdeskChat.tsx).
+// Multi-brand variants (2026-07-30): dezelfde vraagtekst in twee varianten
+// geeft twee aparte tellingen — de match zoekt uitsluitend binnen de
+// opgegeven variant.
 describe("registreerGesteldeVraag", () => {
-  it("maakt een nieuw record aan als de vraag nog niet bestaat", async () => {
+  it("maakt een nieuw record aan als de vraag nog niet bestaat binnen deze variant", async () => {
     mockFind.mockResolvedValue({ docs: [] });
     mockCreate.mockResolvedValue({ id: 1 });
 
-    await registreerGesteldeVraag(maakPayload(), "Hoe maak ik een doelenset aan?");
+    await registreerGesteldeVraag(maakPayload(), "Hoe maak ik een doelenset aan?", VARIANT_ID);
 
     expect(mockFind).toHaveBeenCalledWith(
       expect.objectContaining({
         collection: "helpdesk-vragen",
-        where: { vraagNormalized: { equals: "hoe maak ik een doelenset aan?" } },
+        where: {
+          and: [
+            { vraagNormalized: { equals: "hoe maak ik een doelenset aan?" } },
+            { variantContext: { equals: VARIANT_ID } },
+          ],
+        },
       })
     );
     expect(mockCreate).toHaveBeenCalledWith(
@@ -53,16 +62,17 @@ describe("registreerGesteldeVraag", () => {
           aantalGesteld: 1,
           pinned: false,
           verborgen: false,
+          variantContext: [Number(VARIANT_ID)],
         }),
       })
     );
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it("verhoogt het bestaande aantal en de laatst-gebruikt-datum bij een al bekende vraag (case-insensitief)", async () => {
+  it("verhoogt het bestaande aantal en de laatst-gebruikt-datum bij een al bekende vraag binnen dezelfde variant (case-insensitief)", async () => {
     mockFind.mockResolvedValue({ docs: [{ id: 42, aantalGesteld: 3 }] });
 
-    await registreerGesteldeVraag(maakPayload(), "hoe maak ik een DOELENSET aan?");
+    await registreerGesteldeVraag(maakPayload(), "hoe maak ik een DOELENSET aan?", VARIANT_ID);
 
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -76,7 +86,7 @@ describe("registreerGesteldeVraag", () => {
   });
 
   it("doet niets bij een lege vraag", async () => {
-    await registreerGesteldeVraag(maakPayload(), "   ");
+    await registreerGesteldeVraag(maakPayload(), "   ", VARIANT_ID);
 
     expect(mockFind).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
@@ -85,6 +95,6 @@ describe("registreerGesteldeVraag", () => {
   it("faalt non-blocking: een databasefout wordt gevangen, nooit doorgegooid", async () => {
     mockFind.mockRejectedValue(new Error("DB-fout"));
 
-    await expect(registreerGesteldeVraag(maakPayload(), "Een vraag")).resolves.toBeUndefined();
+    await expect(registreerGesteldeVraag(maakPayload(), "Een vraag", VARIANT_ID)).resolves.toBeUndefined();
   });
 });

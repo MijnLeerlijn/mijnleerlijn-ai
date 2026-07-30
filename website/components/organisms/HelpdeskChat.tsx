@@ -8,6 +8,7 @@ import Input from "@/components/atoms/Input";
 import Spinner from "@/components/atoms/Spinner";
 import ContactForm from "@/components/organisms/ContactForm";
 import MarkdownAnswer from "@/components/molecules/MarkdownAnswer";
+import { useVariant } from "@/providers/VariantProvider";
 
 interface PublicManual {
   id: number;
@@ -85,6 +86,7 @@ interface HelpdeskChatProps {
 }
 
 export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps) {
+  const variant = useVariant();
   const [berichten, setBerichten] = useState<Bericht[]>([]);
   const [vraag, setVraag] = useState("");
   const [vergroteAfbeelding, setVergroteAfbeelding] = useState<PublicStepImage | null>(null);
@@ -225,14 +227,12 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
       <div className="flex flex-col gap-6">
         {berichten.length === 0 && (
           <div className="rounded-xl border border-dashed border-grijs-200 bg-grijs-50 p-6">
-            <p className="text-sm font-semibold text-grijs-900">
-              Hoe duidelijker je vraag, hoe beter het antwoord.
-            </p>
+            <p className="text-sm font-semibold text-grijs-900">{variant.websiteTeksten.helpdeskIntro}</p>
             <p className="mt-2 text-sm leading-6 text-grijs-600">
               Beschrijf zo concreet mogelijk:
             </p>
             <ul className="mt-1 list-inside list-disc text-sm leading-6 text-grijs-600">
-              <li>waar je bent in MijnLeerlijn;</li>
+              <li>waar je bent in {variant.branding.productName};</li>
               <li>wat je probeert te doen;</li>
               <li>wat er gebeurt;</li>
               <li>wat je had verwacht.</li>
@@ -441,7 +441,7 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
           type="text"
           value={vraag}
           onChange={(e) => setVraag(e.target.value)}
-          placeholder="Beschrijf zo duidelijk mogelijk waar je tegenaan loopt..."
+          placeholder={variant.websiteTeksten.zoekveldPlaceholder}
           aria-label="Typ je vraag"
           disabled={bezig}
           className="h-12"

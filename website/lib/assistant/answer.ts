@@ -45,16 +45,34 @@ const STAP4_NORMAAL = "4. Werk daarna pas de concrete stappen uit.";
 const STAP4_MET_STRUCTURED_STAPPEN =
   '4. Er worden na jouw antwoord AL apart, als losse kaarten met titel, uitleg en eventueel een screenshot, de exacte relevante handleidingstappen getoond. Werk de concrete stappen daarom NIET zelf uit als een eigen genummerde lijst (geen "1. ... 2. ... 3. ..." of vergelijkbare opsomming) — vat in 1 tot 3 lopende zinnen samen wat er moet gebeuren en sluit af met een korte, natuurlijke verwijzing zoals "Hieronder zie je de stappen om dit te doen."';
 
-function bouwSysteemprompt(heeftStructuredStappen: boolean): string {
+// Multi-brand variants (2026-07-30): standaardwaarde voor `process-
+// question.ts` (het interne /assistant-scherm, dat bewust geen `variant`
+// meegeeft — dat scherm werkt variant-onafhankelijk) — exact het gedrag van
+// vóór deze wijziging, geen breaking change voor die aanroeper.
+const STANDAARD_VARIANT_VOOR_PROMPT = { productName: "MijnLeerlijn", terminologyDictionary: [] as { centralTerm: string; variantTerm: string }[] };
+
+function bouwSysteemprompt(
+  heeftStructuredStappen: boolean,
+  variant: { productName: string; terminologyDictionary: { centralTerm: string; variantTerm: string }[] } = STANDAARD_VARIANT_VOOR_PROMPT
+): string {
   const stap4 = heeftStructuredStappen ? STAP4_MET_STRUCTURED_STAPPEN : STAP4_NORMAAL;
-  return `Je bent de AI-assistent van MijnLeerlijn.
+  // Multi-brand variants (2026-07-30): terminologie is puur een
+  // promptinstructie, geen deterministische tekstvervanging achteraf — zie
+  // docs/AI-KNOWLEDGE-STRATEGY.md §Systeeminstructie-richtlijnen punt 6.
+  const terminologieRegel =
+    variant.terminologyDictionary.length > 0
+      ? `\n\nTerminologie van ${variant.productName} — gebruik deze woorden in je antwoord i.p.v. de centrale term:\n${variant.terminologyDictionary
+          .map((t) => `- ${t.centralTerm} → ${t.variantTerm}`)
+          .join("\n")}`
+      : "";
+  return `Je bent de AI-assistent van ${variant.productName}.
 Je gebruikt uitsluitend informatie uit de aangeleverde context.
 Verzin nooit functionaliteit.
 Gebruik geen algemene kennis wanneer deze niet in de context staat.
 De bronnen worden AL apart, als klikbare lijst met titel, onder je antwoord getoond — dat is de bronvermelding. Schrijf zelf dus GEEN eigen bronverwijzing in de lopende tekst (geen "(Bron N)", "[Bron N]", "Bron: ...", "Volgens de handleiding ...", of vergelijkbare formuleringen die naar een bron/document verwijzen) — puur natuurlijke, vloeiende tekst over wat je moet doen.
 
 Bouw je antwoord in deze volgorde op:
-1. Herken eerst om welk onderdeel/onderwerp van MijnLeerlijn de vraag gaat.
+1. Herken eerst om welk onderdeel/onderwerp van ${variant.productName} de vraag gaat.
 2. Bepaal of er meerdere legitieme manieren ("routes") zijn om te doen wat er gevraagd wordt — dat komt vaak voor. Zo ja: leg in het kort uit WAAROM er meerdere routes zijn, benoem ze allemaal met de belangrijkste afweging per route (wanneer kies je welke), tenzij de vraag duidelijk over één specifieke route gaat.
 3. Presenteer bij een vraag als "wat is de beste manier?" NOOIT één route als absoluut de beste wanneer de bron zelf aangeeft dat de keuze van schoolkeuzes, werkwijze of context afhangt. Gebruik dan een formulering als "Welke route het beste past, hangt af van hoe jullie als school werken" en beschrijf de relevante routes met hun afwegingen, in plaats van er één als hét antwoord te presenteren. Noemt de bron wél een concrete voorkeur of vuistregel voor een specifieke situatie (bv. "vaak gebruikt bij..."), geef die dan als afweging mee — niet als absolute "beste manier".
 ${stap4}
@@ -73,7 +91,7 @@ Het centrale Kennisbasis MijnLeerlijn-blok (indien meegegeven, gelabeld "[Centra
 13. Gebruik dit blok uitsluitend voor visie, betekenis, samenhang en productlogica — nooit voor concrete klik-stappen, schermnamen of knoplabels (zelfde regel als bronrol "achtergrondmodel" in regel 6 hierboven). De officiële term/configuratie die al voorafgaand aan de zoekopdracht is vastgesteld en in de vraag/context verwerkt is, blijft ALTIJD leidend — dit blok mag die nooit stilzwijgend overschrijven of tegenspreken alsof het de nieuwe waarheid is.
 14. Signaleer je een inhoudelijke tegenspraak tussen dit blok en een andere bron, of tussen dit blok en de al vastgestelde officiële term/configuratie: los dat NOOIT stilzwijgend zelf op. Formuleer je antwoord dan voorzichtig (bijv. "hierover lijken de bronnen elkaar op dit punt tegen te spreken") en vul het veld "tegenstrijdigheid" met een korte, feitelijke omschrijving (max. 1-2 zinnen) van het geconstateerde conflict. Is er geen tegenspraak, laat "tegenstrijdigheid" dan leeg (null) — verzin nooit een tegenstrijdigheid die er niet is.
 
-Antwoord uitsluitend met het gevraagde gestructureerde object.`;
+Antwoord uitsluitend met het gevraagde gestructureerde object.${terminologieRegel}`;
 }
 
 // Schema naar de AI: geen minLength/maxLength (zelfde OpenAI-structured-
@@ -128,6 +146,8 @@ export async function genereerAssistentAntwoord(
     heeftStructuredStappen?: boolean;
     /** Kennisbasis MijnLeerlijn — Fase 4: gegarandeerde achtergrondcontext, altijd meegestuurd ongeacht similarity-score (zie kennisbasis-context.ts). */
     centraleKennisbasis?: { tekst: string; versie: string } | null;
+    /** Multi-brand variants (2026-07-30): productnaam + terminologie voor de systeeminstructie. Weggelaten door process-question.ts (blijft variant-onafhankelijk) — zie STANDAARD_VARIANT_VOOR_PROMPT hierboven. */
+    variant?: { productName: string; terminologyDictionary: { centralTerm: string; variantTerm: string }[] };
   }
 ): Promise<AssistantAntwoordUitkomst> {
   const besteScore = contextItems[0]?.similarity ?? 0;
@@ -151,7 +171,7 @@ export async function genereerAssistentAntwoord(
   let object: z.infer<typeof AntwoordSchema>;
   let usage: UsageInfo;
   try {
-    const systemPrompt = bouwSysteemprompt(Boolean(opties?.heeftStructuredStappen));
+    const systemPrompt = bouwSysteemprompt(Boolean(opties?.heeftStructuredStappen), opties?.variant);
     const kennisbasisBlok = opties?.centraleKennisbasis
       ? `${kennisbasisBlokNaarPrompt(opties.centraleKennisbasis)}\n\n`
       : "";

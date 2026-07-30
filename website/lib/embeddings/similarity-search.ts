@@ -1,4 +1,4 @@
-import type { Payload } from "payload";
+import type { Payload, Where } from "payload";
 import { cosineSimilarity } from "ai";
 import { generateEmbedding } from "@/services/ai-client";
 
@@ -163,12 +163,24 @@ function isEmbeddingVector(waarde: unknown): waarde is number[] {
   return Array.isArray(waarde) && waarde.length > 0 && typeof waarde[0] === "number";
 }
 
-async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
+// Multi-brand variants (2026-07-30): leeg-of-matcht-variant-filter, zelfde
+// patroon overal waar `variantContext` voorkomt — leeg/geen `variantContext`
+// = centraal, voor alle varianten; gevuld = uitsluitend die variant(en).
+// Alleen toegevoegd aan de drie collecties die dit veld al hadden
+// (knowledge-sources/articles/handleidingen, zie hun collectie-config);
+// knowledge-drafts heeft geen variantContext en blijft ongefilterd (interne
+// QA-staging, geen directe klantblootstelling — zie het technisch ontwerp).
+function variantWhereClause(variantId: string | undefined): Where[] {
+  if (!variantId) return [];
+  return [{ or: [{ variantContext: { equals: variantId } }, { variantContext: { exists: false } }] }];
+}
+
+async function verzamelKandidaten(payload: Payload, variantId?: string): Promise<Kandidaat[]> {
   const kandidaten: Kandidaat[] = [];
 
   const bronnen = await payload.find({
     collection: "knowledge-sources",
-    where: { embeddingStatus: { equals: "indexed" } },
+    where: { and: [{ embeddingStatus: { equals: "indexed" } }, ...variantWhereClause(variantId)] },
     limit: MAX_KANDIDATEN_PER_COLLECTIE,
     overrideAccess: true,
     depth: 0,
@@ -235,7 +247,7 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
 
   const artikelen = await payload.find({
     collection: "articles",
-    where: { embeddingStatus: { equals: "indexed" } },
+    where: { and: [{ embeddingStatus: { equals: "indexed" } }, ...variantWhereClause(variantId)] },
     limit: MAX_KANDIDATEN_PER_COLLECTIE,
     overrideAccess: true,
     depth: 0,
@@ -265,7 +277,11 @@ async function verzamelKandidaten(payload: Payload): Promise<Kandidaat[]> {
   const handleidingen = await payload.find({
     collection: "handleidingen",
     where: {
-      and: [{ status: { equals: "gepubliceerd" } }, { embeddingStatus: { equals: "indexed" } }],
+      and: [
+        { status: { equals: "gepubliceerd" } },
+        { embeddingStatus: { equals: "indexed" } },
+        ...variantWhereClause(variantId),
+      ],
     },
     limit: MAX_KANDIDATEN_PER_COLLECTIE,
     overrideAccess: true,
@@ -311,9 +327,9 @@ interface GescoordeKandidaat extends Kandidaat {
 }
 
 /** Gedeelde eerste stap voor zowel searchKnowledge als searchKnowledgePhased: query embedden, alle kandidaten ophalen en scoren — de similarity-score zelf is in beide gevallen exact hetzelfde getal. */
-async function scoorKandidaten(payload: Payload, query: string): Promise<GescoordeKandidaat[]> {
+async function scoorKandidaten(payload: Payload, query: string, variantId?: string): Promise<GescoordeKandidaat[]> {
   const queryEmbedding = await generateEmbedding(query);
-  const kandidaten = await verzamelKandidaten(payload);
+  const kandidaten = await verzamelKandidaten(payload, variantId);
   return kandidaten.map((k) => ({ ...k, similarity: cosineSimilarity(queryEmbedding, k.embedding) }));
 }
 
@@ -444,10 +460,10 @@ function vergelijkGefaseerd(a: GescoordeKandidaat, b: GescoordeKandidaat): numbe
 
 export async function searchKnowledgePhased(
   payload: Payload,
-  opties: { query: string; limiet?: number; drempelVoorVoldoende: number }
+  opties: { query: string; limiet?: number; drempelVoorVoldoende: number; variantId?: string }
 ): Promise<PhasedSearchResultaat> {
   const limiet = opties.limiet ?? STANDAARD_ZOEKLIMIET;
-  const alleGescoord = await scoorKandidaten(payload, opties.query);
+  const alleGescoord = await scoorKandidaten(payload, opties.query, opties.variantId);
 
   // Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28): bronnen met bronrol
   // "background-model" (het oude achtergrondverhaal-record, knowledge-

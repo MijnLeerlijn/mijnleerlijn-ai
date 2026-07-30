@@ -52,6 +52,20 @@ export const AssistantConversations: CollectionConfig = {
       ],
       admin: { readOnly: true },
     },
+    {
+      // Multi-brand variants (2026-07-30): welke variant actief was tijdens
+      // dit gesprek — alleen gezet voor `source: "helpdesk"` (de publieke
+      // pijplijn, zie process-public-question.ts). Maakt "geen kennislekkage
+      // tussen varianten"-steekproefcontroles in het AI Verbetercentrum
+      // mogelijk (zie docs/AI-KNOWLEDGE-STRATEGY.md se verplichte
+      // variant-lekkage-test). Enkelvoudig, niet hasMany: één gesprek
+      // gebeurt binnen precies één actieve variant.
+      name: "variant",
+      type: "relationship",
+      relationTo: "variants",
+      label: "Variant",
+      admin: { readOnly: true, description: "Alleen gezet bij een publiek Helpdesk-gesprek." },
+    },
     { name: "question", type: "textarea", required: true, label: "Vraag" },
     {
       name: "hasAnswer",

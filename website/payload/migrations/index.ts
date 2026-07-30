@@ -19,6 +19,7 @@ import * as migration_20260728_095922_kennisbasis_mijnleerlijn_global from './20
 import * as migration_20260728_134927_verbetercentrum_kennisbasis_velden from './20260728_134927_verbetercentrum_kennisbasis_velden';
 import * as migration_20260729_120000_helpdesk_vragen from './20260729_120000_helpdesk_vragen';
 import * as migration_20260729_150000_categorie_kleuren_uitbreiden from './20260729_150000_categorie_kleuren_uitbreiden';
+import * as migration_20260730_120000_multibrand_variants from './20260730_120000_multibrand_variants';
 
 export const migrations = [
   {
@@ -125,5 +126,10 @@ export const migrations = [
     up: migration_20260729_150000_categorie_kleuren_uitbreiden.up,
     down: migration_20260729_150000_categorie_kleuren_uitbreiden.down,
     name: '20260729_150000_categorie_kleuren_uitbreiden',
+  },
+  {
+    up: migration_20260730_120000_multibrand_variants.up,
+    down: migration_20260730_120000_multibrand_variants.down,
+    name: '20260730_120000_multibrand_variants',
   },
 ];

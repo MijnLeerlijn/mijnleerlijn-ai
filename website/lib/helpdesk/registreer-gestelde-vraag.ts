@@ -16,7 +16,14 @@ export function normaliseerVraag(vraag: string): string {
   return vraag.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-export async function registreerGesteldeVraag(payload: Payload, vraagTekst: string): Promise<void> {
+// Multi-brand variants (2026-07-30): `variantId` verplicht — dezelfde
+// vraagtekst in twee varianten geeft twee aparte tellingen, nooit een
+// gedeelde counter. De match-op-genormaliseerde-tekst zoekt daarom
+// UITSLUITEND binnen deze variant (geen fallback naar lege/universele
+// rijen) — een nieuw, organisch ontstaan record krijgt altijd
+// `variantContext: [variantId]`, nooit leeg. Leeg blijft gereserveerd voor
+// een bewust door een beheerder universeel vastgezette vraag.
+export async function registreerGesteldeVraag(payload: Payload, vraagTekst: string, variantId: string): Promise<void> {
   const schoon = vraagTekst.trim();
   if (!schoon) return;
   const genormaliseerd = normaliseerVraag(schoon);
@@ -24,7 +31,9 @@ export async function registreerGesteldeVraag(payload: Payload, vraagTekst: stri
   try {
     const bestaand = await payload.find({
       collection: "helpdesk-vragen",
-      where: { vraagNormalized: { equals: genormaliseerd } },
+      where: {
+        and: [{ vraagNormalized: { equals: genormaliseerd } }, { variantContext: { equals: variantId } }],
+      },
       limit: 1,
       overrideAccess: true,
       depth: 0,
@@ -55,6 +64,7 @@ export async function registreerGesteldeVraag(payload: Payload, vraagTekst: stri
         laatstGebruiktOp: nu,
         pinned: false,
         verborgen: false,
+        variantContext: [Number(variantId)],
       },
     });
   } catch (error) {

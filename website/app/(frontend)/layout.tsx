@@ -11,10 +11,16 @@ const inter = Inter({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "MijnLeerlijn — Vind direct antwoord op je vraag",
-  description: "Handleidingen en uitleg over MijnLeerlijn, overzichtelijk per onderwerp.",
-};
+// Multi-brand variants (2026-07-30): was een statische `export const
+// metadata` — per-request variant-afhankelijke titel/omschrijving vereist
+// Next.js' generateMetadata() i.p.v. een module-scope constante.
+export async function generateMetadata(): Promise<Metadata> {
+  const variant = await getActiveVariant();
+  return {
+    title: `${variant.branding.productName} — Vind direct antwoord op je vraag`,
+    description: `Handleidingen en uitleg over ${variant.branding.productName}, overzichtelijk per onderwerp.`,
+  };
+}
 
 // Root layout voor de site-kant van de applicatie ((public)/(admin)/dev) —
 // verplaatst van app/layout.tsx naar app/(frontend)/layout.tsx zodat

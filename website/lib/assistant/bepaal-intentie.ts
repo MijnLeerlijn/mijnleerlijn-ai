@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Payload } from "payload";
+import type { Payload, Where } from "payload";
 import { generateStructuredOutput } from "@/services/ai-client";
 import { isProduction } from "@/config/env";
 
@@ -111,12 +111,30 @@ function bouwOnderwerpenPrompt(onderwerpen: KennisbasisOnderwerpDoc[]): string {
  * kennisbasis of geen bruikbare kandidaat valt dit terug op "geen-match",
  * waarna process-public-question.ts de bestaande, ongewijzigde
  * rewriteSearchQuery-flow gebruikt.
+ *
+ * Multi-brand variants (2026-07-30): `variantId` optioneel — meegegeven
+ * vanuit process-public-question.ts (verplicht daar, zie opties.variant),
+ * weggelaten door process-question.ts (het interne /assistant-scherm, dat
+ * bewust over alle varianten heen blijft zoeken — ongewijzigd gedrag). Bij
+ * een gezette `variantId` worden alleen algemene onderwerpen (leeg
+ * `variantContext`) of onderwerpen die expliciet aan déze variant gekoppeld
+ * zijn overwogen — voorkomt dat een ander-variant-specifiek onderwerp de
+ * zoekvraag stuurt (kennislekkage via `officieleTerm`).
  */
-export async function bepaalIntentie(payload: Payload, vraag: string): Promise<IntentieUitkomst> {
+export async function bepaalIntentie(payload: Payload, vraag: string, variantId?: string): Promise<IntentieUitkomst> {
+  const where: Where = variantId
+    ? {
+        and: [
+          { status: { equals: "gepubliceerd" } },
+          { or: [{ variantContext: { equals: variantId } }, { variantContext: { exists: false } }] },
+        ],
+      }
+    : { status: { equals: "gepubliceerd" } };
+
   const onderwerpenRes = await payload
     .find({
       collection: "kennisbasis-onderwerpen",
-      where: { status: { equals: "gepubliceerd" } },
+      where,
       limit: 200,
       overrideAccess: true,
       depth: 0,

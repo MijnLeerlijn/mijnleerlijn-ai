@@ -221,7 +221,14 @@ export interface Variant {
    * Gebruikt in de pad-gebaseerde fallback-route, bijv. 'mijnmonti'.
    */
   slug: string;
+  /**
+   * Redactionele levenscyclus. Bepaalt NIET of bezoekers deze variant kunnen bereiken — zie het 'Actief'-veld hieronder daarvoor.
+   */
   status: 'concept' | 'actief' | 'gearchiveerd';
+  /**
+   * Bepaalt of bezoekers deze variant via hostname/pad kunnen bereiken en of de Helpdesk-AI 'm gebruikt. De standaardvariant (MijnLeerlijn) blijft altijd bereikbaar, ongeacht dit veld.
+   */
+  actief?: boolean | null;
   /**
    * Bijv. 'algemeen', 'montessori', 'dalton', 'vrijeschool'.
    */
@@ -254,6 +261,20 @@ export interface Variant {
         id?: string | null;
       }[]
     | null;
+  /**
+   * Optioneel. Een leeg veld toont automatisch de standaardtekst van MijnLeerlijn — vul hier alleen in wat voor deze variant moet afwijken.
+   */
+  websiteTeksten?: {
+    welkomsttitel?: string | null;
+    welkomsttekst?: string | null;
+    zoekveldPlaceholder?: string | null;
+    helpdeskIntro?: string | null;
+    contactTekst?: string | null;
+    /**
+     * Leeg = automatisch de standaardtekst met het actuele jaartal. Zelf ingevuld = letterlijk gebruikt, geen automatische jaartal-vervanging.
+     */
+    footerTekst?: string | null;
+  };
   /**
    * Optioneel — overschrijft het standaard helpdesk-adres voor deze variant.
    */
@@ -1024,6 +1045,10 @@ export interface KennisbasisOnderwerpen {
    * Alleen 'Gepubliceerd' onderwerpen doen mee in de intentiebepaling.
    */
   status: 'concept' | 'gepubliceerd';
+  /**
+   * Leeg = algemeen onderwerp, geldig voor alle varianten. Ingevuld = alleen voor die variant(en).
+   */
+  variantContext?: (number | Variant)[] | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1057,6 +1082,10 @@ export interface HelpdeskVragen {
    * Sluit deze vraag uit van de publieke Top 5 — blijft wel zichtbaar/beheerbaar hier.
    */
   verborgen?: boolean | null;
+  /**
+   * Leeg = getoond bij alle varianten (bv. een universeel vastgezette vraag). Ingevuld = alleen bij die variant(en).
+   */
+  variantContext?: (number | Variant)[] | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1069,6 +1098,10 @@ export interface HelpdeskVragen {
 export interface AssistantConversation {
   id: number;
   source: 'assistant' | 'helpdesk';
+  /**
+   * Alleen gezet bij een publiek Helpdesk-gesprek.
+   */
+  variant?: (number | null) | Variant;
   question: string;
   /**
    * False = 'Dat weet ik niet' — te weinig/geen betrouwbare bron gevonden.
@@ -1514,6 +1547,7 @@ export interface VariantsSelect<T extends boolean = true> {
   name?: T;
   slug?: T;
   status?: T;
+  actief?: T;
   educationType?: T;
   domain?:
     | T
@@ -1537,6 +1571,16 @@ export interface VariantsSelect<T extends boolean = true> {
         centralTerm?: T;
         variantTerm?: T;
         id?: T;
+      };
+  websiteTeksten?:
+    | T
+    | {
+        welkomsttitel?: T;
+        welkomsttekst?: T;
+        zoekveldPlaceholder?: T;
+        helpdeskIntro?: T;
+        contactTekst?: T;
+        footerTekst?: T;
       };
   contactEmail?: T;
   createdBy?: T;
@@ -1977,6 +2021,7 @@ export interface KennisbasisOnderwerpenSelect<T extends boolean = true> {
   verduidelijkingsvraag?: T;
   prioriteit?: T;
   status?: T;
+  variantContext?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1992,6 +2037,7 @@ export interface HelpdeskVragenSelect<T extends boolean = true> {
   pinned?: T;
   pinVolgorde?: T;
   verborgen?: T;
+  variantContext?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2001,6 +2047,7 @@ export interface HelpdeskVragenSelect<T extends boolean = true> {
  */
 export interface AssistantConversationsSelect<T extends boolean = true> {
   source?: T;
+  variant?: T;
   question?: T;
   hasAnswer?: T;
   answer?: T;

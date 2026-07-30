@@ -35,11 +35,13 @@ import { AssistantEvalTester as AssistantEvalTester_83894a343bb1003bd731f09ba8a0
 import { DownloadNavLinks as DownloadNavLinks_1a93fcbdb3c12082b9126a39d56dc277 } from '@/payload/components/DownloadNavLinks'
 import { VerbetercentrumNavLinks as VerbetercentrumNavLinks_b8410a15ee14a3c85c7ef32e3339e925 } from '@/payload/components/VerbetercentrumNavLinks'
 import { HelpdeskVragenNavLinks as HelpdeskVragenNavLinks_c1c98a90affe41fc3c199bbce3d51f12 } from '@/payload/components/HelpdeskVragenNavLinks'
+import { VariantenNavLinks as VariantenNavLinks_8abf86b9040596b698441ff6ba017999 } from '@/payload/components/VariantenNavLinks'
 import { VercelBlobClientUploadHandler as VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e } from '@payloadcms/storage-vercel-blob/client'
 import { DownloadbeheerViewShell as DownloadbeheerViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { DownloadcategorieenViewShell as DownloadcategorieenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { VerbetercentrumViewShell as VerbetercentrumViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { HelpdeskVragenViewShell as HelpdeskVragenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { VariantenViewShell as VariantenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -81,10 +83,12 @@ export const importMap = {
   "@/payload/components/DownloadNavLinks#DownloadNavLinks": DownloadNavLinks_1a93fcbdb3c12082b9126a39d56dc277,
   "@/payload/components/VerbetercentrumNavLinks#VerbetercentrumNavLinks": VerbetercentrumNavLinks_b8410a15ee14a3c85c7ef32e3339e925,
   "@/payload/components/HelpdeskVragenNavLinks#HelpdeskVragenNavLinks": HelpdeskVragenNavLinks_c1c98a90affe41fc3c199bbce3d51f12,
+  "@/payload/components/VariantenNavLinks#VariantenNavLinks": VariantenNavLinks_8abf86b9040596b698441ff6ba017999,
   "@payloadcms/storage-vercel-blob/client#VercelBlobClientUploadHandler": VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e,
   "@/payload/components/AdminViewShell#DownloadbeheerViewShell": DownloadbeheerViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#DownloadcategorieenViewShell": DownloadcategorieenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#VerbetercentrumViewShell": VerbetercentrumViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#HelpdeskVragenViewShell": HelpdeskVragenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#VariantenViewShell": VariantenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }
