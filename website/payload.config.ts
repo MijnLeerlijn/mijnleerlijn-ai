@@ -6,7 +6,7 @@ import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { vercelBlobStorage } from "@payloadcms/storage-vercel-blob";
 import sharp from "sharp";
 
-import { optionalEnv, requireEnv } from "@/config/env";
+import { isProduction, optionalEnv, requireEnv } from "@/config/env";
 import { Users } from "./payload/collections/Users";
 import { Variants } from "./payload/collections/Variants";
 import { Categories } from "./payload/collections/Categories";
@@ -80,6 +80,19 @@ if (!optionalEnv("NEXT_PUBLIC_SERVER_URL")) {
 export default buildConfig({
   serverURL: optionalEnv("NEXT_PUBLIC_SERVER_URL") ?? "http://localhost:3000",
   secret: requireEnv("PAYLOAD_SECRET"),
+  // Foutafhandeling logo-upload (2026-07-31): Payload vervangt STANDAARD elke
+  // niet-publieke serverfout door de generieke "Something went wrong." (zie
+  // node_modules/payload/dist/utilities/routeError.js — `isErrorPublic()` +
+  // `if (!isErrorPublic) response = formatErrors(new APIError('Something
+  // went wrong.'))`), tenzij `config.debug === true`. Dit was de reden dat de
+  // echte Vercel Blob-fout ("Cannot use public access on a private store")
+  // nergens in de UI zichtbaar was — wél al die hele tijd correct gelogd via
+  // payload.logger.error (dus zichtbaar in Vercel Runtime Logs), maar nooit
+  // doorgestuurd naar de browser. `debug: true` GEEFT foutdetails (incl.
+  // stack) door in de API-response — expliciet uitsluitend buiten productie,
+  // nooit potentieel gevoelige interne foutdetails aan productiegebruikers
+  // tonen.
+  debug: !isProduction(),
   admin: {
     user: Users.slug,
     importMap: { baseDir: path.resolve(dirname, "app", "(payload)", "admin") },
