@@ -3,10 +3,11 @@ import { fileURLToPath } from "node:url";
 import { buildConfig } from "payload";
 import { postgresAdapter } from "@payloadcms/db-postgres";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
-import { vercelBlobStorage } from "@payloadcms/storage-vercel-blob";
+import { cloudStoragePlugin } from "@payloadcms/plugin-cloud-storage";
 import sharp from "sharp";
 
 import { isProduction, optionalEnv, requireEnv } from "@/config/env";
+import { privateBlobAdapter } from "@/lib/media/private-blob-adapter";
 import { Users } from "./payload/collections/Users";
 import { Variants } from "./payload/collections/Variants";
 import { Categories } from "./payload/collections/Categories";
@@ -37,30 +38,16 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 // Fase 4. Postgres-adapter (dezelfde database die later ook pgvector
 // gebruikt, zie docs/ARCHITECTURE.md) — bewust geen SQLite, ook niet lokaal.
 //
-// Media-opslag: publieke site-afbeeldingen/logo's lopen via de
-// vercelBlobStorage-plugin (access: 'public', standaardgedrag). Privé
-// contactformulier-bijlagen lopen NIET via deze plugin of via een Payload
-// upload-collection — zie payload/collections/ContactSubmissions.ts en
-// services/storage.ts voor de motivatie (Vercel Blob private storage +
-// signed URL's, rechtstreeks via de @vercel/blob-SDK).
-//
-// LET OP: @payloadcms/storage-vercel-blob (huidige versie, 3.86.0) bundelt
-// intern een oudere @vercel/blob (2.3.1) die uitsluitend een letterlijke
-// token accepteert — de nieuwe Vercel OIDC-koppeling (BLOB_STORE_ID +
-// automatisch geïnjecteerde VERCEL_OIDC_TOKEN, geen los BLOB_READ_WRITE_TOKEN
-// meer nodig) wordt door DEZE plugin nog niet ondersteund. Zonder token
-// schakelt de plugin zichzelf uit en valt terug op lokale schijfopslag (niet
-// persistent op Vercel) — nooit meer een build-crash, wel bewust zichtbaar
-// via de waarschuwing hieronder totdat de plugin OIDC ondersteunt of hier
-// alsnog een los token wordt gezet. services/storage.ts (privé bijlagen,
-// rechtstreeks @vercel/blob 2.6.1) ondersteunt OIDC wél.
-const blobToken = optionalEnv("BLOB_READ_WRITE_TOKEN");
-
-if (!blobToken) {
-  console.warn(
-    "[payload.config] BLOB_READ_WRITE_TOKEN niet gezet — media-uploads (afbeeldingen/downloads) vallen terug op lokale schijfopslag, niet persistent op Vercel. Zie het commentaar hierboven; dit is geen fatale fout."
-  );
-}
+// Media-opslag (2026-07-31, uniforme private-uploadarchitectuur): elke
+// upload naar de "media"-collectie (variantlogo's, Handleidingbouwer-
+// screenshots, losse media) loopt via lib/media/private-blob-adapter.ts,
+// dat dezelfde private Vercel Blob-store gebruikt als Downloadbeheer's
+// PDF-upload en de contactformulier-bijlagen (services/storage.ts) — zie
+// dat bestand voor de volledige motivatie. Vervangt de eerdere
+// vercelBlobStorage-plugin (@payloadcms/storage-vercel-blob), die
+// uitsluitend 'public'-toegang ondersteunde en daardoor structureel botste
+// met de bewust private mijnleerlijn-media-store (opdracht: "maak
+// mijnleerlijn-media niet publiek").
 
 // serverURL bepaalt (via Payload's config-sanitize.js) ALTIJD en uitsluitend
 // payload.config.csrf — de allowlist die Payload's eigen cookie-gebaseerde
@@ -198,18 +185,19 @@ export default buildConfig({
     outputFile: path.resolve(dirname, "types", "payload-generated.d.ts"),
   },
   sharp,
-  plugins: blobToken
-    ? [
-        vercelBlobStorage({
-          token: blobToken,
-          collections: { media: true },
-          // Zonder dit botst een tweede upload met dezelfde bestandsnaam
-          // (bv. een generieke screenshot-naam als "Schermafbeelding.png",
-          // heel gangbaar in de Handleidingbouwer) hard op "blob already
-          // exists" — plugin-default is false, ontdekt tijdens live E2E-
-          // verificatie van de Handleidingbouwer.
-          addRandomSuffix: true,
-        }),
-      ]
-    : [],
+  plugins: [
+    cloudStoragePlugin({
+      collections: {
+        media: {
+          adapter: privateBlobAdapter,
+          // De adapter zelf zorgt al voor unieke bestandsnamen (crypto.
+          // randomUUID() in de storage-sleutel, zie services/storage.ts) —
+          // "blob already exists"-botsingen op een generieke bestandsnaam
+          // (bv. "Schermafbeelding.png", gangbaar in de Handleidingbouwer)
+          // zijn hierdoor structureel uitgesloten, dezelfde bescherming die
+          // de oude plugin se addRandomSuffix: true bood.
+        },
+      },
+    }),
+  ],
 });

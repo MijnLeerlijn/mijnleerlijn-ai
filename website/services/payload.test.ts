@@ -122,7 +122,10 @@ describe("mapArticle", () => {
     };
     mapArticle(metAfbeelding);
     const media = zoekMedia("123");
-    expect(media?.url).toBe("https://cdn.test/afbeelding.png");
+    // Uniforme private-uploadarchitectuur (2026-07-31): mediaUrl() geeft nu
+    // de stabiele, publiek te gebruiken proxy-URL terug i.p.v. het ruwe
+    // (private, niet-hotlinkbare) Blob-adres — zie app/api/media/[id].
+    expect(media?.url).toBe("/api/media/123");
     expect(media?.altText).toBe("Een afbeelding");
   });
 });

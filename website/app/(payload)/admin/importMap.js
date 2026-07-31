@@ -35,7 +35,6 @@ import { SemanticSearchTester as SemanticSearchTester_1ddc55405c03875741beea8d02
 import { AssistantEvalTester as AssistantEvalTester_83894a343bb1003bd731f09ba8a0ced5 } from '@/payload/components/AssistantEvalTester'
 import { BasisNavLinks as BasisNavLinks_7ec867657888284e4052086c4e47a9fd } from '@/payload/components/BasisNavLinks'
 import { VariantenNavLinks as VariantenNavLinks_8abf86b9040596b698441ff6ba017999 } from '@/payload/components/VariantenNavLinks'
-import { VercelBlobClientUploadHandler as VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e } from '@payloadcms/storage-vercel-blob/client'
 import { DownloadbeheerViewShell as DownloadbeheerViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { DownloadcategorieenViewShell as DownloadcategorieenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { VerbetercentrumViewShell as VerbetercentrumViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
@@ -83,7 +82,6 @@ export const importMap = {
   "@/payload/components/AssistantEvalTester#AssistantEvalTester": AssistantEvalTester_83894a343bb1003bd731f09ba8a0ced5,
   "@/payload/components/BasisNavLinks#BasisNavLinks": BasisNavLinks_7ec867657888284e4052086c4e47a9fd,
   "@/payload/components/VariantenNavLinks#VariantenNavLinks": VariantenNavLinks_8abf86b9040596b698441ff6ba017999,
-  "@payloadcms/storage-vercel-blob/client#VercelBlobClientUploadHandler": VercelBlobClientUploadHandler_16c82c5e25f430251a3e3ba57219ff4e,
   "@/payload/components/AdminViewShell#DownloadbeheerViewShell": DownloadbeheerViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#DownloadcategorieenViewShell": DownloadcategorieenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#VerbetercentrumViewShell": VerbetercentrumViewShell_1e788d78f4aade245b171d8fd6e8c09d,

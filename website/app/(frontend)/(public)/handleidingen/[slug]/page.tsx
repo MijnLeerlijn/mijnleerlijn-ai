@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ExternalLink, ArrowLeft } from "lucide-react";
 import config from "@/payload.config";
 import { haalSessieOp } from "@/services/auth";
-import { naarRelatiefMediaPad } from "@/lib/format/media-url";
 import HandleidingStappenLijst, {
   type HandleidingStapVoorPagina,
 } from "@/components/organisms/HandleidingStappenLijst";
@@ -26,7 +25,7 @@ interface StapDoc {
   tip?: string | null;
   media?:
     | {
-        bestand?: { url?: string | null; altText?: string | null } | number | null;
+        bestand?: { id: number; url?: string | null; altText?: string | null } | number | null;
         onderschrift?: string | null;
       }[]
     | null;
@@ -88,7 +87,7 @@ export default async function HandleidingPagina({ params }: HandleidingPaginaPro
       if (!bestand || typeof bestand === "number" || !bestand.url) return [];
       return [
         {
-          url: naarRelatiefMediaPad(bestand.url),
+          url: `/api/media/${bestand.id}`,
           caption: m.onderschrift,
           alt: bestand.altText ?? stap.titel,
         },

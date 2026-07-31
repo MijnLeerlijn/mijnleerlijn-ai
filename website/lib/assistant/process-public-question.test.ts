@@ -506,7 +506,7 @@ function maakHandleidingSeed() {
             id: "stap-a",
             titel: "Open Beheer",
             uitleg: lexicalMet("Ga naar Beheer en kies Hoofdgebiedprofielen."),
-            media: [{ bestand: { url: "/media/screenshot-1.png", altText: "Het Beheer-menu" }, onderschrift: "Het menu" }],
+            media: [{ bestand: { id: 501, url: "/media/screenshot-1.png", altText: "Het Beheer-menu" }, onderschrift: "Het menu" }],
           },
           {
             id: "stap-b",
@@ -555,7 +555,7 @@ describe("processPublicQuestion — relevante handleidingstappen (Handleidingbou
         stepNummer: 1,
         titel: "Open Beheer",
         uitleg: "Ga naar Beheer en kies Hoofdgebiedprofielen.",
-        images: [{ url: "/media/screenshot-1.png", caption: "Het menu", alt: "Het Beheer-menu" }],
+        images: [{ url: "/api/media/501", caption: "Het menu", alt: "Het Beheer-menu" }],
       },
     ]);
   });

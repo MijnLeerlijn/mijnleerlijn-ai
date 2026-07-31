@@ -2,7 +2,6 @@ import type { Payload } from "payload";
 import type { Variant } from "@/types/variant";
 import { searchKnowledgePhased } from "@/lib/embeddings/similarity-search";
 import { richTextNaarPlatteTekst } from "@/lib/embeddings/embeddable-text";
-import { naarRelatiefMediaPad } from "@/lib/format/media-url";
 import { buildContext, type ContextItem } from "./build-context";
 import { genereerAssistentAntwoord, MIN_SIMILARITY_VOOR_ANTWOORD } from "./answer";
 import { rewriteSearchQuery } from "./rewrite-query";
@@ -132,6 +131,7 @@ async function bepaalPubliekeManuals(payload: Payload, contextItems: ContextItem
 }
 
 interface HandleidingMediaDoc {
+  id: number;
   url?: string | null;
   altText?: string | null;
 }
@@ -194,7 +194,7 @@ async function bepaalRelevanteStappen(payload: Payload, contextItems: ContextIte
       if (!bestand || typeof bestand === "number" || !bestand.url) return [];
       return [
         {
-          url: naarRelatiefMediaPad(bestand.url),
+          url: `/api/media/${bestand.id}`,
           caption: m.onderschrift ?? undefined,
           alt: bestand.altText ?? stap.titel,
         },

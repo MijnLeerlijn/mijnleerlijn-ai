@@ -33,6 +33,12 @@ const ATTACHMENT_PREFIX = "contact-attachments";
 // uploaden/vervangen vanuit Downloadbeheer — los van contact-attachments,
 // zelfde opslagmodel. Zie app/api/knowledge-sources/upload-file/route.ts.
 const DOWNLOAD_PREFIX = "downloads";
+// Uniforme private-uploadarchitectuur (2026-07-31): eigen prefix voor alles
+// wat via de gewone Payload Media-collectie binnenkomt (variantlogo's,
+// Handleidingbouwer-screenshots, losse media-uploads) — zie
+// lib/media/private-blob-adapter.ts. Los van downloads/contact-attachments
+// zodat elke categorie zijn eigen, nooit-overlappende naamruimte houdt.
+const MEDIA_PREFIX = "media";
 const DOWNLOAD_URL_GELDIGHEID_MS = 5 * 60 * 1000; // 5 minuten
 
 /**
@@ -48,32 +54,47 @@ export function blobAuthOptions(): { token: string } | Record<string, never> {
 
 /**
  * Gedeelde private-upload-logica — één beveiligingsmodel voor alles wat via
- * deze module wordt opgeslagen (contactbijlagen, downloadbeheer-PDF's, ...),
- * uitsluitend van elkaar onderscheiden door de prefix. Nooit rechtstreeks
- * exporteren: elke aanroeper krijgt een eigen, benoemde functie hieronder,
- * zodat een prefix nooit per ongeluk verward kan worden.
+ * deze module wordt opgeslagen (contactbijlagen, downloadbeheer-PDF's,
+ * gewone media-uploads, ...), uitsluitend van elkaar onderscheiden door de
+ * prefix. Neemt bewust een kale buffer + metadata aan (niet een `File`):
+ * de Payload-uploadadapter (lib/media/private-blob-adapter.ts) krijgt van
+ * Payload zelf al een losse Buffer, geen File-object — een tweede
+ * conversiepad daarvoor zou deze functie juist minder generiek maken. De
+ * bestaande `File`-aanroepers (formulier-uploads) zetten hun File hieronder
+ * zelf om, één keer, in hun eigen wrapper. Nooit rechtstreeks exporteren:
+ * elke aanroeper krijgt een eigen, benoemde functie, zodat een prefix nooit
+ * per ongeluk verward kan worden.
  */
-async function uploadNaarPrivateBlob(bestand: File, prefix: string): Promise<GeuploadBestand> {
-  const storageKey = `${prefix}/${crypto.randomUUID()}-${bestand.name}`;
+async function uploadNaarPrivateBlob(
+  buffer: Buffer,
+  opties: { filename: string; mimeType: string; sizeBytes: number; prefix: string }
+): Promise<GeuploadBestand> {
+  const storageKey = `${opties.prefix}/${crypto.randomUUID()}-${opties.filename}`;
 
-  const resultaat = await put(storageKey, bestand, {
+  const resultaat = await put(storageKey, buffer, {
     access: "private",
     ...blobAuthOptions(),
     addRandomSuffix: false,
-    contentType: bestand.type || "application/octet-stream",
+    contentType: opties.mimeType || "application/octet-stream",
   });
 
   return {
     storageKey,
-    filename: bestand.name,
-    mimeType: bestand.type || "application/octet-stream",
-    sizeBytes: bestand.size,
+    filename: opties.filename,
+    mimeType: opties.mimeType,
+    sizeBytes: opties.sizeBytes,
     url: resultaat.url,
   };
 }
 
 export async function uploadBijlage(bestand: File): Promise<GeuploadBestand> {
-  return uploadNaarPrivateBlob(bestand, ATTACHMENT_PREFIX);
+  const buffer = Buffer.from(await bestand.arrayBuffer());
+  return uploadNaarPrivateBlob(buffer, {
+    filename: bestand.name,
+    mimeType: bestand.type || "application/octet-stream",
+    sizeBytes: bestand.size,
+    prefix: ATTACHMENT_PREFIX,
+  });
 }
 
 /**
@@ -90,7 +111,34 @@ export async function uploadBijlage(bestand: File): Promise<GeuploadBestand> {
  * er pas bij een daadwerkelijke download een kortlevende signed URL voor.
  */
 export async function uploadDownloadBestand(bestand: File): Promise<GeuploadBestand> {
-  return uploadNaarPrivateBlob(bestand, DOWNLOAD_PREFIX);
+  const buffer = Buffer.from(await bestand.arrayBuffer());
+  return uploadNaarPrivateBlob(buffer, {
+    filename: bestand.name,
+    mimeType: bestand.type || "application/octet-stream",
+    sizeBytes: bestand.size,
+    prefix: DOWNLOAD_PREFIX,
+  });
+}
+
+/**
+ * Uniforme private-uploadarchitectuur (2026-07-31): door de gewone Payload
+ * Media-collectie zelf aangeroepen (lib/media/private-blob-adapter.ts) —
+ * variantlogo's, Handleidingbouwer-screenshots, en elk toekomstig
+ * uploadveld dat naar "media" verwijst. Payload geeft hier al een losse
+ * Buffer (uit req.file, vóór Payload's eigen — op Vercel niet-werkende —
+ * lokale schijfschrijfstap), vandaar de buffer-variant hieronder i.p.v. een
+ * `File`-object.
+ */
+export async function uploadMediaBestand(
+  buffer: Buffer,
+  opties: { filename: string; mimeType: string }
+): Promise<GeuploadBestand> {
+  return uploadNaarPrivateBlob(buffer, {
+    filename: opties.filename,
+    mimeType: opties.mimeType,
+    sizeBytes: buffer.byteLength,
+    prefix: MEDIA_PREFIX,
+  });
 }
 
 /** Kortlevende signed download-URL — pas genereren op het moment dat een melding daadwerkelijk geopend wordt. */

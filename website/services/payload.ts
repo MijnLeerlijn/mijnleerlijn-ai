@@ -36,9 +36,16 @@ function getClient(): Promise<Payload> {
 
 // --- Helpers: Payload-document → canoniek model ------------------------
 
+// Uniforme private-uploadarchitectuur (2026-07-31): media.url is een echte,
+// private Blob-URL — nooit rechtstreeks hotlinkbaar. app/api/media/[id] is
+// de enige, stabiele publieke tegenhanger (leest hetzelfde url-veld op het
+// moment van opvragen, genereert dan pas een kortlevende signed URL) — zie
+// dat bestand. Alleen een pad teruggeven wanneer er ook echt een bestand is,
+// anders blijft de bestaande lege-string-fallback (bv. logo → standaardlogo)
+// intact.
 function mediaUrl(media: PayloadMediaDoc | number | null | undefined): string {
-  if (!media || typeof media === "number") return "";
-  return media.url ?? "";
+  if (!media || typeof media === "number" || !media.url) return "";
+  return `/api/media/${media.id}`;
 }
 
 function mediaAlt(media: PayloadMediaDoc | number | null | undefined): string {
