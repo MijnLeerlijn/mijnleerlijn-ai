@@ -34,9 +34,17 @@ interface Stats {
   laatsteGesprek: string | null;
 }
 
-function variantPublicUrl(variant: VariantDoc): string {
+// `hoofddomein` is bewust een parameter i.p.v. altijd de hardcoded
+// `defaultVariant.domain.value` ("mijnleerlijn.chat", geen www) — die
+// noodvariant is uitsluitend bedoeld als allerlaatste veiligheidsklep
+// (zie config/variants.ts), niet als brondata voor UI-links. Productie se
+// echte MijnLeerlijn-record heeft `domain.value: "www.mijnleerlijn.chat"`
+// (mét www, het canonieke domein) — met de hardcoded waarde bouwde deze
+// knop een niet-canonieke URL (werkte toevallig alleen omdat Vercel non-
+// www naar www doorstuurt). Zie aanroep hieronder: leidt het echte
+// hoofddomein af uit de al opgehaalde variantenlijst.
+function variantPublicUrl(variant: VariantDoc, hoofddomein: string): string {
   if (variant.domain.type === "custom_domain") return `https://${variant.domain.value}`;
-  const hoofddomein = defaultVariant.domain.value;
   if (variant.domain.type === "subdomain") return `https://${variant.domain.value}.${hoofddomein}`;
   return `https://${hoofddomein}/${variant.domain.value}`;
 }
@@ -175,6 +183,10 @@ export function VariantenView() {
     }
   }
 
+  const standaardvariant = varianten.find((v) => v.slug === defaultVariant.slug);
+  const hoofddomein =
+    standaardvariant?.domain.type === "custom_domain" ? standaardvariant.domain.value : defaultVariant.domain.value;
+
   return (
     <Gutter>
       <h1 style={{ marginBottom: "0.25rem" }}>Varianten</h1>
@@ -249,7 +261,7 @@ export function VariantenView() {
               const logoUrl = typeof variant.branding.logo === "object" ? variant.branding.logo?.url : undefined;
               const variantStats = stats[variant.id];
               const gekoppeld = gekoppeldeContent[variant.id];
-              const url = variantPublicUrl(variant);
+              const url = variantPublicUrl(variant, hoofddomein);
               return (
                 <tr key={variant.id} style={{ borderBottom: "1px solid var(--theme-elevation-100)" }}>
                   <td style={{ padding: "0.5rem" }}>
