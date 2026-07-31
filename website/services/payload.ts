@@ -4,7 +4,7 @@ import config from "@/payload.config";
 import type { Article, ContentBlock, Section, VariantOverride } from "@/types/content";
 import type { Variant } from "@/types/variant";
 import { registreerOpgelosteMedia } from "@/lib/data/media";
-import { STANDAARD_WEBSITETEKSTEN, standaardFooterTekst } from "@/lib/variant/default-website-teksten";
+import { STANDAARD_WEBSITETEKSTEN, standaardFooterTekst, standaardWelkomsttekst } from "@/lib/variant/default-website-teksten";
 import type {
   PayloadArticleDoc,
   PayloadCategoryDoc,
@@ -152,10 +152,13 @@ export function mapArticle(doc: PayloadArticleDoc): ArticleWithContent {
 // websiteTeksten-veld op de standaardtekst laat terugvallen — zie
 // lib/variant/default-website-teksten.ts. Consumers lezen na mapVariant()
 // altijd een volledig ingevuld object, nooit een lege string.
-function mapWebsiteTeksten(doc: PayloadVariantDoc["websiteTeksten"]): Variant["websiteTeksten"] {
+function mapWebsiteTeksten(
+  doc: PayloadVariantDoc["websiteTeksten"],
+  productNaam: string
+): Variant["websiteTeksten"] {
   return {
     welkomsttitel: doc?.welkomsttitel?.trim() || STANDAARD_WEBSITETEKSTEN.welkomsttitel,
-    welkomsttekst: doc?.welkomsttekst?.trim() || STANDAARD_WEBSITETEKSTEN.welkomsttekst,
+    welkomsttekst: doc?.welkomsttekst?.trim() || standaardWelkomsttekst(productNaam),
     zoekveldPlaceholder: doc?.zoekveldPlaceholder?.trim() || STANDAARD_WEBSITETEKSTEN.zoekveldPlaceholder,
     helpdeskIntro: doc?.helpdeskIntro?.trim() || STANDAARD_WEBSITETEKSTEN.helpdeskIntro,
     contactTekst: doc?.contactTekst?.trim() || STANDAARD_WEBSITETEKSTEN.contactTekst,
@@ -180,7 +183,7 @@ export function mapVariant(doc: PayloadVariantDoc): Variant {
     },
     educationType: doc.educationType,
     terminologyDictionary: doc.terminologyDictionary ?? [],
-    websiteTeksten: mapWebsiteTeksten(doc.websiteTeksten),
+    websiteTeksten: mapWebsiteTeksten(doc.websiteTeksten, doc.branding.productName),
     contactEmail: doc.contactEmail ?? undefined,
     createdAt: new Date().toISOString(),
     createdBy: "payload",

@@ -1,5 +1,5 @@
 import type { Variant } from "@/types/variant";
-import { STANDAARD_WEBSITETEKSTEN, standaardFooterTekst } from "@/lib/variant/default-website-teksten";
+import { STANDAARD_WEBSITETEKSTEN, standaardFooterTekst, standaardWelkomsttekst } from "@/lib/variant/default-website-teksten";
 
 // Hardcoded noodvariant — gebruikt als (a) lokale dev-fallback vóórdat de
 // database gezaaid is, en (b) sinds multi-brand variants (2026-07-30) als
@@ -28,7 +28,11 @@ export const defaultVariant: Variant = {
   },
   educationType: "algemeen",
   terminologyDictionary: [],
-  websiteTeksten: { ...STANDAARD_WEBSITETEKSTEN, footerTekst: standaardFooterTekst() },
+  websiteTeksten: {
+    ...STANDAARD_WEBSITETEKSTEN,
+    welkomsttekst: standaardWelkomsttekst("MijnLeerlijn"),
+    footerTekst: standaardFooterTekst(),
+  },
   createdAt: new Date(0).toISOString(),
   createdBy: "system",
 };

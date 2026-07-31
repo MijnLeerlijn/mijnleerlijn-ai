@@ -148,6 +148,20 @@ describe("mapVariant", () => {
     const variant = mapVariant(basisVariant);
     expect(variant.terminologyDictionary).toEqual([]);
   });
+
+  it("gebruikt de eigen productnaam in de standaard-welkomsttekst i.p.v. altijd MijnLeerlijn", () => {
+    const variant = mapVariant(basisVariant);
+    expect(variant.websiteTeksten.welkomsttekst).toContain("MijnMonti");
+    expect(variant.websiteTeksten.welkomsttekst).not.toContain("MijnLeerlijn");
+  });
+
+  it("gebruikt een zelf ingevulde welkomsttekst letterlijk, zonder de productnaam erin te forceren", () => {
+    const variant = mapVariant({
+      ...basisVariant,
+      websiteTeksten: { welkomsttekst: "Een volledig eigen tekst zonder productnaam." },
+    });
+    expect(variant.websiteTeksten.welkomsttekst).toBe("Een volledig eigen tekst zonder productnaam.");
+  });
 });
 
 describe("mapCategory / mapSource", () => {
