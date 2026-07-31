@@ -278,6 +278,14 @@ export const KnowledgeSources: CollectionConfig = {
       name: "content",
       type: "textarea",
       label: "Directe inhoud",
+      // Kennisbasis per variant (2026-07-31): zonder expliciete maxLength
+      // valt dit veld terug op Payload's config.defaultMaxTextLength
+      // (40.000 tekens) — ontdekt tijdens de productiemigratie: het echte,
+      // gepubliceerde achtergrondverhaal van MijnLeerlijn is 69.414 tekens,
+      // ruim boven die stille standaardlimiet. 500.000 geeft ruime marge
+      // voor toekomstige, nog langere achtergronddocumenten van andere
+      // varianten, zonder een onbegrensd veld te maken.
+      maxLength: 500000,
       admin: {
         description:
           "Alternatief voor URL: tekst die niet online staat rechtstreeks plakken (bv. een intern achtergronddocument). Gevuld = deze tekst wordt gebruikt, er wordt dan niet van de URL gefetcht.",
