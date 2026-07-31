@@ -248,6 +248,9 @@ export function contextItemsNaarPrompt(items: ContextItem[]): string {
  * duidelijk gelabelde tekst die vóór de genummerde bronblokken in de prompt
  * komt te staan — zie answer.ts.
  */
-export function kennisbasisBlokNaarPrompt(kennisbasis: { tekst: string; versie: string }): string {
-  return `[Centrale Kennisbasis MijnLeerlijn — achtergrondcontext voor visie, betekenis, samenhang en productlogica (versie ${kennisbasis.versie})]\n${kennisbasis.tekst}`;
+export function kennisbasisBlokNaarPrompt(
+  kennisbasis: { tekst: string; versie: string },
+  productNaam = "MijnLeerlijn"
+): string {
+  return `[Kennisbasis ${productNaam} — achtergrondcontext voor visie, betekenis, samenhang en productlogica (versie ${kennisbasis.versie})]\n${kennisbasis.tekst}`;
 }

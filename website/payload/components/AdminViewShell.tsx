@@ -6,6 +6,7 @@ import { DownloadcategorieenView } from "./DownloadcategorieenView";
 import { VerbetercentrumView } from "./VerbetercentrumView";
 import { HelpdeskVragenView } from "./HelpdeskVragenView";
 import { VariantenView } from "./VariantenView";
+import { KennisbasisView } from "./KennisbasisView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -88,6 +89,14 @@ export function VariantenViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="varianten">
       <VariantenView />
+    </InAdminShell>
+  );
+}
+
+export function KennisbasisViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="kennisbasis">
+      <KennisbasisView />
     </InAdminShell>
   );
 }

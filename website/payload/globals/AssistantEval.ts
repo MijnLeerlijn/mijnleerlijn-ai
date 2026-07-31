@@ -11,7 +11,7 @@ import { adminOnly } from "../access/roles";
 export const AssistantEval: GlobalConfig = {
   slug: "assistant-eval",
   admin: {
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "Test de AI-assistent tegen de vaste vragenset (40 vragen) of een losse vraag, met volledige retrieval-diagnostiek en handmatige beoordeling.",
   },

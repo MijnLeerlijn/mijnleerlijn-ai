@@ -350,16 +350,16 @@ describe("processPublicQuestion — question/previousQuestion en AI Verbetercent
   });
 });
 
-// Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28): de centrale kennisbasis
-// wordt bij elke (niet-"onduidelijk") vraag opgehaald en, indien
-// gepubliceerd, gegarandeerd meegestuurd + gelogd — los van de vastgestelde
-// intentie/officiële term. lib/support/fake-payload.ts kent geen
-// findGlobal(), dus payload.findGlobal is standaard undefined — precies het
-// "nog nooit gepubliceerd"-scenario van haalCentraleKennisbasisOp() (geeft
-// null terug, faalt nooit hard). Voor het "wél gepubliceerd"-scenario wordt
-// findGlobal per test op de fake payload gezet.
-describe("processPublicQuestion — centrale Kennisbasis MijnLeerlijn (Fase 4)", () => {
-  it("logt centraleKennisbasisGebruikt: false wanneer de Global nog niet gepubliceerd is (standaard fake-payload-gedrag)", async () => {
+// Kennisbasis per variant (2026-07-31): het achtergronddocument van de
+// ACTIEVE variant wordt bij elke (niet-"onduidelijk") vraag opgehaald en,
+// indien aanwezig+gevuld, gegarandeerd meegestuurd + gelogd — los van de
+// vastgestelde intentie/officiële term. Herkenning uitsluitend via
+// variantContext + bepaalBronrol() (nooit via id/titel) — zie
+// kennisbasis-context.ts. maakSeed() zaait standaard geen knowledge-source
+// met variantContext, dus dat is het "geen achtergronddocument"-scenario;
+// per test wordt er één toegevoegd voor het "wel aanwezig"-scenario.
+describe("processPublicQuestion — kennisbasis per variant", () => {
+  it("logt centraleKennisbasisGebruikt: false wanneer de variant geen achtergronddocument heeft (standaard fake-payload-gedrag)", async () => {
     mockSearch.mockResolvedValue(maakFaseResultaat([]));
     mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
     const { payload, collection } = maakFakePayload(maakSeed());
@@ -372,15 +372,19 @@ describe("processPublicQuestion — centrale Kennisbasis MijnLeerlijn (Fase 4)",
     expect(record.tegenstrijdigheid).toBeNull();
   });
 
-  it("haalt de centrale kennisbasis nooit op en logt de standaardwaarden bij een 'onduidelijk'-verduidelijkingsvraag", async () => {
-    const { payload, collection } = maakFakePayload(
-      maakKennisbasisSeed([
-        { id: 1, onderwerp: "A", officieleTerm: "Term A", status: "gepubliceerd" },
-        { id: 2, onderwerp: "B", officieleTerm: "Term B", status: "gepubliceerd" },
-      ])
-    );
-    const findGlobalSpy = vi.fn();
-    (payload as unknown as { findGlobal: typeof findGlobalSpy }).findGlobal = findGlobalSpy;
+  it("haalt het achtergronddocument nooit op bij een 'onduidelijk'-verduidelijkingsvraag", async () => {
+    const seed = maakKennisbasisSeed([
+      { id: 1, onderwerp: "A", officieleTerm: "Term A", status: "gepubliceerd" },
+      { id: 2, onderwerp: "B", officieleTerm: "Term B", status: "gepubliceerd" },
+    ]);
+    const { payload, collection } = maakFakePayload({
+      ...seed,
+      "knowledge-sources": [
+        ...seed["knowledge-sources"],
+        { id: 100, title: "Kennisbasis MijnLeerlijn", type: "intern_document", content: "Achtergrondtekst.", variantContext: [Number(MOCK_VARIANT.id)] },
+      ],
+    });
+    const findSpy = vi.spyOn(payload, "find");
     mockIntentie.mockResolvedValue({
       kandidaten: [1, 2],
       gekozenId: null,
@@ -390,13 +394,13 @@ describe("processPublicQuestion — centrale Kennisbasis MijnLeerlijn (Fase 4)",
 
     await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "iets vaags" });
 
-    expect(findGlobalSpy).not.toHaveBeenCalled();
+    expect(findSpy).not.toHaveBeenCalledWith(expect.objectContaining({ collection: "knowledge-sources" }));
     const record = collection("assistant-conversations")[0]!;
     expect(record.centraleKennisbasisGebruikt).toBe(false);
     expect(record.centraleKennisbasisVersion).toBeNull();
   });
 
-  it("stuurt het gestructureerde kennisbasisblok mee naar de AI en logt gebruikt:true + de versie, wanneer de Global gepubliceerd is", async () => {
+  it("stuurt het gestructureerde kennisbasisblok mee naar de AI en logt gebruikt:true + de versie, wanneer de variant een achtergronddocument heeft", async () => {
     // Minimaal één context-item met voldoende score nodig, anders wordt de
     // AI (bewust, zie de confidence-gate in answer.ts) helemaal niet
     // aangeroepen — dit test specifiek de promptinhoud, niet de gate zelf.
@@ -409,26 +413,55 @@ describe("processPublicQuestion — centrale Kennisbasis MijnLeerlijn (Fase 4)",
       object: { hasAnswer: true, answer: "Antwoord.", reasoning: "...", tegenstrijdigheid: null },
       usage: USAGE,
     });
-    const { payload, collection } = maakFakePayload(maakSeed());
-    (payload as unknown as { findGlobal: ReturnType<typeof vi.fn> }).findGlobal = vi.fn().mockResolvedValue({
-      _status: "published",
-      inhoud: {
-        root: {
-          children: [{ type: "paragraph", children: [{ type: "text", text: "Achtergrondtekst." }] }],
+    const seed = maakSeed();
+    const { payload, collection } = maakFakePayload({
+      ...seed,
+      "knowledge-sources": [
+        ...seed["knowledge-sources"],
+        {
+          id: 100,
+          title: "Kennisbasis MijnLeerlijn",
+          type: "intern_document",
+          content: "Achtergrondtekst.",
+          variantContext: [Number(MOCK_VARIANT.id)],
+          updatedAt: "2026-07-28T10:00:00.000Z",
         },
-      },
-      updatedAt: "2026-07-28T10:00:00.000Z",
+      ],
     });
 
     await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "Wat is de visie van MijnLeerlijn?" });
 
     const promptAanroep = mockGenerate.mock.calls[0]![0] as { userPrompt: string };
-    expect(promptAanroep.userPrompt).toContain("Centrale Kennisbasis MijnLeerlijn");
+    expect(promptAanroep.userPrompt).toContain("Kennisbasis MijnLeerlijn");
     expect(promptAanroep.userPrompt).toContain("Achtergrondtekst.");
 
     const record = collection("assistant-conversations")[0]!;
     expect(record.centraleKennisbasisGebruikt).toBe(true);
     expect(record.centraleKennisbasisVersion).toBe("2026-07-28T10:00:00.000Z");
+  });
+
+  it("gebruikt uitsluitend het achtergronddocument van de ACTIEVE variant — geen kennislekkage van een andere variant", async () => {
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+    const seed = maakSeed();
+    const { payload, collection } = maakFakePayload({
+      ...seed,
+      "knowledge-sources": [
+        ...seed["knowledge-sources"],
+        {
+          id: 101,
+          title: "Kennisbasis EenAndereVariant",
+          type: "intern_document",
+          content: "Deze tekst hoort NIET bij MOCK_VARIANT.",
+          variantContext: [Number(MOCK_VARIANT.id) + 999],
+        },
+      ],
+    });
+
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "vraag" });
+
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.centraleKennisbasisGebruikt).toBe(false);
   });
 
   it("logt een door het model gerapporteerde tegenstrijdigheid", async () => {

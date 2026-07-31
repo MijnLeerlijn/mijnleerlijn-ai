@@ -136,6 +136,13 @@ Dit is een **vast patroon**, geen ad-hoc oplossing per collectie: elke contentco
 
 `variantContext` en `VariantOverride` zijn complementair: `VariantOverride` wijzigt hoe een **centraal** element binnen een variant verschijnt; `variantContext` bepaalt of een element **an sich** binnen een variant zichtbaar is.
 
+### Bijzonder geval: het achtergronddocument van een variant
+
+Eén specifieke toepassing van `variantContext` op `KnowledgeSources` verdient een eigen regel: het **achtergronddocument** — het narratieve achtergrondverhaal (visie/samenhang/productlogica) dat de Helpdesk AI voor de actieve variant altijd als vast promptblok meestuurt, zie [AI-KNOWLEDGE-STRATEGY.md](AI-KNOWLEDGE-STRATEGY.md) §Per-variant achtergronddocument. Hiervoor gelden twee aanvullende regels, bovenop het algemene `variantContext`-patroon hierboven:
+
+- Een `KnowledgeSources`-document telt alleen als "het" achtergronddocument van variant X wanneer `variantContext` **exact** die ene variant bevat (dus niet leeg/centraal, en niet meerdere varianten tegelijk) **én** de afgeleide bronrol (`bepaalBronrol(type, purpose)`) `"background-model"` oplevert. Nooit op titel of ID geïdentificeerd.
+- Een variant mag nooit meer dan één achtergronddocument hebben — afgedwongen door een `beforeValidate`-hook (`voorkomDubbeleAchtergrondkennisbasis`), niet slechts een conventie.
+
 ## Terminologie-woordenboek
 
 Onderdeel van `Variant` (zie hieronder), geen aparte entiteit: een lijst `{ centralTerm, variantTerm }`-paren. Wordt als vervangingslaag toegepast op alle getoonde centrale tekst binnen die variant, tenzij een specifieke `VariantOverride.termOverridesApplied = false` dit voor dat element uitschakelt.

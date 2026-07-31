@@ -7,10 +7,11 @@ import { anyEditor, centralEditorOnly } from "../access/roles";
 // niets van, consistent met de services/storage.ts-abstractie.
 export const Media: CollectionConfig = {
   slug: "media",
+  labels: { singular: "Media-bestand", plural: "Media" },
   admin: {
     useAsTitle: "altText",
     defaultColumns: ["filename", "mediaType", "altText"],
-    group: "Content",
+    group: "Basis",
   },
   access: {
     read: () => true,

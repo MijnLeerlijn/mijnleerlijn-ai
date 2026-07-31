@@ -15,7 +15,7 @@ export const AnswerFeedback: CollectionConfig = {
   admin: {
     useAsTitle: "vraag",
     defaultColumns: ["vraag", "rating", "variant", "createdAt"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "Ja/nee-feedback van bezoekers op AI-antwoorden. Aanmaken kan alleen via de eigen API-route.",
   },

@@ -13,7 +13,9 @@ import { defaultVariant } from "@/config/variants";
 // (app/api/variants/stats) die geen los veld op de collectie zijn. Diepere
 // bewerking (logo uploaden, terminologiewoordenboek, accentkleur, tagline,
 // website-teksten) loopt door naar Payload's eigen, al volledig werkende
-// editscherm — geen dubbele upload-/array-editor bouwen.
+// editscherm (Variants.ts staat niet op admin.hidden — zie het commentaar
+// daar voor waarom niet — dus /admin/collections/variants/{id} blijft
+// rechtstreeks bereikbaar) — geen dubbele upload-/array-editor bouwen.
 
 interface VariantDoc {
   id: number;
@@ -52,6 +54,7 @@ function formatDatum(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" });
 }
+
 
 export function VariantenView() {
   const [varianten, setVarianten] = useState<VariantDoc[]>([]);

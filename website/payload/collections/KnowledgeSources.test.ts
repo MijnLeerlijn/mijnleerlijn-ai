@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Field, Condition } from "payload";
-import { KnowledgeSources } from "./KnowledgeSources";
+import { ValidationError } from "payload";
+import { KnowledgeSources, voorkomDubbeleAchtergrondkennisbasis } from "./KnowledgeSources";
 
 // Puur config-niveau (geen Payload-runtime/database nodig): controleert dat
 // het prioriteitsveld precies bestaat zoals bedoeld — verplicht, default
@@ -108,5 +109,105 @@ describe("KnowledgeSources — Helpdesk MVP 1.0: publieke zichtbaarheid", () => 
 
     expect(veld.type).toBe("number");
     expect(veld.required).toBeFalsy();
+  });
+});
+
+const mockFind = vi.fn();
+
+function maakReq() {
+  return { payload: { find: mockFind } } as never;
+}
+
+beforeEach(() => {
+  mockFind.mockReset();
+  mockFind.mockResolvedValue({ docs: [] });
+});
+
+// Multi-brand variants (2026-07-31): een variant mag maximaal één
+// achtergronddocument hebben — herkend via variantContext + bepaalBronrol()
+// (nooit via id/titel), zie lib/assistant/kennisbasis-context.ts.
+describe("voorkomDubbeleAchtergrondkennisbasis", () => {
+  it("laat een normale, niet-achtergrond-bron ongemoeid (geen enkele find-aanroep)", async () => {
+    const data = { type: "pdf", variantContext: [1] };
+
+    const result = await voorkomDubbeleAchtergrondkennisbasis({
+      data,
+      originalDoc: undefined,
+      operation: "create",
+      req: maakReq(),
+    } as never);
+
+    expect(result).toBe(data);
+    expect(mockFind).not.toHaveBeenCalled();
+  });
+
+  it("laat een achtergrondbron zonder variantContext ongemoeid (geen conflict mogelijk)", async () => {
+    const data = { type: "intern_document" };
+
+    await voorkomDubbeleAchtergrondkennisbasis({
+      data,
+      originalDoc: undefined,
+      operation: "create",
+      req: maakReq(),
+    } as never);
+
+    expect(mockFind).not.toHaveBeenCalled();
+  });
+
+  it("staat een nieuw achtergronddocument toe wanneer de variant nog geen conflicterend document heeft", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 1, type: "pdf", purpose: null }] });
+    const data = { type: "intern_document", variantContext: [5] };
+
+    const result = await voorkomDubbeleAchtergrondkennisbasis({
+      data,
+      originalDoc: undefined,
+      operation: "create",
+      req: maakReq(),
+    } as never);
+
+    expect(result).toBe(data);
+  });
+
+  it("gooit een ValidationError wanneer de variant al een ander achtergronddocument heeft", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 99, title: "Kennisbasis MijnMonti", type: "intern_document", purpose: null }] });
+    const data = { type: "intern_document", variantContext: [5] };
+
+    await expect(
+      voorkomDubbeleAchtergrondkennisbasis({
+        data,
+        originalDoc: undefined,
+        operation: "create",
+        req: maakReq(),
+      } as never)
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("herkent purpose='background-model' op een ander type als conflict (niet alleen intern_document)", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 99, title: "Oud achtergronddocument", type: "pdf", purpose: "background-model" }] });
+    const data = { type: "pdf", purpose: "background-model", variantContext: [5] };
+
+    await expect(
+      voorkomDubbeleAchtergrondkennisbasis({
+        data,
+        originalDoc: undefined,
+        operation: "create",
+        req: maakReq(),
+      } as never)
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("flagt een document niet als conflict van zichzelf bij een update", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 42, type: "intern_document", purpose: null }] });
+    const data = { content: "bijgewerkte tekst" };
+    const originalDoc = { id: 42, type: "intern_document", purpose: null, variantContext: [5] };
+
+    const result = await voorkomDubbeleAchtergrondkennisbasis({
+      data,
+      originalDoc,
+      operation: "update",
+      req: maakReq(),
+    } as never);
+
+    expect(result).toBe(data);
   });
 });

@@ -136,10 +136,26 @@ describe("genereerAssistentAntwoord — centrale Kennisbasis MijnLeerlijn (Fase 
     });
 
     const aanroep = mockGenerate.mock.calls[0]![0];
-    expect(aanroep.userPrompt).toContain("Centrale Kennisbasis MijnLeerlijn");
+    expect(aanroep.userPrompt).toContain("Kennisbasis MijnLeerlijn");
     expect(aanroep.userPrompt).toContain("v1");
     expect(aanroep.userPrompt).toContain("## Kernfilosofie");
     expect(aanroep.userPrompt).toContain("MijnLeerlijn is een middel, geen doel.");
+  });
+
+  it("labelt het kennisbasisblok met de productnaam van de actieve variant, niet altijd MijnLeerlijn", async () => {
+    mockGenerate.mockResolvedValue({
+      object: { hasAnswer: true, answer: "Antwoord.", reasoning: "...", tegenstrijdigheid: null },
+      usage: GEEN_USAGE,
+    });
+
+    await genereerAssistentAntwoord("vraag", [maakContextItem()], {
+      centraleKennisbasis: { tekst: "Achtergrondtekst.", versie: "v1" },
+      variant: { productName: "MijnMonti", terminologyDictionary: [] },
+    });
+
+    const aanroep = mockGenerate.mock.calls[0]![0];
+    expect(aanroep.userPrompt).toContain("Kennisbasis MijnMonti");
+    expect(aanroep.userPrompt).not.toContain("Kennisbasis MijnLeerlijn");
   });
 
   it("voegt geen kennisbasisblok toe aan de prompt wanneer niet meegegeven (achterwaarts compatibel)", async () => {
@@ -151,7 +167,7 @@ describe("genereerAssistentAntwoord — centrale Kennisbasis MijnLeerlijn (Fase 
     await genereerAssistentAntwoord("vraag", [maakContextItem()]);
 
     const aanroep = mockGenerate.mock.calls[0]![0];
-    expect(aanroep.userPrompt).not.toContain("Centrale Kennisbasis MijnLeerlijn");
+    expect(aanroep.userPrompt).not.toContain("Kennisbasis MijnLeerlijn");
   });
 
   it("de confidence-drempel blijft uitsluitend op de opgehaalde bronnen gebaseerd — het kennisbasisblok telt niet mee", async () => {

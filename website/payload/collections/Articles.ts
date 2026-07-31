@@ -11,6 +11,7 @@ import { contentBlocks } from "../blocks";
 // docs/CONTENT-MODEL.md §Wie mag wat schrijven.
 export const Articles: CollectionConfig = {
   slug: "articles",
+  labels: { singular: "Artikel", plural: "Artikelen" },
   admin: {
     useAsTitle: "title",
     defaultColumns: [
@@ -21,7 +22,7 @@ export const Articles: CollectionConfig = {
       "aiApprovalStatus",
       "lastContentUpdate",
     ],
-    group: "Content",
+    group: "Basis",
     description: "De centrale, enige-bron-van-waarheid handleidingen. Nooit per variant gekopieerd.",
     components: {
       listMenuItems: ["@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton"],

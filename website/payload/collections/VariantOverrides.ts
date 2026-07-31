@@ -14,10 +14,26 @@ import { ownVariantOverrideAccess, publishedOverrideOrEditor } from "../access/r
 // naartoe, zie docs/CONTENT-MODEL.md §Wie mag wat schrijven.
 export const VariantOverrides: CollectionConfig = {
   slug: "variant-overrides",
+  labels: { singular: "Variant-override (volledig)", plural: "Variant-overrides (volledig)" },
   admin: {
     useAsTitle: "id",
     defaultColumns: ["variant", "targetArticle", "targetType", "action", "status"],
-    group: "Varianten",
+    // Menu-herindeling (2026-07-31): NIET admin.hidden. Eerste poging was
+    // `hidden: true` + een link vanaf het Variant-detailscherm — bleek
+    // stuk: Payload's admin.hidden verwijdert een collectie niet alleen uit
+    // de nav, maar blokkeert ook de client-side rendering van het editform
+    // zelf (het veldschema wordt dan niet eens naar de browser gestuurd) —
+    // ontdekt via een echte crash ("Cannot read properties of null (reading
+    // 'fields')") tijdens de eigen browserverificatie van deze wijziging,
+    // ook bij een expliciete overrideEntityVisibility-drawer. In plaats
+    // daarvan: gewoon bereikbaar houden, maar in de minder prominente
+    // "Basis — Technisch beheer"-groep i.p.v. "Varianten" — zo blijft
+    // "Varianten" (de custom overzichtspagina) het enige, prominente
+    // "Varianten"-menu-item, terwijl deze collectie (geen eigen custom
+    // scherm, dataflow ongewijzigd, lib/content/merge.ts blijft dit lezen)
+    // gewoon volledig bewerkbaar blijft via zijn eigen, standaard
+    // Payload-editscherm — bereikbaar via de link op het Variant-detailscherm.
+    group: "Basis — Technisch beheer",
     description: "Variant-specifieke aanvullingen, vervangingen of uitsluitingen op de centrale artikelboom.",
   },
   access: {

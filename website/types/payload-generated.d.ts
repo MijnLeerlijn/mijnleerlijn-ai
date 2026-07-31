@@ -2278,7 +2278,7 @@ export interface AssistantEval {
   createdAt?: string | null;
 }
 /**
- * Het centrale achtergrondverhaal voor de Helpdesk AI — visie, samenhang en productlogica. Wordt bij elke helpdeskvraag als vaste achtergrondcontext gebruikt (naast de handleidingen voor concrete stappen). Alleen de gepubliceerde stand wordt door de AI gelezen.
+ * NIET MEER ACTIEF GEBRUIKT — vervangen door het per-variant achtergronddocument, zie het nieuwe 'Kennisbasis'-scherm onder Varianten. Deze Global blijft uitsluitend bestaan voor rollback/databehoud.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "kennisbasis-mijnleerlijn".

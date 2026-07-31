@@ -23,7 +23,7 @@ export const AssistantEvalRuns: CollectionConfig = {
   admin: {
     useAsTitle: "question",
     defaultColumns: ["question", "hasAnswer", "confidence", "verdict", "createdAt"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "Uitkomsten van chatbot-evaluatieruns (/admin/globals/assistant-eval) — diagnostiek + handmatige beoordeling per testvraag.",
   },

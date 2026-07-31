@@ -173,7 +173,7 @@ export async function genereerAssistentAntwoord(
   try {
     const systemPrompt = bouwSysteemprompt(Boolean(opties?.heeftStructuredStappen), opties?.variant);
     const kennisbasisBlok = opties?.centraleKennisbasis
-      ? `${kennisbasisBlokNaarPrompt(opties.centraleKennisbasis)}\n\n`
+      ? `${kennisbasisBlokNaarPrompt(opties.centraleKennisbasis, opties?.variant?.productName)}\n\n`
       : "";
     const resultaat = await generateStructuredOutputWithUsage({
       schema: AntwoordSchema,

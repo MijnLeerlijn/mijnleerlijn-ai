@@ -9,7 +9,7 @@ import { adminOnly } from "../access/roles";
 export const KnowledgeSearch: GlobalConfig = {
   slug: "knowledge-search",
   admin: {
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description: "Test semantisch zoeken over kennisbronnen, conceptkennisartikelen en artikelen.",
   },
   access: {

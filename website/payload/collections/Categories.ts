@@ -7,10 +7,11 @@ import { centralEditorOnly } from "../access/roles";
 // geen variant-override.
 export const Categories: CollectionConfig = {
   slug: "categories",
+  labels: { singular: "Categorie", plural: "Categorieën" },
   admin: {
     useAsTitle: "title",
     defaultColumns: ["title", "slug", "color"],
-    group: "Content",
+    group: "Basis",
   },
   access: {
     read: () => true,

@@ -15,7 +15,7 @@ export const Users: CollectionConfig = {
   admin: {
     useAsTitle: "name",
     defaultColumns: ["name", "email", "role", "variantScope"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description: "Redacteuren en beheerders van de beheeromgeving.",
   },
   access: {

@@ -20,7 +20,7 @@ export const ContactSubmissions: CollectionConfig = {
   admin: {
     useAsTitle: "subject",
     defaultColumns: ["teacherName", "schoolName", "requestType", "status", "submittedAt"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description: "Inzendingen van het contactformulier. Aanmaken kan alleen via de eigen API-route.",
   },
   access: {

@@ -12,10 +12,11 @@ import { centralEditorOnly } from "../access/roles";
 // maar worden hier al vastgelegd omdat ze bij de bron zelf horen.
 export const Sources: CollectionConfig = {
   slug: "sources",
+  labels: { singular: "Bron", plural: "Bronnen" },
   admin: {
     useAsTitle: "title",
     defaultColumns: ["title", "type", "publisher", "reliability"],
-    group: "Content",
+    group: "Basis",
   },
   access: {
     read: () => true,

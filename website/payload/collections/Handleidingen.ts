@@ -28,10 +28,11 @@ import { bepaalPublicatieVelden } from "@/lib/knowledge/handleiding-publicatie";
 // `gepubliceerdDoor`) als fundament voor later.
 export const Handleidingen: CollectionConfig = {
   slug: "handleidingen",
+  labels: { singular: "Handleiding", plural: "Handleidingen" },
   admin: {
     useAsTitle: "internTitel",
     defaultColumns: ["internTitel", "categorie", "status", "zichtbaarInSidebar", "laatstBijgewerkt"],
-    group: "Content",
+    group: "Basis",
     description:
       "Handleidingen opgebouwd uit losse stappen met tekst en afbeeldingen — de opvolger van PDF-handleidingen.",
     components: {

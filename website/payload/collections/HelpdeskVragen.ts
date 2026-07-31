@@ -108,7 +108,12 @@ export const HelpdeskVragen: CollectionConfig = {
   admin: {
     useAsTitle: "vraag",
     defaultColumns: ["vraag", "aantalGesteld", "laatstGebruiktOp", "pinned", "verborgen"],
-    group: "Beheer",
+    group: "Varianten",
+    // Menu-herindeling (2026-07-31): verborgen uit de sidebar — de custom
+    // "Helpdeskvragen"-pagina (payload/components/HelpdeskVragenView.tsx,
+    // geregistreerd onder Varianten) is de enige beheerervaring, geen
+    // dubbele link meer naar de kale collectielijst.
+    hidden: true,
     description:
       "Vragen die bezoekers daadwerkelijk aan de Helpdesk-assistent gesteld hebben (automatisch geteld bij elke 'Verstuur'-klik), plus handmatig toegevoegde vragen. Bepaalt de 'Meest gestelde vragen' op de homepage — zie de beheerpagina 'Helpdesk-vragen' voor vastzetten/verbergen/toevoegen.",
   },

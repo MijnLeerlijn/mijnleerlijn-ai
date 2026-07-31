@@ -212,11 +212,21 @@ describe("contextItemsNaarPrompt", () => {
 });
 
 describe("kennisbasisBlokNaarPrompt", () => {
-  it("labelt het blok duidelijk als centrale kennisbasis, met versie, en bevat de tekst", () => {
+  it("labelt het blok met MijnLeerlijn als default-productnaam wanneer er geen wordt meegegeven, met versie, en bevat de tekst", () => {
     const blok = kennisbasisBlokNaarPrompt({ tekst: "## Kop\nInhoud.", versie: "2026-07-28T10:00:00.000Z" });
 
-    expect(blok).toContain("Centrale Kennisbasis MijnLeerlijn");
+    expect(blok).toContain("Kennisbasis MijnLeerlijn");
     expect(blok).toContain("2026-07-28T10:00:00.000Z");
     expect(blok).toContain("## Kop\nInhoud.");
+  });
+
+  it("labelt het blok met de meegegeven productnaam van de actieve variant", () => {
+    const blok = kennisbasisBlokNaarPrompt(
+      { tekst: "Inhoud.", versie: "2026-07-31T00:00:00.000Z" },
+      "MijnMonti"
+    );
+
+    expect(blok).toContain("Kennisbasis MijnMonti");
+    expect(blok).not.toContain("Kennisbasis MijnLeerlijn");
   });
 });

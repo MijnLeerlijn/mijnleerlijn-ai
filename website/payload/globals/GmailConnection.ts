@@ -17,7 +17,7 @@ import { adminOnly } from "../access/roles";
 export const GmailConnection: GlobalConfig = {
   slug: "gmail-connection",
   admin: {
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "Gmail-helpdeskkoppeling (alleen-lezen toegang). Koppelen/herkoppelen: log in op /admin en open /api/gmail/oauth/start in dezelfde browser.",
   },

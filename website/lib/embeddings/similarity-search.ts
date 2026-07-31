@@ -110,7 +110,16 @@ const PRIORITEIT_RANG: Record<KnowledgeSourcePriority, number> = { core: 0, seco
 // inhoudelijke afweging ("is dit een stappenvraag of een visievraag") hoort
 // bij het taalmodel, dat de volledige, contextafhankelijke regels in de
 // systeeminstructie krijgt.
-export type BronRol = "release-note" | "handleidingstap" | "manual" | "background-model" | "faq" | "support";
+// BronRol/bepaalBronrol wonen sinds 2026-07-31 in ./bronrol.ts (los
+// getrokken zodat lib/assistant/kennisbasis-context.ts dit kan gebruiken
+// zonder afhankelijk te zijn van dit — in meerdere tests volledig gemockte —
+// bestand). Hier alleen opnieuw geëxporteerd zodat bestaande imports (bv.
+// build-context.ts se `BronRol`-type) ongewijzigd blijven werken.
+export type { BronRol } from "./bronrol";
+export { bepaalBronrol } from "./bronrol";
+import type { BronRol } from "./bronrol";
+import { bepaalBronrol } from "./bronrol";
+
 const BRONROL_RANG: Record<BronRol, number> = {
   "release-note": 0,
   handleidingstap: 1,
@@ -119,31 +128,6 @@ const BRONROL_RANG: Record<BronRol, number> = {
   faq: 4,
   support: 5,
 };
-
-const TYPE_NAAR_BRONROL: Record<string, BronRol> = {
-  pdf: "manual",
-  handleiding: "manual",
-  website: "manual",
-  release_notes: "release-note",
-  faq: "faq",
-  intern_document: "background-model",
-};
-
-/**
- * Bepaalt de bronrol van een Knowledge Source: het handmatige veld `purpose`
- * (payload/collections/KnowledgeSources.ts) wint altijd, anders een
- * redelijke default op basis van `type`. Onbekende/ontbrekende combinaties
- * vallen terug op "manual" (de meest voorkomende, minst risicovolle
- * default — nooit undefined, anders zou zo'n bron nooit meedoen aan de
- * tie-break hieronder).
- */
-function bepaalBronrol(type: string, purpose: string | null | undefined): BronRol {
-  if (purpose === "background-model" || purpose === "manual" || purpose === "release-note" ||
-    purpose === "faq" || purpose === "support") {
-    return purpose;
-  }
-  return TYPE_NAAR_BRONROL[type] ?? "manual";
-}
 
 interface Kandidaat {
   type: SearchHitType;

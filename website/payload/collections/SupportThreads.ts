@@ -23,7 +23,7 @@ export const SupportThreads: CollectionConfig = {
       "aiAnalysisStatus",
       "lastMessageAt",
     ],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description: "Geïmporteerde Gmail-helpdesk-threads (alleen-lezen buiten de synchronisatie om).",
     components: {
       // "Analyseer geselecteerde threads" — rendert binnen de SelectionProvider

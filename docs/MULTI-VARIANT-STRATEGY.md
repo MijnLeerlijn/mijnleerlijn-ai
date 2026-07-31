@@ -32,6 +32,18 @@ Zie [ARCHITECTURE.md](ARCHITECTURE.md) §Variant-herkenningsmechanisme voor de t
 
 Elke variant heeft een `domainStatus`-veld dat deze fase bijhoudt. Bij het promoveren van slug → subdomein → eigen domein zijn **verplichte redirects** onderdeel van de migratie, zodat eerder gedeelde links (bijv. een bookmark van een leerkracht, of een link in een e-mail) blijven werken.
 
+### Wildcard-subdomein `*.mijnleerlijn.chat` — eenmalige, handmatige stap (nog niet uitgevoerd)
+
+Geen codewijziging — puur Vercel/DNS-configuratie, door een beheerder zelf uit te voeren:
+
+1. **Vercel** → project `helpdesk` → Settings → Domains → Add → `*.mijnleerlijn.chat`.
+2. Omdat `mijnleerlijn.chat` al bij Vercel als registrar/nameserver loopt (bevestigd: `ns1`/`ns2.vercel-dns.com`), maakt Vercel de benodigde wildcard-DNS-record automatisch aan — geen aparte actie bij een externe DNS-provider nodig.
+3. Wildcard-SSL-certificaat wordt automatisch uitgegeven (Let's Encrypt), kan enkele minuten duren.
+4. **Per variant die via subdomein bereikbaar moet worden** (bijv. MijnMonti): in het admin-bewerkscherm `domain.type` wijzigen van `slug_path` naar `subdomain` (waarde blijft gelijk, bijv. `mijnmonti`) — dit is een datawijziging, geen code.
+5. Verifiëren met `curl -I https://mijnmonti.mijnleerlijn.chat/` dat het verzoek de Vercel-deployment bereikt (geen `DEPLOYMENT_NOT_FOUND` meer) en dat de juiste variant wordt geladen.
+
+Zolang deze stap niet is gezet, faalt elk verzoek aan een `*.mijnleerlijn.chat`-subdomein al op Vercel's eigen edge-routing (vóórdat de applicatie of `proxy.ts` iets te zien krijgt) — dit is dus geen applicatiebug.
+
 ## Levenscyclus van een variant
 
 ```

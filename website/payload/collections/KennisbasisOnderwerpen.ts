@@ -28,7 +28,7 @@ export const KennisbasisOnderwerpen: CollectionConfig = {
   admin: {
     useAsTitle: "onderwerp",
     defaultColumns: ["onderwerp", "officieleTerm", "status", "prioriteit"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "Functiegerichte term- en synoniemkennis voor intentiebepaling door de AI Helpdesk — een ANDER brontype dan de centrale Kennisbasis MijnLeerlijn (het narratieve achtergrondverhaal, zie dat menu-item). Bepaalt welke MijnLeerlijn-functie een leerkracht bedoelt, vóórdat er naar een handleiding gezocht wordt.",
   },

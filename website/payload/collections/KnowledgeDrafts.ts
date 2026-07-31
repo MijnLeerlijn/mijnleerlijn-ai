@@ -17,7 +17,7 @@ export const KnowledgeDrafts: CollectionConfig = {
   admin: {
     useAsTitle: "title",
     defaultColumns: ["title", "status", "confidenceScore", "isGeneralKnowledge", "aiAnalyzedAt"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "AI-conceptkennisartikelen uit Gmail-helpdeskthreads. Aanmaken kan alleen via de synchronisatieroute; hier uitsluitend bekijken, aanpassen, goedkeuren of afkeuren.",
     components: {

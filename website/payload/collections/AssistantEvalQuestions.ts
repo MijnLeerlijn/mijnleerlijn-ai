@@ -14,7 +14,7 @@ export const AssistantEvalQuestions: CollectionConfig = {
   admin: {
     useAsTitle: "question",
     defaultColumns: ["question", "category", "createdAt"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "Vaste testvragenset voor de chatbot-evaluatieomgeving (/admin/globals/assistant-eval). Zie payload/seed/eval-questions.ts.",
   },

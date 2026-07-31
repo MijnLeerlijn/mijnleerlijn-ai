@@ -1,5 +1,67 @@
-import type { CollectionConfig } from "payload";
+import type { CollectionBeforeValidateHook, CollectionConfig } from "payload";
+import { ValidationError } from "payload";
 import { adminOnly } from "../access/roles";
+import { bepaalBronrol } from "@/lib/embeddings/bronrol";
+
+function variantIds(waarde: unknown): number[] {
+  if (!Array.isArray(waarde)) return [];
+  return waarde
+    .map((v) => (typeof v === "object" && v !== null ? Number((v as { id?: unknown }).id) : Number(v)))
+    .filter((n) => !Number.isNaN(n));
+}
+
+// Harde uniekheidsvalidatie (2026-07-31): een variant mag maximaal één
+// achtergronddocument hebben — hetzelfde kenmerk als de leesfunctie
+// (lib/assistant/kennisbasis-context.ts): `variantContext` bevat de variant
+// ÉN `bepaalBronrol(type, purpose)` levert "background-model" op. Draait bij
+// elke create/update op deze collectie (niet alleen bij intern_document —
+// een beheerder kan `purpose` ook handmatig op "background-model" zetten
+// voor een ander type), zodat er nooit per ongeluk een tweede, parallelle
+// achtergrondbron voor dezelfde variant kan ontstaan. Zelfde patroon als
+// HelpdeskVragen.ts se vulVraagNormalizedIn (beforeValidate + ValidationError
+// bij een conflict) — geëxporteerd voor rechtstreekse, niet-gemockte tests.
+export const voorkomDubbeleAchtergrondkennisbasis: CollectionBeforeValidateHook = async ({
+  data,
+  originalDoc,
+  req,
+}) => {
+  if (!data) return data;
+
+  const type = (data.type ?? originalDoc?.type) as string | undefined;
+  const purpose = (data.purpose ?? originalDoc?.purpose) as string | null | undefined;
+  if (!type || bepaalBronrol(type, purpose) !== "background-model") return data;
+
+  const nieuweVarianten = variantIds(data.variantContext ?? originalDoc?.variantContext);
+  if (nieuweVarianten.length === 0) return data;
+
+  for (const variantId of nieuweVarianten) {
+    const bestaand = await req.payload.find({
+      collection: "knowledge-sources",
+      where: { variantContext: { equals: variantId } },
+      overrideAccess: true,
+      depth: 0,
+      limit: 100,
+    });
+    const conflict = bestaand.docs.find((doc) => {
+      if (originalDoc && doc.id === originalDoc.id) return false;
+      return bepaalBronrol(doc.type as string, doc.purpose as string | null | undefined) === "background-model";
+    });
+    if (conflict) {
+      throw new ValidationError({
+        collection: "knowledge-sources",
+        errors: [
+          {
+            path: "variantContext",
+            message: `Deze variant heeft al een achtergronddocument ("${conflict.title}", id ${conflict.id}). Er mag maximaal één achtergronddocument per variant zijn.`,
+          },
+        ],
+        req,
+      });
+    }
+  }
+
+  return data;
+};
 
 // Ruwe kennisbronnen (PDF/video/website/release notes/handleidingen/FAQ's/
 // interne documenten) die de AI kan uitlezen, samenvatten en koppelen aan
@@ -35,7 +97,7 @@ export const KnowledgeSources: CollectionConfig = {
   admin: {
     useAsTitle: "title",
     defaultColumns: ["title", "type", "status", "aiIndexedAt"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "Kennisbronnen voor de AI (PDF's, video's, websites, release notes, handleidingen, FAQ's, interne documenten). Toevoegen via 'Create new'; indexeren via de knop hierboven in de lijst.",
     components: {
@@ -77,6 +139,7 @@ export const KnowledgeSources: CollectionConfig = {
     delete: adminOnly,
   },
   hooks: {
+    beforeValidate: [voorkomDubbeleAchtergrondkennisbasis],
     // Livegang-afwerking: verwijderen via de admin-UI liet voorheen het
     // gekoppelde Media-document en (bij een gesynchroniseerde PDF) de
     // onderliggende private Blob gewoon staan — verweesde opslag. Chapters

@@ -8,10 +8,11 @@ import { centralEditorOnly } from "../access/roles";
 // voor dezelfde titel kunnen ontstaan.
 export const Updates: CollectionConfig = {
   slug: "updates",
+  labels: { singular: "Update", plural: "Updates" },
   admin: {
     useAsTitle: "article",
     defaultColumns: ["article", "badge", "date"],
-    group: "Content",
+    group: "Basis",
     description: "Redactioneel gekozen recente wijzigingen, getoond op de homepage en /updates.",
   },
   access: {

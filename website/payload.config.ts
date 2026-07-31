@@ -92,17 +92,20 @@ export default buildConfig({
     // `afterNavLinks` voegt de menu-links toe (custom views krijgen die
     // niet automatisch).
     components: {
+      // Menu-herindeling (2026-07-31): nog maar twee navigatiegroepen via
+      // afterNavLinks — "Basis" (BasisNavLinks.tsx, momenteel alleen AI
+      // Verbetercentrum) en "Varianten" (VariantenNavLinks.tsx, alle vijf
+      // Varianten-beheerschermen in één groep — vervangt de eerder losse
+      // DownloadNavLinks/HelpdeskVragenNavLinks/VerbetercentrumNavLinks).
+      // HelpdeskVragen is `admin.hidden` (volledig vervangen door zijn
+      // custom scherm), dus deze link is de enige toegang daartoe. Variants
+      // en VariantOverrides zijn bewust NIET hidden (zie het commentaar in
+      // Variants.ts: `hidden` bleek ook de client-side formulierrendering
+      // te blokkeren, niet alleen de nav) — ze staan daarom ook nog in de
+      // "Basis — Technisch beheer"-groep, voor wie het volledige Payload-
+      // editscherm nodig heeft (logo/terminologie/website-teksten/domein).
       afterNavLinks: [
-        "@/payload/components/DownloadNavLinks#DownloadNavLinks",
-        // AI Verbetercentrum (2026-07-27): zelfde patroon als Downloadbeheer
-        // hierboven — custom view + eigen nav-linkcomponent, zie
-        // payload/components/VerbetercentrumView.tsx/-NavLinks.tsx.
-        "@/payload/components/VerbetercentrumNavLinks#VerbetercentrumNavLinks",
-        // Homepage-herontwerp (2026-07-29): zelfde patroon, zie
-        // payload/components/HelpdeskVragenView.tsx/-NavLinks.tsx.
-        "@/payload/components/HelpdeskVragenNavLinks#HelpdeskVragenNavLinks",
-        // Multi-brand variants (2026-07-30): zelfde patroon, zie
-        // payload/components/VariantenView.tsx/-NavLinks.tsx.
+        "@/payload/components/BasisNavLinks#BasisNavLinks",
         "@/payload/components/VariantenNavLinks#VariantenNavLinks",
       ],
       // Admin-shell-fix (2026-07-28): Component wijst naar de nieuwe
@@ -130,6 +133,10 @@ export default buildConfig({
         varianten: {
           Component: "@/payload/components/AdminViewShell#VariantenViewShell",
           path: "/varianten",
+        },
+        kennisbasis: {
+          Component: "@/payload/components/AdminViewShell#KennisbasisViewShell",
+          path: "/kennisbasis",
         },
       },
     },

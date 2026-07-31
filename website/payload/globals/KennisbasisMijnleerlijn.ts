@@ -23,16 +23,23 @@ import { anyEditor } from "../access/roles";
 // `versions: { drafts: true }` i.p.v. een handmatig status/versie-veld:
 // geeft automatisch concept/gepubliceerd-status (`_status`) én volledige
 // versiehistorie — zie payload/seed/migrate-kennisbasis-global.ts (de
-// eenmalige migratie vanuit de bestaande brontekst) en
-// lib/assistant/kennisbasis-context.ts (leest altijd de GEPUBLICEERDE stand,
-// nooit een concept, voor de Helpdesk AI-promptcontext).
+// eenmalige migratie vanuit de bestaande brontekst).
+//
+// Kennisbasis per variant (2026-07-31): NIET MEER DE ACTIEVE BRON. De
+// inhoud is 1-op-1 overgezet naar een per-variant achtergronddocument (zie
+// payload/seed/migreer-kennisbasis-naar-variant.ts en lib/assistant/
+// kennisbasis-context.ts, dat nu per actieve variant leest i.p.v. altijd
+// deze Global). Dit Global-record blijft bewust ongewijzigd bestaan — puur
+// voor rollback/databehoud — maar is `admin.hidden` (uit de navigatie) en
+// wordt door geen enkel leespad meer gebruikt.
 export const KennisbasisMijnleerlijn: GlobalConfig = {
   slug: "kennisbasis-mijnleerlijn",
   label: "Kennisbasis MijnLeerlijn",
   admin: {
     group: "Kennisbasis MijnLeerlijn",
+    hidden: true,
     description:
-      "Het centrale achtergrondverhaal voor de Helpdesk AI — visie, samenhang en productlogica. Wordt bij elke helpdeskvraag als vaste achtergrondcontext gebruikt (naast de handleidingen voor concrete stappen). Alleen de gepubliceerde stand wordt door de AI gelezen.",
+      "NIET MEER ACTIEF GEBRUIKT — vervangen door het per-variant achtergronddocument, zie het nieuwe 'Kennisbasis'-scherm onder Varianten. Deze Global blijft uitsluitend bestaan voor rollback/databehoud.",
   },
   access: {
     read: anyEditor,

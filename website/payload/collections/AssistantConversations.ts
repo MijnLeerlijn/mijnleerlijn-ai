@@ -24,7 +24,7 @@ export const AssistantConversations: CollectionConfig = {
   admin: {
     useAsTitle: "question",
     defaultColumns: ["question", "source", "hasAnswer", "confidence", "user", "createdAt"],
-    group: "Beheer",
+    group: "Basis — Technisch beheer",
     description:
       "Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant én de publieke helpdesk-homepage).",
   },

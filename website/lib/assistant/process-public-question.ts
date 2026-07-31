@@ -7,7 +7,7 @@ import { buildContext, type ContextItem } from "./build-context";
 import { genereerAssistentAntwoord, MIN_SIMILARITY_VOOR_ANTWOORD } from "./answer";
 import { rewriteSearchQuery } from "./rewrite-query";
 import { bepaalIntentie, type IntentieUitkomst } from "./bepaal-intentie";
-import { haalCentraleKennisbasisOp, type CentraleKennisbasis } from "./kennisbasis-context";
+import { haalAchtergrondKennisbasisVoorVariant, type AchtergrondKennisbasis } from "./kennisbasis-context";
 import { ANSWER_PROMPT_VERSION, RETRIEVAL_VERSION } from "./versions";
 
 // Publieke, anonieme tegenhanger van process-question.ts — Helpdesk MVP 1.0.
@@ -257,7 +257,7 @@ function intentieVelden(intentie: IntentieUitkomst) {
  * nooit bij de AI-aanroep komen).
  */
 function centraleKennisbasisVelden(
-  centraleKennisbasis: CentraleKennisbasis | null,
+  centraleKennisbasis: AchtergrondKennisbasis | null,
   tegenstrijdigheid: string | null = null
 ) {
   return {
@@ -272,7 +272,7 @@ async function loggenMislukking(
   payload: Payload,
   opties: { question: string; previousQuestion?: string; variant: Variant },
   intentie: IntentieUitkomst,
-  centraleKennisbasis: CentraleKennisbasis | null,
+  centraleKennisbasis: AchtergrondKennisbasis | null,
   begin: number,
   foutmelding: string
 ): Promise<void> {
@@ -357,14 +357,17 @@ export async function processPublicQuestion(
     return { type: "clarification", conversationId, question: intentie.vraag };
   }
 
-  // Kennisbasis MijnLeerlijn — Fase 4 (2026-07-28): de centrale kennisbasis
-  // wordt vanaf hier ALTIJD opgehaald (ongeacht intentieType — "opgelost" of
-  // "geen-match" hebben allebei baat bij de achtergrondcontext) en zo
-  // dadelijk gegarandeerd meegestuurd naar genereerAssistentAntwoord(),
-  // ongeacht de similarity-score van de opgehaalde handleidingen/bronnen.
-  // haalCentraleKennisbasisOp() faalt nooit hard (geeft null terug), dus dit
-  // kan nooit de rest van de flow blokkeren.
-  const centraleKennisbasis = await haalCentraleKennisbasisOp(payload);
+  // Kennisbasis per variant (2026-07-31): het achtergronddocument van de
+  // ACTIEVE variant wordt vanaf hier ALTIJD opgehaald (ongeacht intentieType
+  // — "opgelost" of "geen-match" hebben allebei baat bij de achtergrond-
+  // context) en zo dadelijk gegarandeerd meegestuurd naar
+  // genereerAssistentAntwoord(), ongeacht de similarity-score van de
+  // opgehaalde handleidingen/bronnen. Nooit een terugval naar een andere
+  // variant: heeft déze variant geen (bruikbaar) achtergronddocument, dan
+  // geeft haalAchtergrondKennisbasisVoorVariant() `null` terug (gelogd als
+  // waarschuwing) en gaat het antwoord gewoon verder zonder achtergrondblok
+  // — dit kan dus nooit de rest van de flow blokkeren.
+  const centraleKennisbasis = await haalAchtergrondKennisbasisVoorVariant(payload, opties.variant.id);
 
   // "opgelost": de officiële term stuurt de zoekvraag i.p.v. de letterlijke
   // formulering van de gebruiker — dit is de kern van "beide phrasing-
