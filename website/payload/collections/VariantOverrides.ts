@@ -14,7 +14,7 @@ import { ownVariantOverrideAccess, publishedOverrideOrEditor } from "../access/r
 // naartoe, zie docs/CONTENT-MODEL.md §Wie mag wat schrijven.
 export const VariantOverrides: CollectionConfig = {
   slug: "variant-overrides",
-  labels: { singular: "Variant-override (volledig)", plural: "Variant-overrides (volledig)" },
+  labels: { singular: "Variant Override", plural: "Variant Overrides" },
   admin: {
     useAsTitle: "id",
     defaultColumns: ["variant", "targetArticle", "targetType", "action", "status"],

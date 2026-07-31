@@ -24,6 +24,7 @@
     "seed:eval-questions": "node --env-file=.env node_modules/.bin/tsx payload/seed/eval-questions.ts",
     "seed:kennisbasis-onderwerpen": "node --env-file-if-exists=.env node_modules/.bin/tsx payload/seed/kennisbasis-onderwerpen.ts",
     "migrate:kennisbasis-global": "node --env-file-if-exists=.env node_modules/.bin/tsx payload/seed/migrate-kennisbasis-global.ts",
+    "migrate:kennisbasis-per-variant": "node --env-file-if-exists=.env node_modules/.bin/tsx payload/seed/migreer-kennisbasis-naar-variant.ts",
     "import:handleidingen": "node --env-file=.env node_modules/.bin/tsx payload/import-handleidingen/index.ts",
     "import:kennisbasis": "node --env-file=.env node_modules/.bin/tsx payload/import-kennisbasis/index.ts",
     "upload:handleidingen": "node --env-file=.env node_modules/.bin/tsx payload/upload-manuals-to-blob/index.ts"
