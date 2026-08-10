@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { importeerCurriculumWerkplaatsKennis } from "./import-curriculum-werkplaats";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import { handleiding, kennisartikelen } from "@/payload/import-curriculum-werkplaats/data";
@@ -114,5 +114,56 @@ describe("importeerCurriculumWerkplaatsKennis — ontbrekende categorie", () => 
     expect(resultaat.fouten).toHaveLength(1);
     expect(resultaat.fouten[0]?.melding).toMatch(/npm run seed/);
     expect(collection("articles")).toHaveLength(0);
+  });
+
+  it("logt één leesbare regel met stap='categorie-check' als de categorie ontbreekt", async () => {
+    const { payload } = maakFakePayload({});
+    const foutSpy = vi.fn();
+    payload.logger.error = foutSpy;
+
+    await importeerCurriculumWerkplaatsKennis(payload);
+
+    expect(foutSpy).toHaveBeenCalledTimes(1);
+    const regel = foutSpy.mock.calls[0]?.[0] as string;
+    expect(regel).toContain('stap="categorie-check"');
+    expect(regel).toContain("fouttype=CategorieOntbreekt");
+  });
+});
+
+describe("importeerCurriculumWerkplaatsKennis — diagnostische logging per mislukt document (tijdelijk)", () => {
+  it("logt per mislukt document stap/fouttype/melding, en saniteert credentials uit een connectiestring in de foutmelding", async () => {
+    const { payload } = maakFakePayload(maakSeed());
+    const mislukteSlug = kennisartikelen[0]!.slug;
+    const oorspronkelijkeCreate = payload.create.bind(payload);
+    // Simuleert een database-driverfout die (zoals sommige drivers doen) de
+    // rauwe connectiestring in de foutmelding terugecho't — precies het
+    // scenario waar de sanitizer tegen moet beschermen.
+    (payload as unknown as { create: typeof payload.create }).create = (async (
+      opts: Parameters<typeof payload.create>[0]
+    ) => {
+      const data = (opts as { data?: Record<string, unknown> }).data;
+      if (opts.collection === "articles" && data?.slug === mislukteSlug) {
+        throw new Error(
+          "verbinding mislukt: postgres://gebruiker:geheimwachtwoord123@db.voorbeeld.internal:5432/curriculum"
+        );
+      }
+      return oorspronkelijkeCreate(opts);
+    }) as typeof payload.create;
+    const foutSpy = vi.fn();
+    payload.logger.error = foutSpy;
+
+    const resultaat = await importeerCurriculumWerkplaatsKennis(payload);
+
+    expect(resultaat.fouten).toHaveLength(1);
+    expect(resultaat.fouten[0]?.slug).toBe(mislukteSlug);
+    expect(resultaat.fouten[0]?.melding).not.toMatch(/geheimwachtwoord123/);
+    expect(resultaat.fouten[0]?.melding).toContain("://***:***@");
+
+    expect(foutSpy).toHaveBeenCalledTimes(1);
+    const regel = foutSpy.mock.calls[0]?.[0] as string;
+    expect(regel).toContain(`stap="artikel:${mislukteSlug}"`);
+    expect(regel).toContain("fouttype=Error");
+    expect(regel).not.toMatch(/geheimwachtwoord123/);
+    expect(regel).toContain("://***:***@");
   });
 });

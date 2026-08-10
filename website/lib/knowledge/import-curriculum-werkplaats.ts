@@ -34,6 +34,38 @@ export interface CurriculumWerkplaatsImportFout {
   melding: string;
 }
 
+// TIJDELIJKE diagnostische logging (2026-08-10, live productie-import gaf
+// "aangemaakt=0 bijgewerkt=0 verwerkt=0 fouten=1" zonder herleidbare oorzaak
+// in de Vercel-logs — de bestaande payload.logger.warn(resultaat.fouten, …)
+// in de route logt de fouten-array wel, maar niet als leesbare platte
+// regel, en is in de praktijk niet goed terug te vinden). Deze functie
+// logt per mislukte stap ÉÉN plat leesbare regel (stap/fouttype/melding),
+// zodat de oorzaak altijd zichtbaar is ongeacht hoe de logviewer objecten
+// weergeeft. Te verwijderen zodra de onderliggende oorzaak (waarschijnlijk:
+// categorie "curriculum-werkplaats" ontbreekt in productie, npm run seed
+// nooit gedraaid) gevonden en opgelost is — de API-respons naar de admin
+// blijft bewust ongewijzigd/generiek, dit raakt uitsluitend de serverlogs.
+//
+// saniteerFoutmelding: sommige database-drivers echoën bij een parse-/
+// verbindingsfout de rauwe connectiestring terug in error.message (bv.
+// "invalid connection string: postgres://user:wachtwoord@host/db") — dit
+// vervangt credentials in een eventuele URL door "***" vóórdat er iets
+// gelogd of teruggegeven wordt. Nooit de originele, ongesaniteerde message
+// loggen.
+function saniteerFoutmelding(ruw: string): string {
+  return ruw.replace(/:\/\/[^\s/@]+:[^\s/@]+@/g, "://***:***@");
+}
+
+function logImportFout(payload: Payload, stap: string, error: unknown): string {
+  const fouttype = error instanceof Error ? error.constructor.name : typeof error;
+  const meldingRuw = error instanceof Error ? error.message : String(error);
+  const melding = saniteerFoutmelding(meldingRuw);
+  payload.logger.error(
+    `[import-curriculum-werkplaats] stap="${stap}" fouttype=${fouttype} melding="${melding}"`
+  );
+  return melding;
+}
+
 export interface CurriculumWerkplaatsImportResultaat {
   aangemaakt: number;
   bijgewerkt: number;
@@ -153,14 +185,23 @@ export async function importeerCurriculumWerkplaatsKennis(
     limit: 1,
   });
   if (!categorie.docs[0]) {
-    resultaat.fouten.push({
-      slug: CATEGORY_SLUG,
-      melding: `Categorie "${CATEGORY_SLUG}" bestaat niet — draai eerst "npm run seed" (zie lib/data/categories.ts).`,
-    });
+    const melding = `Categorie "${CATEGORY_SLUG}" bestaat niet — draai eerst "npm run seed" (zie lib/data/categories.ts).`;
+    payload.logger.error(
+      `[import-curriculum-werkplaats] stap="categorie-check" fouttype=CategorieOntbreekt melding="${melding}"`
+    );
+    resultaat.fouten.push({ slug: CATEGORY_SLUG, melding });
     return resultaat;
   }
   const categoryId = Number(categorie.docs[0].id);
-  const sourceId = await upsertBron(payload);
+
+  let sourceId: number;
+  try {
+    sourceId = await upsertBron(payload);
+  } catch (error) {
+    const melding = logImportFout(payload, "bron-upsert", error);
+    resultaat.fouten.push({ slug: BRON_TITEL, melding });
+    return resultaat;
+  }
 
   const alleArtikelen: RawArticle[] = [handleiding, ...kennisartikelen];
   for (const ruw of alleArtikelen) {
@@ -170,10 +211,8 @@ export async function importeerCurriculumWerkplaatsKennis(
       else resultaat.bijgewerkt += 1;
       resultaat.verwerkt += 1;
     } catch (error) {
-      resultaat.fouten.push({
-        slug: ruw.slug,
-        melding: error instanceof Error ? error.message : String(error),
-      });
+      const melding = logImportFout(payload, `artikel:${ruw.slug}`, error);
+      resultaat.fouten.push({ slug: ruw.slug, melding });
     }
   }
 
