@@ -19,6 +19,15 @@ const sitemap = [
   [
     { label: "Updates", href: "/updates" },
     { label: "Contact", href: "/contact" },
+    // Helpdesk-beheerkoppeling (2026), punt 9: duidelijke link naar
+    // Curriculum Werkplaats vanaf de publieke Helpdesk-site. Bewust hier en
+    // niet in de Header — die is sinds de MVP 1.0-opschoning (2026-07-25)
+    // opzettelijk logo-only ("de chatbot is de homepage"); de Footer is de
+    // ene gedeelde plek die op elke publieke pagina rendert (incl. de
+    // homepage-chat, zie PublicLayout.tsx) zonder die beslissing terug te
+    // draaien. Externe link (ander domein, andere applicatie) → expliciet
+    // target/rel hieronder, zie de render-loop.
+    { label: "Curriculum Werkplaats", href: "https://curriculum.mijnleerlijn.chat" },
   ],
 ];
 
@@ -47,17 +56,21 @@ export default async function Footer() {
           <div className="grid grid-cols-2 gap-4">
             {sitemap.map((col, i) => (
               <div key={i} className="flex flex-col">
-                {col.map((item) => (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    onDark
-                    underline="hover"
-                    className="flex h-8 items-center text-sm"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
+                {col.map((item) => {
+                  const isExtern = item.href.startsWith("http");
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      onDark
+                      underline="hover"
+                      className="flex h-8 items-center text-sm"
+                      {...(isExtern ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
               </div>
             ))}
           </div>

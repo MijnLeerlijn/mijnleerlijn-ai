@@ -138,6 +138,15 @@ export default buildConfig({
           Component: "@/payload/components/AdminViewShell#KennisbasisViewShell",
           path: "/kennisbasis",
         },
+        // Helpdesk-beheerkoppeling (2026), punt 5-6: beheeroverzicht +
+        // detailpagina voor Curriculum Werkplaats-omgevingen. Eén statisch
+        // pad (geen dynamisch routesegment, zie CurriculumWerkplaatsView.tsx
+        // voor waarom) — de detailweergave wisselt client-side via
+        // ?project=<id>.
+        curriculumWerkplaats: {
+          Component: "@/payload/components/AdminViewShell#CurriculumWerkplaatsViewShell",
+          path: "/curriculum-werkplaats",
+        },
       },
     },
   },

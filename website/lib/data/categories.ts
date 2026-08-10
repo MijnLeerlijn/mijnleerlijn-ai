@@ -12,8 +12,11 @@ export interface Categorie {
   uitleg: string;
 }
 
-// 10 categorieën, gebaseerd op de bestaande handleidingen in handleidingen/ —
-// zie docs/PROJECT.md. Geen verzonnen onderwerpen.
+// 11 categorieën: de oorspronkelijke 10, gebaseerd op de bestaande
+// handleidingen in handleidingen/ (zie docs/PROJECT.md), plus "Curriculum
+// Werkplaats" (Helpdesk-beheerkoppeling 2026) — een echt, apart
+// productonderdeel (curriculum.mijnleerlijn.chat, een losse Next.js-app)
+// met zijn eigen handleiding en kennisartikelen, geen verzonnen onderwerp.
 export const categorieen: Categorie[] = [
   {
     slug: "starten",
@@ -91,6 +94,14 @@ export const categorieen: Categorie[] = [
     kleur: "blue",
     uitleg:
       "Hoe MijnLeerlijn meegroeit met jullie onderwijsconcept, van een reguliere methode tot montessori- of daltononderwijs.",
+  },
+  {
+    slug: "curriculum-werkplaats",
+    titel: "Curriculum Werkplaats",
+    icoon: "PenTool",
+    kleur: "purple",
+    uitleg:
+      "Samen het schoolcurriculum voorbereiden, bewerken en synchroniseren met MijnLeerlijn — van eerste import tot nieuwe ML-export.",
   },
 ];
 

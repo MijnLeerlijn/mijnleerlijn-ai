@@ -12,6 +12,9 @@ export function BasisNavLinks() {
       <Link className="nav__link" href="/admin/verbetercentrum">
         AI Verbetercentrum
       </Link>
+      <Link className="nav__link" href="/admin/curriculum-werkplaats">
+        Curriculum Werkplaats
+      </Link>
     </div>
   );
 }
