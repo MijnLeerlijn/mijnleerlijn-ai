@@ -50,8 +50,17 @@ async function geauthenticeerdeBeheerder(request: NextRequest): Promise<AuthUser
   return user;
 }
 
-function foutRespons(error: unknown): NextResponse {
-  return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 502 });
+// Technische details (bv. netwerkfout, foutieve CURRICULUM_ADMIN_API_URL/
+// -SECRET, non-2xx-respons van Curriculum Werkplaats) gaan uitsluitend naar
+// de serverlogs — nooit als kale foutmelding of stacktrace in de JSON-
+// respons, die immers rechtstreeks in de Helpdesk-admin-UI terecht kan komen.
+// De client krijgt bewust alleen een generieke, niet-technische melding.
+function foutRespons(error: unknown, context: string): NextResponse {
+  console.error(`[curriculum-beheer proxy] ${context}:`, error);
+  return NextResponse.json(
+    { error: "De Curriculum Werkplaats kan op dit moment niet worden bereikt." },
+    { status: 502 }
+  );
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ pad: string[] }> }) {
@@ -69,7 +78,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const resultaat = await stuurCurriculumBeheerVerzoek(pad.join("/"), { method: "GET", zoek });
     return NextResponse.json(resultaat.body, { status: resultaat.status });
   } catch (error) {
-    return foutRespons(error);
+    return foutRespons(error, `GET ${pad.join("/")}`);
   }
 }
 
@@ -92,7 +101,7 @@ async function handleMuterendVerzoek(request: NextRequest, pad: string[], method
     const resultaat = await stuurCurriculumBeheerVerzoek(pad.join("/"), { method, body });
     return NextResponse.json(resultaat.body, { status: resultaat.status });
   } catch (error) {
-    return foutRespons(error);
+    return foutRespons(error, `${method} ${pad.join("/")}`);
   }
 }
 

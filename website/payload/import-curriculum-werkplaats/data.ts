@@ -2,6 +2,16 @@
 // hieronder beschrijft uitsluitend functionaliteit die daadwerkelijk in
 // Curriculum Werkplaats bestaat (geen verzonnen features), gebaseerd op de
 // applicatie zoals gebouwd (zie de opleverrapporten in die repository).
+//
+// Tekstconventie (Helpdesk-beheerkoppeling-uitbreiding 2026, punt 4): in
+// gebruikersgerichte uitleg wordt het systeem waar een school haar
+// exportbestand vandaan haalt en weer naartoe importeert consequent "de
+// software" genoemd, niet "MijnLeerlijn" — Curriculum Werkplaats is immers
+// een generiek, potentieel wit-gelabeld platform (zie docs/MULTI-VARIANT-
+// STRATEGY.md in de Helpdesk-codebase). "MijnLeerlijn" blijft uitsluitend
+// staan waar het functioneel/technisch nodig is: de echte domeinnamen
+// (curriculum.mijnleerlijn.chat, helpdesk.mijnleerlijn.chat) en het interne
+// "ML-ID"-veld.
 
 export type RawBlock =
   | { type: "tekst"; body: string }
@@ -36,17 +46,17 @@ export const handleiding: RawArticle = {
   slug: "curriculum-werkplaats-volledige-handleiding",
   title: "Curriculum Werkplaats — de volledige handleiding",
   summary:
-    "Alles over Curriculum Werkplaats: een omgeving aanmaken, samen curriculum bewerken, exporteren naar MijnLeerlijn en weer synchroniseren.",
+    "Alles over Curriculum Werkplaats: een omgeving aanmaken, samen curriculum bewerken, exporteren naar de software en weer synchroniseren.",
   tags: ["curriculum werkplaats", "handleiding", "curriculum", "export", "import"],
   sections: [
     {
       title: "1. Wat is Curriculum Werkplaats?",
       blocks: [
         tekst(
-          "Curriculum Werkplaats is een apart platform van MijnLeerlijn (op curriculum.mijnleerlijn.chat) waarin een schoolteam gezamenlijk aan het schoolcurriculum werkt: leerdoelen aanpassen, nieuwe doelen toevoegen, doelen splitsen of verwijderen. Je begint met een export uit MijnLeerlijn, werkt die gezamenlijk bij, en maakt er aan het eind weer een importbestand van voor MijnLeerlijn."
+          "Curriculum Werkplaats is een apart platform (op curriculum.mijnleerlijn.chat) waarin een schoolteam gezamenlijk aan het schoolcurriculum werkt: leerdoelen aanpassen, nieuwe doelen toevoegen, doelen splitsen of verwijderen. Je begint met een export uit de software, werkt die gezamenlijk bij, en maakt er aan het eind weer een importbestand van voor de software."
         ),
         tekst(
-          "Curriculum Werkplaats is dus geen vervanging van MijnLeerlijn, maar een tussenstap: een rustige, gedeelde werkplek voor het voorbereidende werk, los van de dagelijkse MijnLeerlijn-omgeving."
+          "Curriculum Werkplaats is dus geen vervanging van de software, maar een tussenstap: een rustige, gedeelde werkplek voor het voorbereidende werk, los van de dagelijkse werkomgeving."
         ),
       ],
     },
@@ -54,7 +64,10 @@ export const handleiding: RawArticle = {
       title: "2. Een omgeving aanmaken voor je school",
       blocks: [
         tekst(
-          'Ga naar de startpagina van Curriculum Werkplaats en kies "Maak een omgeving voor je school". Vul de schoolnaam, een projectnaam (bijvoorbeeld "Curriculum 2026-2027"), optioneel het schooljaar, een wachtwoord en de naam of initialen van de eerste gebruiker in.'
+          'Ga naar de startpagina van Curriculum Werkplaats en kies "Maak een omgeving voor je school". Vul de schoolnaam, de plaats, een projectnaam (bijvoorbeeld "Curriculum 2026-2027"), optioneel het schooljaar, een wachtwoord en de naam of initialen van de eerste gebruiker in.'
+        ),
+        tekst(
+          "Schoolnaam en plaats samen helpen om jullie omgeving te herkennen tussen andere scholen met een vergelijkbare naam. Lijkt het erop dat er al een omgeving bestaat voor dezelfde schoolnaam en plaats, dan krijg je vóór het aanmaken een duidelijke waarschuwing te zien — aanmaken blijft daarna nog steeds mogelijk, maar overleg bij twijfel eerst intern of er al een omgeving in gebruik is."
         ),
         waarschuwing(
           "Bewaar de omgevingslink en het wachtwoord goed na het aanmaken: het wachtwoord kan niet worden teruggehaald (alleen gereset, zie sectie 28) en zonder de link of projectcode kun je de omgeving niet terugvinden."
@@ -78,10 +91,10 @@ export const handleiding: RawArticle = {
       ],
     },
     {
-      title: "4. Het dashboard: Actief, Wacht op ML en Archief",
+      title: "4. Het dashboard: Actief, Wacht op nieuwe export en Archief",
       blocks: [
         tekst(
-          "Het dashboard is je startpunt na het inloggen en toont drie duidelijke groepen: Hoofdgebieden waar nog aan gewerkt kan worden (Actief), Hoofdgebieden die net geëxporteerd zijn en op een nieuwe MijnLeerlijn-export wachten (Wacht op ML), en afgesloten bewerkingsrondes (Archief)."
+          "Het dashboard is je startpunt na het inloggen en toont drie duidelijke groepen: Hoofdgebieden waar nog aan gewerkt kan worden (Actief), Hoofdgebieden die net geëxporteerd zijn en op een nieuwe export uit de software wachten (Wacht op nieuwe export), en afgesloten bewerkingsrondes (Archief)."
         ),
         tekst("Zo zie je in één oogopslag waar het team nu staat, zonder tussen schermen te hoeven zoeken."),
       ],
@@ -90,7 +103,7 @@ export const handleiding: RawArticle = {
       title: "5. Het hoofdmenu en de vaste header",
       blocks: [
         tekst(
-          "Bovenaan elk scherm binnen een omgeving staat een vaste balk met het MijnLeerlijn-logo, de schoolnaam en projectnaam, en het hoofdmenu: Dashboard, Werkplaats, Wijzigingen, Rapporten en Leraren."
+          "Bovenaan elk scherm binnen een omgeving staat een vaste balk met het logo, de schoolnaam en projectnaam, en het hoofdmenu: Dashboard, Werkplaats, Wijzigingen, Rapporten en Leraren."
         ),
         tekst(
           'Rechtsboven zie je "Je werkt als: [jouw naam]" — via dat menu kun je wisselen van gebruiker, een nieuwe gebruiker toevoegen, naar Projectinstellingen gaan of uitloggen. Ernaast staat een subtiele "Hulp nodig?"-link die rechtstreeks naar deze Helpdesk opent.'
@@ -98,12 +111,12 @@ export const handleiding: RawArticle = {
       ],
     },
     {
-      title: "6. Curriculum importeren vanuit MijnLeerlijn (eerste keer)",
+      title: "6. Curriculum importeren vanuit de software (eerste keer)",
       blocks: [
         tekst(
-          "De eerste stap in een nieuwe omgeving is het uploaden van een Excel-export vanuit MijnLeerlijn. Curriculum Werkplaats leest het bestand, herkent de Hoofdgebieden, Deelgebieden en doelen, en laat je vooraf zien wat er gevonden is."
+          "De eerste stap in een nieuwe omgeving is het uploaden van een Excel-export vanuit de software. Curriculum Werkplaats leest het bestand, herkent de Hoofdgebieden, Deelgebieden en doelen, en laat je vooraf zien wat er gevonden is."
         ),
-        stap('Ga naar "Importeren" en kies het Excel-bestand vanuit MijnLeerlijn.'),
+        stap('Ga naar "Importeren" en kies het Excel-bestand vanuit de software.'),
         stap("Controleer het overzicht van gevonden Hoofdgebieden en het aantal doelen per Hoofdgebied."),
         stap('Vink de Hoofdgebieden aan die je wilt importeren (standaard staan alle nieuwe Hoofdgebieden al aan) en kies "Doorgaan".'),
         tip('Gebruik "Alles selecteren" of "Alles deselecteren" om snel te schakelen als je maar een deel van het bestand wilt importeren.'),
@@ -151,14 +164,14 @@ export const handleiding: RawArticle = {
         stap("Kies bij precies één van de resultaten dat het het bestaande ML-ID behoudt."),
         stap('Bevestig met "Splits doelen".'),
         tekst(
-          "Alle andere resultaten worden bij de eerstvolgende export als nieuwe doelen behandeld — dat is bewust zo, om verwarring in MijnLeerlijn te voorkomen over welk doel welk oorspronkelijk doel 'is'."
+          "Alle andere resultaten worden bij de eerstvolgende export als nieuwe doelen behandeld — dat is bewust zo, om verwarring in de software te voorkomen over welk doel welk oorspronkelijk doel 'is'."
         ),
       ],
     },
     {
       title: "11. Een doel verwijderen en herstellen",
       blocks: [
-        tekst("Verwijderen zet een doel op 'gemarkeerd voor verwijdering' — het verdwijnt niet meteen, maar wordt bij de eerstvolgende export als te verwijderen doorgegeven aan MijnLeerlijn."),
+        tekst("Verwijderen zet een doel op 'gemarkeerd voor verwijdering' — het verdwijnt niet meteen, maar wordt bij de eerstvolgende export als te verwijderen doorgegeven aan de software."),
         stap('Open het doel en kies "Verwijderen".'),
         tekst("Zolang de bewerkingsronde nog open is, kun je een verwijderd doel via de Historie weer herstellen."),
       ],
@@ -208,39 +221,39 @@ export const handleiding: RawArticle = {
       ],
     },
     {
-      title: "17. Hoofdgebiedstatus: Bewerkbaar vs. Wacht op nieuwe ML-export",
+      title: "17. Hoofdgebiedstatus: Bewerkbaar vs. Wacht op nieuwe export",
       blocks: [
         tekst(
-          "Een Hoofdgebied heeft altijd één van twee statussen. 'Bewerkbaar' betekent: het team kan er nog aan werken. 'Wacht op nieuwe ML-export' betekent: dit Hoofdgebied is al geëxporteerd naar MijnLeerlijn en is vergrendeld totdat de school een nieuwe export uit MijnLeerlijn terug uploadt (zie sectie 20)."
+          "Een Hoofdgebied heeft altijd één van twee statussen. 'Bewerkbaar' betekent: het team kan er nog aan werken. 'Wacht op nieuwe export' betekent: dit Hoofdgebied is al geëxporteerd naar de software en is vergrendeld totdat de school een nieuwe export uit de software terug uploadt (zie sectie 20)."
         ),
-        waarschuwing("Een vergrendeld Hoofdgebied kan niet bewerkt worden — dat voorkomt dat iemand per ongeluk wijzigingen maakt die MijnLeerlijn nog niet kent."),
+        waarschuwing("Een vergrendeld Hoofdgebied kan niet bewerkt worden — dat voorkomt dat iemand per ongeluk wijzigingen maakt die de software nog niet kent."),
       ],
     },
     {
-      title: "18. Exporteren naar MijnLeerlijn",
+      title: "18. Exporteren naar de software",
       blocks: [
-        tekst("Als een Hoofdgebied klaar is, exporteer je het als Excel-bestand dat je in MijnLeerlijn kunt importeren. Exporteren gebeurt per Hoofdgebied, nooit voor de hele omgeving in één keer."),
+        tekst("Als een Hoofdgebied klaar is, exporteer je het als Excel-bestand dat je in de software kunt importeren. Exporteren gebeurt per Hoofdgebied, nooit voor de hele omgeving in één keer."),
         stap('Ga naar de Werkplaats en kies "Exporteren".'),
         stap("Kies het Hoofdgebied dat je wilt exporteren."),
         stap("Controleer het overzicht van wat er meegaat."),
-        stap('Kies "Excel voor MijnLeerlijn maken" om het bestand te downloaden.'),
+        stap('Kies "Excel voor de software maken" om het bestand te downloaden.'),
         tekst("Na een geslaagde export wordt het Hoofdgebied automatisch vergrendeld (zie sectie 17) en de lopende bewerkingsronde gesloten."),
       ],
     },
     {
-      title: "19. Terug importeren in MijnLeerlijn",
+      title: "19. Terug importeren in de software",
       blocks: [
-        tekst("Het gedownloade exportbestand upload je vervolgens in MijnLeerlijn zelf, op de plek waar je normaal een curriculumbestand importeert. Dit gebeurt buiten Curriculum Werkplaats, in MijnLeerlijn."),
+        tekst("Het gedownloade exportbestand upload je vervolgens in de software zelf, op de plek waar je normaal een curriculumbestand importeert. Dit gebeurt buiten Curriculum Werkplaats, in de software."),
       ],
     },
     {
-      title: "20. Een nieuwe ML-export maken en opnieuw uploaden (hersync)",
+      title: "20. Een nieuwe export maken en opnieuw uploaden (hersync)",
       blocks: [
         tekst(
-          "Zodra het Hoofdgebied verwerkt is in MijnLeerlijn, maak je daar een nieuwe, complete export van (met de definitieve ML-ID's) en upload je die opnieuw in Curriculum Werkplaats — dit heet hersynchroniseren."
+          "Zodra het Hoofdgebied verwerkt is in de software, maak je daar een nieuwe, complete export van (met de definitieve ML-ID's) en upload je die opnieuw in Curriculum Werkplaats — dit heet hersynchroniseren."
         ),
-        stap("Maak in MijnLeerlijn een nieuwe export van het betreffende Hoofdgebied."),
-        stap('Upload dat bestand in Curriculum Werkplaats via "Importeren" — een Hoofdgebied dat op ML wacht, krijgt automatisch de hersync-optie aangeboden in plaats van een gewone import.'),
+        stap("Maak in de software een nieuwe export van het betreffende Hoofdgebied."),
+        stap('Upload dat bestand in Curriculum Werkplaats via "Importeren" — een Hoofdgebied dat op een nieuwe export wacht, krijgt automatisch de hersync-optie aangeboden in plaats van een gewone import.'),
         stap("Controleer het matchingoverzicht (zie sectie 21) en bevestig."),
         tekst("Na een geslaagde hersync is het Hoofdgebied weer 'Bewerkbaar' en start er een nieuwe, schone bewerkingsronde (zie sectie 22)."),
       ],
@@ -249,7 +262,7 @@ export const handleiding: RawArticle = {
       title: "21. Hoe matching bij een hersync werkt",
       blocks: [
         tekst(
-          "Bij een hersync probeert Curriculum Werkplaats elk doel uit het nieuwe MijnLeerlijn-bestand te koppelen aan het bijbehorende doel in de Werkplaats, zodat de definitieve ML-ID's correct terugkomen. Twijfelgevallen worden voorgelegd voor handmatige bevestiging in plaats van geraden."
+          "Bij een hersync probeert Curriculum Werkplaats elk doel uit het nieuwe bestand uit de software te koppelen aan het bijbehorende doel in de Werkplaats, zodat de definitieve ML-ID's correct terugkomen. Twijfelgevallen worden voorgelegd voor handmatige bevestiging in plaats van geraden."
         ),
       ],
     },
@@ -257,7 +270,7 @@ export const handleiding: RawArticle = {
       title: "22. Een nieuwe, schone bewerkingsronde",
       blocks: [
         tekst(
-          "Na een succesvolle hersync begint automatisch een nieuwe bewerkingsronde: de Wijzigingen-tab en statusbalk beginnen weer op nul, en de zojuist binnengehaalde MijnLeerlijn-versie is de nieuwe basislijn (rondestart) om eventueel weer naar terug te kunnen."
+          "Na een succesvolle hersync begint automatisch een nieuwe bewerkingsronde: de Wijzigingen-tab en statusbalk beginnen weer op nul, en de zojuist binnengehaalde versie uit de software is de nieuwe basislijn (rondestart) om eventueel weer naar terug te kunnen."
         ),
       ],
     },
@@ -300,8 +313,8 @@ export const handleiding: RawArticle = {
         tekst(
           "Via het gebruikersmenu rechtsboven kom je bij Projectinstellingen, met het blok 'Toegang tot deze omgeving': schoolnaam, projectcode en de volledige omgevingslink, elk met een kopieerknop."
         ),
-        waarschuwing("Het wachtwoord van de omgeving staat hier bewust nooit bij — dat is en blijft alleen als versleutelde hash opgeslagen, ook voor MijnLeerlijn zelf niet leesbaar."),
-        tekst("Ben je het wachtwoord kwijt, dan verwijst dit scherm je door naar deze Helpdesk om contact op te nemen met MijnLeerlijn voor een reset."),
+        waarschuwing("Het wachtwoord van de omgeving staat hier bewust nooit bij — dat is en blijft alleen als versleutelde hash opgeslagen, ook voor ons niet leesbaar."),
+        tekst("Ben je het wachtwoord kwijt, dan verwijst dit scherm je door naar deze Helpdesk om contact op te nemen voor een reset."),
       ],
     },
     {
@@ -325,13 +338,13 @@ export const handleiding: RawArticle = {
       title: "31. De volledige cyclus in één overzicht",
       blocks: [
         tekst("Samengevat doorloopt een school steeds dezelfde cyclus:"),
-        stap("Exporteer het curriculum vanuit MijnLeerlijn."),
+        stap("Exporteer het curriculum vanuit de software."),
         stap("Upload dat bestand in Curriculum Werkplaats (import)."),
         stap("Werk samen aan de doelen in de Werkplaats."),
         stap("Exporteer het bijgewerkte Hoofdgebied vanuit Curriculum Werkplaats."),
-        stap("Het Hoofdgebied krijgt de status 'Wacht op nieuwe ML-export' en wordt vergrendeld."),
-        stap("Importeer het exportbestand in MijnLeerlijn."),
-        stap("Maak in MijnLeerlijn een nieuwe, definitieve export van hetzelfde Hoofdgebied."),
+        stap("Het Hoofdgebied krijgt de status 'Wacht op nieuwe export' en wordt vergrendeld."),
+        stap("Importeer het exportbestand in de software."),
+        stap("Maak in de software een nieuwe, definitieve export van hetzelfde Hoofdgebied."),
         stap("Upload die nieuwe export terug in Curriculum Werkplaats (hersync/synchroniseren)."),
         stap("Het Hoofdgebied wordt weer 'Bewerkbaar' en er begint een nieuwe, schone bewerkingsronde."),
         tip("Deze cyclus geldt per Hoofdgebied — verschillende Hoofdgebieden kunnen dus prima in verschillende stappen van de cyclus zitten."),
@@ -348,15 +361,15 @@ export const handleiding: RawArticle = {
 export const kennisartikelen: RawArticle[] = [
   {
     slug: "curriculum-werkplaats-versus-mijnleerlijn",
-    title: "Wat is het verschil tussen Curriculum Werkplaats en MijnLeerlijn?",
-    summary: "Curriculum Werkplaats is de voorbereidende werkplek voor het curriculum; MijnLeerlijn blijft het systeem waarin je dagelijks werkt.",
+    title: "Wat is het verschil tussen Curriculum Werkplaats en de software?",
+    summary: "Curriculum Werkplaats is de voorbereidende werkplek voor het curriculum; de software blijft het systeem waarin je dagelijks werkt.",
     tags: ["curriculum werkplaats", "mijnleerlijn", "verschil"],
     sections: [
       {
         title: "Antwoord",
         blocks: [
           tekst(
-            "MijnLeerlijn is het leerlingvolgsysteem waarin je dagelijks werkt: leerlingen, groepen, doelensets, voortgang. Curriculum Werkplaats is een apart, los platform waarin een team gezamenlijk het schoolcurriculum zelf voorbereidt en bewerkt, vóórdat het weer terug de school in gaat via een import in MijnLeerlijn."
+            "De software is het leerlingvolgsysteem waarin je dagelijks werkt: leerlingen, groepen, doelensets, voortgang. Curriculum Werkplaats is een apart, los platform waarin een team gezamenlijk het schoolcurriculum zelf voorbereidt en bewerkt, vóórdat het weer terug de school in gaat via een import in de software."
           ),
           tekst("De twee systemen zijn technisch onafhankelijk van elkaar: een eigen inlog, eigen data, eigen beheer — verbonden via export- en importbestanden, niet via een directe koppeling."),
         ],
@@ -393,25 +406,25 @@ export const kennisartikelen: RawArticle[] = [
         blocks: [
           stap('Ga naar de startpagina van Curriculum Werkplaats en vul bij "Open bestaande omgeving" de projectcode van je school in (te vinden bij een collega die al is ingelogd, via Projectinstellingen).'),
           stap("Vul daarna het projectwachtwoord in zoals gewoonlijk."),
-          tip("Weet niemand in het team de projectcode meer, neem dan contact op met MijnLeerlijn via deze Helpdesk."),
+          tip("Weet niemand in het team de projectcode meer, neem dan contact op via deze Helpdesk."),
         ],
       },
     ],
   },
   {
     slug: "wat-betekent-wacht-op-nieuwe-ml-export",
-    title: "Wat betekent 'Wacht op nieuwe ML-export' bij een Hoofdgebied?",
-    summary: "Het Hoofdgebied is al geëxporteerd naar MijnLeerlijn en tijdelijk vergrendeld, totdat er een nieuwe export wordt teruggehaald.",
+    title: "Wat betekent 'Wacht op nieuwe export' bij een Hoofdgebied?",
+    summary: "Het Hoofdgebied is al geëxporteerd naar de software en tijdelijk vergrendeld, totdat er een nieuwe export wordt teruggehaald.",
     tags: ["hoofdgebiedstatus", "export", "vergrendeld"],
     sections: [
       {
         title: "Antwoord",
         blocks: [
           tekst(
-            "Zodra een Hoofdgebied in Curriculum Werkplaats geëxporteerd is naar MijnLeerlijn, krijgt het de status 'Wacht op nieuwe ML-export' en wordt het vergrendeld voor verdere bewerking."
+            "Zodra een Hoofdgebied in Curriculum Werkplaats geëxporteerd is naar de software, krijgt het de status 'Wacht op nieuwe export' en wordt het vergrendeld voor verdere bewerking."
           ),
           tekst(
-            "Dat voorkomt dat het team blijft doorwerken op een versie die MijnLeerlijn al niet meer als actueel beschouwt. Het Hoofdgebied wordt pas weer bewerkbaar zodra de definitieve, nieuwe export uit MijnLeerlijn is teruggeüpload (hersynchroniseren)."
+            "Dat voorkomt dat het team blijft doorwerken op een versie die de software al niet meer als actueel beschouwt. Het Hoofdgebied wordt pas weer bewerkbaar zodra de definitieve, nieuwe export uit de software is teruggeüpload (hersynchroniseren)."
           ),
         ],
       },
@@ -420,16 +433,16 @@ export const kennisartikelen: RawArticle[] = [
   {
     slug: "hoofdgebied-bewerken-na-export",
     title: "Kan ik een Hoofdgebied nog bewerken nadat het geëxporteerd is?",
-    summary: "Nee — een geëxporteerd Hoofdgebied is vergrendeld totdat een nieuwe MijnLeerlijn-export is teruggehaald.",
+    summary: "Nee — een geëxporteerd Hoofdgebied is vergrendeld totdat een nieuwe export uit de software is teruggehaald.",
     tags: ["hoofdgebiedstatus", "vergrendeld", "bewerken"],
     sections: [
       {
         title: "Antwoord",
         blocks: [
           tekst(
-            "Nee, niet direct. Zodra een Hoofdgebied de status 'Wacht op nieuwe ML-export' heeft, staan de bewerkingsmogelijkheden (bewerken, splitsen, verwijderen, nieuw doel) voor dat Hoofdgebied uit."
+            "Nee, niet direct. Zodra een Hoofdgebied de status 'Wacht op nieuwe export' heeft, staan de bewerkingsmogelijkheden (bewerken, splitsen, verwijderen, nieuw doel) voor dat Hoofdgebied uit."
           ),
-          tekst("Zodra je een nieuwe, definitieve export uit MijnLeerlijn terugbrengt via een hersync, wordt het Hoofdgebied weer volledig bewerkbaar."),
+          tekst("Zodra je een nieuwe, definitieve export uit de software terugbrengt via een hersync, wordt het Hoofdgebied weer volledig bewerkbaar."),
         ],
       },
     ],
@@ -437,14 +450,14 @@ export const kennisartikelen: RawArticle[] = [
   {
     slug: "wijzigingen-bij-opnieuw-importeren",
     title: "Wat gebeurt er met mijn wijzigingen als ik opnieuw importeer (hersync)?",
-    summary: "Je eigen wijzigingen blijven behouden; de hersync koppelt ze aan de definitieve ML-ID's uit de nieuwe MijnLeerlijn-export.",
+    summary: "Je eigen wijzigingen blijven behouden; de hersync koppelt ze aan de definitieve ML-ID's uit de nieuwe export.",
     tags: ["hersync", "import", "wijzigingen"],
     sections: [
       {
         title: "Antwoord",
         blocks: [
           tekst(
-            "Je wijzigingen gaan niet verloren. Een hersync koppelt (matcht) de doelen uit de nieuwe MijnLeerlijn-export aan de doelen die je in Curriculum Werkplaats had staan, zodat de juiste, definitieve ML-ID's erbij komen."
+            "Je wijzigingen gaan niet verloren. Een hersync koppelt (matcht) de doelen uit de nieuwe export uit de software aan de doelen die je in Curriculum Werkplaats had staan, zodat de juiste, definitieve ML-ID's erbij komen."
           ),
           tekst("Na een geslaagde hersync begint een nieuwe, schone bewerkingsronde met deze versie als nieuwe basislijn."),
         ],
@@ -461,7 +474,7 @@ export const kennisartikelen: RawArticle[] = [
         title: "Antwoord",
         blocks: [
           tekst(
-            "Bij een hersync probeert Curriculum Werkplaats elk doel uit de nieuwe MijnLeerlijn-export te matchen met het bijbehorende doel dat al in de Werkplaats stond, zodat het juiste, definitieve ML-ID gekoppeld wordt."
+            "Bij een hersync probeert Curriculum Werkplaats elk doel uit de nieuwe export uit de software te matchen met het bijbehorende doel dat al in de Werkplaats stond, zodat het juiste, definitieve ML-ID gekoppeld wordt."
           ),
           tekst("Gevallen waarin de match niet vanzelfsprekend is, worden niet automatisch geraden — die krijg je voorgelegd om zelf te bevestigen, voordat de hersync wordt afgerond."),
         ],
@@ -515,7 +528,7 @@ export const kennisartikelen: RawArticle[] = [
         title: "Antwoord",
         blocks: [
           tekst(
-            "Binnen één Hoofdgebied moet elke Deelgebiednaam uniek zijn. Dat voorkomt dat er onbedoeld twee verschillende Deelgebieden met dezelfde naam naast elkaar ontstaan, wat bij het exporteren naar MijnLeerlijn tot verwarring zou leiden."
+            "Binnen één Hoofdgebied moet elke Deelgebiednaam uniek zijn. Dat voorkomt dat er onbedoeld twee verschillende Deelgebieden met dezelfde naam naast elkaar ontstaan, wat bij het exporteren naar de software tot verwarring zou leiden."
           ),
           tekst("Kies bij het aanmaken een naam die nog niet bestaat binnen dat Hoofdgebied, of gebruik het bestaande Deelgebied als dat inhoudelijk al past."),
         ],
@@ -534,7 +547,7 @@ export const kennisartikelen: RawArticle[] = [
           tekst(
             "Bij het splitsen van een doel kies je zelf welk van de resulterende doelen het bestaande ML-ID van het origineel behoudt — dat doel wordt bij export gezien als 'hetzelfde' doel, alleen aangepast."
           ),
-          tekst("De overige resultaten van de splitsing krijgen bij de eerstvolgende export geen bestaand ML-ID mee en worden dus als nieuwe doelen aan MijnLeerlijn doorgegeven."),
+          tekst("De overige resultaten van de splitsing krijgen bij de eerstvolgende export geen bestaand ML-ID mee en worden dus als nieuwe doelen aan de software doorgegeven."),
         ],
       },
     ],
@@ -592,16 +605,16 @@ export const kennisartikelen: RawArticle[] = [
   {
     slug: "omgeving-gearchiveerd-wat-nu",
     title: "Wat gebeurt er als onze schoolomgeving wordt gearchiveerd?",
-    summary: "Een gearchiveerde omgeving is niet meer te openen; neem contact op met MijnLeerlijn als dit onverwacht is.",
+    summary: "Een gearchiveerde omgeving is niet meer te openen; neem contact op via deze Helpdesk als dit onverwacht is.",
     tags: ["archief", "projectstatus", "beheer"],
     sections: [
       {
         title: "Antwoord",
         blocks: [
           tekst(
-            "Een gearchiveerde omgeving kan (net als een geblokkeerde) tijdelijk niet meer geopend worden door het schoolteam — dit is een beheeractie die alleen via MijnLeerlijn wordt uitgevoerd, bijvoorbeeld aan het einde van een schooljaar."
+            "Een gearchiveerde omgeving kan (net als een geblokkeerde) tijdelijk niet meer geopend worden door het schoolteam — dit is een beheeractie die alleen via de beheerpagina wordt uitgevoerd, bijvoorbeeld aan het einde van een schooljaar."
           ),
-          tekst("Denk je dat dit per ongeluk is gebeurd of wil je de omgeving weer geopend hebben, neem dan contact op met MijnLeerlijn via deze Helpdesk."),
+          tekst("Denk je dat dit per ongeluk is gebeurd of wil je de omgeving weer geopend hebben, neem dan contact op via deze Helpdesk."),
         ],
       },
     ],
@@ -609,16 +622,16 @@ export const kennisartikelen: RawArticle[] = [
   {
     slug: "wachtwoord-vergeten-curriculum-werkplaats",
     title: "Ik weet mijn wachtwoord niet meer — wat moet ik doen?",
-    summary: "Het wachtwoord is bij niemand terug te vinden of te zien; neem contact op met MijnLeerlijn voor een reset.",
+    summary: "Het wachtwoord is bij niemand terug te vinden of te zien; neem contact op via deze Helpdesk voor een reset.",
     tags: ["wachtwoord", "vergeten", "reset"],
     sections: [
       {
         title: "Antwoord",
         blocks: [
           tekst(
-            "Het projectwachtwoord van je omgeving wordt uitsluitend versleuteld opgeslagen — ook MijnLeerlijn kan het bestaande wachtwoord niet opzoeken of laten zien, alleen resetten naar een nieuw wachtwoord."
+            "Het projectwachtwoord van je omgeving wordt uitsluitend versleuteld opgeslagen — ook wij kunnen het bestaande wachtwoord niet opzoeken of laten zien, alleen resetten naar een nieuw wachtwoord."
           ),
-          stap("Ga naar Projectinstellingen in Curriculum Werkplaats (als je nog ingelogd bent) voor de contactverwijzing, of neem rechtstreeks contact op met MijnLeerlijn via deze Helpdesk."),
+          stap("Ga naar Projectinstellingen in Curriculum Werkplaats (als je nog ingelogd bent) voor de contactverwijzing, of neem rechtstreeks contact op via deze Helpdesk."),
           stap("Na een reset moet iedereen in het team opnieuw inloggen met het nieuwe wachtwoord."),
         ],
       },
@@ -656,7 +669,7 @@ export const kennisartikelen: RawArticle[] = [
             "Bovenin elk scherm van Curriculum Werkplaats staat een subtiele 'Hulp nodig?'-link. Die opent deze Helpdesk in een nieuw tabblad, zodat je werk in de Werkplaats niet verloren gaat."
           ),
           tekst(
-            "Bij specifieke onderdelen (zoals doelen splitsen of exporteren naar MijnLeerlijn) staat er bovendien een directe link naar het bijbehorende onderwerp hier in de Helpdesk."
+            "Bij specifieke onderdelen (zoals doelen splitsen of exporteren naar de software) staat er bovendien een directe link naar het bijbehorende onderwerp hier in de Helpdesk."
           ),
         ],
       },

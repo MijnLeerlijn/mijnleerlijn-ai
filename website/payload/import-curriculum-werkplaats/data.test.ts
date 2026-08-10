@@ -5,7 +5,7 @@ import { handleiding, kennisartikelen } from "./data";
 // Curriculum Werkplaats linkt vanuit twee schermen rechtstreeks naar een
 // anker binnen deze handleiding (zie lib/helpdesk-links.ts in de Curriculum
 // Werkplaats-codebase: #10-een-doel-splitsen en
-// #18-exporteren-naar-mijnleerlijn). Die ankers zijn de sectietitel hier
+// #18-exporteren-naar-de-software). Die ankers zijn de sectietitel hier
 // door dezelfde slugify()-functie die de artikelpagina zelf gebruikt (zie
 // app/(frontend)/(public)/artikel/[slug]/page.tsx). Deze test bewaakt dat
 // een latere hernummering/hertitelt van die twee secties niet stilzwijgend
@@ -39,9 +39,9 @@ describe("Curriculum Werkplaats-content — structuur en cross-app deep-links", 
     expect(slugify(sectie!.title)).toBe("10-een-doel-splitsen");
   });
 
-  it("sectie 18 ('exporteren naar MijnLeerlijn') slugify't naar het anker dat Curriculum Werkplaats gebruikt", () => {
+  it("sectie 18 ('exporteren naar de software') slugify't naar het anker dat Curriculum Werkplaats gebruikt", () => {
     const sectie = handleiding.sections.find((s) => s.title.startsWith("18."));
     expect(sectie).toBeDefined();
-    expect(slugify(sectie!.title)).toBe("18-exporteren-naar-mijnleerlijn");
+    expect(slugify(sectie!.title)).toBe("18-exporteren-naar-de-software");
   });
 });

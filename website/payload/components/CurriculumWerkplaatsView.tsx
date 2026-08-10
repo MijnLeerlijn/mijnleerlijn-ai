@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { Component, Suspense, useCallback, useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button, Gutter, SelectInput, TextInput, toast } from "@payloadcms/ui";
 
@@ -28,6 +28,7 @@ type StatusFilter = "" | "actief" | "geblokkeerd" | "gearchiveerd" | "wacht_op_m
 interface ProjectOverzichtRij {
   id: string;
   schoolnaam: string;
+  plaats: string | null;
   projectnaam: string;
   schooljaar: string | null;
   projectcode: string | null;
@@ -75,7 +76,7 @@ const STATUS_FILTER_OPTIES = [
   { label: "Actief", value: "actief" },
   { label: "Geblokkeerd", value: "geblokkeerd" },
   { label: "Gearchiveerd", value: "gearchiveerd" },
-  { label: "Wacht op ML-export", value: "wacht_op_ml" },
+  { label: "Wacht op nieuwe export", value: "wacht_op_ml" },
 ];
 
 function formatDatum(iso: string): string {
@@ -113,17 +114,80 @@ async function kopieerNaarKlembord(waarde: string, label: string) {
   }
 }
 
+// Nette fout-/lege staat i.p.v. een blanco pagina. Technische details gaan
+// uitsluitend naar de serverconsole/browserconsole (voor beheer/logging) —
+// nooit als kale foutmelding of stacktrace in de UI zelf. Zie de witte-pagina-
+// bugfix: een ontbrekende importMap-registratie liet de hele view eerder
+// geruisloos falen, zonder dat onderstaande foutstaten ooit bereikt werden.
+function FoutMelding({ herprobeer }: { herprobeer?: () => void }) {
+  return (
+    <div
+      style={{
+        padding: "1rem",
+        border: "1px solid var(--theme-error-500)",
+        borderRadius: "4px",
+        marginBottom: "1rem",
+      }}
+    >
+      <p style={{ margin: 0, fontWeight: 600 }}>
+        De Curriculum Werkplaats kan op dit moment niet worden geladen.
+      </p>
+      <p style={{ margin: "0.5rem 0 0", color: "var(--theme-elevation-500)" }}>
+        Probeer het opnieuw. Blijft dit gebeuren, neem dan contact op met de beheerder — de
+        technische details staan in de serverlogs.
+      </p>
+      {herprobeer && (
+        <div style={{ marginTop: "0.75rem" }}>
+          <Button buttonStyle="secondary" size="small" onClick={herprobeer}>
+            Opnieuw proberen
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ErrorBoundaryState {
+  heeftFout: boolean;
+}
+
+class CurriculumWerkplaatsErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { heeftFout: false };
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { heeftFout: true };
+  }
+
+  componentDidCatch(error: unknown, info: unknown) {
+    // Alleen voor beheer/logging (browserconsole) — nooit als stacktrace in de UI.
+    console.error("[CurriculumWerkplaatsView] onverwachte renderfout:", error, info);
+  }
+
+  render() {
+    if (this.state.heeftFout) {
+      return (
+        <Gutter>
+          <FoutMelding herprobeer={() => this.setState({ heeftFout: false })} />
+        </Gutter>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function CurriculumWerkplaatsView() {
   return (
-    <Suspense
-      fallback={
-        <Gutter>
-          <p>Laden…</p>
-        </Gutter>
-      }
-    >
-      <CurriculumWerkplaatsViewInner />
-    </Suspense>
+    <CurriculumWerkplaatsErrorBoundary>
+      <Suspense
+        fallback={
+          <Gutter>
+            <p>Laden…</p>
+          </Gutter>
+        }
+      >
+        <CurriculumWerkplaatsViewInner />
+      </Suspense>
+    </CurriculumWerkplaatsErrorBoundary>
   );
 }
 
@@ -342,7 +406,7 @@ function CurriculumWerkplaatsViewInner() {
       {!detail && geselecteerdId && detailStatus === "laden" && <p>Omgeving laden…</p>}
       {!detail && geselecteerdId && detailStatus === "fout" && (
         <div style={{ marginBottom: "1rem" }}>
-          <p style={{ color: "var(--theme-error-500)" }}>Omgeving niet gevonden.</p>
+          <FoutMelding herprobeer={() => laadDetail(geselecteerdId)} />
           <Button buttonStyle="secondary" onClick={() => kiesProject(null)}>
             ← Terug naar overzicht
           </Button>
@@ -390,7 +454,7 @@ function CurriculumWerkplaatsViewInner() {
                   label="Zoeken"
                   value={zoekterm}
                   onChange={(e: ChangeEvent<HTMLInputElement>) => setZoekterm(e.target.value)}
-                  placeholder="Schoolnaam, projectnaam of projectcode"
+                  placeholder="Schoolnaam, plaats, projectnaam of projectcode"
                 />
               </div>
               <div style={{ minWidth: 220 }}>
@@ -410,15 +474,14 @@ function CurriculumWerkplaatsViewInner() {
             </div>
 
             {lijstStatus === "laden" && <p>Laden…</p>}
-            {lijstStatus === "fout" && (
-              <p style={{ color: "var(--theme-error-500)" }}>Ophalen van omgevingen mislukt. Herlaad de pagina.</p>
-            )}
+            {lijstStatus === "fout" && <FoutMelding herprobeer={laadLijst} />}
 
             {lijstStatus === "klaar" && (
               <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "2rem" }}>
                 <thead>
                   <tr style={{ borderBottom: "2px solid var(--theme-elevation-150)", textAlign: "left" }}>
                     <th style={{ padding: "0.5rem" }}>School</th>
+                    <th style={{ padding: "0.5rem" }}>Plaats</th>
                     <th style={{ padding: "0.5rem" }}>Project</th>
                     <th style={{ padding: "0.5rem" }}>Schooljaar</th>
                     <th style={{ padding: "0.5rem" }}>Projectcode</th>
@@ -432,7 +495,7 @@ function CurriculumWerkplaatsViewInner() {
                 <tbody>
                   {lijst.length === 0 && (
                     <tr>
-                      <td colSpan={9} style={{ padding: "1rem", color: "var(--theme-elevation-500)" }}>
+                      <td colSpan={10} style={{ padding: "1rem", color: "var(--theme-elevation-500)" }}>
                         Geen omgevingen gevonden.
                       </td>
                     </tr>
@@ -444,6 +507,7 @@ function CurriculumWerkplaatsViewInner() {
                       style={{ borderBottom: "1px solid var(--theme-elevation-100)", cursor: "pointer" }}
                     >
                       <td style={{ padding: "0.5rem" }}>{rij.schoolnaam}</td>
+                      <td style={{ padding: "0.5rem" }}>{rij.plaats ?? "—"}</td>
                       <td style={{ padding: "0.5rem" }}>{rij.projectnaam}</td>
                       <td style={{ padding: "0.5rem" }}>{rij.schooljaar ?? "—"}</td>
                       <td style={{ padding: "0.5rem" }}>{rij.projectcode ?? "—"}</td>
@@ -451,7 +515,7 @@ function CurriculumWerkplaatsViewInner() {
                       <td style={{ padding: "0.5rem" }}>{formatDatum(rij.laatsteActiviteitOp)}</td>
                       <td style={{ padding: "0.5rem" }}>
                         {STATUS_LABEL[rij.status]}
-                        {rij.wachtOpMl ? " · wacht op ML-export" : ""}
+                        {rij.wachtOpMl ? " · wacht op nieuwe export" : ""}
                       </td>
                       <td style={{ padding: "0.5rem", textAlign: "center" }}>{rij.aantalLeraren}</td>
                       <td style={{ padding: "0.5rem", textAlign: "center" }}>{rij.aantalHoofdgebieden}</td>
@@ -468,9 +532,7 @@ function CurriculumWerkplaatsViewInner() {
               {toonAuditlog && (
                 <div style={{ marginTop: "1rem" }}>
                   {auditlogStatus === "laden" && <p>Laden…</p>}
-                  {auditlogStatus === "fout" && (
-                    <p style={{ color: "var(--theme-error-500)" }}>Ophalen van het auditlog mislukt.</p>
-                  )}
+                  {auditlogStatus === "fout" && <FoutMelding herprobeer={laadAuditlog} />}
                   {auditlogStatus === "klaar" && (
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead>
@@ -585,8 +647,9 @@ function ProjectDetailPaneel(props: {
           background: "var(--theme-input-bg)",
         }}
       >
+        <Veld label="Plaats" waarde={detail.plaats ?? "—"} />
         <Veld label="Status" waarde={STATUS_LABEL[detail.status]} />
-        <Veld label="Wacht op ML-export" waarde={detail.wachtOpMl ? "Ja" : "Nee"} />
+        <Veld label="Wacht op nieuwe export" waarde={detail.wachtOpMl ? "Ja" : "Nee"} />
         <Veld label="Projectcode" waarde={detail.projectcode ?? "—"} kopieerbaar />
         <Veld label="Projectlink" waarde={projectlink} kopieerbaar />
         <Veld label="Aangemaakt op" waarde={formatDatum(detail.aangemaaktOp)} />
@@ -603,7 +666,7 @@ function ProjectDetailPaneel(props: {
           {detail.hoofdgebiedenDetail.map((h) => (
             <li key={h.id}>
               {h.naam} —{" "}
-              {h.werkstatus === "bewerkbaar" ? "bewerkbaar" : "wacht op nieuwe ML-export"}
+              {h.werkstatus === "bewerkbaar" ? "bewerkbaar" : "wacht op nieuwe export"}
             </li>
           ))}
         </ul>
