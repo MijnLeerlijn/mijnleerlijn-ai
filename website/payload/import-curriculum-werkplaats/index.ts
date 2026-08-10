@@ -16,8 +16,9 @@ import { importeerCurriculumWerkplaatsKennis } from "@/lib/knowledge/import-curr
 // sync-manuals.ts naast app/api/knowledge/sync-manuals/route.ts), bedoeld
 // voor lokaal/dev-gebruik tegen de database in .env.
 //
-// Categorie "curriculum-werkplaats" moet al bestaan (via `npm run seed`,
-// zie lib/data/categories.ts) vóórdat dit script draait.
+// Categorie "curriculum-werkplaats" hoeft niet vooraf via `npm run seed`
+// gezaaid te zijn — importeerCurriculumWerkplaatsKennis maakt 'm zelf aan
+// (met dezelfde gegevens als lib/data/categories.ts) als hij nog ontbreekt.
 //
 // Gebruik: node --env-file=.env node_modules/.bin/tsx payload/import-curriculum-werkplaats/index.ts
 // (of: npm run import:curriculum-werkplaats, zie package.json)

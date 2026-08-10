@@ -1,5 +1,6 @@
 import type { Payload } from "payload";
 import { plainTextToLexical } from "@/payload/lexical";
+import { categorieen } from "@/lib/data/categories";
 import {
   handleiding,
   kennisartikelen,
@@ -38,13 +39,19 @@ export interface CurriculumWerkplaatsImportFout {
 // "aangemaakt=0 bijgewerkt=0 verwerkt=0 fouten=1" zonder herleidbare oorzaak
 // in de Vercel-logs — de bestaande payload.logger.warn(resultaat.fouten, …)
 // in de route logt de fouten-array wel, maar niet als leesbare platte
-// regel, en is in de praktijk niet goed terug te vinden). Deze functie
-// logt per mislukte stap ÉÉN plat leesbare regel (stap/fouttype/melding),
-// zodat de oorzaak altijd zichtbaar is ongeacht hoe de logviewer objecten
-// weergeeft. Te verwijderen zodra de onderliggende oorzaak (waarschijnlijk:
-// categorie "curriculum-werkplaats" ontbreekt in productie, npm run seed
-// nooit gedraaid) gevonden en opgelost is — de API-respons naar de admin
-// blijft bewust ongewijzigd/generiek, dit raakt uitsluitend de serverlogs.
+// regel, en is in de praktijk niet goed terug te vinden). Root cause
+// bevestigd uit de code: dat exacte 0/0/0/1-patroon kon op dat moment
+// uitsluitend ontstaan doordat categorie "curriculum-werkplaats" nog
+// ontbrak (npm run seed nooit tegen productie gedraaid) — de toenmalige
+// vroege return bij een ontbrekende categorie was de enige plek die precies
+// dat patroon opleverde. Opgelost via zelfherstel (zie
+// upsertCurriculumWerkplaatsCategorie hieronder) i.p.v. een verplichte
+// losse seed-stap. Deze logfunctie blijft niettemin nuttig voor de overige,
+// wél nog mogelijke faalpaden (bron-upsert, een los artikel, of het
+// aanmaken van de categorie zelf) en logt per mislukte stap ÉÉN plat
+// leesbare regel (stap/fouttype/melding), ongeacht hoe de logviewer
+// objecten weergeeft — de API-respons naar de admin blijft bewust
+// ongewijzigd/generiek, dit raakt uitsluitend de serverlogs.
 //
 // saniteerFoutmelding: sommige database-drivers echoën bij een parse-/
 // verbindingsfout de rauwe connectiestring terug in error.message (bv.
@@ -116,6 +123,57 @@ async function upsertArticleBySlug(
   return { id: Number(created.id), aangemaakt: true };
 }
 
+/**
+ * Categorie "curriculum-werkplaats" — normaal gezaaid door `npm run seed`
+ * (payload/seed/index.ts, dezelfde upsert-by-slug-aanpak met exact dezelfde
+ * velden: title/icon/color/description uit lib/data/categories.ts). Root
+ * cause van de eerdere "aangemaakt=0 bijgewerkt=0 verwerkt=0 fouten=1" in
+ * productie: die categorie bestond daar simpelweg nog niet (npm run seed is
+ * nooit tegen de productiedatabase gedraaid — logisch, dat script zaait ook
+ * de 10 andere, niet-Curriculum-Werkplaats-categorieën/demo-artikelen, wat
+ * je normaal niet als losse actie op een levende productie-Helpdesk wil
+ * draaien). In plaats van daarvoor een aparte deployment/seed-actie te eisen,
+ * maakt de import voortaan **uitsluitend deze ene, met naam genoemde
+ * categorie** zelf aan als hij ontbreekt — met identieke gegevens als de
+ * officiële seed, dus geen enkel verschil in eindresultaat t.o.v. wél eerst
+ * `npm run seed` gedraaid hebben. Bestaat de categorie al (lokaal/dev, of
+ * een productie die ooit wél geseed is), dan wordt hij gewoon hergebruikt —
+ * nooit een tweede aangemaakt, nooit een ándere categorie aangeraakt of
+ * gewijzigd.
+ */
+async function upsertCurriculumWerkplaatsCategorie(payload: Payload): Promise<number> {
+  const bestaand = await payload.find({
+    collection: "categories",
+    where: { slug: { equals: CATEGORY_SLUG } },
+    limit: 1,
+  });
+  if (bestaand.docs[0]) return Number(bestaand.docs[0].id);
+
+  const definitie = categorieen.find((c) => c.slug === CATEGORY_SLUG);
+  if (!definitie) {
+    // Kan in de praktijk niet gebeuren (statische lijst in lib/data/
+    // categories.ts) — expliciet afgevangen zodat een toekomstige
+    // verwijdering van die entry een duidelijke fout geeft i.p.v. straks
+    // een categorie met lege/undefined velden aan te maken.
+    throw new Error(
+      `Categorie-definitie "${CATEGORY_SLUG}" ontbreekt in lib/data/categories.ts — kan de categorie niet aanmaken.`
+    );
+  }
+
+  const created = await payload.create({
+    collection: "categories",
+    overrideAccess: true,
+    data: {
+      slug: definitie.slug,
+      title: definitie.titel,
+      icon: definitie.icoon,
+      color: definitie.kleur,
+      description: definitie.uitleg,
+    },
+  });
+  return Number(created.id);
+}
+
 async function upsertBron(payload: Payload): Promise<number> {
   const existing = await payload.find({
     collection: "sources",
@@ -162,12 +220,12 @@ async function importeerArtikel(
 
 /**
  * Voert de vaste Curriculum Werkplaats-import uit: 1 handleiding + 18
- * kennisartikelen, upsert-by-slug. Verwerkt elk document onafhankelijk (één
- * mislukt document blokkeert de andere 18 niet) en telt aangemaakt/
- * bijgewerkt apart. Ontbreekt de categorie "curriculum-werkplaats" (zou
- * betekenen dat `npm run seed` nooit gedraaid is), dan wordt dat als één
- * fout gerapporteerd en verder niets geïmporteerd — er is dan geen geldige
- * category-relatie om artikelen aan te hangen.
+ * kennisartikelen, upsert-by-slug. Volledig zelfstandig/idempotent — maakt
+ * de categorie "curriculum-werkplaats" zelf aan (met de officiële
+ * seed-gegevens) als die nog ontbreekt, i.p.v. te falen en `npm run seed`
+ * te vereisen (zie upsertCurriculumWerkplaatsCategorie hierboven). Verwerkt
+ * elk document onafhankelijk (één mislukt document blokkeert de andere 18
+ * niet) en telt aangemaakt/bijgewerkt apart.
  */
 export async function importeerCurriculumWerkplaatsKennis(
   payload: Payload
@@ -179,20 +237,14 @@ export async function importeerCurriculumWerkplaatsKennis(
     fouten: [],
   };
 
-  const categorie = await payload.find({
-    collection: "categories",
-    where: { slug: { equals: CATEGORY_SLUG } },
-    limit: 1,
-  });
-  if (!categorie.docs[0]) {
-    const melding = `Categorie "${CATEGORY_SLUG}" bestaat niet — draai eerst "npm run seed" (zie lib/data/categories.ts).`;
-    payload.logger.error(
-      `[import-curriculum-werkplaats] stap="categorie-check" fouttype=CategorieOntbreekt melding="${melding}"`
-    );
+  let categoryId: number;
+  try {
+    categoryId = await upsertCurriculumWerkplaatsCategorie(payload);
+  } catch (error) {
+    const melding = logImportFout(payload, "categorie-upsert", error);
     resultaat.fouten.push({ slug: CATEGORY_SLUG, melding });
     return resultaat;
   }
-  const categoryId = Number(categorie.docs[0].id);
 
   let sourceId: number;
   try {
