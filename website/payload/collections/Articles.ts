@@ -25,7 +25,10 @@ export const Articles: CollectionConfig = {
     group: "Basis",
     description: "De centrale, enige-bron-van-waarheid handleidingen. Nooit per variant gekopieerd.",
     components: {
-      listMenuItems: ["@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton"],
+      listMenuItems: [
+        "@/payload/components/ImporteerCurriculumWerkplaatsButton#ImporteerCurriculumWerkplaatsButton",
+        "@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton",
+      ],
     },
   },
   access: {

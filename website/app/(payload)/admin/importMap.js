@@ -22,6 +22,7 @@ import { StrikethroughFeatureClient as StrikethroughFeatureClient_e70f5e05f09f93
 import { UnderlineFeatureClient as UnderlineFeatureClient_e70f5e05f09f93e00b997edb1ef0c864 } from '@payloadcms/richtext-lexical/client'
 import { BoldFeatureClient as BoldFeatureClient_e70f5e05f09f93e00b997edb1ef0c864 } from '@payloadcms/richtext-lexical/client'
 import { ItalicFeatureClient as ItalicFeatureClient_e70f5e05f09f93e00b997edb1ef0c864 } from '@payloadcms/richtext-lexical/client'
+import { ImporteerCurriculumWerkplaatsButton as ImporteerCurriculumWerkplaatsButton_83b6bbcd3963f27a2c7861231d086b2a } from '@/payload/components/ImporteerCurriculumWerkplaatsButton'
 import { MaakEmbeddingsButton as MaakEmbeddingsButton_119e49e5593a4ab1b4f6e1928eec3567 } from '@/payload/components/MaakEmbeddingsButton'
 import { AnalyzeSelectedThreadsButton as AnalyzeSelectedThreadsButton_677091693245d0bf90c20429b272f9d1 } from '@/payload/components/AnalyzeSelectedThreadsButton'
 import { OnderbouwdDoorSummary as OnderbouwdDoorSummary_4021c60dec449f3f4dca6fbb6eb8b2c1 } from '@/payload/components/OnderbouwdDoorSummary'
@@ -70,6 +71,7 @@ export const importMap = {
   "@payloadcms/richtext-lexical/client#UnderlineFeatureClient": UnderlineFeatureClient_e70f5e05f09f93e00b997edb1ef0c864,
   "@payloadcms/richtext-lexical/client#BoldFeatureClient": BoldFeatureClient_e70f5e05f09f93e00b997edb1ef0c864,
   "@payloadcms/richtext-lexical/client#ItalicFeatureClient": ItalicFeatureClient_e70f5e05f09f93e00b997edb1ef0c864,
+  "@/payload/components/ImporteerCurriculumWerkplaatsButton#ImporteerCurriculumWerkplaatsButton": ImporteerCurriculumWerkplaatsButton_83b6bbcd3963f27a2c7861231d086b2a,
   "@/payload/components/MaakEmbeddingsButton#MaakEmbeddingsButton": MaakEmbeddingsButton_119e49e5593a4ab1b4f6e1928eec3567,
   "@/payload/components/AnalyzeSelectedThreadsButton#AnalyzeSelectedThreadsButton": AnalyzeSelectedThreadsButton_677091693245d0bf90c20429b272f9d1,
   "@/payload/components/OnderbouwdDoorSummary#OnderbouwdDoorSummary": OnderbouwdDoorSummary_4021c60dec449f3f4dca6fbb6eb8b2c1,
