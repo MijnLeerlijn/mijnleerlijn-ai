@@ -279,6 +279,10 @@ export interface Variant {
    * Optioneel — overschrijft het standaard helpdesk-adres voor deze variant.
    */
   contactEmail?: string | null;
+  /**
+   * Optioneel. Volledige URL naar de Curriculum Werkplaats van deze variant. Leeg = geen kaartje op de homepage.
+   */
+  curriculumWerkplaatsUrl?: string | null;
   createdBy?: (number | null) | User;
   updatedAt: string;
   createdAt: string;
@@ -1565,6 +1569,7 @@ export interface VariantsSelect<T extends boolean = true> {
         footerTekst?: T;
       };
   contactEmail?: T;
+  curriculumWerkplaatsUrl?: T;
   createdBy?: T;
   updatedAt?: T;
   createdAt?: T;

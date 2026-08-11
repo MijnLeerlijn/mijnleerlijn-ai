@@ -192,6 +192,7 @@ export function mapVariant(doc: PayloadVariantDoc): Variant {
     terminologyDictionary: doc.terminologyDictionary ?? [],
     websiteTeksten: mapWebsiteTeksten(doc.websiteTeksten, doc.branding.productName),
     contactEmail: doc.contactEmail ?? undefined,
+    curriculumWerkplaatsUrl: doc.curriculumWerkplaatsUrl ?? undefined,
     createdAt: new Date().toISOString(),
     createdBy: "payload",
   };

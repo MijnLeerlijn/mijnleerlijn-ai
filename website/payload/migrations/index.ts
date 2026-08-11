@@ -20,6 +20,7 @@ import * as migration_20260728_134927_verbetercentrum_kennisbasis_velden from '.
 import * as migration_20260729_120000_helpdesk_vragen from './20260729_120000_helpdesk_vragen';
 import * as migration_20260729_150000_categorie_kleuren_uitbreiden from './20260729_150000_categorie_kleuren_uitbreiden';
 import * as migration_20260730_120000_multibrand_variants from './20260730_120000_multibrand_variants';
+import * as migration_20260811_070000_curriculum_werkplaats_url from './20260811_070000_curriculum_werkplaats_url';
 
 export const migrations = [
   {
@@ -131,5 +132,10 @@ export const migrations = [
     up: migration_20260730_120000_multibrand_variants.up,
     down: migration_20260730_120000_multibrand_variants.down,
     name: '20260730_120000_multibrand_variants',
+  },
+  {
+    up: migration_20260811_070000_curriculum_werkplaats_url.up,
+    down: migration_20260811_070000_curriculum_werkplaats_url.down,
+    name: '20260811_070000_curriculum_werkplaats_url',
   },
 ];

@@ -44,6 +44,7 @@ export interface PayloadVariantDoc {
     footerTekst?: string | null;
   } | null;
   contactEmail?: string | null;
+  curriculumWerkplaatsUrl?: string | null;
 }
 
 export interface PayloadCategoryDoc {

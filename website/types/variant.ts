@@ -53,6 +53,7 @@ export interface Variant {
   terminologyDictionary: TerminologyEntry[];
   websiteTeksten: WebsiteTeksten;
   contactEmail?: string;
+  curriculumWerkplaatsUrl?: string;
   createdAt: string;
   createdBy: string;
 }
