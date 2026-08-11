@@ -31,6 +31,7 @@ import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
 import { AssistantEval } from "./payload/globals/AssistantEval";
 import { KennisbasisMijnleerlijn } from "./payload/globals/KennisbasisMijnleerlijn";
+import { HelpdeskInstellingen } from "./payload/globals/HelpdeskInstellingen";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -171,7 +172,7 @@ export default buildConfig({
     AssistantEvalQuestions,
     AssistantEvalRuns,
   ],
-  globals: [GmailConnection, KnowledgeSearch, AssistantEval, KennisbasisMijnleerlijn],
+  globals: [GmailConnection, KnowledgeSearch, AssistantEval, KennisbasisMijnleerlijn, HelpdeskInstellingen],
   editor: lexicalEditor(),
   db: postgresAdapter({
     pool: { connectionString: requireEnv("DATABASE_URI") },

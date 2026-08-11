@@ -5,11 +5,17 @@ import HandleidingenSidebar from "@/components/organisms/HandleidingenSidebar";
 import CurriculumWerkplaatsCard from "@/components/molecules/CurriculumWerkplaatsCard";
 import GradientAccent from "@/components/atoms/GradientAccent";
 import { haalTop5VoorbeeldVragen } from "@/lib/helpdesk/top5-voorbeeldvragen";
+import { haalCurriculumWerkplaatsUrl } from "@/lib/helpdesk/curriculum-werkplaats-url";
 import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
 async function haalVoorbeeldvragen(variantId: string): Promise<string[]> {
   const payload = await getPayload({ config });
   return haalTop5VoorbeeldVragen(payload, variantId);
+}
+
+async function haalCurriculumWerkplaatsCardUrl(): Promise<string | undefined> {
+  const payload = await getPayload({ config });
+  return haalCurriculumWerkplaatsUrl(payload);
 }
 
 // Helpdesk MVP 1.0 (2026-07-25): de homepage IS de chatbot — zie het
@@ -27,6 +33,7 @@ async function haalVoorbeeldvragen(variantId: string): Promise<string[]> {
 export default async function Home() {
   const variant = await getActiveVariant();
   const voorbeeldvragen = await haalVoorbeeldvragen(variant.id);
+  const curriculumWerkplaatsUrl = await haalCurriculumWerkplaatsCardUrl();
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 pb-16 pt-8 sm:px-8 sm:pt-12 lg:px-16">
@@ -39,7 +46,7 @@ export default async function Home() {
       <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[70%_30%] lg:gap-12">
         <HelpdeskChat voorbeeldvragen={voorbeeldvragen} />
         <div className="grid gap-6 lg:self-start">
-          {variant.curriculumWerkplaatsUrl && <CurriculumWerkplaatsCard href={variant.curriculumWerkplaatsUrl} />}
+          {curriculumWerkplaatsUrl && <CurriculumWerkplaatsCard href={curriculumWerkplaatsUrl} />}
           <HandleidingenSidebar />
         </div>
       </div>

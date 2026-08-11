@@ -44,6 +44,9 @@ export interface PayloadVariantDoc {
     footerTekst?: string | null;
   } | null;
   contactEmail?: string | null;
+}
+
+export interface PayloadHelpdeskInstellingenDoc {
   curriculumWerkplaatsUrl?: string | null;
 }
 

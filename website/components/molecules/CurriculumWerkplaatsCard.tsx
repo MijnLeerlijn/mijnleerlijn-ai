@@ -6,15 +6,17 @@ interface CurriculumWerkplaatsCardProps {
 }
 
 // Molecule: compact kaartje naar Curriculum Werkplaats (los productonderdeel,
-// eigen Next.js-app) op de publieke Helpdesk-homepage. `href` komt uit
-// variant.curriculumWerkplaatsUrl (payload/collections/Variants.ts) — de
-// homepage rendert dit kaartje alleen als die URL voor de actieve variant is
-// ingevuld, dus hier bewust geen hardcoded MijnLeerlijn-URL en geen eigen
-// zichtbaarheidscheck. Vast paars (CategorieIcoon "PenTool"/"purple", dezelfde
-// combinatie als de "curriculum-werkplaats"-categorie elders, zie
-// lib/data/categories.ts) in plaats van de variant-accentkleur: Curriculum
-// Werkplaats heeft een eigen merkidentiteit, los van welke onderwijsvariant
-// (MijnLeerlijn, MijnMonti, Mijn-D, …) hem toont.
+// eigen Next.js-app) op de publieke Helpdesk-homepage. `href` komt uit de
+// Global "Helpdesk-instellingen" (payload/globals/HelpdeskInstellingen.ts,
+// via lib/helpdesk/curriculum-werkplaats-url.ts) — één centrale URL voor de
+// hele Helpdesk, niet per variant. De homepage rendert dit kaartje alleen
+// als die URL is ingevuld, dus hier bewust geen hardcoded MijnLeerlijn-URL
+// en geen eigen zichtbaarheidscheck. Vast paars (CategorieIcoon
+// "PenTool"/"purple", dezelfde combinatie als de "curriculum-werkplaats"-
+// categorie elders, zie lib/data/categories.ts) in plaats van de
+// variant-accentkleur: Curriculum Werkplaats heeft een eigen merkidentiteit,
+// los van welke onderwijsvariant (MijnLeerlijn, MijnMonti, Mijn-D, …) hem
+// toont.
 export default function CurriculumWerkplaatsCard({ href }: CurriculumWerkplaatsCardProps) {
   return (
     <a

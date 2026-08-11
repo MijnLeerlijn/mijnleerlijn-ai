@@ -128,12 +128,14 @@ export interface Config {
     'knowledge-search': KnowledgeSearch;
     'assistant-eval': AssistantEval;
     'kennisbasis-mijnleerlijn': KennisbasisMijnleerlijn;
+    'helpdesk-instellingen': HelpdeskInstellingen;
   };
   globalsSelect: {
     'gmail-connection': GmailConnectionSelect<false> | GmailConnectionSelect<true>;
     'knowledge-search': KnowledgeSearchSelect<false> | KnowledgeSearchSelect<true>;
     'assistant-eval': AssistantEvalSelect<false> | AssistantEvalSelect<true>;
     'kennisbasis-mijnleerlijn': KennisbasisMijnleerlijnSelect<false> | KennisbasisMijnleerlijnSelect<true>;
+    'helpdesk-instellingen': HelpdeskInstellingenSelect<false> | HelpdeskInstellingenSelect<true>;
   };
   locale: null;
   widgets: {
@@ -279,10 +281,6 @@ export interface Variant {
    * Optioneel — overschrijft het standaard helpdesk-adres voor deze variant.
    */
   contactEmail?: string | null;
-  /**
-   * Optioneel. Volledige URL naar de Curriculum Werkplaats van deze variant. Leeg = geen kaartje op de homepage.
-   */
-  curriculumWerkplaatsUrl?: string | null;
   createdBy?: (number | null) | User;
   updatedAt: string;
   createdAt: string;
@@ -1569,7 +1567,6 @@ export interface VariantsSelect<T extends boolean = true> {
         footerTekst?: T;
       };
   contactEmail?: T;
-  curriculumWerkplaatsUrl?: T;
   createdBy?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -2272,6 +2269,21 @@ export interface KennisbasisMijnleerlijn {
   createdAt?: string | null;
 }
 /**
+ * Algemene instellingen voor de hele Helpdesk, ongeacht welke variant actief is.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "helpdesk-instellingen".
+ */
+export interface HelpdeskInstellingen {
+  id: number;
+  /**
+   * Optioneel. Leeg = geen Curriculum Werkplaats-kaartje op de homepage. Gevuld = kaartje zichtbaar voor alle varianten.
+   */
+  curriculumWerkplaatsUrl?: string | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "gmail-connection_select".
  */
@@ -2313,6 +2325,16 @@ export interface KennisbasisMijnleerlijnSelect<T extends boolean = true> {
   titel?: T;
   inhoud?: T;
   _status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "helpdesk-instellingen_select".
+ */
+export interface HelpdeskInstellingenSelect<T extends boolean = true> {
+  curriculumWerkplaatsUrl?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;
