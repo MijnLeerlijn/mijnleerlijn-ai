@@ -2,6 +2,7 @@ import { getPayload } from "payload";
 import config from "@/payload.config";
 import HelpdeskChat from "@/components/organisms/HelpdeskChat";
 import HandleidingenSidebar from "@/components/organisms/HandleidingenSidebar";
+import CurriculumWerkplaatsCard from "@/components/molecules/CurriculumWerkplaatsCard";
 import GradientAccent from "@/components/atoms/GradientAccent";
 import { haalTop5VoorbeeldVragen } from "@/lib/helpdesk/top5-voorbeeldvragen";
 import { getActiveVariant } from "@/lib/variant/get-active-variant";
@@ -37,7 +38,10 @@ export default async function Home() {
 
       <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[70%_30%] lg:gap-12">
         <HelpdeskChat voorbeeldvragen={voorbeeldvragen} />
-        <HandleidingenSidebar />
+        <div className="grid gap-6 lg:self-start">
+          {variant.curriculumWerkplaatsUrl && <CurriculumWerkplaatsCard href={variant.curriculumWerkplaatsUrl} />}
+          <HandleidingenSidebar />
+        </div>
       </div>
     </div>
   );

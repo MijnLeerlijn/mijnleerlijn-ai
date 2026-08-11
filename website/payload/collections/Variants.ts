@@ -270,6 +270,20 @@ export const Variants: CollectionConfig = {
       admin: { description: "Optioneel — overschrijft het standaard helpdesk-adres voor deze variant." },
     },
     {
+      // Curriculum Werkplaats-kaartje op de publieke Helpdesk-homepage: het
+      // kaartje (CurriculumWerkplaatsCard, gewired in de homepage) rendert
+      // alleen wanneer dit veld gevuld is — geen hardcoded MijnLeerlijn-URL
+      // in de component, zie de historie van dit veld. Werkt zo ongewijzigd
+      // voor toekomstige varianten (MijnMonti, Mijn-D, …).
+      name: "curriculumWerkplaatsUrl",
+      type: "text",
+      label: "Curriculum Werkplaats URL",
+      admin: {
+        description:
+          "Optioneel. Volledige URL naar de Curriculum Werkplaats van deze variant. Leeg = geen kaartje op de homepage.",
+      },
+    },
+    {
       name: "createdBy",
       type: "relationship",
       relationTo: "users",
