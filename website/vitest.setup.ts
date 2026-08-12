@@ -11,3 +11,4 @@ process.env.GMAIL_TOKEN_ENCRYPTION_KEY ??= "test-gmail-encryptiesleutel-niet-voo
 process.env.GMAIL_CLIENT_ID ??= "test-gmail-client-id";
 process.env.GMAIL_CLIENT_SECRET ??= "test-gmail-client-secret";
 process.env.GMAIL_REDIRECT_URI ??= "http://localhost:3000/api/gmail/oauth/callback";
+process.env.NEXT_PUBLIC_ROOT_DOMAIN ??= "mijnleerlijn.chat";

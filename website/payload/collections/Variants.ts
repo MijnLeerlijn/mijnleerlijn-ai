@@ -1,5 +1,7 @@
-import type { CollectionAfterChangeHook, CollectionConfig, Payload, PayloadRequest } from "payload";
+import type { CollectionAfterChangeHook, CollectionBeforeValidateHook, CollectionConfig, Payload, PayloadRequest } from "payload";
+import { ValidationError } from "payload";
 import { adminOnly } from "../access/roles";
+import { isReservedSlug } from "@/lib/variant/reserved-slugs";
 
 // Multi-brand variants (2026-07-30): bij het aanmaken van een nieuwe variant
 // automatisch een eigen Knowledge Source aanmaken ("Kennisbasis
@@ -57,6 +59,33 @@ export const maakAutomatischeKennisbron: CollectionAfterChangeHook = async ({ op
   }
 };
 
+// Dubbele bereikbaarheid (2026-08-11): slug is sindsdien de enige bron van
+// waarheid voor zowel de subdomein- als de padvorm (zie
+// lib/variant/in-memory-variant-resolver.ts en proxy.ts) — een gereserveerde
+// naam (bestaande route zoals "contact", of infrastructuur zoals "www"/
+// "curriculum") zou als slug die route/dat domein kunnen kapen, omdat
+// proxy.ts vóór Next.js' eigen routeringsresolutie draait. beforeValidate
+// i.p.v. beforeChange: moet vóór Payload's eigen unique-slug-validatie al
+// afwijzen (zelfde reden als vulVraagNormalizedIn in HelpdeskVragen.ts).
+// Geëxporteerd als losse functie voor rechtstreekse, ongemockte tests (zie
+// Variants.test.ts) — zelfde patroon als HelpdeskVragen.ts.
+export const wijsGereserveerdeSlugAf: CollectionBeforeValidateHook = ({ data, req }) => {
+  const slug = typeof data?.slug === "string" ? data.slug.trim() : "";
+  if (slug && isReservedSlug(slug)) {
+    throw new ValidationError({
+      collection: "variants",
+      errors: [
+        {
+          path: "slug",
+          message: `"${slug}" is een gereserveerde naam (bestaande route of infrastructuur) en kan niet als variant-slug gebruikt worden.`,
+        },
+      ],
+      req,
+    });
+  }
+  return data;
+};
+
 // Zie docs/DATA-MODEL.md §Variant en docs/MULTI-VARIANT-STRATEGY.md.
 // Variant-configuratie is uitsluitend een Beheerder-bevoegdheid (zie
 // docs/CONTENT-MODEL.md §Wie mag wat schrijven) — een redacteur, ook een
@@ -110,7 +139,10 @@ export const Variants: CollectionConfig = {
       required: true,
       unique: true,
       label: "Slug",
-      admin: { description: "Gebruikt in de pad-gebaseerde fallback-route, bijv. 'mijnmonti'." },
+      admin: {
+        description:
+          "Bron van waarheid voor bereikbaarheid: bepaalt zowel het subdomein ({slug}.mijnleerlijn.chat) als het pad (mijnleerlijn.chat/{slug}) — bijv. 'mijnmonti'. Mag geen bestaande route of infrastructuurnaam zijn (wordt automatisch geweigerd).",
+      },
     },
     {
       name: "status",
@@ -165,6 +197,10 @@ export const Variants: CollectionConfig = {
           type: "select",
           required: true,
           defaultValue: "slug_path",
+          admin: {
+            description:
+              "\"Subdomein\" en \"Pad-gebaseerde slug\" betekenen sinds de dubbele-bereikbaarheidswijziging (2026-08-11) hetzelfde: elke variant zonder eigen domein is altijd automatisch via ZOWEL {slug}.mijnleerlijn.chat ALS mijnleerlijn.chat/{slug} bereikbaar (de padvorm redirect permanent naar de subdomeinvorm, zie proxy.ts) — dit is geen keuze meer, alleen \"Eigen domein\" is dat nog.",
+          },
           options: [
             { label: "Eigen domein", value: "custom_domain" },
             { label: "Subdomein", value: "subdomain" },
@@ -291,6 +327,7 @@ export const Variants: CollectionConfig = {
     },
   ],
   hooks: {
+    beforeValidate: [wijsGereserveerdeSlugAf],
     beforeChange: [
       ({ operation, data, req }) => {
         if (operation === "create" && req.user) data.createdBy = req.user.id;

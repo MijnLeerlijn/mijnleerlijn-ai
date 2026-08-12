@@ -220,7 +220,7 @@ export interface Variant {
    */
   name: string;
   /**
-   * Gebruikt in de pad-gebaseerde fallback-route, bijv. 'mijnmonti'.
+   * Bron van waarheid voor bereikbaarheid: bepaalt zowel het subdomein ({slug}.mijnleerlijn.chat) als het pad (mijnleerlijn.chat/{slug}) — bijv. 'mijnmonti'. Mag geen bestaande route of infrastructuurnaam zijn (wordt automatisch geweigerd).
    */
   slug: string;
   /**
@@ -236,6 +236,9 @@ export interface Variant {
    */
   educationType: string;
   domain: {
+    /**
+     * "Subdomein" en "Pad-gebaseerde slug" betekenen sinds de dubbele-bereikbaarheidswijziging (2026-08-11) hetzelfde: elke variant zonder eigen domein is altijd automatisch via ZOWEL {slug}.mijnleerlijn.chat ALS mijnleerlijn.chat/{slug} bereikbaar (de padvorm redirect permanent naar de subdomeinvorm, zie proxy.ts) — dit is geen keuze meer, alleen "Eigen domein" is dat nog.
+     */
     type: 'custom_domain' | 'subdomain' | 'slug_path';
     value: string;
     domainStatus: 'slug_path' | 'subdomain' | 'custom_domain';

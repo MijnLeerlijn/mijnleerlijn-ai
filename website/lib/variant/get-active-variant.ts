@@ -23,9 +23,22 @@ import { isProduction } from "@/config/env";
 // alerting, geen stille fout) i.p.v. de hele publieke site plat te leggen.
 // Een verkeerd geconfigureerde ANDERE variant blijft wél hard falen (kleine
 // blast radius, geen reden om de veiligheidsklep breder te maken dan nodig).
+// Puur/synchroon, geen next/headers-afhankelijkheid — zodat Route Handlers
+// die de NextRequest al als parameter hebben (app/api/feedback/route.ts,
+// app/api/contact/route.ts) 'm rechtstreeks op `request.headers` kunnen
+// toepassen i.p.v. via de ambient next/headers()-context te moeten gaan
+// (die laatste vereist Next's request-scoped AsyncLocalStorage — onnodige
+// koppeling voor code die de headers al in de hand heeft, en lastiger te
+// unit-testen: rechtstreeks een NextRequest bouwen volstaat dan). Eén
+// implementatie van "hoe lees je het x-variant-slug-signaal", door
+// getActiveVariant() hieronder en beide routes hergebruikt.
+export function variantSlugFromHeaders(headerList: Pick<Headers, "get">): string {
+  return headerList.get("x-variant-slug") ?? defaultVariant.slug;
+}
+
 export async function getActiveVariant(): Promise<Variant> {
   const headerList = await headers();
-  const slug = headerList.get("x-variant-slug") ?? defaultVariant.slug;
+  const slug = variantSlugFromHeaders(headerList);
   const isDefaultSlug = slug === defaultVariant.slug;
 
   try {

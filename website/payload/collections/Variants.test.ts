@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { maakAutomatischeKennisbron } from "./Variants";
+import { ValidationError } from "payload";
+import { maakAutomatischeKennisbron, wijsGereserveerdeSlugAf } from "./Variants";
 
 const mockCreate = vi.fn();
 const mockLoggerError = vi.fn();
@@ -92,5 +93,45 @@ describe("maakAutomatischeKennisbron", () => {
       } as never)
     ).resolves.toBeUndefined();
     expect(mockLoggerError).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Dubbele bereikbaarheid (2026-08-11): laag 2 van de bescherming uit
+// lib/variant/reserved-slugs.ts (laag 1 is de resolver zelf, zie
+// in-memory-variant-resolver.test.ts) — een gereserveerde naam mag nooit als
+// variant-slug opgeslagen worden.
+describe("wijsGereserveerdeSlugAf", () => {
+  it("laat data ongewijzigd bij een niet-gereserveerde slug", () => {
+    const data = { slug: "mijnmonti" };
+
+    const result = wijsGereserveerdeSlugAf({ data, req: {} } as never);
+
+    expect(result).toBe(data);
+  });
+
+  it("gooit een ValidationError bij een gereserveerde naam (bestaande route)", () => {
+    const data = { slug: "contact" };
+
+    expect(() => wijsGereserveerdeSlugAf({ data, req: {} } as never)).toThrow(ValidationError);
+  });
+
+  it("gooit een ValidationError bij een gereserveerde naam (infrastructuur)", () => {
+    const data = { slug: "curriculum" };
+
+    expect(() => wijsGereserveerdeSlugAf({ data, req: {} } as never)).toThrow(ValidationError);
+  });
+
+  it("is hoofdletterongevoelig", () => {
+    const data = { slug: "Contact" };
+
+    expect(() => wijsGereserveerdeSlugAf({ data, req: {} } as never)).toThrow(ValidationError);
+  });
+
+  it("laat data ongewijzigd wanneer slug ontbreekt (Payload's eigen required-validatie geeft de fout)", () => {
+    const data = {};
+
+    const result = wijsGereserveerdeSlugAf({ data, req: {} } as never);
+
+    expect(result).toBe(data);
   });
 });

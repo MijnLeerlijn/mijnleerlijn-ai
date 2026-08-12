@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAnswerFeedback } from "@/services/payload";
 import { maakRateLimiter } from "@/lib/contact/validate";
+import { variantSlugFromHeaders } from "@/lib/variant/get-active-variant";
 
 // Ja/Nee-feedback onder een AI-antwoord (components/molecules/
 // FeedbackControl.tsx) — zie docs/AI-KNOWLEDGE-STRATEGY.md §Kwaliteitsbewaking.
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
   const slugs = Array.isArray(bronArtikelSlugs) ? bronArtikelSlugs.filter((s) => typeof s === "string") : [];
 
   try {
-    const variantSlug = request.headers.get("x-variant-slug") ?? undefined;
+    const variantSlug = variantSlugFromHeaders(request.headers);
     const { id } = await createAnswerFeedback({
       vraag: vraag.trim(),
       antwoordTekst: antwoordTekst.trim(),

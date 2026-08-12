@@ -1,6 +1,8 @@
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { defaultVariant } from "@/config/variants";
+import { getRootDomain } from "@/config/env";
+import { isReservedSlug } from "./reserved-slugs";
 import type { VariantResolver } from "./variant-resolver";
 
 // Multi-brand variants (2026-07-30): enige huidige implementatie van
@@ -77,35 +79,50 @@ export class InMemoryVariantResolver implements VariantResolver {
     // BEHALVE de standaardvariant zelf, die altijd bereikbaar moet blijven
     // ongeacht een (foutief) actief=false op dat record.
     const geldig = (rij: DomeinRij) => rij.actief || isDefault(rij);
-    const hoofddomein = rijen.find(isDefault)?.domainValue?.toLowerCase();
+    // Alleen een écht gereserveerde slug uitsluiten (defensief — de
+    // beforeValidate-hook op Variants voorkomt dit al bij het opslaan, dit
+    // is de tweede laag, zie lib/variant/reserved-slugs.ts).
+    const nietGereserveerd = (rij: DomeinRij) => !isReservedSlug(rij.slug);
+    const hoofddomein = getRootDomain().toLowerCase();
 
-    // 1. Eigen domein van een ANDERE (niet-standaard) variant — de
-    // standaardvariant zelf wordt hier bewust uitgesloten, zodat een
-    // pad-gebaseerde slug (stap 3) op het hoofddomein altijd nog een kans
-    // krijgt vóórdat er op de standaardvariant wordt teruggevallen.
+    // 1. Eigen domein van een ANDERE (niet-standaard) variant — deze blijft
+    // de enige uitzondering die niet generiek via slug loopt (een variant
+    // met een echt, extern domein heeft geen subdomein/pad-vorm nodig).
     const customMatch = rijen.find(
       (r) => !isDefault(r) && r.domainType === "custom_domain" && r.domainValue.toLowerCase() === schoneHost && geldig(r)
     );
     if (customMatch) return customMatch.slug;
 
-    // 2. Subdomein t.o.v. het hoofddomein (de standaardvariant se eigen domein).
-    if (hoofddomein) {
-      const subdomainMatch = rijen.find(
-        (r) =>
-          r.domainType === "subdomain" &&
-          schoneHost === `${r.domainValue.toLowerCase()}.${hoofddomein}` &&
-          geldig(r)
-      );
-      if (subdomainMatch) return subdomainMatch.slug;
-    }
+    // 2. Subdomein — generiek voor elke actieve, niet-standaard variant
+    // zonder eigen domein: {slug}.{hoofddomein}. Vroeger gekoppeld aan
+    // domain.value + domain.type === "subdomain" (exclusief t.o.v. stap 3);
+    // nu rechtstreeks op `slug` (de bron van waarheid) en niet meer
+    // exclusief — een variant is voortaan altijd via beide vormen
+    // bereikbaar, ongeacht `domain.type` (subdomain/slug_path betekenen nu
+    // hetzelfde, zie payload/collections/Variants.ts).
+    const subdomainMatch = rijen.find(
+      (r) =>
+        !isDefault(r) &&
+        r.domainType !== "custom_domain" &&
+        nietGereserveerd(r) &&
+        schoneHost === `${r.slug}.${hoofddomein}` &&
+        geldig(r)
+    );
+    if (subdomainMatch) return subdomainMatch.slug;
 
-    // 3. Pad-gebaseerde slug — uitsluitend zinvol op het hoofddomein zelf
-    // (bijv. mijnleerlijn.chat/mijnmonti/...), niet op een ander domein.
-    if (!hoofddomein || schoneHost === hoofddomein) {
-      const eersteSegment = pathname.split("/").filter(Boolean)[0];
+    // 3. Pad-gebaseerde slug — generiek, zelfde variant-verzameling als
+    // stap 2, uitsluitend zinvol op de hoofdsite zelf (kaal domein of
+    // www-vorm), niet op een willekeurig ander domein.
+    if (schoneHost === hoofddomein || schoneHost === `www.${hoofddomein}`) {
+      const eersteSegment = pathname.split("/").filter(Boolean)[0]?.toLowerCase();
       if (eersteSegment) {
         const slugMatch = rijen.find(
-          (r) => r.domainType === "slug_path" && r.slug === eersteSegment.toLowerCase() && geldig(r)
+          (r) =>
+            !isDefault(r) &&
+            r.domainType !== "custom_domain" &&
+            nietGereserveerd(r) &&
+            r.slug === eersteSegment &&
+            geldig(r)
         );
         if (slugMatch) return slugMatch.slug;
       }

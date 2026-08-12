@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import { Button, CheckboxInput, Gutter, TextInput, toast } from "@payloadcms/ui";
-import { defaultVariant } from "@/config/variants";
+import { variantPublicUrl } from "@/lib/variant/variant-public-url";
 
 // Multi-brand variants (2026-07-30): overzichtslijst + snelle acties voor de
 // Variants-collectie (payload/collections/Variants.ts) — zelfde architectuur
@@ -34,21 +34,6 @@ interface Stats {
   laatsteGesprek: string | null;
 }
 
-// `hoofddomein` is bewust een parameter i.p.v. altijd de hardcoded
-// `defaultVariant.domain.value` ("mijnleerlijn.chat", geen www) — die
-// noodvariant is uitsluitend bedoeld als allerlaatste veiligheidsklep
-// (zie config/variants.ts), niet als brondata voor UI-links. Productie se
-// echte MijnLeerlijn-record heeft `domain.value: "www.mijnleerlijn.chat"`
-// (mét www, het canonieke domein) — met de hardcoded waarde bouwde deze
-// knop een niet-canonieke URL (werkte toevallig alleen omdat Vercel non-
-// www naar www doorstuurt). Zie aanroep hieronder: leidt het echte
-// hoofddomein af uit de al opgehaalde variantenlijst.
-function variantPublicUrl(variant: VariantDoc, hoofddomein: string): string {
-  if (variant.domain.type === "custom_domain") return `https://${variant.domain.value}`;
-  if (variant.domain.type === "subdomain") return `https://${variant.domain.value}.${hoofddomein}`;
-  return `https://${hoofddomein}/${variant.domain.value}`;
-}
-
 function slugify(tekst: string): string {
   return tekst
     .toLowerCase()
@@ -69,7 +54,6 @@ export function VariantenView() {
   const [stats, setStats] = useState<Record<number, Stats>>({});
   const [status, setStatus] = useState<"laden" | "klaar" | "fout">("laden");
   const [nieuweNaam, setNieuweNaam] = useState("");
-  const [nieuweHostname, setNieuweHostname] = useState("");
   const [nieuwOnderwijstype, setNieuwOnderwijstype] = useState("algemeen");
   const [toevoegen, setToevoegen] = useState(false);
   const [gekoppeldeContent, setGekoppeldeContent] = useState<Record<number, Record<string, number>>>({});
@@ -113,19 +97,23 @@ export function VariantenView() {
 
   async function voegToe() {
     const naam = nieuweNaam.trim();
-    const hostname = nieuweHostname.trim();
-    if (!naam || !hostname) return;
+    if (!naam) return;
     setToevoegen(true);
     try {
+      const slug = slugify(naam);
       const res = await fetch("/api/variants", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: naam,
-          slug: `${slugify(naam)}-${Date.now().toString(36)}`,
+          slug,
           educationType: nieuwOnderwijstype.trim() || "algemeen",
-          domain: { type: "subdomain", value: slugify(hostname), domainStatus: "subdomain" },
+          // "subdomain"/"slug_path" zijn sinds de dubbele-bereikbaarheidswijziging
+          // gelijkwaardig (zie lib/variant/variant-public-url.ts) — domain.value
+          // spiegelt hier bewust de slug (Payload-verplicht veld zonder default,
+          // geen apart hostname-veld meer, dus geen kans op drift).
+          domain: { type: "subdomain", value: slug, domainStatus: "subdomain" },
           branding: { productName: naam, tagline: naam },
         }),
       });
@@ -134,9 +122,10 @@ export function VariantenView() {
         throw new Error(data?.errors?.[0]?.message || "Aanmaken mislukt.");
       }
       setNieuweNaam("");
-      setNieuweHostname("");
       setNieuwOnderwijstype("algemeen");
-      toast.success(`Variant "${naam}" toegevoegd — vul verder aan (logo, terminologie, …) via 'Volledig bewerken'.`);
+      toast.success(
+        `Variant "${naam}" toegevoegd op ${variantPublicUrl({ slug, domain: { type: "subdomain", value: slug } })} — vul verder aan (logo, terminologie, …) via 'Volledig bewerken'.`
+      );
       await laadAlles();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Aanmaken mislukt.");
@@ -183,10 +172,6 @@ export function VariantenView() {
     }
   }
 
-  const standaardvariant = varianten.find((v) => v.slug === defaultVariant.slug);
-  const hoofddomein =
-    standaardvariant?.domain.type === "custom_domain" ? standaardvariant.domain.value : defaultVariant.domain.value;
-
   return (
     <Gutter>
       <h1 style={{ marginBottom: "0.25rem" }}>Varianten</h1>
@@ -218,15 +203,6 @@ export function VariantenView() {
         </div>
         <div style={{ maxWidth: 200 }}>
           <TextInput
-            path="nieuweHostname"
-            label="Hostname"
-            value={nieuweHostname}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setNieuweHostname(e.target.value)}
-            placeholder="Bv. mijnmonti"
-          />
-        </div>
-        <div style={{ maxWidth: 200 }}>
-          <TextInput
             path="nieuwOnderwijstype"
             label="Onderwijstype"
             value={nieuwOnderwijstype}
@@ -234,7 +210,7 @@ export function VariantenView() {
             placeholder="Bv. montessori"
           />
         </div>
-        <Button buttonStyle="secondary" disabled={!nieuweNaam.trim() || !nieuweHostname.trim() || toevoegen} onClick={voegToe}>
+        <Button buttonStyle="secondary" disabled={!nieuweNaam.trim() || toevoegen} onClick={voegToe}>
           {toevoegen ? "Bezig met toevoegen…" : "+ Nieuwe variant"}
         </Button>
       </div>
@@ -261,7 +237,7 @@ export function VariantenView() {
               const logoUrl = typeof variant.branding.logo === "object" ? variant.branding.logo?.url : undefined;
               const variantStats = stats[variant.id];
               const gekoppeld = gekoppeldeContent[variant.id];
-              const url = variantPublicUrl(variant, hoofddomein);
+              const url = variantPublicUrl(variant);
               return (
                 <tr key={variant.id} style={{ borderBottom: "1px solid var(--theme-elevation-100)" }}>
                   <td style={{ padding: "0.5rem" }}>

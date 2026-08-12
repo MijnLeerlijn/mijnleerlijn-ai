@@ -66,6 +66,58 @@ describe("InMemoryVariantResolver", () => {
     expect(await resolver.resolveSlug("mijnleerlijn.chat", "/mijnd/iets")).toBe("mijnd");
   });
 
+  // Dubbele bereikbaarheid (2026-08-11): de kern-eis van deze wijziging —
+  // domain.type bepaalt niet meer exclusief via welke vorm een variant
+  // bereikbaar is, `slug` is de enige bron van waarheid voor beide.
+  it("matcht een domainType 'subdomain'-variant ÓÓK via pad (dubbele bereikbaarheid)", async () => {
+    mockFind.mockResolvedValue({
+      docs: [
+        maakVariantDoc({ slug: "mijnleerlijn", domainType: "custom_domain", domainValue: "mijnleerlijn.chat" }),
+        maakVariantDoc({ slug: "mijnmonti", domainType: "subdomain", domainValue: "mijnmonti", actief: true }),
+      ],
+    });
+    const resolver = await maakResolver();
+    expect(await resolver.resolveSlug("mijnleerlijn.chat", "/mijnmonti/iets")).toBe("mijnmonti");
+  });
+
+  it("matcht een domainType 'slug_path'-variant ÓÓK via subdomein (dubbele bereikbaarheid)", async () => {
+    mockFind.mockResolvedValue({
+      docs: [
+        maakVariantDoc({ slug: "mijnleerlijn", domainType: "custom_domain", domainValue: "mijnleerlijn.chat" }),
+        maakVariantDoc({ slug: "mijnd", domainType: "slug_path", domainValue: "mijnd", actief: true }),
+      ],
+    });
+    const resolver = await maakResolver();
+    expect(await resolver.resolveSlug("mijnd.mijnleerlijn.chat", "/")).toBe("mijnd");
+  });
+
+  it("matcht de pad-gebaseerde slug ook op de www-vorm van het hoofddomein", async () => {
+    mockFind.mockResolvedValue({
+      docs: [
+        maakVariantDoc({ slug: "mijnleerlijn", domainType: "custom_domain", domainValue: "mijnleerlijn.chat" }),
+        maakVariantDoc({ slug: "mijnmonti", domainType: "subdomain", domainValue: "mijnmonti", actief: true }),
+      ],
+    });
+    const resolver = await maakResolver();
+    expect(await resolver.resolveSlug("www.mijnleerlijn.chat", "/mijnmonti")).toBe("mijnmonti");
+  });
+
+  // Laag 1 van de bescherming uit reserved-slugs.ts (zie ook Variants.test.ts
+  // voor laag 2, de beforeValidate-hook) — defensief: zelfs als een
+  // gereserveerde naam ooit als rij bestaat, mag de resolver 'm nooit als
+  // variant-subdomein/-pad herkennen.
+  it("negeert een gereserveerde slug, zowel op subdomein- als padvorm", async () => {
+    mockFind.mockResolvedValue({
+      docs: [
+        maakVariantDoc({ slug: "mijnleerlijn", domainType: "custom_domain", domainValue: "mijnleerlijn.chat" }),
+        maakVariantDoc({ slug: "contact", domainType: "subdomain", domainValue: "contact", actief: true }),
+      ],
+    });
+    const resolver = await maakResolver();
+    expect(await resolver.resolveSlug("contact.mijnleerlijn.chat", "/")).toBe("mijnleerlijn");
+    expect(await resolver.resolveSlug("mijnleerlijn.chat", "/contact")).toBe("mijnleerlijn");
+  });
+
   it("valt terug op de standaardvariant zonder enige match", async () => {
     mockFind.mockResolvedValue({
       docs: [maakVariantDoc({ slug: "mijnleerlijn", domainType: "custom_domain", domainValue: "mijnleerlijn.chat" })],

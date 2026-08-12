@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { createContactSubmission } from "@/services/payload";
+import { defaultVariant } from "@/config/variants";
 
 vi.mock("payload", () => ({ getPayload: vi.fn() }));
 vi.mock("@/payload.config", () => ({ default: {} }));
@@ -38,11 +39,11 @@ function maakFormData(overrides: Record<string, string> = {}): FormData {
 // blijven meetellen — zie ook de "x-real-ip"-aanpak in
 // app/api/helpdesk/ask/route.test.ts.
 let volgendIp = 1;
-function maakRequest(form: FormData): NextRequest {
+function maakRequest(form: FormData, extraHeaders: Record<string, string> = {}): NextRequest {
   return new NextRequest("http://localhost:3000/api/contact", {
     method: "POST",
     body: form,
-    headers: { "x-real-ip": `203.0.113.${volgendIp++}` },
+    headers: { "x-real-ip": `203.0.113.${volgendIp++}`, ...extraHeaders },
   });
 }
 
@@ -68,6 +69,26 @@ describe("POST /api/contact — basisvalidatie (bestaand gedrag)", () => {
     expect(response.status).toBe(200);
     expect(data.ok).toBe(true);
     expect(mockCreateSubmission).not.toHaveBeenCalled();
+  });
+
+  // Dubbele bereikbaarheid (2026-08-11): leest de door proxy.ts gezette
+  // x-variant-slug-header rechtstreeks van `request.headers` (zie
+  // lib/variant/get-active-variant.ts se variantSlugFromHeaders()) — geen
+  // aparte, tweede implementatie van dit signaal.
+  it("geeft de x-variant-slug-header door aan createContactSubmission", async () => {
+    await POST(maakRequest(maakFormData(), { "x-variant-slug": "mijnmonti" }));
+
+    expect(mockCreateSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({ variantSlug: "mijnmonti" })
+    );
+  });
+
+  it("valt terug op de standaardvariant-slug wanneer de header ontbreekt", async () => {
+    await POST(maakRequest(maakFormData()));
+
+    expect(mockCreateSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({ variantSlug: defaultVariant.slug })
+    );
   });
 });
 

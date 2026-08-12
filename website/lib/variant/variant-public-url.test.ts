@@ -43,8 +43,8 @@ describe("variantPublicUrl", () => {
     expect(variantPublicUrl(variant)).toBe("https://mijnmonti.mijnleerlijn.chat");
   });
 
-  it("bouwt de URL voor een pad-gebaseerde slug op het hoofddomein", () => {
+  it("bouwt óók de subdomein-URL voor domain.type slug_path — dat is nu de canonieke vorm, de padvorm is alleen nog een redirect-alias (zie proxy.ts)", () => {
     const variant = maakVariant({ type: "slug_path", value: "mijnmonti" });
-    expect(variantPublicUrl(variant)).toBe("https://mijnleerlijn.chat/mijnmonti");
+    expect(variantPublicUrl(variant)).toBe("https://mijnmonti.mijnleerlijn.chat");
   });
 });

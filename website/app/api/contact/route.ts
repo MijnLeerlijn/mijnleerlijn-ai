@@ -6,6 +6,7 @@ import { uploadBijlage } from "@/services/storage";
 import { verzendEmail } from "@/services/email";
 import { optionalEnv } from "@/config/env";
 import { grofApparaat, isGeldigEmail, maakRateLimiter } from "@/lib/contact/validate";
+import { variantSlugFromHeaders } from "@/lib/variant/get-active-variant";
 
 // Echte verwerking van het contactformulier — zie docs/SECURITY-AND-PRIVACY.md
 // en Fase 4 Stap 8. Uitsluitend deze route mag ContactSubmissions aanmaken
@@ -107,7 +108,7 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    const variantSlug = request.headers.get("x-variant-slug") ?? undefined;
+    const variantSlug = variantSlugFromHeaders(request.headers);
     const helpCenterUrl = optionalEnv("NEXT_PUBLIC_SERVER_URL") ?? request.nextUrl.origin;
 
     const { id } = await createContactSubmission({
