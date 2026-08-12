@@ -93,28 +93,32 @@ export default buildConfig({
     // `afterNavLinks` voegt de menu-links toe (custom views krijgen die
     // niet automatisch).
     components: {
-      // Menu-herindeling (2026-07-31): nog maar twee navigatiegroepen via
-      // afterNavLinks — "Basis" (BasisNavLinks.tsx, momenteel alleen AI
-      // Verbetercentrum) en "Varianten" (VariantenNavLinks.tsx, alle vijf
-      // Varianten-beheerschermen in één groep — vervangt de eerder losse
-      // DownloadNavLinks/HelpdeskVragenNavLinks/VerbetercentrumNavLinks).
-      // HelpdeskVragen is `admin.hidden` (volledig vervangen door zijn
-      // custom scherm), dus deze link is de enige toegang daartoe. Variants
-      // en VariantOverrides zijn bewust NIET hidden (zie het commentaar in
-      // Variants.ts: `hidden` bleek ook de client-side formulierrendering
-      // te blokkeren, niet alleen de nav) — ze staan daarom ook nog in de
-      // "Basis — Technisch beheer"-groep, voor wie het volledige Payload-
-      // editscherm nodig heeft (logo/terminologie/website-teksten/domein).
-      afterNavLinks: [
-        "@/payload/components/BasisNavLinks#BasisNavLinks",
-        "@/payload/components/VariantenNavLinks#VariantenNavLinks",
-      ],
-      // Admin-shell-fix (2026-07-28): Component wijst naar de nieuwe
-      // server-wrappers in AdminViewShell.tsx (renderen de standaard
-      // Payload-adminshell via <DefaultTemplate> om de ongewijzigde
-      // content-componenten heen), niet meer rechtstreeks naar de
-      // "use client"-viewcomponenten — zie AdminViewShell.tsx voor de reden.
+      // Admin-rebrand Fase 1 (2026-08-12): BeheerNavLinks.tsx vervangt
+      // BasisNavLinks.tsx + VariantenNavLinks.tsx (verwijderd) — één
+      // permissiebewuste component met alle 24 collecties/globals + 7
+      // custom views in 4 taakgerichte hoofdgroepen (Algemeen, Helpdesk AI,
+      // Creator, Curriculum Werkplaats — zie lib/admin-nav/nav-groups.ts),
+      // i.p.v. Payload's kale, technische standaardnav. Die standaardnav
+      // wordt via CSS verborgen (payload/components/admin-shell.css) —
+      // GEEN enkele collectie/global-config verandert hierdoor (dus geen
+      // admin.hidden, zie de toelichting in Variants.ts over waarom niet).
+      afterNavLinks: ["@/payload/components/BeheerNavLinks#BeheerNavLinks"],
+      // Admin-rebrand Fase 1: eigen dashboard + loginpagina. Beide
+      // viewKeys vallen samen met een ingebouwde Payload-route
+      // (dashboard/login), dus krijgen ze — anders dan de custom views
+      // hieronder — altijd al automatisch de juiste chrome (resp.
+      // <DefaultTemplate>, <MinimalTemplate>) zonder AdminViewShell.tsx.
+      // BeheerLoginView.tsx bouwt zelf een volledig eigen vormgeving maar
+      // hergebruikt Payload's eigen Form/useAuth/EmailField/PasswordField/
+      // getSafeRedirect-bouwstenen — geen nieuw authenticatiemechanisme.
       views: {
+        dashboard: { Component: "@/payload/components/BeheerDashboard#BeheerDashboard" },
+        login: { Component: "@/payload/components/BeheerLoginView#BeheerLoginView" },
+        // Admin-shell-fix (2026-07-28): Component wijst naar de nieuwe
+        // server-wrappers in AdminViewShell.tsx (renderen de standaard
+        // Payload-adminshell via <DefaultTemplate> om de ongewijzigde
+        // content-componenten heen), niet meer rechtstreeks naar de
+        // "use client"-viewcomponenten — zie AdminViewShell.tsx voor de reden.
         downloadbeheer: {
           Component: "@/payload/components/AdminViewShell#DownloadbeheerViewShell",
           path: "/download-beheer",

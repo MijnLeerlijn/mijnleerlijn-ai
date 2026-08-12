@@ -1,0 +1,347 @@
+/*
+ * Admin-rebrand Fase 1 (2026-08-12) — MijnLeerlijn-huisstijl bovenop Payload's
+ * eigen admin-CSS. Eén bestand, drie taken (zie payload/components/
+ * BeheerNavLinks.tsx, BeheerDashboard.tsx, BeheerLoginView.tsx voor de
+ * bijbehorende React-componenten):
+ *   1. Kleurtokens (--ml-admin-*) — los van Payload's eigen --theme- en
+ *      --color--schaal (die blijft ongewijzigd: draagt betekenis
+ *      "gelukt"/"mislukt" op alle bestaande schermen) en los van het
+ *      publieke-site-only --variant-accent uit app/globals.css (andere
+ *      React-boom, resolvet hier toch niet).
+ *   2. Verbergen van Payload's automatisch gegenereerde navigatiegroepen
+ *      (bewust GEEN admin.hidden op de collecties/globals zelf — zie de
+ *      toelichting in payload/collections/Variants.ts over waarom dat
+ *      field-schema's en deep links breekt). Elke groep krijgt van Payload
+ *      zelf een stabiele id (`nav-group-{admin.group}`, bevestigd in
+ *      node_modules/@payloadcms/ui/dist/elements/NavGroup/index.js) —
+ *      hieronder verborgen via attribuutselectors (i.p.v. #id, vanwege de
+ *      spatie/liggend streepje in "Basis — Technisch beheer"). Onder de
+ *      motorkap blijft alles precies zoals vandaag: routes, formulieren,
+ *      deep links.
+ *   3. De inlogpagina breder maken dan Payload's standaard, smalle
+ *      loginkaart (.login.template-minimal is uniek voor deze ene route,
+ *      zie getRouteData.js — raakt geen enkele andere MinimalTemplate-
+ *      pagina zoals wachtwoord-vergeten/resetten).
+ *
+ * Werkt zonder speciale Payload-configuratiesleutel (die bestaat niet in
+ * deze versie) doordat Payload's eigen tokens/klassen binnen een CSS-laag
+ * (@layer payload-default) staan — elke NIET-gelaagde regel (zoals dit hele
+ * bestand) wint automatisch, ongeacht ladingsvolgorde of specificiteit.
+ * Geïmporteerd in app/(payload)/layout.tsx, ná "@payloadcms/next/css".
+ */
+
+:root {
+  --ml-admin-accent: #7c3aed; /* violet-600 — zelfde waarde als de bestaande "Paars"-categoriekleur (lib/data/categorie-kleuren.ts) */
+  --ml-admin-accent-hover: #6d28d9; /* violet-700 */
+  --ml-admin-accent-soft: #ede9fe; /* violet-100 */
+  --ml-admin-accent-contrast: #ffffff;
+  --ml-admin-brand-donkerblauw: #002641; /* officieel, brandbook */
+  --ml-admin-brand-gradient: linear-gradient(45deg, #1588c9, #53ac32, #fec905, #ec6608, #e10919); /* officieel brandbook-verloop, dunne accentbalk, geen vlakvulling */
+  --ml-admin-radius: 12px;
+  --ml-admin-radius-sm: 8px;
+  --ml-admin-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* --- 2. Native nav verbergen (presentatielaag, geen configuratiewijziging) --- */
+[id="nav-group-Basis"],
+[id="nav-group-Basis — Technisch beheer"],
+[id="nav-group-Varianten"],
+[id="nav-group-Kennisbasis MijnLeerlijn"],
+[id="nav-group-Beheer"] {
+  display: none;
+}
+
+/* --- Nieuwe branded nav (BeheerNavLinks.tsx) --- */
+.ml-nav-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 20px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--theme-elevation-100);
+}
+
+.ml-nav-brand__logo {
+  height: 28px;
+  width: auto;
+}
+
+.ml-nav-brand__subtitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--theme-elevation-500);
+}
+
+.ml-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ml-nav-link__icon {
+  flex-shrink: 0;
+  color: var(--theme-elevation-400);
+}
+
+.nav__link:has(.nav__link-indicator) .ml-nav-link__icon {
+  color: var(--ml-admin-accent);
+}
+
+.nav__link-indicator {
+  background: var(--ml-admin-accent) !important;
+}
+
+.ml-nav-muted-label {
+  margin: 10px 0 2px;
+  padding-left: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--theme-elevation-400);
+}
+
+.ml-nav-link--muted .nav__link {
+  opacity: 0.75;
+  font-size: 13px;
+}
+
+.ml-nav-placeholder .nav-group__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+
+.ml-nav-placeholder__badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ml-admin-accent-soft);
+  color: var(--ml-admin-accent-hover);
+}
+
+/* --- Dashboard (BeheerDashboard.tsx) --- */
+.ml-dashboard {
+  padding: 8px 0 40px;
+}
+
+.ml-dashboard__welcome-title {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--theme-elevation-800);
+}
+
+.ml-dashboard__welcome-subtitle {
+  font-size: 15px;
+  color: var(--theme-elevation-500);
+  margin: 0 0 36px;
+}
+
+.ml-dashboard__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.ml-dashboard__group-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--theme-elevation-500);
+  margin: 0 0 12px;
+}
+
+.ml-dashboard__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.ml-dashboard__card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--ml-admin-radius);
+  border: 1px solid var(--theme-elevation-100);
+  background: var(--theme-elevation-0);
+  box-shadow: var(--ml-admin-shadow);
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+a.ml-dashboard__card:hover {
+  border-color: var(--ml-admin-accent);
+  transform: translateY(-1px);
+}
+
+.ml-dashboard__card-icon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--ml-admin-radius-sm);
+  background: var(--ml-admin-accent-soft);
+  color: var(--ml-admin-accent-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ml-dashboard__card-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--theme-elevation-800);
+}
+
+.ml-dashboard__card--placeholder {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ml-dashboard__card-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--theme-elevation-100);
+  color: var(--theme-elevation-500);
+  white-space: nowrap;
+}
+
+/* --- 3. Inlogpagina (BeheerLoginView.tsx) — alleen .login.template-minimal, uniek voor deze route --- */
+.login.template-minimal {
+  max-width: none;
+  width: 100%;
+  min-height: 100vh;
+  padding: 0;
+  align-items: stretch;
+}
+
+.login.template-minimal .template-minimal__wrap {
+  max-width: none;
+  width: 100%;
+  padding: 0;
+}
+
+.ml-login {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+  min-height: 100vh;
+}
+
+.ml-login__brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
+  padding: 64px;
+  background: var(--ml-admin-brand-donkerblauw);
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+}
+
+.ml-login__brand::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--ml-admin-brand-gradient);
+}
+
+/*
+ * Witte achtergrondchip achter het logo: het volledige-kleur woordmerk
+ * (public/brand/logo-kleur.svg — enige beschikbare variant, geen apart
+ * wit/lichte-achtergrond-logo aanwezig in Brand/logos/) heeft onvoldoende
+ * contrast rechtstreeks op het donkerblauw. Verandert niets aan het
+ * logobestand zelf — alleen een niet-destructieve achtergrond eronder,
+ * zodat de echte merkkleuren correct zichtbaar blijven i.p.v. het logo een
+ * kunstmatig witte kleur op te dwingen.
+ */
+.ml-login__brand-logo-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: #ffffff;
+  border-radius: var(--ml-admin-radius-sm);
+  width: fit-content;
+}
+
+.ml-login__brand-logo {
+  height: 32px;
+  width: auto;
+  display: block;
+}
+
+.ml-login__brand-tagline {
+  font-size: 19px;
+  line-height: 1.5;
+  max-width: 380px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.ml-login__form-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+.ml-login__form-wrap {
+  width: 100%;
+  max-width: 360px;
+}
+
+.ml-login__form-logo {
+  height: 28px;
+  width: auto;
+  margin-bottom: 32px;
+}
+
+.ml-login__form-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 28px;
+  color: var(--theme-elevation-800);
+}
+
+.ml-login .btn--style-primary {
+  --bg-color: var(--ml-admin-accent);
+  --hover-bg: var(--ml-admin-accent-hover);
+}
+
+.ml-login__forgot {
+  display: block;
+  margin: 14px 0 20px;
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .ml-login {
+    grid-template-columns: 1fr;
+  }
+  .ml-login__brand {
+    padding: 40px 32px;
+  }
+  .ml-login__brand-tagline {
+    font-size: 16px;
+  }
+  .ml-login__form-side {
+    padding: 32px 24px;
+  }
+}
