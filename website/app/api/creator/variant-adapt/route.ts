@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(resultaat);
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);
-    console.error("[api/creator/variant-adapt] mislukt:", error);
+    console.error("[api/creator/variant-adapt] mislukt:", boodschap);
     return NextResponse.json({ error: boodschap }, { status: 500 });
   }
 }
