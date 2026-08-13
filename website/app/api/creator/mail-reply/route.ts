@@ -16,12 +16,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = (await request.json()) as { ontvangenTekst: string; variantId?: string };
-    if (!body.ontvangenTekst || !body.ontvangenTekst.trim()) {
-      return NextResponse.json({ error: "ontvangenTekst is verplicht." }, { status: 400 });
+    const body = (await request.json()) as { ontvangenTekst?: string; instructie: string; variantId?: string };
+    if (!body.instructie || !body.instructie.trim()) {
+      return NextResponse.json({ error: "instructie is verplicht — vertel wat de mail moet zeggen." }, { status: 400 });
     }
 
-    const resultaat = await schrijfMailAntwoord(payload, { ontvangenTekst: body.ontvangenTekst, variantId: body.variantId || undefined });
+    const resultaat = await schrijfMailAntwoord(payload, {
+      ontvangenTekst: body.ontvangenTekst || undefined,
+      instructie: body.instructie,
+      variantId: body.variantId || undefined,
+    });
     return NextResponse.json(resultaat);
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);

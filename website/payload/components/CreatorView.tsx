@@ -1,11 +1,34 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { Suspense, useCallback, useEffect, useState, type ChangeEvent, type CSSProperties, type KeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Link, SelectInput, TextInput, toast } from "@payloadcms/ui";
+import {
+  BookOpen,
+  Laptop,
+  Mail,
+  Sparkles,
+  FileText,
+  Search,
+  Plus,
+  X,
+  Send,
+  Rss,
+  BrainCircuit,
+  GraduationCap,
+  Share2,
+  Newspaper,
+  Building2,
+  Handshake,
+  MessageSquare,
+  TriangleAlert,
+  Save,
+  type LucideIcon,
+} from "lucide-react";
 import type { ContextItem } from "@/lib/assistant/build-context";
 import type { CreatorChatBericht } from "@/lib/creator/creator-chat";
 import type { AfgeleideKanaal } from "@/lib/creator/derive-channel";
+import { NAV_COLOR_STYLES, type NavColor } from "@/lib/admin-nav/nav-colors";
 
 // Creator V1 (2026-08-13) — zie de sessie-onderzoeksfase (technisch
 // voorstel A-M) voor de volledige architectuur-onderbouwing. Eén statisch
@@ -24,8 +47,19 @@ import type { AfgeleideKanaal } from "@/lib/creator/derive-channel";
 // Elke schrijfactie (artikel aanmaken/bijwerken, variant-versie/afgeleide
 // content/mailconcept/kennisstuk opslaan) gaat via Payload's EIGEN
 // REST-API (fetch met credentials:"include") — geen tweede, aparte
-// opslaglaag. Alleen de AI-aanroepen zelf lopen via de 5 nieuwe
-// app/api/creator/*-routes (die op hun beurt lib/creator/* aanroepen).
+// opslaglaag. Alleen de AI-aanroepen zelf lopen via de app/api/creator/*-
+// routes (die op hun beurt lib/creator/* aanroepen).
+//
+// UX/visual-polish (2026-08-13): kleuren/iconen hergebruiken bewust
+// hetzelfde 9-kleurenpalet + --item-fg/--item-bg-mechanisme als
+// nav-groups.ts/BeheerNavLinks.tsx/BeheerDashboard.tsx (NAV_COLOR_STYLES) —
+// geen tweede, losse kleurdefinitie. "+ Kennis toevoegen" bij de
+// artikel-chat is een ECHTE zoek-en-pin-actie (creatorChat() ondersteunt
+// gepindeKnowledgeSourceIds al server-side, zie lib/creator/creator-chat.ts)
+// — bij Mail schrijven bestaat die pin-mogelijkheid niet in
+// schrijfMailAntwoord(), dus daar bewust GEEN "+ Kennis toevoegen"-knop
+// (geen nepfunctionaliteit), alleen de al door de API geretourneerde
+// "Gebruikte kennis" zichtbaar gemaakt.
 
 type CreatorRoute = "inhoudelijk" | "software";
 
@@ -41,6 +75,11 @@ interface VariantOptie {
   id: string;
   name: string;
   terminologyDictionary: { centralTerm: string; variantTerm: string }[];
+}
+
+interface KennisbronOptie {
+  id: number;
+  title: string;
 }
 
 function slugify(input: string): string {
@@ -81,6 +120,16 @@ async function json<T>(res: Response): Promise<T> {
   return data as T;
 }
 
+/** Kleur-chip voor een icoon — hergebruikt NAV_COLOR_STYLES (nav-colors.ts), geen los kleursysteem. */
+function IconChip({ icon: Icon, kleur, size = 22 }: { icon: LucideIcon; kleur: NavColor; size?: number }) {
+  const stijl = NAV_COLOR_STYLES[kleur];
+  return (
+    <div className="ml-creator__icon-chip" style={{ "--item-fg": stijl.fg, "--item-bg": stijl.bg } as CSSProperties}>
+      <Icon size={size} aria-hidden="true" />
+    </div>
+  );
+}
+
 export function CreatorView() {
   return (
     <Suspense fallback={null}>
@@ -101,16 +150,25 @@ function CreatorViewInner() {
 
 // --- Startscherm ---------------------------------------------------------
 
-const ROUTE_BESCHRIJVING: Record<CreatorRoute, { titel: string; tekst: string; knowledgeType: "product" | "pedagogisch" }> = {
+const ROUTE_BESCHRIJVING: Record<
+  CreatorRoute,
+  { titel: string; tekst: string; knowledgeType: "product" | "pedagogisch"; kleur: NavColor; icon: LucideIcon; actieLabel: string }
+> = {
   inhoudelijk: {
     titel: "Inhoudelijk artikel",
     tekst: "Schrijf samen met AI over onderwijs, curriculum, kerndoelen, visie of een ander inhoudelijk onderwerp.",
     knowledgeType: "pedagogisch",
+    kleur: "blue",
+    icon: BookOpen,
+    actieLabel: "Start artikel",
   },
   software: {
     titel: "MijnLeerlijn / software",
     tekst: "Maak uitleg, tips of een artikel over een bestaande of nieuwe functionaliteit. De AI gebruikt hierbij de bestaande productkennis.",
     knowledgeType: "product",
+    kleur: "purple",
+    icon: Laptop,
+    actieLabel: "Start softwareartikel",
   },
 };
 
@@ -180,40 +238,47 @@ function StartScreen() {
   return (
     <div className="ml-creator">
       <h1 className="ml-creator__title">Wat wil je maken?</h1>
+      <p className="ml-creator__subtitle">Kies een startpunt — de AI schrijft mee, jij houdt de regie.</p>
 
       <div className="ml-creator__routes">
-        {(Object.keys(ROUTE_BESCHRIJVING) as CreatorRoute[]).map((route) => (
-          <div className="ml-creator__route-card" key={route}>
-            <h2>{ROUTE_BESCHRIJVING[route].titel}</h2>
-            <p>{ROUTE_BESCHRIJVING[route].tekst}</p>
-            {actieveRoute === route ? (
-              <div className="ml-creator__route-start">
-                <TextInput path="titel" label="Titel" value={titel} onChange={(e: ChangeEvent<HTMLInputElement>) => setTitel(e.target.value)} placeholder="Bijv. Doelen plannen" />
-                <Button buttonStyle="primary" size="small" disabled={bezig || !titel.trim()} onClick={() => startArtikel(route, Date.now().toString(36))}>
-                  {bezig ? "Bezig..." : "Start"}
+        {(Object.keys(ROUTE_BESCHRIJVING) as CreatorRoute[]).map((route) => {
+          const info = ROUTE_BESCHRIJVING[route];
+          return (
+            <div className="ml-creator__route-card" key={route} style={{ "--item-fg": NAV_COLOR_STYLES[info.kleur].fg } as CSSProperties}>
+              <IconChip icon={info.icon} kleur={info.kleur} />
+              <h2>{info.titel}</h2>
+              <p>{info.tekst}</p>
+              {actieveRoute === route ? (
+                <div className="ml-creator__route-start">
+                  <TextInput path="titel" label="Titel" value={titel} onChange={(e: ChangeEvent<HTMLInputElement>) => setTitel(e.target.value)} placeholder="Bijv. Doelen plannen" />
+                  <Button buttonStyle="primary" size="small" disabled={bezig || !titel.trim()} onClick={() => startArtikel(route, Date.now().toString(36))}>
+                    {bezig ? "Bezig..." : "Start"}
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  buttonStyle="primary"
+                  size="small"
+                  className="ml-creator__route-actie"
+                  onClick={() => {
+                    setActieveRoute(route);
+                    setTitel("");
+                  }}
+                >
+                  {info.actieLabel}
                 </Button>
-              </div>
-            ) : (
-              <Button
-                buttonStyle="secondary"
-                size="small"
-                onClick={() => {
-                  setActieveRoute(route);
-                  setTitel("");
-                }}
-              >
-                Kiezen
-              </Button>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
 
-        <div className="ml-creator__route-card">
+        <div className="ml-creator__route-card" style={{ "--item-fg": NAV_COLOR_STYLES.teal.fg } as CSSProperties}>
+          <IconChip icon={Mail} kleur="teal" />
           <h2>Mail schrijven</h2>
           <p>Schrijf een inhoudelijke reactie op een mail met gebruik van de MijnLeerlijn-kennisbasis.</p>
           <Link href="/admin/creator?mail=nieuw" className="ml-creator__route-link">
-            <Button buttonStyle="secondary" size="small" el="div">
-              Kiezen
+            <Button buttonStyle="primary" size="small" el="div" className="ml-creator__route-actie">
+              Schrijf een mail
             </Button>
           </Link>
         </div>
@@ -221,8 +286,8 @@ function StartScreen() {
 
       <div className="ml-creator__recent">
         <h2>Verder met...</h2>
-        {recent === null && <p>Laden...</p>}
-        {recent !== null && recent.length === 0 && <p>Nog niets om verder mee te gaan — kies hierboven een route om te beginnen.</p>}
+        {recent === null && <p className="ml-creator__muted">Laden...</p>}
+        {recent !== null && recent.length === 0 && <p className="ml-creator__muted">Nog niets om verder mee te gaan — kies hierboven een route om te beginnen.</p>}
         {recent !== null && recent.length > 0 && (
           <ul className="ml-creator__recent-list">
             {recent.map((item) => (
@@ -254,6 +319,12 @@ interface ArtikelDoc {
   sections: { id: string; title: string; blocks: { id: string; blockType: string; body?: unknown }[] }[];
 }
 
+const KANAAL_META: Record<AfgeleideKanaal, { label: string; icon: LucideIcon; kleur: NavColor }> = {
+  nieuwsbrief: { label: "Nieuwsbrief", icon: Newspaper, kleur: "orange" },
+  linkedin: { label: "LinkedIn", icon: Building2, kleur: "blue" },
+  partnertekst: { label: "Partnertekst", icon: Handshake, kleur: "green" },
+};
+
 function Werkruimte({ artikelId }: { artikelId: string }) {
   const [artikel, setArtikel] = useState<ArtikelDoc | null>(null);
   const [documentTekst, setDocumentTekst] = useState("");
@@ -263,6 +334,11 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
   const [chatInvoer, setChatInvoer] = useState("");
   const [chatBezig, setChatBezig] = useState(false);
   const [gebruikteKennis, setGebruikteKennis] = useState<ContextItem[]>([]);
+
+  const [kennisZoekterm, setKennisZoekterm] = useState("");
+  const [kennisResultaten, setKennisResultaten] = useState<KennisbronOptie[] | null>(null);
+  const [kennisZoekBezig, setKennisZoekBezig] = useState(false);
+  const [gepindeKennis, setGepindeKennis] = useState<KennisbronOptie[]>([]);
 
   const [varianten, setVarianten] = useState<VariantOptie[]>([]);
   const [gekozenVariant, setGekozenVariant] = useState<string>("");
@@ -346,6 +422,7 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
           documentTekst,
           berichten: nieuweBerichten,
           knowledgeType: artikel.knowledgeType,
+          gepindeKnowledgeSourceIds: gepindeKennis.map((k) => k.id),
         }),
       });
       const data = await json<{ antwoord: string; gebruikteKennis: ContextItem[] }>(res);
@@ -357,6 +434,41 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
     } finally {
       setChatBezig(false);
     }
+  }
+
+  async function zoekKennis() {
+    const zoekterm = kennisZoekterm.trim();
+    if (!zoekterm) return;
+    setKennisZoekBezig(true);
+    try {
+      const res = await fetch(`/api/knowledge-sources?where[title][contains]=${encodeURIComponent(zoekterm)}&limit=6&depth=0`, { credentials: "include" });
+      const data = await json<{ docs: { id: number; title: string }[] }>(res);
+      setKennisResultaten(data.docs.map((d) => ({ id: d.id, title: d.title })));
+    } catch {
+      // Kennisbronnen zijn admin-only leesbaar — voor een redacteur is dit
+      // niet te onderscheiden van "niets gevonden"; geen alarmerende toast
+      // voor een secundaire, optionele actie.
+      setKennisResultaten([]);
+    } finally {
+      setKennisZoekBezig(false);
+    }
+  }
+
+  function kennisZoekToetsenbord(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      zoekKennis();
+    }
+  }
+
+  function pinKennis(item: KennisbronOptie) {
+    setGepindeKennis((huidig) => (huidig.some((k) => k.id === item.id) ? huidig : [...huidig, item]));
+    setKennisZoekterm("");
+    setKennisResultaten(null);
+  }
+
+  function verwijderGepindeKennis(id: number) {
+    setGepindeKennis((huidig) => huidig.filter((k) => k.id !== id));
   }
 
   async function maakVariantVersie() {
@@ -444,7 +556,14 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
   return (
     <div className="ml-creator ml-creator--werkruimte">
       <div className="ml-creator__kolom ml-creator__kolom--chat">
-        <h2>AI-gesprek</h2>
+        <div className="ml-creator__kolom-header ml-creator__kolom-header--purple">
+          <Sparkles size={18} aria-hidden="true" />
+          <div>
+            <h2>AI-assistent</h2>
+            <p>Schrijft mee aan je document</p>
+          </div>
+        </div>
+
         <div className="ml-creator__chat-berichten">
           {berichten.length === 0 && <p className="ml-creator__chat-leeg">Vraag de AI bijvoorbeeld: &ldquo;Maak de intro minder commercieel&rdquo; of &ldquo;Geef een praktisch voorbeeld&rdquo;.</p>}
           {berichten.map((b, i) => (
@@ -460,30 +579,95 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
           placeholder="Typ een instructie voor de AI..."
           rows={3}
         />
-        <Button buttonStyle="primary" size="small" disabled={chatBezig || !chatInvoer.trim()} onClick={stuurChatBericht}>
+        <Button buttonStyle="primary" size="small" disabled={chatBezig || !chatInvoer.trim()} onClick={stuurChatBericht} icon={<Send size={14} />} iconPosition="left">
           {chatBezig ? "Bezig..." : "Versturen"}
         </Button>
 
         <div className="ml-creator__gebruikte-kennis">
-          <h3>Gebruikte kennis</h3>
-          {gebruikteKennis.length === 0 ? <p>Nog geen kennis opgehaald.</p> : <ul>{gebruikteKennis.map((k) => <li key={`${k.refCollection}-${k.refId}`}>{k.title}</li>)}</ul>}
+          <h3>
+            <BookOpen size={13} aria-hidden="true" /> Gebruikte kennis
+          </h3>
+          {gebruikteKennis.length === 0 ? (
+            <p className="ml-creator__muted">Nog geen kennis opgehaald.</p>
+          ) : (
+            <ul>
+              {gebruikteKennis.map((k) => (
+                <li key={`${k.refCollection}-${k.refId}`}>{k.title}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="ml-creator__kennis-toevoegen">
+          <h3>
+            <Plus size={13} aria-hidden="true" /> Kennis toevoegen
+          </h3>
+          <div className="ml-creator__kennis-zoek">
+            <input
+              type="text"
+              value={kennisZoekterm}
+              onChange={(e) => setKennisZoekterm(e.target.value)}
+              onKeyDown={kennisZoekToetsenbord}
+              placeholder="Zoek een kennisbron..."
+            />
+            <button type="button" onClick={zoekKennis} disabled={kennisZoekBezig || !kennisZoekterm.trim()} aria-label="Zoeken">
+              <Search size={14} aria-hidden="true" />
+            </button>
+          </div>
+          {kennisResultaten !== null && (
+            <ul className="ml-creator__kennis-resultaten">
+              {kennisResultaten.length === 0 && <li className="ml-creator__muted">Niets gevonden.</li>}
+              {kennisResultaten.map((r) => (
+                <li key={r.id}>
+                  <span>{r.title}</span>
+                  <button type="button" onClick={() => pinKennis(r)} aria-label={`${r.title} toevoegen`}>
+                    <Plus size={13} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {gepindeKennis.length > 0 && (
+            <div className="ml-creator__kennis-chips">
+              {gepindeKennis.map((k) => (
+                <span key={k.id} className="ml-creator__kennis-chip">
+                  {k.title}
+                  <button type="button" onClick={() => verwijderGepindeKennis(k.id)} aria-label={`${k.title} verwijderen`}>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="ml-creator__kolom ml-creator__kolom--editor">
-        <h2>{artikel.title}</h2>
-        <textarea className="ml-creator__editor" value={documentTekst} onChange={(e) => setDocumentTekst(e.target.value)} rows={20} />
+        <div className="ml-creator__document-titel">
+          <FileText size={20} aria-hidden="true" />
+          <h2>{artikel.title}</h2>
+        </div>
+        <div className="ml-creator__document-shell">
+          <div className="ml-creator__document-shell-label">Document</div>
+          <textarea className="ml-creator__editor" value={documentTekst} onChange={(e) => setDocumentTekst(e.target.value)} rows={20} />
+        </div>
         <div className="ml-creator__editor-acties">
-          <Button buttonStyle="primary" size="small" disabled={opslaan} onClick={slaDocumentOp}>
+          <Button buttonStyle="primary" size="small" disabled={opslaan} onClick={slaDocumentOp} icon={<Save size={14} />} iconPosition="left">
             {opslaan ? "Opslaan..." : "Opslaan"}
           </Button>
-          <Link href={`/admin/collections/articles/${artikel.id}`}>Volledig bewerken (alle secties/blokken)</Link>
+          <Link href={`/admin/collections/articles/${artikel.id}`}>
+            <Button buttonStyle="secondary" size="small" el="div">
+              Volledig bewerken
+            </Button>
+          </Link>
         </div>
       </div>
 
       <div className="ml-creator__kolom ml-creator__kolom--rechts">
-        <section>
-          <h3>Publicatie</h3>
+        <section className="ml-creator__actiekaart">
+          <h3>
+            <Rss size={14} aria-hidden="true" /> Publicatie
+          </h3>
           <SelectInput
             path="articleStatus"
             name="articleStatus"
@@ -502,15 +686,19 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
           />
         </section>
 
-        <section>
-          <h3>AI-kennis</h3>
+        <section className="ml-creator__actiekaart">
+          <h3>
+            <BrainCircuit size={14} aria-hidden="true" /> AI-kennis
+          </h3>
           <Button buttonStyle={artikel.aiKnowledgeStatus === "actief" ? "primary" : "secondary"} size="small" onClick={() => slaOp({ aiKnowledgeStatus: artikel.aiKnowledgeStatus === "actief" ? "uit" : "actief" })}>
             {artikel.aiKnowledgeStatus === "actief" ? "Gebruikt als kennis voor Helpdesk-AI — uitzetten" : "Gebruik als kennis voor Helpdesk-AI"}
           </Button>
         </section>
 
-        <section>
-          <h3>Onderwijsvarianten</h3>
+        <section className="ml-creator__actiekaart">
+          <h3>
+            <GraduationCap size={14} aria-hidden="true" /> Onderwijsvarianten
+          </h3>
           <SelectInput
             path="variant"
             name="variant"
@@ -527,13 +715,28 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
           </Button>
         </section>
 
-        <section>
-          <h3>Maak hiervan</h3>
-          {(["nieuwsbrief", "linkedin", "partnertekst"] as AfgeleideKanaal[]).map((channel) => (
-            <Button key={channel} buttonStyle="secondary" size="small" disabled={kanaalBezig === channel} onClick={() => maakAfgeleideContent(channel)}>
-              {kanaalBezig === channel ? "Bezig..." : channel === "nieuwsbrief" ? "Nieuwsbrief" : channel === "linkedin" ? "LinkedIn" : "Partnertekst"}
-            </Button>
-          ))}
+        <section className="ml-creator__actiekaart">
+          <h3>
+            <Share2 size={14} aria-hidden="true" /> Maak hiervan
+          </h3>
+          <div className="ml-creator__kanaal-knoppen">
+            {(Object.keys(KANAAL_META) as AfgeleideKanaal[]).map((channel) => {
+              const meta = KANAAL_META[channel];
+              return (
+                <button
+                  key={channel}
+                  type="button"
+                  className="ml-creator__kanaal-knop"
+                  style={{ "--item-fg": NAV_COLOR_STYLES[meta.kleur].fg, "--item-bg": NAV_COLOR_STYLES[meta.kleur].bg } as CSSProperties}
+                  disabled={kanaalBezig === channel}
+                  onClick={() => maakAfgeleideContent(channel)}
+                >
+                  <meta.icon size={16} aria-hidden="true" />
+                  {kanaalBezig === channel ? "Bezig..." : meta.label}
+                </button>
+              );
+            })}
+          </div>
         </section>
       </div>
     </div>
@@ -556,7 +759,9 @@ function MailFlow({ mailId }: { mailId: string }) {
   const isNieuw = mailId === "nieuw";
   const [mail, setMail] = useState<MailDraftDoc | null>(isNieuw ? { id: 0, status: "concept" } : null);
   const [ontvangenTekst, setOntvangenTekst] = useState("");
-  const [conceptAntwoord, setConceptAntwoord] = useState("");
+  const [instructie, setInstructie] = useState("");
+  const [mailTekst, setMailTekst] = useState("");
+  const [gebruikteKennis, setGebruikteKennis] = useState<{ titel: string; tekst: string }[]>([]);
   const [bezig, setBezig] = useState(false);
   const [kennisstukVoorstel, setKennisstukVoorstel] = useState<{
     title: string;
@@ -575,27 +780,28 @@ function MailFlow({ mailId }: { mailId: string }) {
         const doc = await json<MailDraftDoc>(res);
         setMail(doc);
         setOntvangenTekst(doc.receivedText ?? "");
-        setConceptAntwoord(doc.draftReply ?? "");
+        setMailTekst(doc.draftReply ?? "");
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Mailconcept laden mislukt.");
       }
     })();
   }, [mailId, isNieuw]);
 
-  async function genereerAntwoord() {
-    if (!ontvangenTekst.trim()) return;
+  async function schrijfMail() {
+    if (!instructie.trim()) return;
     setBezig(true);
     try {
       const res = await fetch("/api/creator/mail-reply", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ontvangenTekst }),
+        body: JSON.stringify({ ontvangenTekst: ontvangenTekst.trim() || undefined, instructie }),
       });
-      const data = await json<{ conceptAntwoord: string }>(res);
-      setConceptAntwoord(data.conceptAntwoord);
+      const data = await json<{ conceptAntwoord: string; gebruikteKennis: { titel: string; tekst: string }[] }>(res);
+      setMailTekst(data.conceptAntwoord);
+      setGebruikteKennis(data.gebruikteKennis);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Conceptantwoord genereren mislukt.");
+      toast.error(error instanceof Error ? error.message : "Mail schrijven mislukt.");
     } finally {
       setBezig(false);
     }
@@ -605,9 +811,9 @@ function MailFlow({ mailId }: { mailId: string }) {
     setBezig(true);
     try {
       const body = JSON.stringify({
-        subject: ontvangenTekst.slice(0, 80) || "Mailconcept",
+        subject: (ontvangenTekst || instructie).slice(0, 80) || "Mailconcept",
         receivedText: ontvangenTekst,
-        draftReply: conceptAntwoord,
+        draftReply: mailTekst,
         status: "concept",
       });
       if (isNieuw || !mail?.id) {
@@ -628,14 +834,14 @@ function MailFlow({ mailId }: { mailId: string }) {
   }
 
   async function maakKennisstukVoorstel() {
-    if (!ontvangenTekst.trim() || !conceptAntwoord.trim()) return;
+    if (!mailTekst.trim()) return;
     setBezig(true);
     try {
       const res = await fetch("/api/creator/mail-to-knowledge", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ontvangenTekst, conceptAntwoord }),
+        body: JSON.stringify({ ontvangenTekst: ontvangenTekst || instructie, conceptAntwoord: mailTekst }),
       });
       setKennisstukVoorstel(await json(res));
     } catch (error) {
@@ -681,28 +887,87 @@ function MailFlow({ mailId }: { mailId: string }) {
   if (!mail) return <div className="ml-creator">Laden...</div>;
 
   return (
-    <div className="ml-creator">
+    <div className="ml-creator ml-creator--mail">
       <h1 className="ml-creator__title">Mail schrijven</h1>
+      <p className="ml-creator__subtitle">Vertel wat je wilt zeggen — de AI gebruikt dat, de eventuele ontvangen mail en de MijnLeerlijn-kennis om een mail te schrijven.</p>
 
-      <div className="ml-creator__mail-kolommen">
-        <div>
-          <h2>Ontvangen mail</h2>
-          <textarea className="ml-creator__editor" rows={12} value={ontvangenTekst} onChange={(e) => setOntvangenTekst(e.target.value)} placeholder="Plak hier de ontvangen mail..." />
-          <Button buttonStyle="primary" size="small" disabled={bezig || !ontvangenTekst.trim()} onClick={genereerAntwoord}>
-            {bezig ? "Bezig..." : "AI helpt met antwoord"}
+      <div className="ml-creator__mail-layout">
+        <div className="ml-creator__kolom ml-creator__kolom--mail-input">
+          <div className="ml-creator__kolom-header">
+            <Mail size={16} aria-hidden="true" />
+            <div>
+              <h2>Ontvangen mail</h2>
+              <p>Optioneel</p>
+            </div>
+          </div>
+          <textarea
+            className="ml-creator__editor ml-creator__editor--klein"
+            rows={9}
+            value={ontvangenTekst}
+            onChange={(e) => setOntvangenTekst(e.target.value)}
+            placeholder="Plak hier eventueel de mail waarop je wilt reageren..."
+          />
+        </div>
+
+        <div className="ml-creator__kolom ml-creator__kolom--mail-input">
+          <div className="ml-creator__kolom-header ml-creator__kolom-header--blue">
+            <MessageSquare size={16} aria-hidden="true" />
+            <div>
+              <h2>Wat wil ik zeggen?</h2>
+              <p>Stuurt de AI direct</p>
+            </div>
+          </div>
+          <textarea
+            className="ml-creator__editor ml-creator__editor--klein"
+            rows={9}
+            value={instructie}
+            onChange={(e) => setInstructie(e.target.value)}
+            placeholder="Vertel de AI wat je wilt antwoorden. Bijvoorbeeld: bedank voor de interesse, leg uit hoe Montessori werkt en stel voor om een demo in te plannen..."
+          />
+          <Button buttonStyle="primary" size="small" disabled={bezig || !instructie.trim()} onClick={schrijfMail} icon={<Sparkles size={14} />} iconPosition="left">
+            {bezig ? "Bezig..." : "Schrijf mijn mail"}
           </Button>
         </div>
 
-        <div>
-          <h2>Conceptantwoord</h2>
-          <textarea className="ml-creator__editor" rows={12} value={conceptAntwoord} onChange={(e) => setConceptAntwoord(e.target.value)} placeholder="Het conceptantwoord verschijnt hier — je kunt het zelf aanpassen." />
+        <div className="ml-creator__kolom ml-creator__kolom--mail-output">
+          <div className="ml-creator__kolom-header ml-creator__kolom-header--purple">
+            <FileText size={16} aria-hidden="true" />
+            <div>
+              <h2>Mail om te versturen</h2>
+              <p>Door AI gegenereerd — blijft handmatig bewerkbaar</p>
+            </div>
+          </div>
+          <div className="ml-creator__document-shell">
+            <textarea
+              className="ml-creator__editor"
+              rows={12}
+              value={mailTekst}
+              onChange={(e) => setMailTekst(e.target.value)}
+              placeholder="Het resultaat van 'Schrijf mijn mail' verschijnt hier — je kunt het zelf aanpassen."
+            />
+          </div>
           <div className="ml-creator__editor-acties">
             <Button buttonStyle="secondary" size="small" disabled={bezig} onClick={slaMailOp}>
               Bewaren als concept
             </Button>
-            <Button buttonStyle="secondary" size="small" disabled={bezig || !conceptAntwoord.trim()} onClick={maakKennisstukVoorstel}>
+            <Button buttonStyle="secondary" size="small" disabled={bezig || !mailTekst.trim()} onClick={maakKennisstukVoorstel}>
               Maak hier een kennisstuk van
             </Button>
+          </div>
+
+          <div className="ml-creator__gebruikte-kennis">
+            <h3>
+              <BookOpen size={13} aria-hidden="true" /> Gebruikte kennis
+            </h3>
+            {gebruikteKennis.length === 0 ? (
+              <p className="ml-creator__muted">Nog geen kennis opgehaald — verschijnt hier na &ldquo;Schrijf mijn mail&rdquo;.</p>
+            ) : (
+              <ul>
+                {gebruikteKennis.map((k) => (
+                  <li key={k.titel}>{k.titel}</li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </div>
@@ -721,13 +986,14 @@ function MailFlow({ mailId }: { mailId: string }) {
           </p>
           {kennisstukVoorstel.customerSpecificInformationFound && (
             <p className="ml-creator__kennisstuk-waarschuwing">
+              <TriangleAlert size={14} aria-hidden="true" />
               Let op: mogelijk klantspecifieke informatie in de brontekst — controleer voor het goedkeuren. {kennisstukVoorstel.customerSpecificInformationExplanation}
             </p>
           )}
           <Button buttonStyle="primary" size="small" disabled={bezig || isNieuw} onClick={keurKennisstukGoed}>
             Goedkeuren en opslaan
           </Button>
-          {isNieuw && <p>Bewaar het mailconcept eerst voordat je het kennisstuk goedkeurt.</p>}
+          {isNieuw && <p className="ml-creator__muted">Bewaar het mailconcept eerst voordat je het kennisstuk goedkeurt.</p>}
         </div>
       )}
     </div>

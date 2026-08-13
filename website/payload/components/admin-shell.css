@@ -454,42 +454,86 @@ a.ml-dashboard__card:hover {
 
 /*
  * --- Content Creator (CreatorView.tsx) — startscherm, 3-koloms werkruimte,
- * mailflow. Zelfde tokens/kaartstijl als het dashboard hierboven; het
- * paarse accent (--ml-admin-purple) hergebruikt de bestaande Creator-
- * identiteit uit de nav (WandSparkles-icoon).
+ * mailflow. UX/visual-polish (2026-08-13): kaarten/iconen/kleuren
+ * hergebruiken bewust dezelfde --ml-admin-*-tokens + het --item-fg/--item-bg
+ * mechanisme dat de dashboardkaarten hierboven en nav-colors.ts
+ * (NAV_COLOR_STYLES) al gebruiken — geen los, tweede kleursysteem.
  */
 .ml-creator {
   padding: 8px 0 40px;
   max-width: 1200px;
 }
 
+/* Mailflow krijgt iets meer breedte dan het startscherm — 3 blokken
+ * (ontvangen mail / instructie / resultaat), geen onbegrensde breedte zoals
+ * de werkruimte hieronder (die heeft het document om de ruimte te vullen). */
+.ml-creator--mail {
+  max-width: 1400px;
+}
+
 .ml-creator__title {
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 600;
-  margin: 0 0 24px;
+  margin: 0 0 6px;
   color: var(--theme-elevation-800);
 }
 
+.ml-creator__subtitle {
+  font-size: 15px;
+  color: var(--theme-elevation-500);
+  margin: 0 0 32px;
+}
+
+.ml-creator__muted {
+  font-size: 13px;
+  color: var(--theme-elevation-400);
+  margin: 0;
+}
+
+/* Herbruikbare kleur-chip voor een icoon (IconChip-component in
+ * CreatorView.tsx) — zelfde recept als .ml-dashboard__card-icon hierboven,
+ * eigen klasse omdat de afmeting per context (routekaart) vastligt. */
+.ml-creator__icon-chip {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--ml-admin-radius-sm);
+  background: var(--item-bg, var(--ml-admin-accent-soft));
+  color: var(--item-fg, var(--ml-admin-accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Startscherm --- */
 .ml-creator__routes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 14px;
-  margin-bottom: 40px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 44px;
 }
 
 .ml-creator__route-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 20px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px;
   border-radius: var(--ml-admin-radius);
   border: 1px solid var(--theme-elevation-100);
   background: var(--theme-elevation-0);
   box-shadow: var(--ml-admin-shadow);
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ml-creator__route-card:hover {
+  border-color: var(--item-fg, var(--ml-admin-accent));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
 }
 
 .ml-creator__route-card h2 {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   margin: 0;
   color: var(--theme-elevation-800);
@@ -498,7 +542,7 @@ a.ml-dashboard__card:hover {
 .ml-creator__route-card p {
   flex-grow: 1;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--theme-elevation-500);
   margin: 0;
 }
@@ -507,10 +551,19 @@ a.ml-dashboard__card:hover {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+}
+
+/* Volledige-breedte primaire actie onderaan elke kaart (opdrachtseis) —
+ * .btn__content (Payload, elements/Button/index.scss) centreert het label
+ * al met flex, dus width:100% hier volstaat. */
+.ml-creator__route-actie,
+.ml-creator__route-start .btn {
+  width: 100%;
 }
 
 .ml-creator__route-link {
-  align-self: flex-start;
+  width: 100%;
   text-decoration: none;
 }
 
@@ -537,7 +590,7 @@ a.ml-dashboard__card:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-radius: var(--ml-admin-radius-sm);
   text-decoration: none;
   transition: background 0.15s ease;
@@ -560,23 +613,25 @@ a.ml-dashboard__card:hover {
 }
 
 .ml-creator__archief-hint {
-  margin: 0;
+  margin: 12px 0 0;
   font-size: 12px;
   font-style: italic;
   color: var(--theme-elevation-400);
 }
 
-/* Werkruimte: chat / editor / acties naast elkaar. */
+/* --- Werkruimte: AI 25% | Document 50% | Acties 25%, schaalt via minmax
+ * i.p.v. vaste fr-verhoudingen — blijft bruikbaar op zowel smallere als
+ * zeer brede desktopschermen (opdrachtseis). */
 .ml-creator--werkruimte {
   max-width: none;
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(280px, 1fr) minmax(420px, 2fr) minmax(260px, 1fr);
+  gap: 20px;
   align-items: start;
 }
 
 .ml-creator__kolom {
-  padding: 18px;
+  padding: 20px;
   border-radius: var(--ml-admin-radius);
   border: 1px solid var(--theme-elevation-100);
   background: var(--theme-elevation-0);
@@ -586,16 +641,55 @@ a.ml-dashboard__card:hover {
 .ml-creator__kolom h2 {
   font-size: 15px;
   font-weight: 600;
-  margin: 0 0 14px;
+  margin: 0;
   color: var(--theme-elevation-800);
 }
 
 .ml-creator__kolom h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  margin: 0 0 8px;
+  margin: 0 0 10px;
+  color: var(--theme-elevation-500);
+}
+
+/* Kolomheader — icoonchip + titel/ondertitel, bleedt tot de rand van
+ * .ml-creator__kolom via negatieve marges (die padding is altijd 20px).
+ * Gebruikt in de chatkolom en beide mail-invoerkolommen. */
+.ml-creator__kolom-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: -20px -20px 16px;
+  border-radius: var(--ml-admin-radius) var(--ml-admin-radius) 0 0;
+  background: var(--theme-elevation-50);
+  color: var(--theme-elevation-500);
+}
+
+.ml-creator__kolom-header--blue {
+  background: var(--ml-admin-accent-soft);
+  color: var(--ml-admin-accent);
+}
+
+.ml-creator__kolom-header--purple {
+  background: var(--ml-admin-purple-soft);
+  color: var(--ml-admin-purple-hover);
+}
+
+.ml-creator__kolom-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__kolom-header p {
+  margin: 2px 0 0;
+  font-size: 12px;
   color: var(--theme-elevation-500);
 }
 
@@ -609,7 +703,7 @@ a.ml-dashboard__card:hover {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 360px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
@@ -653,7 +747,7 @@ a.ml-dashboard__card:hover {
 }
 
 .ml-creator__gebruikte-kennis {
-  padding-top: 12px;
+  padding-top: 14px;
   border-top: 1px solid var(--theme-elevation-100);
 }
 
@@ -669,77 +763,278 @@ a.ml-dashboard__card:hover {
 .ml-creator__gebruikte-kennis li {
   font-size: 12px;
   color: var(--theme-elevation-600);
-  padding: 6px 8px;
+  padding: 7px 9px;
   background: var(--theme-elevation-50);
   border-radius: var(--ml-admin-radius-sm);
 }
 
-.ml-creator__gebruikte-kennis p {
-  margin: 0;
+/* --- "+ Kennis toevoegen" (artikel-chat) — echte zoek-en-pin-actie, zie
+ * gepindeKnowledgeSourceIds in creator-chat.ts. Bewust NIET bij Mail
+ * schrijven (schrijfMailAntwoord ondersteunt geen pinnen — geen
+ * nepfunctionaliteit tonen). */
+.ml-creator__kennis-toevoegen {
+  padding-top: 14px;
+  border-top: 1px solid var(--theme-elevation-100);
+}
+
+.ml-creator__kennis-zoek {
+  display: flex;
+  gap: 6px;
+}
+
+.ml-creator__kennis-zoek input {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  padding: 7px 10px;
   font-size: 12px;
+  font-family: inherit;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__kennis-zoek button {
+  flex-shrink: 0;
+  width: 30px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  background: var(--theme-elevation-0);
+  color: var(--theme-elevation-500);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ml-creator__kennis-zoek button:hover:not(:disabled) {
+  border-color: var(--ml-admin-accent);
+  color: var(--ml-admin-accent);
+}
+
+.ml-creator__kennis-zoek button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ml-creator__kennis-resultaten {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ml-creator__kennis-resultaten li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--theme-elevation-700);
+  background: var(--theme-elevation-50);
+  border-radius: var(--ml-admin-radius-sm);
+}
+
+.ml-creator__kennis-resultaten button {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: var(--ml-admin-accent-soft);
+  color: var(--ml-admin-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ml-creator__kennis-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ml-creator__kennis-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  background: var(--ml-admin-purple-soft);
+  color: var(--ml-admin-purple-hover);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ml-creator__kennis-chip button {
+  border: none;
+  background: none;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 2px;
+  opacity: 0.7;
+}
+
+.ml-creator__kennis-chip button:hover {
+  opacity: 1;
+}
+
+/* --- Documentkolom — bewust GEEN nieuwe rich-text-editor (zie het
+ * commentaar bovenaan CreatorView.tsx); de "shell" geeft de platte
+ * textarea alleen een documentachtig frame (label-strip + kader). --- */
+.ml-creator__document-titel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  color: var(--ml-admin-accent);
+}
+
+.ml-creator__document-titel h2 {
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__document-shell {
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  background: var(--theme-elevation-50);
+  overflow: hidden;
+}
+
+.ml-creator__document-shell-label {
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--theme-elevation-400);
+  background: var(--theme-elevation-50);
+  border-bottom: 1px solid var(--theme-elevation-100);
 }
 
 .ml-creator__editor {
+  display: block;
   width: 100%;
   resize: vertical;
-  border-radius: var(--ml-admin-radius-sm);
-  border: 1px solid var(--theme-elevation-150);
-  padding: 14px;
+  border: none;
+  background: var(--theme-elevation-0);
+  padding: 18px;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.7;
   font-family: inherit;
   color: var(--theme-elevation-800);
+}
+
+.ml-creator__editor:focus {
+  outline: none;
+}
+
+.ml-creator__editor--klein {
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .ml-creator__editor-acties {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
-.ml-creator__editor-acties a {
-  font-size: 13px;
-  color: var(--ml-admin-accent);
-  text-decoration: none;
-}
-
+/* --- Rechterkolom: elke sectie een eigen kaart (opdrachtseis) --- */
 .ml-creator__kolom--rechts {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 16px;
 }
 
-.ml-creator__kolom--rechts section {
+.ml-creator__actiekaart {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-100);
+  background: var(--theme-elevation-50);
 }
 
-.ml-creator__kolom--rechts section > div:first-of-type {
+.ml-creator__actiekaart > div:first-of-type,
+.ml-creator__actiekaart .field-type {
   width: 100%;
 }
 
-/* Mail schrijven */
-.ml-creator__mail-kolommen {
+.ml-creator__kanaal-knoppen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Nieuwsbrief/LinkedIn/Partnertekst — kleine gekleurde iconknoppen i.p.v.
+ * kale zwart-omlijnde knoppen (opdrachtseis), kleur via KANAAL_META +
+ * NAV_COLOR_STYLES (--item-fg/--item-bg), zelfde mechanisme als overal. */
+.ml-creator__kanaal-knop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  background: var(--theme-elevation-0);
+  color: var(--theme-elevation-700);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.ml-creator__kanaal-knop:hover:not(:disabled) {
+  background: var(--item-bg);
+  border-color: var(--item-fg);
+}
+
+.ml-creator__kanaal-knop:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ml-creator__kanaal-knop svg {
+  flex-shrink: 0;
+  color: var(--item-fg);
+}
+
+/* --- Mail schrijven — boven/links Ontvangen mail, boven/rechts Wat wil ik
+ * zeggen?, daaronder breed Mail om te versturen (opdrachtseis). --- */
+.ml-creator__mail-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
   margin-bottom: 24px;
 }
 
-.ml-creator__mail-kolommen h2 {
-  font-size: 14px;
-  font-weight: 600;
-  margin: 0 0 10px;
-  color: var(--theme-elevation-800);
+.ml-creator__kolom--mail-output {
+  grid-column: 1 / -1;
+}
+
+.ml-creator__kolom--mail-input .ml-creator__editor--klein {
+  margin-bottom: 14px;
 }
 
 .ml-creator__kennisstuk-voorstel {
-  padding: 20px;
+  padding: 24px;
   border-radius: var(--ml-admin-radius);
   border: 1px solid var(--theme-elevation-100);
   background: var(--theme-elevation-0);
@@ -761,6 +1056,9 @@ a.ml-dashboard__card:hover {
 }
 
 .ml-creator__kennisstuk-waarschuwing {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 10px 12px;
   border-radius: var(--ml-admin-radius-sm);
   background: #fef3c7;
@@ -768,11 +1066,19 @@ a.ml-dashboard__card:hover {
   font-size: 13px;
 }
 
+.ml-creator__kennisstuk-waarschuwing svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 @media (max-width: 1100px) {
   .ml-creator--werkruimte {
     grid-template-columns: 1fr;
   }
-  .ml-creator__mail-kolommen {
+  .ml-creator__mail-layout {
     grid-template-columns: 1fr;
+  }
+  .ml-creator__kolom--mail-output {
+    grid-column: auto;
   }
 }
