@@ -183,6 +183,12 @@ export async function embedArticle(payload: Payload, id: number): Promise<Proces
         "Pedagogische content vereist eerst AI-goedkeuring (aiApprovalStatus) — zie docs/CONTENT-MODEL.md §Twee soorten kennis.",
     };
   }
+  // Creator V1: publicatie en AI-kennis zijn twee losse beslissingen (zie
+  // docs/DATA-MODEL.md) — een gepubliceerd, goedgekeurd artikel wordt pas
+  // geëmbed als de beheerder het expliciet als AI-kennis heeft gemarkeerd.
+  if (artikel.aiKnowledgeStatus !== "actief") {
+    return { type: "ignored", reden: "Artikel is niet gemarkeerd als AI-kennis (aiKnowledgeStatus)." };
+  }
 
   const categoryTitle =
     typeof artikel.category === "object" && artikel.category !== null
@@ -194,6 +200,7 @@ export async function embedArticle(payload: Payload, id: number): Promise<Proces
     summary: artikel.summary,
     tags: artikel.tags,
     categoryTitle,
+    sections: artikel.sections,
   });
   const uitkomst = await embedIfChanged({
     text: tekst,

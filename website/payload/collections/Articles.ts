@@ -127,6 +127,38 @@ export const Articles: CollectionConfig = {
       ],
     },
     {
+      // Creator V1 (2026-08-13): losstaand van articleStatus/aiApprovalStatus
+      // — publicatie en AI-kennis zijn twee verschillende beslissingen (zie
+      // docs/DATA-MODEL.md). Alleen bij "actief" embedt lib/embeddings/
+      // process-embedding.ts se embedArticle() dit artikel, en alleen dan
+      // levert lib/embeddings/similarity-search.ts se artikelen-query het op
+      // — uitzetten is dus ook daadwerkelijk effectief bij de eerstvolgende
+      // vraag, niet alleen bij het aanmaken van een nieuwe embedding. Wordt
+      // door de beforeChange-hook hieronder automatisch op "uit" gezet zodra
+      // articleStatus naar "gearchiveerd" gaat.
+      name: "aiKnowledgeStatus",
+      type: "select",
+      required: true,
+      defaultValue: "uit",
+      label: "Gebruik als kennis voor Helpdesk-AI",
+      admin: {
+        position: "sidebar",
+        description: "Los van publicatiestatus — publiek zichtbaar hoeft niet AI-kennis te betekenen, en andersom.",
+      },
+      options: [
+        { label: "Uit", value: "uit" },
+        { label: "Actief", value: "actief" },
+      ],
+    },
+    {
+      name: "createdViaCreator",
+      type: "checkbox",
+      defaultValue: false,
+      label: "Aangemaakt via Creator",
+      access: { update: adminFieldOnly },
+      admin: { position: "sidebar", readOnly: true, description: "Alleen voor herkomst in Archief, geen functioneel effect." },
+    },
+    {
       // Sprint 4: dit veld bestond al als voorbereidend Fase 6-systeemveld en
       // wordt nu daadwerkelijk gevuld door lib/embeddings/ (POST
       // /api/knowledge/embed) — alleen voor gepubliceerde artikelen, en voor
@@ -244,6 +276,10 @@ export const Articles: CollectionConfig = {
         if (!data.lastContentUpdate) data.lastContentUpdate = new Date().toISOString();
         if (data.articleStatus === "gepubliceerd" && !data.publishedAt)
           data.publishedAt = new Date().toISOString();
+        // Creator V1: archiveren sluit AI-kennisgebruik altijd uit — geen
+        // aparte handeling nodig, en de retrieval-query hoeft alleen
+        // aiKnowledgeStatus te kennen, niet ook nog articleStatus.
+        if (data.articleStatus === "gearchiveerd") data.aiKnowledgeStatus = "uit";
         return data;
       },
     ],

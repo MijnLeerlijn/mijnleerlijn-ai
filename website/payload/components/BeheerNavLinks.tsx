@@ -10,7 +10,7 @@ import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 // vervangt BasisNavLinks.tsx + VariantenNavLinks.tsx (verwijderd) — zelfde
 // afterNavLinks-mechanisme, zelfde Payload-CSS-klassen (nav__link,
 // nav__link-indicator, nav__link-label) voor de actieve-link-opmaak, maar nu
-// alle 24 collecties/globals + 7 custom views in 4 taakgerichte hoofdgroepen
+// alle 24 collecties/globals + 8 custom views in 4 taakgerichte hoofdgroepen
 // (lib/admin-nav/nav-groups.ts is de bron van waarheid), i.p.v. een lange,
 // ongegroepeerde Payload-standaardnav. Die standaardnav wordt via CSS
 // verborgen (payload/components/admin-shell.css, op de stabiele
@@ -72,32 +72,23 @@ export function BeheerNavLinks() {
         <span className="ml-nav-brand__subtitle">Helpdesk beheer</span>
       </Link>
 
-      {groups.map((group) =>
-        group.placeholder ? (
-          <div className="nav-group ml-nav-placeholder" key={group.id}>
-            <div className="nav-group__label">
-              {group.placeholder.label}
-              <span className="ml-nav-placeholder__badge">{group.placeholder.badge}</span>
-            </div>
-          </div>
-        ) : (
-          <NavGroup key={group.id} label={group.label}>
-            {group.items.map((item) => (
-              <NavLink key={item.href} item={item} pathname={pathname} />
-            ))}
-            {group.mutedItems.length > 0 && (
-              <>
-                <div className="ml-nav-muted-label">Technisch</div>
-                {group.mutedItems.map((item) => (
-                  <div className="ml-nav-link--muted" key={item.href}>
-                    <NavLink item={item} pathname={pathname} gekleurd={false} />
-                  </div>
-                ))}
-              </>
-            )}
-          </NavGroup>
-        )
-      )}
+      {groups.map((group) => (
+        <NavGroup key={group.id} label={group.label}>
+          {group.items.map((item) => (
+            <NavLink key={item.href} item={item} pathname={pathname} />
+          ))}
+          {group.mutedItems.length > 0 && (
+            <>
+              <div className="ml-nav-muted-label">Technisch</div>
+              {group.mutedItems.map((item) => (
+                <div className="ml-nav-link--muted" key={item.href}>
+                  <NavLink item={item} pathname={pathname} gekleurd={false} />
+                </div>
+              ))}
+            </>
+          )}
+        </NavGroup>
+      ))}
     </>
   );
 }

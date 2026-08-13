@@ -52,15 +52,65 @@ export function buildKnowledgeDraftText(draft: KnowledgeDraftVoorEmbedding): str
     .join("\n\n");
 }
 
+export interface ArticleBlokVoorEmbedding {
+  blockType: string;
+  body?: unknown;
+  caption?: string | null;
+  label?: string | null;
+}
+
+export interface ArticleSectieVoorEmbedding {
+  title: string;
+  blocks?: ArticleBlokVoorEmbedding[] | null;
+}
+
 export interface ArticleVoorEmbedding {
   title: string;
   summary?: string | null;
   tags?: string[] | null;
   categoryTitle?: string | null;
+  sections?: ArticleSectieVoorEmbedding[] | null;
 }
 
+/**
+ * Normaliseert één ContentBlock (payload/blocks/*.ts) naar platte tekst.
+ * Media-referenties (afbeelding/download) worden bewust nooit meegenomen,
+ * alleen het bijschrift/label erbij — zelfde principe als de bestaande
+ * buildStapText (geen interneNotitie, geen bestandsverwijzingen in AI-tekst).
+ */
+function buildBlokText(blok: ArticleBlokVoorEmbedding): string {
+  switch (blok.blockType) {
+    case "tekst":
+      return richTextNaarPlatteTekst(blok.body);
+    case "genummerde_stap":
+    case "waarschuwing":
+    case "tip":
+    case "contact_doorverwijzing":
+      return typeof blok.body === "string" ? blok.body : "";
+    case "afbeelding":
+    case "video":
+      return blok.caption?.trim() ?? "";
+    case "download":
+      return blok.label?.trim() ?? "";
+    default:
+      return "";
+  }
+}
+
+function buildSectieText(sectie: ArticleSectieVoorEmbedding): string {
+  const blokTeksten = (sectie.blocks ?? []).map(buildBlokText).filter((deel) => deel.trim().length > 0);
+  return [sectie.title, ...blokTeksten].filter((deel) => deel && deel.trim().length > 0).join("\n\n");
+}
+
+// Fase Creator V1 (2026-08-13): naast titel/summary/tags/categorie wordt nu
+// ook de daadwerkelijke sectie-/blokinhoud meegenomen — voorheen bleef die
+// buiten de geëmbedde tekst, waardoor de AI-assistent de inhoud van een
+// artikel nooit kon terugvinden, alleen de metadata erover. `sections` is
+// optioneel gehouden zodat bestaande aanroepen (zonder dit argument) exact
+// hetzelfde gedrag blijven vertonen als voorheen.
 export function buildArticleText(artikel: ArticleVoorEmbedding): string {
-  return [artikel.title, artikel.summary, artikel.categoryTitle, (artikel.tags ?? []).join(", ")]
+  const sectieTeksten = (artikel.sections ?? []).map(buildSectieText).filter((deel) => deel.trim().length > 0);
+  return [artikel.title, artikel.summary, artikel.categoryTitle, (artikel.tags ?? []).join(", "), ...sectieTeksten]
     .filter((deel) => deel && deel.trim().length > 0)
     .join("\n\n");
 }

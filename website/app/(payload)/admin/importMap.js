@@ -45,6 +45,7 @@ import { HelpdeskVragenViewShell as HelpdeskVragenViewShell_1e788d78f4aade245b17
 import { VariantenViewShell as VariantenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { KennisbasisViewShell as KennisbasisViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { CurriculumWerkplaatsViewShell as CurriculumWerkplaatsViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { CreatorViewShell as CreatorViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -96,5 +97,6 @@ export const importMap = {
   "@/payload/components/AdminViewShell#VariantenViewShell": VariantenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#KennisbasisViewShell": KennisbasisViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#CurriculumWerkplaatsViewShell": CurriculumWerkplaatsViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#CreatorViewShell": CreatorViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }

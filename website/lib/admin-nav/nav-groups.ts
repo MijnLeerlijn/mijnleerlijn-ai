@@ -85,8 +85,6 @@ export interface NavGroupDef {
    * of ingeklapt.
    */
   mutedItems?: NavItem[];
-  /** Alleen voor "Creator": nog geen functionaliteit — zie het Fase 1-plan. Kleur/icoon-opzet is al zo generiek dat Creator later gewoon eigen items aan deze structuur toevoegt. */
-  placeholder?: { label: string; badge: string };
 }
 
 export const NAV_GROUPS: NavGroupDef[] = [
@@ -136,8 +134,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
     id: "creator",
     label: "Creator",
     icon: WandSparkles,
-    items: [],
-    placeholder: { label: "Creator", badge: "Binnenkort" },
+    items: [{ label: "Creator", href: "/admin/creator", icon: WandSparkles, color: "purple", description: "Schrijf, herschrijf en verspreid content samen met AI." }],
   },
   {
     id: "curriculum-werkplaats",
@@ -171,7 +168,7 @@ export function getVisibleNavGroups(permissions: SanitizedPermissions | null | u
     ...group,
     items: group.items.filter((item) => isNavItemVisible(item, permissions)),
     mutedItems: (group.mutedItems ?? []).filter((item) => isNavItemVisible(item, permissions)),
-  })).filter((group) => group.items.length > 0 || group.mutedItems.length > 0 || Boolean(group.placeholder));
+  })).filter((group) => group.items.length > 0 || group.mutedItems.length > 0);
 }
 
 export interface DashboardCardGroup {

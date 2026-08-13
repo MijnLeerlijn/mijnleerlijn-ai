@@ -111,6 +111,42 @@ export const KnowledgeDrafts: CollectionConfig = {
       label: "Toelichting klantspecifieke info",
     },
     {
+      // Creator V1 (2026-08-13): voorheen niet aanwezig — deze collectie werd
+      // nooit variant-gescoped gefilterd bij retrieval, dus elk goedgekeurd
+      // concept was kandidaat voor elke variant. Zelfde patroon als op
+      // KnowledgeSources/Articles/Handleidingen; leeg = centraal/voor alle
+      // varianten, net als daar.
+      name: "variantContext",
+      type: "relationship",
+      relationTo: "variants",
+      hasMany: true,
+      label: "Variant-context",
+      admin: { position: "sidebar", description: "Leeg = centraal, voor alle varianten." },
+    },
+    {
+      name: "origin",
+      type: "select",
+      required: true,
+      defaultValue: "support-thread-analyse",
+      label: "Herkomst",
+      admin: { position: "sidebar", readOnly: true },
+      options: [
+        { label: "Support-thread-analyse (Gmail)", value: "support-thread-analyse" },
+        { label: "Creator — mail schrijven", value: "creator-mail" },
+      ],
+    },
+    {
+      name: "sourceMailDraft",
+      type: "relationship",
+      relationTo: "mail-drafts",
+      label: "Bron-mailconcept",
+      admin: {
+        position: "sidebar",
+        readOnly: true,
+        description: "Alleen gezet wanneer dit concept via Creator se 'Maak hier een kennisstuk van' is ontstaan.",
+      },
+    },
+    {
       name: "status",
       type: "select",
       required: true,

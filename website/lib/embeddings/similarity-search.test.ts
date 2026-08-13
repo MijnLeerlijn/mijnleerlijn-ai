@@ -305,7 +305,7 @@ describe("searchKnowledge — bronrol (purpose), chatbot-evaluatieopdracht", () 
 
   it("geeft gepubliceerde artikelen altijd bronrol 'manual'", async () => {
     const { payload } = maakFakePayload({
-      articles: [{ id: 1, title: "Artikel", embeddingStatus: "indexed", embedding: [1, 0, 0] }],
+      articles: [{ id: 1, title: "Artikel", embeddingStatus: "indexed", aiKnowledgeStatus: "actief", embedding: [1, 0, 0] }],
     });
     const hits = await searchKnowledge(payload, { query: "wachtwoord" });
     expect(hits[0]).toMatchObject({ bronrol: "manual" });
@@ -585,6 +585,7 @@ describe("searchKnowledgePhased — gefaseerd zoeken op Knowledge Source-priorit
           id: 4,
           title: "Gepubliceerd artikel",
           embeddingStatus: "indexed",
+          aiKnowledgeStatus: "actief",
           embedding: embeddingVoorScore(0.55),
         },
       ],

@@ -1,5 +1,5 @@
 import type { CollectionConfig } from "payload";
-import { ownVariantOverrideAccess, publishedOverrideOrEditor } from "../access/roles";
+import { adminFieldOnly, ownVariantOverrideAccess, publishedOverrideOrEditor } from "../access/roles";
 
 // Eén polymorf mechanisme voor alle variant-afwijkingen — zie
 // docs/DATA-MODEL.md §VariantOverride en docs/CONTENT-MODEL.md
@@ -125,6 +125,25 @@ export const VariantOverrides: CollectionConfig = {
       label: "Laatst bewerkt door",
       access: { update: () => false },
       admin: { position: "sidebar", readOnly: true },
+    },
+    {
+      // Creator V1 (2026-08-13): legt vast tegen welke versie van het
+      // masterartikel deze override is gegenereerd — puur ter voorbereiding
+      // op een latere "deze versie is gebaseerd op een oudere versie"-
+      // vergelijking (nog niet gebouwd). Geen functioneel effect vandaag.
+      name: "basedOnArticleVersion",
+      type: "text",
+      label: "Gebaseerd op masterversie",
+      access: { update: adminFieldOnly },
+      admin: { position: "sidebar", readOnly: true, hidden: true },
+    },
+    {
+      name: "generatedByAi",
+      type: "checkbox",
+      defaultValue: false,
+      label: "AI-gegenereerd",
+      access: { update: adminFieldOnly },
+      admin: { position: "sidebar", readOnly: true, description: "Alleen voor herkomst in Archief, geen functioneel effect." },
     },
   ],
   hooks: {

@@ -27,6 +27,8 @@ import { HelpdeskVragen } from "./payload/collections/HelpdeskVragen";
 import { AssistantConversations } from "./payload/collections/AssistantConversations";
 import { AssistantEvalQuestions } from "./payload/collections/AssistantEvalQuestions";
 import { AssistantEvalRuns } from "./payload/collections/AssistantEvalRuns";
+import { MailDrafts } from "./payload/collections/MailDrafts";
+import { DerivedContent } from "./payload/collections/DerivedContent";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
 import { AssistantEval } from "./payload/globals/AssistantEval";
@@ -95,7 +97,7 @@ export default buildConfig({
     components: {
       // Admin-rebrand Fase 1 (2026-08-12): BeheerNavLinks.tsx vervangt
       // BasisNavLinks.tsx + VariantenNavLinks.tsx (verwijderd) — één
-      // permissiebewuste component met alle 24 collecties/globals + 7
+      // permissiebewuste component met alle 24 collecties/globals + 8
       // custom views in 4 taakgerichte hoofdgroepen (Algemeen, Helpdesk AI,
       // Creator, Curriculum Werkplaats — zie lib/admin-nav/nav-groups.ts),
       // i.p.v. Payload's kale, technische standaardnav. Die standaardnav
@@ -162,6 +164,14 @@ export default buildConfig({
           Component: "@/payload/components/AdminViewShell#CurriculumWerkplaatsViewShell",
           path: "/curriculum-werkplaats",
         },
+        // Creator V1 (2026-08-13): startscherm/werkruimte/mailflow op één
+        // statisch pad, zelfde aanpak als curriculumWerkplaats hierboven
+        // (client-side wisselen via ?artikel=<id> / ?mail=<id>, zie
+        // CreatorView.tsx).
+        creator: {
+          Component: "@/payload/components/AdminViewShell#CreatorViewShell",
+          path: "/creator",
+        },
       },
     },
   },
@@ -180,6 +190,8 @@ export default buildConfig({
     KnowledgeDrafts,
     KnowledgeSources,
     Handleidingen,
+    MailDrafts,
+    DerivedContent,
     KennisbasisOnderwerpen,
     HelpdeskVragen,
     AssistantConversations,

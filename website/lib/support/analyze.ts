@@ -228,6 +228,7 @@ export async function analyseThread(payload: Payload, thread: ThreadVoorAnalyse)
   const nieuwConcept = await payload.create({
     collection: "knowledge-drafts",
     overrideAccess: true,
+    draft: false,
     data: {
       title: ruweOutput.title,
       question: ruweOutput.mainQuestion,
@@ -243,6 +244,9 @@ export async function analyseThread(payload: Payload, thread: ThreadVoorAnalyse)
       customerSpecificInformationFound: ruweOutput.containsPersonalData,
       customerSpecificInformationExplanation: ruweOutput.personalDataExplanation,
       status,
+      // Creator V1: expliciet i.p.v. op de veld-default leunen — dit is
+      // precies de andere herkomst dan lib/creator/mail-to-knowledge.ts.
+      origin: "support-thread-analyse",
       aiModel: getAiModelId(),
       aiAnalyzedAt: new Date().toISOString(),
       embeddingStatus: "pending",

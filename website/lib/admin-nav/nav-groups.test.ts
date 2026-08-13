@@ -112,14 +112,14 @@ describe("nav-groups", () => {
     expect(alleZichtbareLabels).toContain("AI-gesprekken");
   });
 
-  it("getVisibleNavGroups: een groep zonder enig zichtbaar item verdwijnt volledig, behalve met een placeholder", () => {
+  it("getVisibleNavGroups: een groep waarvan het enige item geen permission-veld heeft (custom view) blijft altijd zichtbaar, ook zonder enige toegang", () => {
     const geenToegang = { canAccessAdmin: true, collections: {}, globals: {} } as unknown as SanitizedPermissions;
     const zichtbaar = getVisibleNavGroups(geenToegang);
 
-    // Curriculum Werkplaats heeft precies 1 item, zonder permission-veld
-    // (custom view) — blijft dus altijd staan, ook zonder enige toegang.
+    // Curriculum Werkplaats en Creator hebben allebei precies 1 item, zonder
+    // permission-veld (custom view) — blijven dus altijd staan, ook zonder
+    // enige toegang.
     expect(zichtbaar.some((g) => g.id === "curriculum-werkplaats")).toBe(true);
-    // Creator heeft geen items maar wél een placeholder — blijft dus ook staan.
     expect(zichtbaar.some((g) => g.id === "creator")).toBe(true);
   });
 

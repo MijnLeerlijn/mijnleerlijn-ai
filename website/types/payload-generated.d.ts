@@ -81,6 +81,8 @@ export interface Config {
     'knowledge-drafts': KnowledgeDraft;
     'knowledge-sources': KnowledgeSource;
     handleidingen: Handleidingen;
+    'mail-drafts': MailDraft;
+    'derived-content': DerivedContent;
     'kennisbasis-onderwerpen': KennisbasisOnderwerpen;
     'helpdesk-vragen': HelpdeskVragen;
     'assistant-conversations': AssistantConversation;
@@ -108,6 +110,8 @@ export interface Config {
     'knowledge-drafts': KnowledgeDraftsSelect<false> | KnowledgeDraftsSelect<true>;
     'knowledge-sources': KnowledgeSourcesSelect<false> | KnowledgeSourcesSelect<true>;
     handleidingen: HandleidingenSelect<false> | HandleidingenSelect<true>;
+    'mail-drafts': MailDraftsSelect<false> | MailDraftsSelect<true>;
+    'derived-content': DerivedContentSelect<false> | DerivedContentSelect<true>;
     'kennisbasis-onderwerpen': KennisbasisOnderwerpenSelect<false> | KennisbasisOnderwerpenSelect<true>;
     'helpdesk-vragen': HelpdeskVragenSelect<false> | HelpdeskVragenSelect<true>;
     'assistant-conversations': AssistantConversationsSelect<false> | AssistantConversationsSelect<true>;
@@ -355,6 +359,14 @@ export interface Article {
    * Verplicht 'Goedgekeurd' voordat pedagogische content in de AI-index mag — uitsluitend door een beheerder te zetten. Zie docs/CONTENT-MODEL.md §Twee soorten kennis.
    */
   aiApprovalStatus: 'n.v.t.' | 'in_afwachting' | 'goedgekeurd';
+  /**
+   * Los van publicatiestatus — publiek zichtbaar hoeft niet AI-kennis te betekenen, en andersom.
+   */
+  aiKnowledgeStatus: 'uit' | 'actief';
+  /**
+   * Alleen voor herkomst in Archief, geen functioneel effect.
+   */
+  createdViaCreator?: boolean | null;
   embeddingStatus: 'pending' | 'indexed' | 'stale';
   embeddedAt?: string | null;
   embeddingModel?: string | null;
@@ -524,6 +536,11 @@ export interface VariantOverride {
   termOverridesApplied?: boolean | null;
   status: 'concept' | 'gepubliceerd';
   editedBy?: (number | null) | User;
+  basedOnArticleVersion?: string | null;
+  /**
+   * Alleen voor herkomst in Archief, geen functioneel effect.
+   */
+  generatedByAi?: boolean | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -697,6 +714,15 @@ export interface KnowledgeDraft {
    */
   customerSpecificInformationFound?: boolean | null;
   customerSpecificInformationExplanation?: string | null;
+  /**
+   * Leeg = centraal, voor alle varianten.
+   */
+  variantContext?: (number | Variant)[] | null;
+  origin: 'support-thread-analyse' | 'creator-mail';
+  /**
+   * Alleen gezet wanneer dit concept via Creator se 'Maak hier een kennisstuk van' is ontstaan.
+   */
+  sourceMailDraft?: (number | null) | MailDraft;
   status: 'new' | 'review' | 'approved' | 'rejected' | 'published';
   aiModel?: string | null;
   aiAnalyzedAt?: string | null;
@@ -850,6 +876,33 @@ export interface KnowledgeSource {
   createdAt: string;
 }
 /**
+ * Concept-mailantwoorden geschreven met Creator.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mail-drafts".
+ */
+export interface MailDraft {
+  id: number;
+  subject?: string | null;
+  /**
+   * Bewaar dit niet langer dan nodig — maak dit veld leeg zodra het concept is afgehandeld.
+   */
+  receivedText?: string | null;
+  draftReply: string;
+  status: 'concept' | 'afgehandeld';
+  /**
+   * Automatisch gezet nadat 'Maak hier een kennisstuk van' is gebruikt.
+   */
+  linkedKnowledgeDraft?: (number | null) | KnowledgeDraft;
+  /**
+   * Leeg = niet variant-specifiek.
+   */
+  variantContext?: (number | Variant)[] | null;
+  createdBy?: (number | null) | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * Handleidingen opgebouwd uit losse stappen met tekst en afbeeldingen — de opvolger van PDF-handleidingen.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -973,6 +1026,36 @@ export interface Handleidingen {
     | number
     | boolean
     | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Afgeleide content (nieuwsbrief/LinkedIn/partnertekst) per masterartikel, aangemaakt via Creator.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "derived-content".
+ */
+export interface DerivedContent {
+  id: number;
+  sourceArticle: number | Article;
+  channel: 'nieuwsbrief' | 'linkedin' | 'partnertekst';
+  title?: string | null;
+  content: string;
+  cta?: string | null;
+  /**
+   * Vooral relevant voor nieuwsbrief.
+   */
+  audience?: ('nieuwe_scholen' | 'bestaande_scholen' | 'overig') | null;
+  /**
+   * Bijv. 'demo aanvragen', 'feature gebruiken'.
+   */
+  goal?: string | null;
+  /**
+   * Leeg = voor alle varianten, bijv. bij een variant-specifieke nieuwsbrief.
+   */
+  variantContext?: (number | Variant)[] | null;
+  status: 'concept' | 'gepubliceerd';
+  generatedByAi?: boolean | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1440,6 +1523,14 @@ export interface PayloadLockedDocument {
         value: number | Handleidingen;
       } | null)
     | ({
+        relationTo: 'mail-drafts';
+        value: number | MailDraft;
+      } | null)
+    | ({
+        relationTo: 'derived-content';
+        value: number | DerivedContent;
+      } | null)
+    | ({
         relationTo: 'kennisbasis-onderwerpen';
         value: number | KennisbasisOnderwerpen;
       } | null)
@@ -1602,6 +1693,8 @@ export interface ArticlesSelect<T extends boolean = true> {
   knowledgeType?: T;
   articleStatus?: T;
   aiApprovalStatus?: T;
+  aiKnowledgeStatus?: T;
+  createdViaCreator?: T;
   embeddingStatus?: T;
   embeddedAt?: T;
   embeddingModel?: T;
@@ -1702,6 +1795,8 @@ export interface VariantOverridesSelect<T extends boolean = true> {
   termOverridesApplied?: T;
   status?: T;
   editedBy?: T;
+  basedOnArticleVersion?: T;
+  generatedByAi?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1858,6 +1953,9 @@ export interface KnowledgeDraftsSelect<T extends boolean = true> {
   isGeneralKnowledge?: T;
   customerSpecificInformationFound?: T;
   customerSpecificInformationExplanation?: T;
+  variantContext?: T;
+  origin?: T;
+  sourceMailDraft?: T;
   status?: T;
   aiModel?: T;
   aiAnalyzedAt?: T;
@@ -1966,6 +2064,39 @@ export interface HandleidingenSelect<T extends boolean = true> {
   embeddingModel?: T;
   embeddingTextHash?: T;
   embedding?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mail-drafts_select".
+ */
+export interface MailDraftsSelect<T extends boolean = true> {
+  subject?: T;
+  receivedText?: T;
+  draftReply?: T;
+  status?: T;
+  linkedKnowledgeDraft?: T;
+  variantContext?: T;
+  createdBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "derived-content_select".
+ */
+export interface DerivedContentSelect<T extends boolean = true> {
+  sourceArticle?: T;
+  channel?: T;
+  title?: T;
+  content?: T;
+  cta?: T;
+  audience?: T;
+  goal?: T;
+  variantContext?: T;
+  status?: T;
+  generatedByAi?: T;
   updatedAt?: T;
   createdAt?: T;
 }

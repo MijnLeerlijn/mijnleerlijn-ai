@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, embed } from "ai";
+import { generateObject, generateText, embed } from "ai";
 import { z } from "zod";
 import { requireEnv, optionalEnv } from "@/config/env";
 
@@ -108,6 +108,26 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const model = openaiClient().embedding(getEmbeddingModelId());
   const result = await embed({ model, value: text });
   return result.embedding;
+}
+
+export interface ChatTextArgs {
+  systemPrompt: string;
+  messages: { role: "user" | "assistant"; content: string }[];
+}
+
+/**
+ * Creator V1 (2026-08-13): vrije, niet-schemagebonden tekstgeneratie —
+ * voor het AI-schrijfgesprek in lib/creator/ (zie de sessie-onderzoeksfase).
+ * Bewust een aparte functie i.p.v. generateStructuredOutput() misbruiken met
+ * een `{ text: string }`-schema: dit is écht vrije tekst (proza dat de
+ * gebruiker verder bewerkt), geen gestructureerde data. Zelfde
+ * providerabstractie als de rest van dit bestand (openaiClient()/
+ * getAiModelId()) — geen tweede AI-clientje.
+ */
+export async function generateChatText(args: ChatTextArgs): Promise<string> {
+  const model = openaiClient()(getAiModelId());
+  const result = await generateText({ model, system: args.systemPrompt, messages: args.messages });
+  return result.text;
 }
 
 const OcrPdfSchema = z.object({

@@ -169,6 +169,7 @@ describe("embedArticle", () => {
           summary: "Uitleg.",
           articleStatus: "gepubliceerd",
           knowledgeType: "product",
+          aiKnowledgeStatus: "actief",
           embeddingStatus: "pending",
         },
       ],
@@ -178,6 +179,27 @@ describe("embedArticle", () => {
 
     expect(uitkomst).toEqual({ type: "embedded" });
     expect(collection("articles")[0]!.embeddingStatus).toBe("indexed");
+  });
+
+  it("negeert een gepubliceerd, goedgekeurd artikel zonder aiKnowledgeStatus 'actief' (Creator V1: publicatie en AI-kennis zijn losse beslissingen)", async () => {
+    const { payload } = maakFakePayload({
+      articles: [
+        {
+          id: 1,
+          title: "Opiniestuk",
+          summary: "Uitleg.",
+          articleStatus: "gepubliceerd",
+          knowledgeType: "product",
+          aiKnowledgeStatus: "uit",
+          embeddingStatus: "pending",
+        },
+      ],
+    });
+
+    const uitkomst = await embedArticle(payload, 1);
+
+    expect(uitkomst).toMatchObject({ type: "ignored" });
+    expect(mockGenerateEmbedding).not.toHaveBeenCalled();
   });
 
   it("negeert een niet-gepubliceerd artikel (concept)", async () => {
@@ -231,6 +253,7 @@ describe("embedArticle", () => {
           articleStatus: "gepubliceerd",
           knowledgeType: "pedagogisch",
           aiApprovalStatus: "goedgekeurd",
+          aiKnowledgeStatus: "actief",
           embeddingStatus: "pending",
         },
       ],

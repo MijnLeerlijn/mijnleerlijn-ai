@@ -204,8 +204,11 @@ async function verzamelKandidaten(payload: Payload, variantId?: string): Promise
 
   const drafts = await payload.find({
     collection: "knowledge-drafts",
+    // Creator V1: variantWhereClause hier alsnog toegepast — voorheen was
+    // dit de enige geëmbedde collectie zonder variant-filter, dus elk
+    // goedgekeurd concept lekte naar elke variant.
     where: {
-      and: [{ embeddingStatus: { equals: "indexed" } }, { status: { in: VEILIGE_DRAFT_STATUSSEN } }],
+      and: [{ embeddingStatus: { equals: "indexed" } }, { status: { in: VEILIGE_DRAFT_STATUSSEN } }, ...variantWhereClause(variantId)],
     },
     limit: MAX_KANDIDATEN_PER_COLLECTIE,
     overrideAccess: true,
@@ -231,7 +234,13 @@ async function verzamelKandidaten(payload: Payload, variantId?: string): Promise
 
   const artikelen = await payload.find({
     collection: "articles",
-    where: { and: [{ embeddingStatus: { equals: "indexed" } }, ...variantWhereClause(variantId)] },
+    // Creator V1: aiKnowledgeStatus hier herchecken (niet alleen bij het
+    // aanmaken van de embedding) — zodat "uitzetten" ook echt meteen
+    // effectief is, zelfde patroon als de status-check bij Handleidingen
+    // hieronder.
+    where: {
+      and: [{ embeddingStatus: { equals: "indexed" } }, { aiKnowledgeStatus: { equals: "actief" } }, ...variantWhereClause(variantId)],
+    },
     limit: MAX_KANDIDATEN_PER_COLLECTIE,
     overrideAccess: true,
     depth: 0,

@@ -12,8 +12,8 @@
  *      bestaande merkblauw — zie config/variants.ts se accentColor) is nu de
  *      PRIMAIRE kleur; paars (--ml-admin-purple, dezelfde waarde als de
  *      bestaande "Paars"-categoriekleur) blijft bestaan als secundaire
- *      accentkleur (o.a. de Creator-badge — bewust een andere kleur dan de
- *      rest, ter onderscheiding van "binnenkort").
+ *      accentkleur (o.a. de Creator-nav-/dashboardkleur en de assistent-
+ *      chatbubbel in CreatorView.tsx — bewust een andere kleur dan de rest).
  *   2. Verbergen van Payload's automatisch gegenereerde navigatiegroepen
  *      (bewust GEEN admin.hidden op de collecties/globals zelf). Elke groep
  *      krijgt van Payload zelf een stabiele id (`nav-group-{admin.group}`) —
@@ -136,24 +136,6 @@
 .ml-nav-link--muted .nav__link {
   opacity: 0.75;
   font-size: 13px;
-}
-
-.ml-nav-placeholder .nav-group__label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: default;
-}
-
-.ml-nav-placeholder__badge {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--ml-admin-purple-soft);
-  color: var(--ml-admin-purple-hover);
 }
 
 /* --- Topbar (BeheerTopBar.tsx) — admin.components.header, op elke pagina --- */
@@ -468,4 +450,329 @@ a.ml-dashboard__card:hover {
 
 .step-nav a {
   color: var(--ml-admin-accent);
+}
+
+/*
+ * --- Content Creator (CreatorView.tsx) — startscherm, 3-koloms werkruimte,
+ * mailflow. Zelfde tokens/kaartstijl als het dashboard hierboven; het
+ * paarse accent (--ml-admin-purple) hergebruikt de bestaande Creator-
+ * identiteit uit de nav (WandSparkles-icoon).
+ */
+.ml-creator {
+  padding: 8px 0 40px;
+  max-width: 1200px;
+}
+
+.ml-creator__title {
+  font-size: 26px;
+  font-weight: 600;
+  margin: 0 0 24px;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__routes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-bottom: 40px;
+}
+
+.ml-creator__route-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border-radius: var(--ml-admin-radius);
+  border: 1px solid var(--theme-elevation-100);
+  background: var(--theme-elevation-0);
+  box-shadow: var(--ml-admin-shadow);
+}
+
+.ml-creator__route-card h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__route-card p {
+  flex-grow: 1;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--theme-elevation-500);
+  margin: 0;
+}
+
+.ml-creator__route-start {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ml-creator__route-link {
+  align-self: flex-start;
+  text-decoration: none;
+}
+
+.ml-creator__recent h2 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--theme-elevation-500);
+  margin: 0 0 12px;
+}
+
+.ml-creator__recent-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ml-creator__recent-list a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--ml-admin-radius-sm);
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.ml-creator__recent-list a:hover {
+  background: var(--theme-elevation-50);
+}
+
+.ml-creator__recent-titel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__recent-meta {
+  font-size: 12px;
+  color: var(--theme-elevation-400);
+  white-space: nowrap;
+}
+
+.ml-creator__archief-hint {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--theme-elevation-400);
+}
+
+/* Werkruimte: chat / editor / acties naast elkaar. */
+.ml-creator--werkruimte {
+  max-width: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.ml-creator__kolom {
+  padding: 18px;
+  border-radius: var(--ml-admin-radius);
+  border: 1px solid var(--theme-elevation-100);
+  background: var(--theme-elevation-0);
+  box-shadow: var(--ml-admin-shadow);
+}
+
+.ml-creator__kolom h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 14px;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__kolom h3 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 8px;
+  color: var(--theme-elevation-500);
+}
+
+.ml-creator__kolom--chat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ml-creator__chat-berichten {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.ml-creator__chat-leeg {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--theme-elevation-400);
+}
+
+.ml-creator__bericht {
+  padding: 10px 12px;
+  border-radius: var(--ml-admin-radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-width: 92%;
+}
+
+.ml-creator__bericht--user {
+  align-self: flex-end;
+  background: var(--theme-elevation-50);
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__bericht--assistant {
+  align-self: flex-start;
+  background: var(--ml-admin-purple-soft);
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__chat-invoer {
+  width: 100%;
+  resize: vertical;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  padding: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__gebruikte-kennis {
+  padding-top: 12px;
+  border-top: 1px solid var(--theme-elevation-100);
+}
+
+.ml-creator__gebruikte-kennis ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ml-creator__gebruikte-kennis li {
+  font-size: 12px;
+  color: var(--theme-elevation-600);
+  padding: 6px 8px;
+  background: var(--theme-elevation-50);
+  border-radius: var(--ml-admin-radius-sm);
+}
+
+.ml-creator__gebruikte-kennis p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--theme-elevation-400);
+}
+
+.ml-creator__editor {
+  width: 100%;
+  resize: vertical;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  padding: 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: inherit;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__editor-acties {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.ml-creator__editor-acties a {
+  font-size: 13px;
+  color: var(--ml-admin-accent);
+  text-decoration: none;
+}
+
+.ml-creator__kolom--rechts {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.ml-creator__kolom--rechts section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ml-creator__kolom--rechts section > div:first-of-type {
+  width: 100%;
+}
+
+/* Mail schrijven */
+.ml-creator__mail-kolommen {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.ml-creator__mail-kolommen h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__kennisstuk-voorstel {
+  padding: 20px;
+  border-radius: var(--ml-admin-radius);
+  border: 1px solid var(--theme-elevation-100);
+  background: var(--theme-elevation-0);
+  box-shadow: var(--ml-admin-shadow);
+}
+
+.ml-creator__kennisstuk-voorstel h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__kennisstuk-voorstel p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--theme-elevation-600);
+  margin: 0 0 8px;
+}
+
+.ml-creator__kennisstuk-waarschuwing {
+  padding: 10px 12px;
+  border-radius: var(--ml-admin-radius-sm);
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .ml-creator--werkruimte {
+    grid-template-columns: 1fr;
+  }
+  .ml-creator__mail-kolommen {
+    grid-template-columns: 1fr;
+  }
 }

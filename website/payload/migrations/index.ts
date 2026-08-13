@@ -21,6 +21,7 @@ import * as migration_20260729_120000_helpdesk_vragen from './20260729_120000_he
 import * as migration_20260729_150000_categorie_kleuren_uitbreiden from './20260729_150000_categorie_kleuren_uitbreiden';
 import * as migration_20260730_120000_multibrand_variants from './20260730_120000_multibrand_variants';
 import * as migration_20260811_080000_helpdesk_instellingen from './20260811_080000_helpdesk_instellingen';
+import * as migration_20260813_090000_creator_v1_datamodel from './20260813_090000_creator_v1_datamodel';
 
 export const migrations = [
   {
@@ -137,5 +138,10 @@ export const migrations = [
     up: migration_20260811_080000_helpdesk_instellingen.up,
     down: migration_20260811_080000_helpdesk_instellingen.down,
     name: '20260811_080000_helpdesk_instellingen',
+  },
+  {
+    up: migration_20260813_090000_creator_v1_datamodel.up,
+    down: migration_20260813_090000_creator_v1_datamodel.down,
+    name: '20260813_090000_creator_v1_datamodel',
   },
 ];
