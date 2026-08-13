@@ -45,37 +45,41 @@ export function BeheerLoginView() {
   const searchParams = useSearchParams();
 
   return (
-    <div className="ml-login">
-      <div className="ml-login__brand">
-        <div className="ml-login__brand-logo-chip">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/logo-kleur.svg" alt="MijnLeerlijn" className="ml-login__brand-logo" />
+    <>
+      {/* Tijdelijke deploy-verificatiemarker, zie admin-shell.css#.ml-build-marker — verwijderen zodra bevestigd. */}
+      <div className="ml-build-marker">ADMIN BUILD f4f0096</div>
+      <div className="ml-login">
+        <div className="ml-login__brand">
+          <div className="ml-login__brand-logo-chip">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/logo-kleur.svg" alt="MijnLeerlijn" className="ml-login__brand-logo" />
+          </div>
+          <p className="ml-login__brand-tagline">Beheer je Helpdesk, kennis en AI vanuit één plek.</p>
         </div>
-        <p className="ml-login__brand-tagline">Beheer je Helpdesk, kennis en AI vanuit één plek.</p>
-      </div>
 
-      <div className="ml-login__form-side">
-        <div className="ml-login__form-wrap">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/beeldmerk-kleur.png" alt="" className="ml-login__form-logo" />
-          <h1 className="ml-login__form-title">Welkom terug</h1>
-          <Form
-            action={formatAdminURL({ apiRoute, path: `/${userSlug}/login` })}
-            method="POST"
-            disableSuccessStatus
-            waitForAutocomplete
-            onSuccess={(data) => setUser(data as Parameters<typeof setUser>[0])}
-            redirect={getSafeRedirect({ fallbackTo: adminRoute, redirectTo: searchParams.get("redirect") ?? "" })}
-          >
-            <EmailField field={{ name: "email", label: "E-mailadres", required: true, admin: { autoComplete: "email" } }} path="email" />
-            <PasswordField field={{ name: "password", label: "Wachtwoord", required: true }} path="password" />
-            <Link className="ml-login__forgot" href={formatAdminURL({ adminRoute, path: forgotRoute })} prefetch={false}>
-              Wachtwoord vergeten?
-            </Link>
-            <FormSubmit size="large">Inloggen</FormSubmit>
-          </Form>
+        <div className="ml-login__form-side">
+          <div className="ml-login__form-wrap">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/beeldmerk-kleur.png" alt="" className="ml-login__form-logo" />
+            <h1 className="ml-login__form-title">Welkom terug</h1>
+            <Form
+              action={formatAdminURL({ apiRoute, path: `/${userSlug}/login` })}
+              method="POST"
+              disableSuccessStatus
+              waitForAutocomplete
+              onSuccess={(data) => setUser(data as Parameters<typeof setUser>[0])}
+              redirect={getSafeRedirect({ fallbackTo: adminRoute, redirectTo: searchParams.get("redirect") ?? "" })}
+            >
+              <EmailField field={{ name: "email", label: "E-mailadres", required: true, admin: { autoComplete: "email" } }} path="email" />
+              <PasswordField field={{ name: "password", label: "Wachtwoord", required: true }} path="password" />
+              <Link className="ml-login__forgot" href={formatAdminURL({ adminRoute, path: forgotRoute })} prefetch={false}>
+                Wachtwoord vergeten?
+              </Link>
+              <FormSubmit size="large">Inloggen</FormSubmit>
+            </Form>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

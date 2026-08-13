@@ -42,6 +42,22 @@
   --ml-admin-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
+/* --- Tijdelijke build-marker (verificatie productie-deploy f4f0096) ---
+ * Uitsluitend om objectief vast te stellen of productie deze build serveert
+ * (zie BeheerDashboard.tsx en BeheerLoginView.tsx voor de twee plekken waar
+ * hij gerenderd wordt). Hergebruikt het bestaande --ml-admin-accent-token,
+ * geen nieuwe kleur. Verwijderen zodra bevestigd. */
+.ml-build-marker {
+  background: var(--ml-admin-accent);
+  color: #ffffff;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 8px 12px;
+}
+
 /* --- 2. Native nav verbergen (presentatielaag, geen configuratiewijziging) --- */
 [id="nav-group-Basis"],
 [id="nav-group-Basis — Technisch beheer"],

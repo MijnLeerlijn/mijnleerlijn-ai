@@ -28,6 +28,8 @@ export function BeheerDashboard({ permissions, user }: BeheerDashboardProps) {
 
   return (
     <div className="ml-dashboard">
+      {/* Tijdelijke deploy-verificatiemarker, zie admin-shell.css#.ml-build-marker — verwijderen zodra bevestigd. */}
+      <div className="ml-build-marker">ADMIN BUILD f4f0096</div>
       <h1 className="ml-dashboard__welcome-title">Welkom terug{naam ? `, ${naam}` : ""}</h1>
       <p className="ml-dashboard__welcome-subtitle">Beheer de MijnLeerlijn Helpdesk, kennis en AI vanuit één plek.</p>
 
