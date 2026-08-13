@@ -1071,6 +1071,172 @@ a.ml-dashboard__card:hover {
   margin-top: 1px;
 }
 
+/* --- Mailtemplates (2026-08-13) — "Nieuwe mail"/"Template: X"-indicator,
+ * de templatekiezer (startscherm) en het "Opslaan als template"-formulier
+ * (mailflow). Beide delen dezelfde eenvoudige, hand-gebouwde overlay i.p.v.
+ * Payload's Modal/faceless-ui-systeem — dat vereist een ModalProvider/
+ * -Container die nergens in deze adminboom bevestigd is, dit blijft
+ * lichtgewicht en sluit qua opmaak volledig aan op de rest van Creator. */
+.ml-creator__sjabloon-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  margin-bottom: 20px;
+  border-radius: 999px;
+  background: var(--theme-elevation-50);
+  color: var(--theme-elevation-600);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ml-creator__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.ml-creator__overlay-paneel {
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  border-radius: var(--ml-admin-radius);
+  background: var(--theme-elevation-0);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.25);
+}
+
+.ml-creator__overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ml-creator__overlay-header h2 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__overlay-header button {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: none;
+  background: var(--theme-elevation-50);
+  color: var(--theme-elevation-500);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ml-creator__overlay-header button:hover {
+  background: var(--theme-elevation-100);
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__overlay-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-elevation-600);
+  margin: 4px 0 -6px;
+}
+
+/* Templatekiezer (startscherm) */
+.ml-creator__sjabloon-lijst {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.ml-creator__sjabloon-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-100);
+  background: var(--theme-elevation-0);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.ml-creator__sjabloon-item:hover {
+  border-color: var(--ml-admin-accent);
+  background: var(--ml-admin-accent-soft);
+}
+
+.ml-creator__sjabloon-naam {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--theme-elevation-800);
+}
+
+.ml-creator__sjabloon-omschrijving {
+  font-size: 12px;
+  color: var(--theme-elevation-500);
+}
+
+.ml-creator__sjabloon-meta {
+  font-size: 11px;
+  color: var(--theme-elevation-400);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ml-creator__sjabloon-beheer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ml-admin-accent);
+  text-decoration: none;
+}
+
+.ml-creator__sjabloon-beheer-link:hover {
+  color: var(--ml-admin-accent-hover);
+}
+
+/* "Opslaan als template"-formulier (mailflow) */
+.ml-creator__sjabloon-privacyhint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--ml-admin-radius-sm);
+  background: var(--theme-elevation-50);
+  color: var(--theme-elevation-600);
+  font-size: 12px;
+}
+
+.ml-creator__sjabloon-privacyhint svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 @media (max-width: 1100px) {
   .ml-creator--werkruimte {
     grid-template-columns: 1fr;

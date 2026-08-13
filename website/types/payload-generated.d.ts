@@ -82,6 +82,7 @@ export interface Config {
     'knowledge-sources': KnowledgeSource;
     handleidingen: Handleidingen;
     'mail-drafts': MailDraft;
+    'mail-templates': MailTemplate;
     'derived-content': DerivedContent;
     'kennisbasis-onderwerpen': KennisbasisOnderwerpen;
     'helpdesk-vragen': HelpdeskVragen;
@@ -111,6 +112,7 @@ export interface Config {
     'knowledge-sources': KnowledgeSourcesSelect<false> | KnowledgeSourcesSelect<true>;
     handleidingen: HandleidingenSelect<false> | HandleidingenSelect<true>;
     'mail-drafts': MailDraftsSelect<false> | MailDraftsSelect<true>;
+    'mail-templates': MailTemplatesSelect<false> | MailTemplatesSelect<true>;
     'derived-content': DerivedContentSelect<false> | DerivedContentSelect<true>;
     'kennisbasis-onderwerpen': KennisbasisOnderwerpenSelect<false> | KennisbasisOnderwerpenSelect<true>;
     'helpdesk-vragen': HelpdeskVragenSelect<false> | HelpdeskVragenSelect<true>;
@@ -1030,6 +1032,31 @@ export interface Handleidingen {
   createdAt: string;
 }
 /**
+ * Herbruikbare basismails voor 'Mail schrijven' in Creator.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mail-templates".
+ */
+export interface MailTemplate {
+  id: number;
+  name: string;
+  subject?: string | null;
+  content: string;
+  /**
+   * Leeg = algemeen, bruikbaar voor elke variant.
+   */
+  variant?: (number | null) | Variant;
+  audience?: ('algemeen' | 'schoolleider_directeur' | 'ib_kc' | 'leerkracht' | 'partner') | null;
+  /**
+   * Korte interne uitleg — waarvoor gebruik je deze template?
+   */
+  description?: string | null;
+  status: 'actief' | 'gearchiveerd';
+  createdBy?: (number | null) | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * Afgeleide content (nieuwsbrief/LinkedIn/partnertekst) per masterartikel, aangemaakt via Creator.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1525,6 +1552,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'mail-drafts';
         value: number | MailDraft;
+      } | null)
+    | ({
+        relationTo: 'mail-templates';
+        value: number | MailTemplate;
       } | null)
     | ({
         relationTo: 'derived-content';
@@ -2078,6 +2109,22 @@ export interface MailDraftsSelect<T extends boolean = true> {
   status?: T;
   linkedKnowledgeDraft?: T;
   variantContext?: T;
+  createdBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mail-templates_select".
+ */
+export interface MailTemplatesSelect<T extends boolean = true> {
+  name?: T;
+  subject?: T;
+  content?: T;
+  variant?: T;
+  audience?: T;
+  description?: T;
+  status?: T;
   createdBy?: T;
   updatedAt?: T;
   createdAt?: T;

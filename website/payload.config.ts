@@ -28,6 +28,7 @@ import { AssistantConversations } from "./payload/collections/AssistantConversat
 import { AssistantEvalQuestions } from "./payload/collections/AssistantEvalQuestions";
 import { AssistantEvalRuns } from "./payload/collections/AssistantEvalRuns";
 import { MailDrafts } from "./payload/collections/MailDrafts";
+import { MailTemplates } from "./payload/collections/MailTemplates";
 import { DerivedContent } from "./payload/collections/DerivedContent";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
@@ -191,6 +192,7 @@ export default buildConfig({
     KnowledgeSources,
     Handleidingen,
     MailDrafts,
+    MailTemplates,
     DerivedContent,
     KennisbasisOnderwerpen,
     HelpdeskVragen,

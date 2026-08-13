@@ -71,4 +71,37 @@ describe("schrijfMailAntwoord", () => {
 
     expect(mockSearch).toHaveBeenCalledWith(payload, expect.objectContaining({ variantId: "mijnmonti-id" }));
   });
+
+  it("neemt een meegegeven sjabloon apart gelabeld op in het prompt-bericht, als schrijfvoorbeeld — niet als feitelijke kennis", async () => {
+    const payload = {} as Payload;
+    await schrijfMailAntwoord(payload, {
+      instructie: "Stel een demo voor.",
+      templateTekst: "Beste {naam}, bedankt voor je interesse in MijnLeerlijn.",
+    });
+
+    const bericht = mockChat.mock.calls[0]?.[0]?.messages[0]?.content as string;
+    expect(bericht).toContain("Sjabloon");
+    expect(bericht).toContain("Beste {naam}, bedankt voor je interesse in MijnLeerlijn.");
+    const systeemprompt = mockChat.mock.calls[0]?.[0]?.systemPrompt as string;
+    expect(systeemprompt).toMatch(/sjabloon.*geen feitelijke bron/i);
+  });
+
+  it("neemt sjabloontekst NIET mee in de retrieval-zoekquery — alleen instructie/ontvangen mail sturen de kennis-zoekopdracht", async () => {
+    const payload = {} as Payload;
+    await schrijfMailAntwoord(payload, {
+      instructie: "Stel een demo voor.",
+      templateTekst: "EEN-HEEL-SPECIFIEKE-SJABLOONFRASE-DIE-NIET-MAG-ZOEKEN",
+    });
+
+    const zoekQuery = mockSearch.mock.calls[0]?.[1]?.query;
+    expect(zoekQuery).not.toContain("EEN-HEEL-SPECIFIEKE-SJABLOONFRASE-DIE-NIET-MAG-ZOEKEN");
+  });
+
+  it("werkt ook zonder sjabloon (bestaand gedrag blijft ongewijzigd)", async () => {
+    const payload = {} as Payload;
+    await schrijfMailAntwoord(payload, { instructie: "x" });
+
+    const bericht = mockChat.mock.calls[0]?.[0]?.messages[0]?.content as string;
+    expect(bericht).not.toContain("Sjabloon");
+  });
 });

@@ -18,11 +18,26 @@ import { buildContext } from "@/lib/assistant/build-context";
 // gepersisteerd als los veld (zelfde patroon als de chatinstructie bij
 // artikelen, zie creator-chat.ts): CreatorView.tsx slaat uitsluitend de
 // resulterende mailtekst op, via de bestaande mail-drafts-velden.
+//
+// Mailtemplates (2026-08-13) — `templateTekst` toegevoegd: optioneel
+// uitgangspunt uit een mail-templates-record (zie CreatorView.tsx se
+// "Start vanuit template"). Bewust NIET meegenomen in de retrieval-
+// zoekquery hieronder — een template is generiek schrijfvoorbeeld, geen
+// zoekintentie, en zou de kennis-retrieval alleen maar verdunnen/afleiden
+// van de daadwerkelijke instructie. Wél als apart, duidelijk gelabeld blok
+// in de prompt, met een expliciete systeeminstructie dat een sjabloon nooit
+// als feitelijke kennis mag gelden (opdrachtseis sectie 6: "template =
+// schrijfvoorbeeld/basis, knowledge = feitelijke MijnLeerlijn-kennis").
+// Templates worden hier alleen GELEZEN — dit bestand schrijft nooit naar
+// mail-templates (opslaan gebeurt rechtstreeks vanuit CreatorView.tsx via
+// Payload's eigen REST-API, net als bij mail-drafts).
 export interface MailReplyOpties {
   /** Optioneel — de mail waarop gereageerd wordt, indien aanwezig. */
   ontvangenTekst?: string;
   /** Wat de beheerder in gewone taal wil laten zeggen — de primaire sturing voor de generatie. */
   instructie: string;
+  /** Optioneel — inhoud van een gekozen mail-template, als schrijfvoorbeeld/basis (geen feitelijke kennis). */
+  templateTekst?: string;
   /** "Werkvariant" — optioneel, UI-keuze net als bij creator-chat.ts. */
   variantId?: string;
 }
@@ -33,7 +48,7 @@ export interface MailReplyResultaat {
 }
 
 const SYSTEEMPROMPT =
-  "Je helpt een MijnLeerlijn-beheerder een e-mail schrijven. Is er een ontvangen mail meegegeven, schrijf dan een antwoord daarop; is die er niet, schrijf dan een nieuwe mail. Volg in beide gevallen nauwkeurig de instructie van de beheerder over wat er in de mail moet staan — die instructie is leidend, de ontvangen mail is alleen context. Gebruik uitsluitend de meegegeven MijnLeerlijn-kennis voor uitspraken over hoe de software werkt — verzin nooit functionaliteit. Schrijf een complete, vriendelijke mail die de beheerder verder kan aanpassen. Dekt de meegegeven kennis de instructie niet volledig, zeg dat expliciet in de mail in plaats van te gokken.";
+  "Je helpt een MijnLeerlijn-beheerder een e-mail schrijven. Is er een ontvangen mail meegegeven, schrijf dan een antwoord daarop; is die er niet, schrijf dan een nieuwe mail. Volg in beide gevallen nauwkeurig de instructie van de beheerder over wat er in de mail moet staan — die instructie is leidend, de ontvangen mail is alleen context. Is er een sjabloon meegegeven, gebruik dat uitsluitend als schrijfvoorbeeld voor toon/structuur/opbouw — een sjabloon is GEEN feitelijke bron en mag nooit productkennis vervangen; pas de inhoud aan op basis van de instructie en de ontvangen mail. Gebruik uitsluitend de apart meegegeven MijnLeerlijn-kennis voor uitspraken over hoe de software werkt — verzin nooit functionaliteit. Schrijf een complete, vriendelijke mail die de beheerder verder kan aanpassen. Dekt de meegegeven kennis de instructie niet volledig, zeg dat expliciet in de mail in plaats van te gokken.";
 
 export async function schrijfMailAntwoord(payload: Payload, opties: MailReplyOpties): Promise<MailReplyResultaat> {
   const zoekQuery = [opties.instructie, opties.ontvangenTekst].filter((deel) => deel?.trim()).join("\n\n").slice(0, 500);
@@ -51,6 +66,7 @@ export async function schrijfMailAntwoord(payload: Payload, opties: MailReplyOpt
       : "\n\nEr is geen specifiek relevante MijnLeerlijn-kennis gevonden.";
 
   const berichtDelen = [
+    opties.templateTekst?.trim() ? `Sjabloon (uitgangspunt/schrijfvoorbeeld, geen feitelijke kennis):\n\n${opties.templateTekst.trim()}` : null,
     opties.ontvangenTekst?.trim() ? `Ontvangen mail:\n\n${opties.ontvangenTekst.trim()}` : null,
     `Instructie van de beheerder — wat het antwoord moet zeggen:\n\n${opties.instructie.trim()}`,
   ].filter((deel): deel is string => Boolean(deel));

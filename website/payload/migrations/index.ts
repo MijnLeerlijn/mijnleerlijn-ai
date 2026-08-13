@@ -22,6 +22,7 @@ import * as migration_20260729_150000_categorie_kleuren_uitbreiden from './20260
 import * as migration_20260730_120000_multibrand_variants from './20260730_120000_multibrand_variants';
 import * as migration_20260811_080000_helpdesk_instellingen from './20260811_080000_helpdesk_instellingen';
 import * as migration_20260813_090000_creator_v1_datamodel from './20260813_090000_creator_v1_datamodel';
+import * as migration_20260813_150000_mail_templates from './20260813_150000_mail_templates';
 
 export const migrations = [
   {
@@ -143,5 +144,10 @@ export const migrations = [
     up: migration_20260813_090000_creator_v1_datamodel.up,
     down: migration_20260813_090000_creator_v1_datamodel.down,
     name: '20260813_090000_creator_v1_datamodel',
+  },
+  {
+    up: migration_20260813_150000_mail_templates.up,
+    down: migration_20260813_150000_mail_templates.down,
+    name: '20260813_150000_mail_templates',
   },
 ];

@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = (await request.json()) as { ontvangenTekst?: string; instructie: string; variantId?: string };
+    const body = (await request.json()) as { ontvangenTekst?: string; instructie: string; templateTekst?: string; variantId?: string };
     if (!body.instructie || !body.instructie.trim()) {
       return NextResponse.json({ error: "instructie is verplicht — vertel wat de mail moet zeggen." }, { status: 400 });
     }
@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
     const resultaat = await schrijfMailAntwoord(payload, {
       ontvangenTekst: body.ontvangenTekst || undefined,
       instructie: body.instructie,
+      templateTekst: body.templateTekst || undefined,
       variantId: body.variantId || undefined,
     });
     return NextResponse.json(resultaat);

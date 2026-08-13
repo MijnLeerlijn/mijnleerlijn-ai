@@ -23,12 +23,15 @@ import {
   MessageSquare,
   TriangleAlert,
   Save,
+  LayoutTemplate,
+  ExternalLink,
   type LucideIcon,
 } from "lucide-react";
 import type { ContextItem } from "@/lib/assistant/build-context";
 import type { CreatorChatBericht } from "@/lib/creator/creator-chat";
 import type { AfgeleideKanaal } from "@/lib/creator/derive-channel";
 import { NAV_COLOR_STYLES, type NavColor } from "@/lib/admin-nav/nav-colors";
+import { scrubPotentialPii } from "@/lib/support/pii-scrub";
 
 // Creator V1 (2026-08-13) — zie de sessie-onderzoeksfase (technisch
 // voorstel A-M) voor de volledige architectuur-onderbouwing. Eén statisch
@@ -76,6 +79,27 @@ interface VariantOptie {
   name: string;
   terminologyDictionary: { centralTerm: string; variantTerm: string }[];
 }
+
+interface SjabloonOptie {
+  id: number;
+  name: string;
+  description?: string;
+  variantNaam?: string;
+  audience?: string;
+}
+
+// Mailtemplates (2026-08-13) — "eenvoudig en uitbreidbaar" (opdrachtseis):
+// een select met een vaste, kleine lijst, gedeeld tussen de templatekiezer
+// (StartScreen) en het "Opslaan als template"-formulier (MailFlow) zodat
+// het maar op één plek hoeft te kloppen.
+const DOELGROEP_OPTIES: { label: string; value: string }[] = [
+  { label: "Algemeen", value: "algemeen" },
+  { label: "Schoolleider/directeur", value: "schoolleider_directeur" },
+  { label: "IB/KC", value: "ib_kc" },
+  { label: "Leerkracht", value: "leerkracht" },
+  { label: "Partner", value: "partner" },
+];
+const DOELGROEP_LABEL: Record<string, string> = Object.fromEntries(DOELGROEP_OPTIES.map((o) => [o.value, o.label]));
 
 interface KennisbronOptie {
   id: number;
@@ -142,9 +166,10 @@ function CreatorViewInner() {
   const searchParams = useSearchParams();
   const artikelId = searchParams.get("artikel");
   const mailId = searchParams.get("mail");
+  const templateId = searchParams.get("template");
 
   if (artikelId) return <Werkruimte artikelId={artikelId} />;
-  if (mailId) return <MailFlow mailId={mailId} />;
+  if (mailId) return <MailFlow mailId={mailId} templateId={templateId ?? undefined} />;
   return <StartScreen />;
 }
 
@@ -178,6 +203,8 @@ function StartScreen() {
   const [titel, setTitel] = useState("");
   const [bezig, setBezig] = useState(false);
   const [recent, setRecent] = useState<RecentItem[] | null>(null);
+  const [sjabloonKiezerOpen, setSjabloonKiezerOpen] = useState(false);
+  const [sjablonen, setSjablonen] = useState<SjabloonOptie[] | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -235,6 +262,36 @@ function StartScreen() {
     }
   }
 
+  async function openSjabloonKiezer() {
+    setSjabloonKiezerOpen(true);
+    if (sjablonen !== null) return;
+    try {
+      const res = await fetch("/api/mail-templates?where[status][equals]=actief&sort=name&limit=100&depth=1", { credentials: "include" });
+      const data = await json<{
+        docs: { id: number; name: string; description?: string; variant?: { name?: string } | number | null; audience?: string }[];
+      }>(res);
+      setSjablonen(
+        data.docs.map((d) => ({
+          id: d.id,
+          name: d.name,
+          description: d.description,
+          variantNaam: d.variant && typeof d.variant === "object" ? d.variant.name : undefined,
+          audience: d.audience,
+        }))
+      );
+    } catch {
+      // Templates zijn anyEditor-leesbaar, dus dit zou niet moeten mislukken
+      // voor een ingelogde beheerder — toch geen alarmerende toast voor een
+      // secundaire actie; een lege lijst is zelfverklarend in de UI.
+      setSjablonen([]);
+    }
+  }
+
+  function kiesSjabloon(id: number) {
+    setSjabloonKiezerOpen(false);
+    router.push(`/admin/creator?mail=nieuw&template=${id}`);
+  }
+
   return (
     <div className="ml-creator">
       <h1 className="ml-creator__title">Wat wil je maken?</h1>
@@ -276,11 +333,16 @@ function StartScreen() {
           <IconChip icon={Mail} kleur="teal" />
           <h2>Mail schrijven</h2>
           <p>Schrijf een inhoudelijke reactie op een mail met gebruik van de MijnLeerlijn-kennisbasis.</p>
-          <Link href="/admin/creator?mail=nieuw" className="ml-creator__route-link">
-            <Button buttonStyle="primary" size="small" el="div" className="ml-creator__route-actie">
-              Schrijf een mail
+          <div className="ml-creator__route-start">
+            <Link href="/admin/creator?mail=nieuw" className="ml-creator__route-link">
+              <Button buttonStyle="primary" size="small" el="div" className="ml-creator__route-actie">
+                Nieuwe mail
+              </Button>
+            </Link>
+            <Button buttonStyle="secondary" size="small" className="ml-creator__route-actie" onClick={openSjabloonKiezer} icon={<LayoutTemplate size={14} />} iconPosition="left">
+              Start vanuit template
             </Button>
-          </Link>
+          </div>
         </div>
       </div>
 
@@ -304,6 +366,43 @@ function StartScreen() {
         )}
         <p className="ml-creator__archief-hint">Archief volgt in een latere fase.</p>
       </div>
+
+      {sjabloonKiezerOpen && (
+        <div className="ml-creator__overlay" onClick={() => setSjabloonKiezerOpen(false)}>
+          <div className="ml-creator__overlay-paneel" onClick={(e) => e.stopPropagation()}>
+            <div className="ml-creator__overlay-header">
+              <h2>Start vanuit template</h2>
+              <button type="button" onClick={() => setSjabloonKiezerOpen(false)} aria-label="Sluiten">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            {sjablonen === null && <p className="ml-creator__muted">Laden...</p>}
+            {sjablonen !== null && sjablonen.length === 0 && (
+              <p className="ml-creator__muted">Nog geen templates opgeslagen — sla een mail op als template om hier te kunnen kiezen.</p>
+            )}
+            {sjablonen !== null && sjablonen.length > 0 && (
+              <ul className="ml-creator__sjabloon-lijst">
+                {sjablonen.map((s) => (
+                  <li key={s.id}>
+                    <button type="button" className="ml-creator__sjabloon-item" onClick={() => kiesSjabloon(s.id)}>
+                      <span className="ml-creator__sjabloon-naam">{s.name}</span>
+                      {s.description && <span className="ml-creator__sjabloon-omschrijving">{s.description}</span>}
+                      {(s.variantNaam || s.audience) && (
+                        <span className="ml-creator__sjabloon-meta">
+                          {[s.variantNaam, s.audience ? (DOELGROEP_LABEL[s.audience] ?? s.audience) : null].filter(Boolean).join(" · ")}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <a href="/admin/collections/mail-templates" target="_blank" rel="noreferrer" className="ml-creator__sjabloon-beheer-link">
+              <ExternalLink size={13} aria-hidden="true" /> Beheer templates in Payload
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -754,7 +853,7 @@ interface MailDraftDoc {
   linkedKnowledgeDraft?: number | null;
 }
 
-function MailFlow({ mailId }: { mailId: string }) {
+function MailFlow({ mailId, templateId }: { mailId: string; templateId?: string }) {
   const router = useRouter();
   const isNieuw = mailId === "nieuw";
   const [mail, setMail] = useState<MailDraftDoc | null>(isNieuw ? { id: 0, status: "concept" } : null);
@@ -772,6 +871,25 @@ function MailFlow({ mailId }: { mailId: string }) {
     customerSpecificInformationExplanation?: string;
   } | null>(null);
 
+  // Mailtemplates (2026-08-13) — templateTekst/templateSubject blijven vast
+  // op de OORSPRONKELIJK geladen template-inhoud, los van mailTekst (dat de
+  // gebruiker vrij mag bewerken vanaf het moment van laden). Zo gebruikt
+  // schrijfMail() hieronder altijd het echte sjabloon als basis voor de AI
+  // — en wordt de template zelf nooit aangeraakt/overschreven (opdrachtseis).
+  const [templateNaam, setTemplateNaam] = useState<string | null>(null);
+  const [templateTekst, setTemplateTekst] = useState<string | undefined>(undefined);
+  const [templateSubject, setTemplateSubject] = useState<string | undefined>(undefined);
+  const [varianten, setVarianten] = useState<{ id: string; name: string }[]>([]);
+
+  const [sjabloonFormOpen, setSjabloonFormOpen] = useState(false);
+  const [sjabloonNaam, setSjabloonNaam] = useState("");
+  const [sjabloonOnderwerp, setSjabloonOnderwerp] = useState("");
+  const [sjabloonInhoud, setSjabloonInhoud] = useState("");
+  const [sjabloonVariant, setSjabloonVariant] = useState("");
+  const [sjabloonDoelgroep, setSjabloonDoelgroep] = useState("");
+  const [sjabloonOmschrijving, setSjabloonOmschrijving] = useState("");
+  const [sjabloonOpslaanBezig, setSjabloonOpslaanBezig] = useState(false);
+
   useEffect(() => {
     if (isNieuw) return;
     (async () => {
@@ -787,6 +905,36 @@ function MailFlow({ mailId }: { mailId: string }) {
     })();
   }, [mailId, isNieuw]);
 
+  useEffect(() => {
+    if (!isNieuw || !templateId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/mail-templates/${templateId}?depth=0`, { credentials: "include" });
+        const doc = await json<{ id: number; name: string; subject?: string; content: string }>(res);
+        // Uitgangspunt voor "Mail om te versturen" — de template zelf blijft
+        // ongewijzigd; dit is puur lokale, nog niet opgeslagen staat.
+        setMailTekst(doc.content);
+        setTemplateTekst(doc.content);
+        setTemplateSubject(doc.subject);
+        setTemplateNaam(doc.name);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Template laden mislukt.");
+      }
+    })();
+  }, [isNieuw, templateId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/variants?limit=100&sort=name&depth=0", { credentials: "include" });
+        const data = await json<{ docs: { id: string; name: string }[] }>(res);
+        setVarianten(data.docs.map((v) => ({ id: v.id, name: v.name })));
+      } catch {
+        setVarianten([]);
+      }
+    })();
+  }, []);
+
   async function schrijfMail() {
     if (!instructie.trim()) return;
     setBezig(true);
@@ -795,7 +943,7 @@ function MailFlow({ mailId }: { mailId: string }) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ontvangenTekst: ontvangenTekst.trim() || undefined, instructie }),
+        body: JSON.stringify({ ontvangenTekst: ontvangenTekst.trim() || undefined, instructie, templateTekst }),
       });
       const data = await json<{ conceptAntwoord: string; gebruikteKennis: { titel: string; tekst: string }[] }>(res);
       setMailTekst(data.conceptAntwoord);
@@ -811,7 +959,7 @@ function MailFlow({ mailId }: { mailId: string }) {
     setBezig(true);
     try {
       const body = JSON.stringify({
-        subject: (ontvangenTekst || instructie).slice(0, 80) || "Mailconcept",
+        subject: templateSubject || (ontvangenTekst || instructie).slice(0, 80) || "Mailconcept",
         receivedText: ontvangenTekst,
         draftReply: mailTekst,
         status: "concept",
@@ -884,12 +1032,63 @@ function MailFlow({ mailId }: { mailId: string }) {
     }
   }
 
+  function openSjabloonForm() {
+    setSjabloonNaam(templateNaam ? `${templateNaam} (kopie)` : "");
+    setSjabloonOnderwerp("");
+    setSjabloonInhoud(mailTekst);
+    setSjabloonVariant("");
+    setSjabloonDoelgroep("");
+    setSjabloonOmschrijving("");
+    setSjabloonFormOpen(true);
+  }
+
+  async function slaSjabloonOp() {
+    if (!sjabloonNaam.trim() || !sjabloonInhoud.trim()) return;
+    setSjabloonOpslaanBezig(true);
+    try {
+      // Bewust GEEN ontvangenTekst hier — een template mag nooit automatisch
+      // de ontvangen mail bevatten (opdrachtseis privacy, sectie 7).
+      const res = await fetch("/api/mail-templates", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: sjabloonNaam.trim(),
+          subject: sjabloonOnderwerp.trim() || undefined,
+          content: sjabloonInhoud.trim(),
+          variant: sjabloonVariant || undefined,
+          audience: sjabloonDoelgroep || undefined,
+          description: sjabloonOmschrijving.trim() || undefined,
+        }),
+      });
+      await json(res);
+      toast.success("Template opgeslagen.");
+      setSjabloonFormOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Template opslaan mislukt.");
+    } finally {
+      setSjabloonOpslaanBezig(false);
+    }
+  }
+
   if (!mail) return <div className="ml-creator">Laden...</div>;
 
   return (
     <div className="ml-creator ml-creator--mail">
       <h1 className="ml-creator__title">Mail schrijven</h1>
       <p className="ml-creator__subtitle">Vertel wat je wilt zeggen — de AI gebruikt dat, de eventuele ontvangen mail en de MijnLeerlijn-kennis om een mail te schrijven.</p>
+
+      {isNieuw && (
+        <div className="ml-creator__sjabloon-indicator">
+          {templateNaam ? (
+            <>
+              <LayoutTemplate size={13} aria-hidden="true" /> Template: {templateNaam}
+            </>
+          ) : (
+            "Nieuwe mail"
+          )}
+        </div>
+      )}
 
       <div className="ml-creator__mail-layout">
         <div className="ml-creator__kolom ml-creator__kolom--mail-input">
@@ -950,6 +1149,9 @@ function MailFlow({ mailId }: { mailId: string }) {
             <Button buttonStyle="secondary" size="small" disabled={bezig} onClick={slaMailOp}>
               Bewaren als concept
             </Button>
+            <Button buttonStyle="secondary" size="small" disabled={!mailTekst.trim()} onClick={openSjabloonForm} icon={<LayoutTemplate size={14} />} iconPosition="left">
+              Opslaan als template
+            </Button>
             <Button buttonStyle="secondary" size="small" disabled={bezig || !mailTekst.trim()} onClick={maakKennisstukVoorstel}>
               Maak hier een kennisstuk van
             </Button>
@@ -994,6 +1196,82 @@ function MailFlow({ mailId }: { mailId: string }) {
             Goedkeuren en opslaan
           </Button>
           {isNieuw && <p className="ml-creator__muted">Bewaar het mailconcept eerst voordat je het kennisstuk goedkeurt.</p>}
+        </div>
+      )}
+
+      {sjabloonFormOpen && (
+        <div className="ml-creator__overlay" onClick={() => setSjabloonFormOpen(false)}>
+          <div className="ml-creator__overlay-paneel" onClick={(e) => e.stopPropagation()}>
+            <div className="ml-creator__overlay-header">
+              <h2>Opslaan als template</h2>
+              <button type="button" onClick={() => setSjabloonFormOpen(false)} aria-label="Sluiten">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <p className="ml-creator__sjabloon-privacyhint">
+              <TriangleAlert size={13} aria-hidden="true" /> Controleer of de template geen namen, e-mailadressen of klantspecifieke informatie bevat.
+            </p>
+            {sjabloonInhoud.trim().length > 0 && scrubPotentialPii(sjabloonInhoud) !== sjabloonInhoud && (
+              <p className="ml-creator__kennisstuk-waarschuwing">
+                <TriangleAlert size={14} aria-hidden="true" />
+                Er lijkt een e-mailadres of telefoonnummer in de tekst te staan — controleer dit voor je opslaat.
+              </p>
+            )}
+
+            <TextInput
+              path="sjabloonNaam"
+              label="Naam template"
+              value={sjabloonNaam}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setSjabloonNaam(e.target.value)}
+              placeholder="Bijv. Opvolging na demo"
+            />
+            <TextInput
+              path="sjabloonOnderwerp"
+              label="Onderwerpregel (optioneel)"
+              value={sjabloonOnderwerp}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setSjabloonOnderwerp(e.target.value)}
+            />
+
+            <label className="ml-creator__overlay-label">Template-inhoud</label>
+            <textarea className="ml-creator__editor ml-creator__editor--klein" rows={8} value={sjabloonInhoud} onChange={(e) => setSjabloonInhoud(e.target.value)} />
+
+            <SelectInput
+              path="sjabloonVariant"
+              name="sjabloonVariant"
+              label="Onderwijstype/variant (optioneel)"
+              value={sjabloonVariant}
+              options={varianten.map((v) => ({ label: v.name, value: v.id }))}
+              onChange={(optie) => {
+                const gekozen = Array.isArray(optie) ? optie[0] : optie;
+                setSjabloonVariant(gekozen && "value" in gekozen ? String(gekozen.value) : "");
+              }}
+            />
+            <SelectInput
+              path="sjabloonDoelgroep"
+              name="sjabloonDoelgroep"
+              label="Doelgroep (optioneel)"
+              value={sjabloonDoelgroep}
+              options={DOELGROEP_OPTIES}
+              onChange={(optie) => {
+                const gekozen = Array.isArray(optie) ? optie[0] : optie;
+                setSjabloonDoelgroep(gekozen && "value" in gekozen ? String(gekozen.value) : "");
+              }}
+            />
+
+            <label className="ml-creator__overlay-label">Omschrijving (optioneel)</label>
+            <textarea
+              className="ml-creator__editor ml-creator__editor--klein"
+              rows={2}
+              value={sjabloonOmschrijving}
+              onChange={(e) => setSjabloonOmschrijving(e.target.value)}
+              placeholder="Waarvoor gebruik je deze template?"
+            />
+
+            <Button buttonStyle="primary" size="small" disabled={sjabloonOpslaanBezig || !sjabloonNaam.trim() || !sjabloonInhoud.trim()} onClick={slaSjabloonOp}>
+              {sjabloonOpslaanBezig ? "Opslaan..." : "Opslaan als template"}
+            </Button>
+          </div>
         </div>
       )}
     </div>
