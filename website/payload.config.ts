@@ -103,6 +103,16 @@ export default buildConfig({
       // GEEN enkele collectie/global-config verandert hierdoor (dus geen
       // admin.hidden, zie de toelichting in Variants.ts over waarom niet).
       afterNavLinks: ["@/payload/components/BeheerNavLinks#BeheerNavLinks"],
+      // Fase 1B (2026-08-13): DefaultTemplate (node_modules/@payloadcms/next/
+      // dist/templates/Default/index.js) rendert admin.components.header als
+      // eerste element, boven nav én content — verschijnt daardoor automatisch
+      // op elke pagina die DefaultTemplate gebruikt (dashboard, alle native
+      // collectie-/global-views, en via AdminViewShell.tsx alle 7 custom
+      // views hieronder), zonder één van die pagina's zelf aan te passen.
+      // MinimalTemplate (login) leest deze sleutel niet — verschijnt daar dus
+      // terecht niet. Combineert de "Dashboard"-breadcrumb met de
+      // toevoegen/verwijderen-van-dashboard-schakelaar (zie BeheerTopBar.tsx).
+      header: ["@/payload/components/BeheerTopBar#BeheerTopBar"],
       // Admin-rebrand Fase 1: eigen dashboard + loginpagina. Beide
       // viewKeys vallen samen met een ingebouwde Payload-route
       // (dashboard/login), dus krijgen ze — anders dan de custom views

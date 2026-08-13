@@ -1,27 +1,36 @@
 /*
- * Admin-rebrand Fase 1 (2026-08-12) — MijnLeerlijn-huisstijl bovenop Payload's
- * eigen admin-CSS. Eén bestand, drie taken (zie payload/components/
- * BeheerNavLinks.tsx, BeheerDashboard.tsx, BeheerLoginView.tsx voor de
- * bijbehorende React-componenten):
+ * Admin-rebrand Fase 1 (2026-08-12), uitgebreid in Fase 1B (2026-08-13) —
+ * MijnLeerlijn-huisstijl bovenop Payload's eigen admin-CSS. Eén bestand,
+ * vier taken (zie payload/components/BeheerNavLinks.tsx, BeheerDashboard.tsx,
+ * BeheerLoginView.tsx, BeheerTopBar.tsx voor de bijbehorende React-
+ * componenten):
  *   1. Kleurtokens (--ml-admin-*) — los van Payload's eigen --theme- en
  *      --color--schaal (die blijft ongewijzigd: draagt betekenis
  *      "gelukt"/"mislukt" op alle bestaande schermen) en los van het
  *      publieke-site-only --variant-accent uit app/globals.css (andere
- *      React-boom, resolvet hier toch niet).
+ *      React-boom, resolvet hier toch niet). Fase 1B: blauw (#1588c9, het
+ *      bestaande merkblauw — zie config/variants.ts se accentColor) is nu de
+ *      PRIMAIRE kleur; paars (--ml-admin-purple, dezelfde waarde als de
+ *      bestaande "Paars"-categoriekleur) blijft bestaan als secundaire
+ *      accentkleur (o.a. de Creator-badge — bewust een andere kleur dan de
+ *      rest, ter onderscheiding van "binnenkort").
  *   2. Verbergen van Payload's automatisch gegenereerde navigatiegroepen
- *      (bewust GEEN admin.hidden op de collecties/globals zelf — zie de
- *      toelichting in payload/collections/Variants.ts over waarom dat
- *      field-schema's en deep links breekt). Elke groep krijgt van Payload
- *      zelf een stabiele id (`nav-group-{admin.group}`, bevestigd in
- *      node_modules/@payloadcms/ui/dist/elements/NavGroup/index.js) —
- *      hieronder verborgen via attribuutselectors (i.p.v. #id, vanwege de
- *      spatie/liggend streepje in "Basis — Technisch beheer"). Onder de
- *      motorkap blijft alles precies zoals vandaag: routes, formulieren,
- *      deep links.
+ *      (bewust GEEN admin.hidden op de collecties/globals zelf). Elke groep
+ *      krijgt van Payload zelf een stabiele id (`nav-group-{admin.group}`) —
+ *      hieronder verborgen via attribuutselectors. Onder de motorkap blijft
+ *      alles precies zoals vandaag: routes, formulieren, deep links.
  *   3. De inlogpagina breder maken dan Payload's standaard, smalle
- *      loginkaart (.login.template-minimal is uniek voor deze ene route,
- *      zie getRouteData.js — raakt geen enkele andere MinimalTemplate-
- *      pagina zoals wachtwoord-vergeten/resetten).
+ *      loginkaart (.login.template-minimal is uniek voor deze ene route).
+ *   4. Fase 1B: kleur per nav-/dashboard-item (via de --item-fg/--item-bg
+ *      custom properties die de React-componenten per item zetten — zie
+ *      lib/admin-nav/nav-colors.ts), de topbar-breadcrumb, en een subtiele,
+ *      MijnLeerlijn-tint op Payload's eigen knoppen/focusranden/actieve tab
+ *      (géén nieuwe formulieren nagebouwd — bestaande Payload-klassen
+ *      hergebruikt en rechtstreeks in node_modules nagelezen: .btn--style-
+ *      primary se --bg-color/--hover-bg (elements/Button/index.scss),
+ *      --accessibility-outline (scss/app.scss, standaard "2px solid
+ *      var(--theme-text)") en .tabs-field__tab-button--active:after
+ *      (fields/Tabs/Tab/index.scss)).
  *
  * Werkt zonder speciale Payload-configuratiesleutel (die bestaat niet in
  * deze versie) doordat Payload's eigen tokens/klassen binnen een CSS-laag
@@ -31,31 +40,18 @@
  */
 
 :root {
-  --ml-admin-accent: #7c3aed; /* violet-600 — zelfde waarde als de bestaande "Paars"-categoriekleur (lib/data/categorie-kleuren.ts) */
-  --ml-admin-accent-hover: #6d28d9; /* violet-700 */
-  --ml-admin-accent-soft: #ede9fe; /* violet-100 */
+  --ml-admin-accent: #1588c9; /* MijnLeerlijn-blauw — het bestaande merkblauw, zelfde waarde als accentColor in config/variants.ts */
+  --ml-admin-accent-hover: #0f6b9e; /* iets donkerder, zelfde verhouding als de vorige paarse hover-stap */
+  --ml-admin-accent-soft: #e6f2fa; /* lichte tint van het blauw, voor zachte achtergronden */
   --ml-admin-accent-contrast: #ffffff;
+  --ml-admin-purple: #7c3aed; /* secundaire accentkleur — zelfde waarde als de bestaande "Paars"-categoriekleur; niet langer de primaire kleur */
+  --ml-admin-purple-soft: #ede9fe;
+  --ml-admin-purple-hover: #6d28d9;
   --ml-admin-brand-donkerblauw: #002641; /* officieel, brandbook */
   --ml-admin-brand-gradient: linear-gradient(45deg, #1588c9, #53ac32, #fec905, #ec6608, #e10919); /* officieel brandbook-verloop, dunne accentbalk, geen vlakvulling */
   --ml-admin-radius: 12px;
   --ml-admin-radius-sm: 8px;
   --ml-admin-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
-}
-
-/* --- Tijdelijke build-marker (verificatie productie-deploy f4f0096) ---
- * Uitsluitend om objectief vast te stellen of productie deze build serveert
- * (zie BeheerDashboard.tsx en BeheerLoginView.tsx voor de twee plekken waar
- * hij gerenderd wordt). Hergebruikt het bestaande --ml-admin-accent-token,
- * geen nieuwe kleur. Verwijderen zodra bevestigd. */
-.ml-build-marker {
-  background: var(--ml-admin-accent);
-  color: #ffffff;
-  font-family: ui-monospace, monospace;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-align: center;
-  padding: 8px 12px;
 }
 
 /* --- 2. Native nav verbergen (presentatielaag, geen configuratiewijziging) --- */
@@ -75,6 +71,13 @@
   padding: 0 0 20px;
   margin-bottom: 8px;
   border-bottom: 1px solid var(--theme-elevation-100);
+  text-decoration: none;
+  border-radius: var(--ml-admin-radius-sm);
+  transition: opacity 0.15s ease;
+}
+
+.ml-nav-brand:hover {
+  opacity: 0.85;
 }
 
 .ml-nav-brand__logo {
@@ -99,12 +102,25 @@
   color: var(--theme-elevation-400);
 }
 
-.nav__link:has(.nav__link-indicator) .ml-nav-link__icon {
-  color: var(--ml-admin-accent);
+/* Fase 1B: elk item heeft zijn eigen, vaste kleur (--item-fg, gezet per
+ * item vanuit lib/admin-nav/nav-colors.ts) — dezelfde kleur als de
+ * dashboardkaart van hetzelfde item. Gemute "Technisch"-items krijgen deze
+ * klasse bewust niet (blijven neutraal grijs, zie BeheerNavLinks.tsx). */
+.ml-nav-link__icon--kleur {
+  color: var(--item-fg);
 }
 
 .nav__link-indicator {
   background: var(--ml-admin-accent) !important;
+}
+
+/* Zachte achtergrond op de actieve nav-regel — vervangt de (in Fase 1B
+ * verwijderde) omkleuring van het icoon naar de accentkleur, die de eigen
+ * identiteit van elk item zou verstoren nu ieder item al een vaste kleur
+ * heeft. */
+.nav__link:has(.nav__link-indicator) {
+  background: var(--ml-admin-accent-soft);
+  border-radius: var(--ml-admin-radius-sm);
 }
 
 .ml-nav-muted-label {
@@ -136,8 +152,57 @@
   letter-spacing: 0.03em;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--ml-admin-accent-soft);
+  background: var(--ml-admin-purple-soft);
+  color: var(--ml-admin-purple-hover);
+}
+
+/* --- Topbar (BeheerTopBar.tsx) — admin.components.header, op elke pagina --- */
+.ml-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 32px;
+  background: var(--theme-elevation-0);
+  border-bottom: 1px solid var(--theme-elevation-100);
+  flex-wrap: wrap;
+}
+
+.ml-topbar__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.ml-topbar__crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--theme-elevation-500);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ml-topbar__crumb--home {
+  color: var(--ml-admin-accent);
+  font-weight: 600;
+}
+
+.ml-topbar__crumb--home:hover {
   color: var(--ml-admin-accent-hover);
+}
+
+.ml-topbar__crumb--current {
+  color: var(--theme-elevation-800);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ml-topbar__sep {
+  color: var(--theme-elevation-300);
 }
 
 /* --- Dashboard (BeheerDashboard.tsx) --- */
@@ -178,62 +243,85 @@
 
 .ml-dashboard__cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 14px;
 }
 
 .ml-dashboard__card {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   padding: 16px;
   border-radius: var(--ml-admin-radius);
   border: 1px solid var(--theme-elevation-100);
   background: var(--theme-elevation-0);
   box-shadow: var(--ml-admin-shadow);
   text-decoration: none;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 a.ml-dashboard__card:hover {
-  border-color: var(--ml-admin-accent);
+  border-color: var(--item-fg, var(--ml-admin-accent));
   transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
 }
 
 .ml-dashboard__card-icon {
   flex-shrink: 0;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: var(--ml-admin-radius-sm);
-  background: var(--ml-admin-accent-soft);
-  color: var(--ml-admin-accent-hover);
+  background: var(--item-bg, var(--ml-admin-accent-soft));
+  color: var(--item-fg, var(--ml-admin-accent));
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+.ml-dashboard__card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .ml-dashboard__card-label {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--theme-elevation-800);
 }
 
-.ml-dashboard__card--placeholder {
-  opacity: 0.6;
-  cursor: default;
+.ml-dashboard__card-description {
+  font-size: 12px;
+  color: var(--theme-elevation-500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ml-dashboard__card-badge {
-  margin-left: auto;
-  font-size: 10px;
+/* Fase 1B: lege standaardtoestand — geen automatisch gegenereerde kaarten meer. */
+.ml-dashboard__empty {
+  max-width: 480px;
+  padding: 40px 0;
+}
+
+.ml-dashboard__empty-title {
+  font-size: 18px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--theme-elevation-100);
+  margin: 0 0 8px;
+  color: var(--theme-elevation-800);
+}
+
+.ml-dashboard__empty-text {
+  font-size: 15px;
+  color: var(--theme-elevation-600);
+  margin: 0 0 12px;
+}
+
+.ml-dashboard__empty-hint {
+  font-size: 13px;
   color: var(--theme-elevation-500);
-  white-space: nowrap;
+  margin: 0;
 }
 
 /* --- 3. Inlogpagina (BeheerLoginView.tsx) — alleen .login.template-minimal, uniek voor deze route --- */
@@ -336,15 +424,11 @@ a.ml-dashboard__card:hover {
   color: var(--theme-elevation-800);
 }
 
-.ml-login .btn--style-primary {
-  --bg-color: var(--ml-admin-accent);
-  --hover-bg: var(--ml-admin-accent-hover);
-}
-
 .ml-login__forgot {
   display: block;
   margin: 14px 0 20px;
   font-size: 13px;
+  color: var(--ml-admin-accent);
 }
 
 @media (max-width: 900px) {
@@ -360,4 +444,28 @@ a.ml-dashboard__card:hover {
   .ml-login__form-side {
     padding: 32px 24px;
   }
+}
+
+/*
+ * --- 4. Subtiele MijnLeerlijn-tint op bestaande Payload-componenten,
+ * beheeromgeving-breed (niet alleen login/dashboard/nav). Uitsluitend
+ * kleur/rand/radius op al bestaande Payload-klassen — geen enkel formulier
+ * nagebouwd. Rustig gehouden: alleen op knoppen, focus, actieve tab en
+ * links, niet op vlakken/achtergronden van gewone content.
+ */
+.btn--style-primary {
+  --bg-color: var(--ml-admin-accent);
+  --hover-bg: var(--ml-admin-accent-hover);
+}
+
+:root {
+  --accessibility-outline: 2px solid var(--ml-admin-accent);
+}
+
+.tabs-field__tab-button--active::after {
+  background: var(--ml-admin-accent) !important;
+}
+
+.step-nav a {
+  color: var(--ml-admin-accent);
 }

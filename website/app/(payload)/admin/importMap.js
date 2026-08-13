@@ -34,6 +34,7 @@ import { GmailSyncButton as GmailSyncButton_9ca8d060c59b410164b116ec5b036204 } f
 import { AnalyzeNewThreadsButton as AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd1df9de28668f } from '@/payload/components/AnalyzeNewThreadsButton'
 import { SemanticSearchTester as SemanticSearchTester_1ddc55405c03875741beea8d02298f60 } from '@/payload/components/SemanticSearchTester'
 import { AssistantEvalTester as AssistantEvalTester_83894a343bb1003bd731f09ba8a0ced5 } from '@/payload/components/AssistantEvalTester'
+import { BeheerTopBar as BeheerTopBar_9d0198802eff9cfc462c2f85d1e0e7aa } from '@/payload/components/BeheerTopBar'
 import { BeheerNavLinks as BeheerNavLinks_b5528b08c0ba4152fa75a9a2ce3d0ef6 } from '@/payload/components/BeheerNavLinks'
 import { BeheerDashboard as BeheerDashboard_90da8d7c0d5e39ae797d6b12ec47086f } from '@/payload/components/BeheerDashboard'
 import { BeheerLoginView as BeheerLoginView_4863ba89db59f6fb5211fd7ff24ea480 } from '@/payload/components/BeheerLoginView'
@@ -84,6 +85,7 @@ export const importMap = {
   "@/payload/components/AnalyzeNewThreadsButton#AnalyzeNewThreadsButton": AnalyzeNewThreadsButton_4e16c2d33baa06a6bacd1df9de28668f,
   "@/payload/components/SemanticSearchTester#SemanticSearchTester": SemanticSearchTester_1ddc55405c03875741beea8d02298f60,
   "@/payload/components/AssistantEvalTester#AssistantEvalTester": AssistantEvalTester_83894a343bb1003bd731f09ba8a0ced5,
+  "@/payload/components/BeheerTopBar#BeheerTopBar": BeheerTopBar_9d0198802eff9cfc462c2f85d1e0e7aa,
   "@/payload/components/BeheerNavLinks#BeheerNavLinks": BeheerNavLinks_b5528b08c0ba4152fa75a9a2ce3d0ef6,
   "@/payload/components/BeheerDashboard#BeheerDashboard": BeheerDashboard_90da8d7c0d5e39ae797d6b12ec47086f,
   "@/payload/components/BeheerLoginView#BeheerLoginView": BeheerLoginView_4863ba89db59f6fb5211fd7ff24ea480,

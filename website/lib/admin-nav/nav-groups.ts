@@ -31,21 +31,22 @@ import {
   WandSparkles,
   type LucideIcon,
 } from "lucide-react";
+import type { NavColor } from "@/lib/admin-nav/nav-colors";
 
-// Admin-rebrand Fase 1 (2026-08-12): enige bron van waarheid voor de
-// MijnLeerlijn-navigatie-indeling — vervangt de kale, ongegroepeerde
-// Payload-standaardnav (24 collecties/globals in 3 technische
-// admin.group-secties) door 4 taakgerichte hoofdgroepen ("wat wil ik doen"
-// i.p.v. "hoe heet de databasecollectie"). Puur data + functies, geen
-// React — zowel BeheerNavLinks.tsx (sidebar) als BeheerDashboard.tsx
-// (snelle-ingangen-kaarten) lezen hieruit, zodat de indeling maar op één
-// plek hoeft te kloppen.
+// Admin-rebrand Fase 1 (2026-08-12), uitgebreid in Fase 1B (2026-08-13):
+// enige bron van waarheid voor de MijnLeerlijn-navigatie-indeling — vervangt
+// de kale, ongegroepeerde Payload-standaardnav (24 collecties/globals in 3
+// technische admin.group-secties) door 4 taakgerichte hoofdgroepen ("wat wil
+// ik doen" i.p.v. "hoe heet de databasecollectie"). Puur data + functies,
+// geen React — BeheerNavLinks.tsx (sidebar), BeheerDashboard.tsx (gekozen
+// dashboardkaarten) én BeheerTopBar.tsx (breadcrumb + toevoegen/verwijderen-
+// van-dashboard) lezen allemaal hieruit, zodat kleur/label/icoon/route/groep
+// maar op één plek hoeft te kloppen (Fase 1B-eis: niet dupliceren).
 //
 // Raakt bewust GEEN enkele collectie-/global-config aan (geen admin.group-
 // wijziging, geen admin.hidden) — de onderliggende Payload-nav/routes/
 // field-schema's blijven exact zoals vandaag; alleen de presentatielaag
-// (payload/components/BeheerNavLinks.tsx + admin-shell.css) verbergt de
-// automatisch gegenereerde nav en vervangt 'm door wat hier staat.
+// verbergt de automatisch gegenereerde nav en vervangt 'm door wat hier staat.
 export type NavItemPermission = { type: "collection" | "global"; slug: string };
 
 export interface NavItem {
@@ -53,17 +54,23 @@ export interface NavItem {
   href: string;
   icon: LucideIcon;
   /**
+   * Kleursleutel (lib/admin-nav/nav-colors.ts, hergebruikt het bestaande
+   * categorie-kleurenpalet) — zelfde kleur op het navicoon én de
+   * dashboardkaart van hetzelfde item (Fase 1B-eis). Gemute "Technisch"-
+   * items houden hun bestaande neutrale grijs in de nav (admin-shell.css) —
+   * dit veld is voor hen alleen relevant als ze ooit als dashboardkaart
+   * gekozen worden.
+   */
+  color: NavColor;
+  /** Korte omschrijving — gebruikt op de dashboardkaart. */
+  description: string;
+  /**
    * Alleen zetten voor items die een echte Payload-collectie/-global zijn —
    * bepaalt of `isNavItemVisible` dit item voor de ingelogde gebruiker
    * toont. Custom views (bv. "Varianten", "AI Verbetercentrum") hebben geen
-   * Payload-permissieobject en blijven daarom altijd zichtbaar — exact het
-   * gedrag van de bestaande BasisNavLinks.tsx/VariantenNavLinks.tsx vandaag
-   * (die renderen ook onvoorwaardelijk, wat vandaag geen probleem is omdat
-   * geen van hun 7 doelen door een adminOnly-collectie wordt afgeschermd).
+   * Payload-permissieobject en blijven daarom altijd zichtbaar.
    */
   permission?: NavItemPermission;
-  /** Toont dit item ook als snelle-ingang-kaart op het dashboard. */
-  dashboardCard?: boolean;
 }
 
 export interface NavGroupDef {
@@ -75,10 +82,10 @@ export interface NavGroupDef {
    * Alleen voor "Helpdesk AI": technische/pijplijn-tools (Gmail-koppeling,
    * AI-conceptartikelen, geïmporteerde support-threads, de zoek-tester) —
    * geen dagelijkse bestemmingen, dus visueel gedempt, maar NIET verborgen
-   * of ingeklapt (de opdracht was informatiearchitectuur, geen verwijdering).
+   * of ingeklapt.
    */
   mutedItems?: NavItem[];
-  /** Alleen voor "Creator": nog geen functionaliteit, zie het plan Fase 1. */
+  /** Alleen voor "Creator": nog geen functionaliteit — zie het Fase 1-plan. Kleur/icoon-opzet is al zo generiek dat Creator later gewoon eigen items aan deze structuur toevoegt. */
   placeholder?: { label: string; badge: string };
 }
 
@@ -88,18 +95,18 @@ export const NAV_GROUPS: NavGroupDef[] = [
     label: "Algemeen",
     icon: LayoutGrid,
     items: [
-      { label: "Artikelen", href: "/admin/collections/articles", icon: PenTool, permission: { type: "collection", slug: "articles" }, dashboardCard: true },
-      { label: "Handleidingen", href: "/admin/collections/handleidingen", icon: BookOpen, permission: { type: "collection", slug: "handleidingen" }, dashboardCard: true },
-      { label: "Categorieën", href: "/admin/collections/categories", icon: Tags, permission: { type: "collection", slug: "categories" }, dashboardCard: true },
-      { label: "Media", href: "/admin/collections/media", icon: Image, permission: { type: "collection", slug: "media" }, dashboardCard: true },
-      { label: "Bronnen", href: "/admin/collections/sources", icon: Link2, permission: { type: "collection", slug: "sources" } },
-      { label: "Updates", href: "/admin/collections/updates", icon: Megaphone, permission: { type: "collection", slug: "updates" } },
-      { label: "Varianten", href: "/admin/varianten", icon: Globe, dashboardCard: true },
-      { label: "Variant Overrides", href: "/admin/collections/variant-overrides", icon: GitBranch, permission: { type: "collection", slug: "variant-overrides" } },
-      { label: "Downloadbeheer", href: "/admin/download-beheer", icon: FolderOpen },
-      { label: "Downloadcategorieën", href: "/admin/download-categorieen", icon: FolderTree },
-      { label: "Gebruikers", href: "/admin/collections/users", icon: Users, permission: { type: "collection", slug: "users" }, dashboardCard: true },
-      { label: "Helpdesk Instellingen", href: "/admin/globals/helpdesk-instellingen", icon: Settings, permission: { type: "global", slug: "helpdesk-instellingen" }, dashboardCard: true },
+      { label: "Artikelen", href: "/admin/collections/articles", icon: PenTool, color: "blue", description: "Beheer de centrale kennisartikelen.", permission: { type: "collection", slug: "articles" } },
+      { label: "Handleidingen", href: "/admin/collections/handleidingen", icon: BookOpen, color: "green", description: "PDF-handleidingen voor gebruikers.", permission: { type: "collection", slug: "handleidingen" } },
+      { label: "Categorieën", href: "/admin/collections/categories", icon: Tags, color: "orange", description: "Indeling van artikelen en handleidingen.", permission: { type: "collection", slug: "categories" } },
+      { label: "Media", href: "/admin/collections/media", icon: Image, color: "purple", description: "Afbeeldingen en bestanden voor content.", permission: { type: "collection", slug: "media" } },
+      { label: "Bronnen", href: "/admin/collections/sources", icon: Link2, color: "teal", description: "Externe links en bronvermeldingen.", permission: { type: "collection", slug: "sources" } },
+      { label: "Updates", href: "/admin/collections/updates", icon: Megaphone, color: "red", description: "Nieuwsberichten en aankondigingen.", permission: { type: "collection", slug: "updates" } },
+      { label: "Varianten", href: "/admin/varianten", icon: Globe, color: "blue", description: "Beheer de white-label varianten." },
+      { label: "Variant Overrides", href: "/admin/collections/variant-overrides", icon: GitBranch, color: "orange", description: "Content-afwijkingen per variant.", permission: { type: "collection", slug: "variant-overrides" } },
+      { label: "Downloadbeheer", href: "/admin/download-beheer", icon: FolderOpen, color: "teal", description: "Curateer de publieke downloads-bibliotheek." },
+      { label: "Downloadcategorieën", href: "/admin/download-categorieen", icon: FolderTree, color: "orange", description: "Indeling van de downloads-bibliotheek." },
+      { label: "Gebruikers", href: "/admin/collections/users", icon: Users, color: "green", description: "Beheerders en redacteuren.", permission: { type: "collection", slug: "users" } },
+      { label: "Helpdesk Instellingen", href: "/admin/globals/helpdesk-instellingen", icon: Settings, color: "slate", description: "Algemene instellingen van de Helpdesk.", permission: { type: "global", slug: "helpdesk-instellingen" } },
     ],
   },
   {
@@ -107,22 +114,22 @@ export const NAV_GROUPS: NavGroupDef[] = [
     label: "Helpdesk AI",
     icon: Bot,
     items: [
-      { label: "Kennisbasis", href: "/admin/kennisbasis", icon: BookMarked, dashboardCard: true },
-      { label: "Kennisbronnen", href: "/admin/collections/knowledge-sources", icon: Database, permission: { type: "collection", slug: "knowledge-sources" } },
-      { label: "Helpdesk-onderwerpen", href: "/admin/collections/kennisbasis-onderwerpen", icon: Tag, permission: { type: "collection", slug: "kennisbasis-onderwerpen" } },
-      { label: "Gestelde Helpdeskvragen", href: "/admin/helpdesk-vragen", icon: CircleQuestionMark, dashboardCard: true },
-      { label: "AI-feedback", href: "/admin/collections/answer-feedback", icon: ThumbsUp, permission: { type: "collection", slug: "answer-feedback" } },
-      { label: "AI-gesprekken", href: "/admin/collections/assistant-conversations", icon: MessageSquare, permission: { type: "collection", slug: "assistant-conversations" }, dashboardCard: true },
-      { label: "AI Verbetercentrum", href: "/admin/verbetercentrum", icon: TrendingUp },
-      { label: "AI-evaluatie", href: "/admin/globals/assistant-eval", icon: FlaskConical, permission: { type: "global", slug: "assistant-eval" }, dashboardCard: true },
-      { label: "AI Evaluation Questions", href: "/admin/collections/assistant-eval-questions", icon: ListChecks, permission: { type: "collection", slug: "assistant-eval-questions" } },
-      { label: "AI Evaluation Runs", href: "/admin/collections/assistant-eval-runs", icon: CirclePlay, permission: { type: "collection", slug: "assistant-eval-runs" } },
+      { label: "Kennisbasis", href: "/admin/kennisbasis", icon: BookMarked, color: "purple", description: "Achtergrondkennis per variant voor de AI." },
+      { label: "Kennisbronnen", href: "/admin/collections/knowledge-sources", icon: Database, color: "teal", description: "Brondocumenten voor de AI-kennisbank.", permission: { type: "collection", slug: "knowledge-sources" } },
+      { label: "Helpdesk-onderwerpen", href: "/admin/collections/kennisbasis-onderwerpen", icon: Tag, color: "orange", description: "Onderwerpindeling voor helpdeskvragen.", permission: { type: "collection", slug: "kennisbasis-onderwerpen" } },
+      { label: "Gestelde Helpdeskvragen", href: "/admin/helpdesk-vragen", icon: CircleQuestionMark, color: "green", description: "Vragen die bezoekers aan de AI stelden." },
+      { label: "AI-feedback", href: "/admin/collections/answer-feedback", icon: ThumbsUp, color: "pink", description: "Duim omhoog/omlaag op AI-antwoorden.", permission: { type: "collection", slug: "answer-feedback" } },
+      { label: "AI-gesprekken", href: "/admin/collections/assistant-conversations", icon: MessageSquare, color: "blue", description: "Volledige gesprekslog van de AI-assistent.", permission: { type: "collection", slug: "assistant-conversations" } },
+      { label: "AI Verbetercentrum", href: "/admin/verbetercentrum", icon: TrendingUp, color: "purple", description: "Verbeter AI-antwoorden op basis van feedback." },
+      { label: "AI-evaluatie", href: "/admin/globals/assistant-eval", icon: FlaskConical, color: "orange", description: "Instellingen voor de AI-kwaliteitstoets.", permission: { type: "global", slug: "assistant-eval" } },
+      { label: "AI Evaluation Questions", href: "/admin/collections/assistant-eval-questions", icon: ListChecks, color: "blue", description: "Testvragen voor de AI-kwaliteitstoets.", permission: { type: "collection", slug: "assistant-eval-questions" } },
+      { label: "AI Evaluation Runs", href: "/admin/collections/assistant-eval-runs", icon: CirclePlay, color: "green", description: "Resultaten van AI-kwaliteitstoetsen.", permission: { type: "collection", slug: "assistant-eval-runs" } },
     ],
     mutedItems: [
-      { label: "Gmail-koppeling", href: "/admin/globals/gmail-connection", icon: Mail, permission: { type: "global", slug: "gmail-connection" } },
-      { label: "Knowledge Drafts", href: "/admin/collections/knowledge-drafts", icon: FilePen, permission: { type: "collection", slug: "knowledge-drafts" } },
-      { label: "Support Threads", href: "/admin/collections/support-threads", icon: Inbox, permission: { type: "collection", slug: "support-threads" } },
-      { label: "Knowledge Search", href: "/admin/globals/knowledge-search", icon: Search, permission: { type: "global", slug: "knowledge-search" } },
+      { label: "Gmail-koppeling", href: "/admin/globals/gmail-connection", icon: Mail, color: "slate", description: "OAuth-koppeling voor het lezen van support-mail.", permission: { type: "global", slug: "gmail-connection" } },
+      { label: "Knowledge Drafts", href: "/admin/collections/knowledge-drafts", icon: FilePen, color: "slate", description: "AI-conceptartikelen ter goedkeuring.", permission: { type: "collection", slug: "knowledge-drafts" } },
+      { label: "Support Threads", href: "/admin/collections/support-threads", icon: Inbox, color: "slate", description: "Geïmporteerde support-mailthreads.", permission: { type: "collection", slug: "support-threads" } },
+      { label: "Knowledge Search", href: "/admin/globals/knowledge-search", icon: Search, color: "slate", description: "Testtool voor semantisch zoeken.", permission: { type: "global", slug: "knowledge-search" } },
     ],
   },
   {
@@ -136,7 +143,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
     id: "curriculum-werkplaats",
     label: "Curriculum Werkplaats",
     icon: PenTool,
-    items: [{ label: "Curriculum Werkplaats", href: "/admin/curriculum-werkplaats", icon: PenTool, dashboardCard: true }],
+    items: [{ label: "Curriculum Werkplaats", href: "/admin/curriculum-werkplaats", icon: PenTool, color: "teal", description: "Open de gekoppelde Curriculum Werkplaats-app." }],
   },
 ];
 
@@ -157,9 +164,7 @@ export interface VisibleNavGroup extends Omit<NavGroupDef, "items" | "mutedItems
  * Permissiebewuste versie van NAV_GROUPS — filtert items waar de ingelogde
  * gebruiker geen leestoegang toe heeft (bv. de 8 adminOnly-collecties/
  * -globals, onzichtbaar voor een redacteur) en laat een groep zonder enig
- * zichtbaar item helemaal weg. Zonder dit zou de nieuwe, alles-in-één nav
- * een regressie zijn t.o.v. vandaag, waar Payload's eigen visibleEntities-
- * filtering dit al afdwingt voor de automatisch gegenereerde nav.
+ * zichtbaar item helemaal weg.
  */
 export function getVisibleNavGroups(permissions: SanitizedPermissions | null | undefined): VisibleNavGroup[] {
   return NAV_GROUPS.map((group) => ({
@@ -174,18 +179,64 @@ export interface DashboardCardGroup {
   label: string;
   icon: LucideIcon;
   items: NavItem[];
-  placeholder?: NavGroupDef["placeholder"];
 }
 
-/** Gecureerde subset van getVisibleNavGroups() voor de dashboard-snelle-ingangen — alleen items met dashboardCard: true. */
-export function getDashboardCards(permissions: SanitizedPermissions | null | undefined): DashboardCardGroup[] {
+/**
+ * Fase 1B: het dashboard toont uitsluitend wat de beheerder zelf gekozen
+ * heeft (selectedHrefs, uit de preference — zie dashboard-preferences.ts),
+ * niet meer automatisch alle collecties. Permissiefilter blijft gelden (een
+ * eerder gekozen item dat een redacteur niet meer mag lezen, verschijnt niet
+ * alsnog). Groepen zonder gekozen items vallen weg — de lege-staat wordt
+ * door BeheerDashboard.tsx zelf getoond wanneer het totaal leeg is.
+ */
+export function getSelectedDashboardCards(permissions: SanitizedPermissions | null | undefined, selectedHrefs: string[]): DashboardCardGroup[] {
+  const gekozen = new Set(selectedHrefs);
   return getVisibleNavGroups(permissions)
     .map((group) => ({
       id: group.id,
       label: group.label,
       icon: group.icon,
-      items: [...group.items, ...group.mutedItems].filter((item) => item.dashboardCard),
-      placeholder: group.placeholder,
+      items: [...group.items, ...group.mutedItems].filter((item) => gekozen.has(item.href)),
     }))
-    .filter((group) => group.items.length > 0 || Boolean(group.placeholder));
+    .filter((group) => group.items.length > 0);
+}
+
+export interface SelectableNavItem extends NavItem {
+  groupId: NavGroupDef["id"];
+  groupLabel: string;
+}
+
+/** Alle items die een beheerder aan het dashboard kan toevoegen (permissiebewust, geen placeholder-groepen). */
+export function getSelectableNavItems(permissions: SanitizedPermissions | null | undefined): SelectableNavItem[] {
+  return getVisibleNavGroups(permissions).flatMap((group) =>
+    [...group.items, ...group.mutedItems].map((item) => ({ ...item, groupId: group.id, groupLabel: group.label }))
+  );
+}
+
+export interface NavPathMatch {
+  group: NavGroupDef;
+  item: NavItem;
+  /** true = dit IS de menupagina zelf (bv. de artikelenlijst); false = een subpad ervan (bv. één artikel bewerken). */
+  exact: boolean;
+}
+
+/**
+ * Zoekt bij een pathname het bijbehorende nav-item + groep op — gedeeld door
+ * BeheerTopBar.tsx voor zowel de breadcrumb-labels als het "toevoegen/
+ * verwijderen van dashboard"-schakelaar (alleen bij exact === true, zie de
+ * opdracht: het gaat om het menu-item zelf, niet een los record erbinnen).
+ * Draait op de volledige NAV_GROUPS (niet permissiebewust): wie de pagina al
+ * ziet, heeft er per definitie toegang toe.
+ */
+export function findNavItemByPath(pathname: string): NavPathMatch | null {
+  for (const group of NAV_GROUPS) {
+    for (const item of [...group.items, ...(group.mutedItems ?? [])]) {
+      const exact = pathname === item.href;
+      const binnenSubpad = pathname.startsWith(item.href) && ["/", undefined].includes(pathname[item.href.length]);
+      if (exact || binnenSubpad) {
+        return { group, item, exact };
+      }
+    }
+  }
+  return null;
 }
