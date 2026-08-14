@@ -1,11 +1,14 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePreferences } from "@payloadcms/ui";
+import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCircle } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
+import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 import type { TodoResultaat } from "@/lib/sales/dashboard-todo";
 
 // Sales UX-ronde 3 (2026-08-14) — vervangt SalesWidgetVandaag.tsx (het oude
@@ -52,6 +55,7 @@ interface SalesActionDoc {
 interface SchoolOptie {
   id: number;
   schoolName: string;
+  relatiestatus?: string | null;
 }
 
 function schoolRef(school: SchoolRef | number): SchoolRef {
@@ -60,6 +64,23 @@ function schoolRef(school: SchoolRef | number): SchoolRef {
 
 function vandaagIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Visuele polish (2026-08-14) — urgentie is puur een afgeleide weergave van
+// het al aanwezige dueDate, geen nieuw veld/model.
+function urgentieVanActie(actie: SalesActionDoc): "achterstallig" | "vandaag" | null {
+  const datum = actie.dueDate.slice(0, 10);
+  const vandaag = vandaagIso();
+  if (datum < vandaag) return "achterstallig";
+  if (datum === vandaag) return "vandaag";
+  return null;
+}
+
+function voorstelAccentKlasse(proposalType: string, status: string): string {
+  if (status === "conflict") return "ml-sales-widget__item--conflict";
+  if (proposalType === "veld_correctie") return "ml-sales-widget__item--verrijking";
+  if (proposalType === "bestaande_vervolgdatum") return "ml-sales-widget__item--bestaande-datum";
+  return "ml-sales-widget__item--ai-voorstel";
 }
 
 async function apiGet<T>(url: string): Promise<T[]> {
@@ -91,6 +112,7 @@ export function SalesDashboardPaneel() {
   const [tabGeladen, setTabGeladen] = useState(false);
 
   const [vandaagActies, setVandaagActies] = useState<SalesActionDoc[]>([]);
+  const [actiesDezeWeekAantal, setActiesDezeWeekAantal] = useState(0);
   const [todo, setTodo] = useState<TodoResultaat | null>(null);
   const [scholenVoorSelector, setScholenVoorSelector] = useState<SchoolOptie[]>([]);
   const [laden, setLaden] = useState(true);
@@ -130,6 +152,10 @@ export function SalesDashboardPaneel() {
       apiGet<SchoolOptie>(`/api/sales-schools?depth=0&sort=schoolName&limit=1000`),
     ]);
     setVandaagActies(openActies.filter((a) => a.dueDate.slice(0, 10) <= vandaag));
+    const over7Dagen = new Date();
+    over7Dagen.setDate(over7Dagen.getDate() + 7);
+    const over7DagenIso = over7Dagen.toISOString().slice(0, 10);
+    setActiesDezeWeekAantal(openActies.filter((a) => a.dueDate.slice(0, 10) <= over7DagenIso).length);
     setTodo(todoData);
     setScholenVoorSelector(scholenLijst);
     setLaden(false);
@@ -164,6 +190,19 @@ export function SalesDashboardPaneel() {
 
   const todoAantal = todo ? todo.proposals.length + todo.mogelijkAfgeslotenScholen.length : 0;
 
+  // Snelle inzichten + AI-tip (visuele polish, 2026-08-14) — uitsluitend
+  // afgeleid van hierboven al opgehaalde data, geen nieuwe fetch/AI-call.
+  const scholenAantal = scholenVoorSelector.length;
+  const prospectsAantal = scholenVoorSelector.filter((s) => s.relatiestatus === "Prospect").length;
+  const tipTekst = (() => {
+    if (!todo) return null;
+    const prospectsZonderVervolg = todo.mogelijkAfgeslotenScholen.filter((s) => s.relatiestatus === "Prospect").length;
+    if (prospectsZonderVervolg > 0) return `Er zijn ${prospectsZonderVervolg} prospect${prospectsZonderVervolg === 1 ? "" : "s"} zonder vervolgactie.`;
+    const totaal = todo.mogelijkAfgeslotenScholen.length;
+    if (totaal > 0) return `Er ${totaal === 1 ? "is" : "zijn"} ${totaal} school${totaal === 1 ? "" : "en"} mogelijk zonder vervolgactie.`;
+    return null;
+  })();
+
   if (laden || !tabGeladen) {
     return (
       <section className="ml-sales-widget">
@@ -176,12 +215,17 @@ export function SalesDashboardPaneel() {
     <section className="ml-sales-widget">
       <div className="ml-sales-widget__tabs">
         <button type="button" className={`ml-sales-widget__tab${tab === "vandaag" ? " ml-sales-widget__tab--actief" : ""}`} onClick={() => kiesTab("vandaag")}>
-          Vandaag{vandaagActies.length > 0 ? ` (${vandaagActies.length})` : ""}
+          <Calendar size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.blue.fg }} />
+          Vandaag
+          {vandaagActies.length > 0 && <span className="ml-sales-widget__tab-badge">{vandaagActies.length}</span>}
         </button>
         <button type="button" className={`ml-sales-widget__tab${tab === "todo" ? " ml-sales-widget__tab--actief" : ""}`} onClick={() => kiesTab("todo")}>
-          To do{todoAantal > 0 ? ` (${todoAantal})` : ""}
+          <ClipboardList size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.orange.fg }} />
+          To do
+          {todoAantal > 0 && <span className="ml-sales-widget__tab-badge">{todoAantal}</span>}
         </button>
         <button type="button" className={`ml-sales-widget__tab${tab === "vraag" ? " ml-sales-widget__tab--actief" : ""}`} onClick={() => kiesTab("vraag")}>
+          <Sparkles size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.purple.fg }} />
           Vraag
         </button>
       </div>
@@ -193,17 +237,24 @@ export function SalesDashboardPaneel() {
           ) : (
             vandaagActies.map((actie) => {
               const school = schoolRef(actie.school);
+              const urgentie = urgentieVanActie(actie);
               return (
-                <div className="ml-sales-widget__item" key={actie.id}>
+                <div className={`ml-sales-widget__item${urgentie ? ` ml-sales-widget__item--${urgentie}` : ""}`} key={actie.id}>
                   <div className="ml-sales-widget__item-header">
                     <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
                       {school.schoolName}
                     </Link>
-                    <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {urgentie && (
+                        <span className={`ml-sales-widget__urgentie ml-sales-widget__urgentie--${urgentie}`}>
+                          {urgentie === "achterstallig" ? "Achterstallig" : "Vandaag"}
+                        </span>
+                      )}
+                      <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    </div>
                   </div>
                   <p className="ml-sales-widget__meta">
                     {actie.type} · {formatKorteDatum(actie.dueDate)}
-                    {actie.dueDate.slice(0, 10) < vandaagIso() ? " (achterstallig)" : ""}
                   </p>
                   <p className="ml-sales-widget__context">{actie.description}</p>
                   <div className="ml-sales__actie-knoppen">
@@ -230,7 +281,7 @@ export function SalesDashboardPaneel() {
               {todo?.proposals.map((voorstel) => {
                 const school = voorstel.school;
                 return (
-                  <div className="ml-sales-widget__item" key={voorstel.id}>
+                  <div className={`ml-sales-widget__item ${voorstelAccentKlasse(voorstel.proposalType, voorstel.status)}`} key={voorstel.id}>
                     <div className="ml-sales-widget__item-header">
                       <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
                         {school.schoolName}
@@ -239,7 +290,11 @@ export function SalesDashboardPaneel() {
                     </div>
                     <p className="ml-sales-widget__meta">
                       {[school.plaats, voorstel.confidence ? `vertrouwen: ${voorstel.confidence}` : null].filter(Boolean).join(" · ")}
-                      {voorstel.status === "conflict" && <span className="ml-sales__badge" style={{ marginLeft: 6 }}>⚠ Conflict — Monday is gewijzigd</span>}
+                      {voorstel.status === "conflict" && (
+                        <span className="ml-sales__badge ml-sales__badge--conflict" style={{ marginLeft: 6 }}>
+                          ⚠ Conflict — Monday is gewijzigd
+                        </span>
+                      )}
                     </p>
                     <p className="ml-sales-widget__context">{voorstel.proposalText}</p>
                     {voorstel.reason && <p className="ml-sales-widget__meta">AI: {voorstel.reason}</p>}
@@ -258,7 +313,7 @@ export function SalesDashboardPaneel() {
                 );
               })}
               {todo?.mogelijkAfgeslotenScholen.map((school) => (
-                <div className="ml-sales-widget__item" key={`veiligheidsnet-${school.id}`}>
+                <div className="ml-sales-widget__item ml-sales-widget__item--veiligheidsnet" key={`veiligheidsnet-${school.id}`}>
                   <div className="ml-sales-widget__item-header">
                     <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
                       {school.schoolName}
@@ -284,19 +339,25 @@ export function SalesDashboardPaneel() {
 
       {tab === "vraag" && (
         <div className="ml-sales-widget__vraag">
-          <select
-            className="ml-sales-widget__schoolselector"
-            value={schoolKeuze}
-            onChange={(e) => setSchoolKeuze(e.target.value)}
-            aria-label="Kies scope voor de vraag"
-          >
-            <option value="alle">Alle scholen</option>
-            {scholenVoorSelector.map((s) => (
-              <option key={s.id} value={String(s.id)}>
-                {s.schoolName}
-              </option>
-            ))}
-          </select>
+          <div className="ml-sales-widget__schoolselector-rij">
+            <span className="ml-sales-widget__schoolselector-label">
+              <Sparkles size={13} aria-hidden="true" />
+              Vraag over
+            </span>
+            <select
+              className="ml-sales-widget__schoolselector"
+              value={schoolKeuze}
+              onChange={(e) => setSchoolKeuze(e.target.value)}
+              aria-label="Kies scope voor de vraag"
+            >
+              <option value="alle">Alle scholen</option>
+              {scholenVoorSelector.map((s) => (
+                <option key={s.id} value={String(s.id)}>
+                  {s.schoolName}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {vraagBerichten.length > 0 && (
             <div className="ml-sales__chat-berichten">
@@ -320,6 +381,59 @@ export function SalesDashboardPaneel() {
               {vraagBezig ? "Bezig…" : "Vraag"}
             </button>
           </div>
+        </div>
+      )}
+
+      <div className="ml-sales-widget__stats">
+        <div className="ml-sales-widget__stat">
+          <span className="ml-sales-widget__stat-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.teal.fg, "--item-bg": NAV_COLOR_STYLES.teal.bg } as CSSProperties}>
+            <School size={16} aria-hidden="true" />
+          </span>
+          <span className="ml-sales-widget__stat-tekst">
+            <span className="ml-sales-widget__stat-getal">{scholenAantal}</span>
+            <span className="ml-sales-widget__stat-label">Scholen</span>
+          </span>
+        </div>
+        <div className="ml-sales-widget__stat">
+          <span className="ml-sales-widget__stat-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.purple.fg, "--item-bg": NAV_COLOR_STYLES.purple.bg } as CSSProperties}>
+            <UserPlus size={16} aria-hidden="true" />
+          </span>
+          <span className="ml-sales-widget__stat-tekst">
+            <span className="ml-sales-widget__stat-getal">{prospectsAantal}</span>
+            <span className="ml-sales-widget__stat-label">Prospects</span>
+          </span>
+        </div>
+        <div className="ml-sales-widget__stat">
+          <span className="ml-sales-widget__stat-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.orange.fg, "--item-bg": NAV_COLOR_STYLES.orange.bg } as CSSProperties}>
+            <ListTodo size={16} aria-hidden="true" />
+          </span>
+          <span className="ml-sales-widget__stat-tekst">
+            <span className="ml-sales-widget__stat-getal">{actiesDezeWeekAantal}</span>
+            <span className="ml-sales-widget__stat-label">Acties deze week</span>
+          </span>
+        </div>
+        <div className="ml-sales-widget__stat">
+          <span className="ml-sales-widget__stat-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.red.fg, "--item-bg": NAV_COLOR_STYLES.red.bg } as CSSProperties}>
+            <AlertCircle size={16} aria-hidden="true" />
+          </span>
+          <span className="ml-sales-widget__stat-tekst">
+            <span className="ml-sales-widget__stat-getal">{todoAantal}</span>
+            <span className="ml-sales-widget__stat-label">Aandacht nodig</span>
+          </span>
+        </div>
+      </div>
+
+      {tipTekst && (
+        <div className="ml-sales-widget__tip">
+          <p className="ml-sales-widget__tip-tekst">
+            <Sparkles size={14} aria-hidden="true" style={{ color: "var(--ml-admin-accent)", flexShrink: 0 }} />
+            <span>
+              <strong>AI-tip van vandaag:</strong> {tipTekst}
+            </span>
+          </p>
+          <button type="button" className="ml-sales-widget__tip-knop" onClick={() => kiesTab("vraag")}>
+            Stel een vraag →
+          </button>
         </div>
       )}
 

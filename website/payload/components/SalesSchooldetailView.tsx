@@ -1,11 +1,14 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Compass, ListTodo, School, Sparkles } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { formatKorteDatum, formatKorteDatumTijd, typeLabel } from "@/lib/sales/format-datum";
 import { LOGBOEK_SAMENVATTING_MAX_LENGTE } from "@/lib/sales/monday-columns";
+import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 
 // Sales-assistent V1 (2026-08-14) — schooldetail: het centrale Sales-object.
 // Query-param-gebaseerd (?id=<schoolId>), zelfde patroon als CreatorView.tsx
@@ -318,7 +321,12 @@ function SchooldetailInner() {
       <div className="ml-sales__kaarten-rij">
         <div className="ml-sales__kaart">
           <div className="ml-sales__kaart-header">
-            <strong>Waar staan we?</strong>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="ml-sales__kaart-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.blue.fg, "--item-bg": NAV_COLOR_STYLES.blue.bg } as CSSProperties}>
+                <Compass size={15} aria-hidden="true" />
+              </span>
+              <strong>Waar staan we?</strong>
+            </span>
           </div>
           {samenvatting ? (
             <>
@@ -340,7 +348,12 @@ function SchooldetailInner() {
 
         <div className="ml-sales__kaart">
           <div className="ml-sales__kaart-header">
-            <strong>Volgende stap</strong>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="ml-sales__kaart-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.orange.fg, "--item-bg": NAV_COLOR_STYLES.orange.bg } as CSSProperties}>
+                <ListTodo size={15} aria-hidden="true" />
+              </span>
+              <strong>Volgende stap</strong>
+            </span>
           </div>
           {openActie ? (
             <>
@@ -362,7 +375,12 @@ function SchooldetailInner() {
 
         <div className="ml-sales__kaart">
           <div className="ml-sales__kaart-header">
-            <strong>Schoolcontext</strong>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="ml-sales__kaart-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.teal.fg, "--item-bg": NAV_COLOR_STYLES.teal.bg } as CSSProperties}>
+                <School size={15} aria-hidden="true" />
+              </span>
+              <strong>Schoolcontext</strong>
+            </span>
           </div>
           <p className="ml-sales__kaart-tekst">Onderwijstype: {onderwijstypeNaam ?? "onbekend"}</p>
           <p className="ml-sales__kaart-tekst">Laatste Monday-activiteit: {formatKorteDatum(school.lastMondayActivityAt)}</p>
@@ -408,7 +426,10 @@ function SchooldetailInner() {
       )}
 
       <div className="ml-sales__section">
-        <h2>Vraag AI over deze school</h2>
+        <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={16} aria-hidden="true" style={{ color: "var(--ml-admin-purple)" }} />
+          Vraag AI over deze school
+        </h2>
         <div className="ml-sales__chat">
           {chatBerichten.length > 0 && (
             <div className="ml-sales__chat-berichten">

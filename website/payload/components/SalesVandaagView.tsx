@@ -88,6 +88,17 @@ function vandaagIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Visuele polish (2026-08-14) — zelfde urgentie-afleiding als
+// SalesDashboardPaneel.tsx, voor consistente kleuraccenten tussen widget en
+// volledige pagina. Puur weergave, geen nieuw veld.
+function urgentieVanActie(actie: SalesActionDoc): "achterstallig" | "vandaag" | null {
+  const datum = actie.dueDate.slice(0, 10);
+  const vandaag = vandaagIso();
+  if (datum < vandaag) return "achterstallig";
+  if (datum === vandaag) return "vandaag";
+  return null;
+}
+
 function SchoolMeta({ school, extra }: { school: SchoolRef; extra?: string | null }) {
   return <p className="ml-sales__kaart-tekst">{[school.plaats, extra].filter(Boolean).join(" · ")}</p>;
 }
@@ -220,11 +231,19 @@ export function SalesVandaagView() {
           <div className="ml-sales__grid">
             {vandaagActies.map((actie) => {
               const school = schoolRef(actie.school);
+              const urgentie = urgentieVanActie(actie);
               return (
-                <div className="ml-sales__kaart" key={actie.id}>
+                <div className={`ml-sales__kaart${urgentie ? ` ml-sales-widget__item--${urgentie}` : ""}`} key={actie.id}>
                   <div className="ml-sales__kaart-header">
                     <Link href={`/admin/sales/school?id=${school.id}`}>{school.schoolName}</Link>
-                    <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {urgentie && (
+                        <span className={`ml-sales-widget__urgentie ml-sales-widget__urgentie--${urgentie}`}>
+                          {urgentie === "achterstallig" ? "Achterstallig" : "Vandaag"}
+                        </span>
+                      )}
+                      <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    </div>
                   </div>
                   <SchoolMeta school={school} extra={`Vandaag: ${actie.type}`} />
                   <p className="ml-sales__kaart-tekst">{actie.description}</p>

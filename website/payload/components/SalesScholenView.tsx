@@ -192,9 +192,9 @@ export function SalesScholenView() {
     }
   }
 
-  function sorteerIndicator(kolom: SorteerKolom): string {
-    if (sorteerKolom !== kolom) return "";
-    return sorteerRichting === "oplopend" ? " ▲" : " ▼";
+  function sorteerIndicator(kolom: SorteerKolom) {
+    if (sorteerKolom !== kolom) return null;
+    return <span className="ml-sales__sorteer-pijl">{sorteerRichting === "oplopend" ? "↑" : "↓"}</span>;
   }
 
   return (
@@ -212,7 +212,7 @@ export function SalesScholenView() {
           placeholder="Zoek op schoolnaam of plaats…"
           value={filters.zoekterm}
           onChange={(e) => setFilters((f) => ({ ...f, zoekterm: e.target.value }))}
-          style={{ padding: "6px 10px", borderRadius: "var(--ml-admin-radius-sm)", border: "1px solid var(--theme-elevation-200)", minWidth: "200px" }}
+          className="ml-sales__zoekveld"
         />
         {Object.keys(RELATIESTATUS_BADGE).map((waarde) => (
           <button
