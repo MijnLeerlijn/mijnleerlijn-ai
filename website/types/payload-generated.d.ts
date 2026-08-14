@@ -89,6 +89,10 @@ export interface Config {
     'assistant-conversations': AssistantConversation;
     'assistant-eval-questions': AssistantEvalQuestion;
     'assistant-eval-runs': AssistantEvalRun;
+    'sales-schools': SalesSchool;
+    'sales-log-events': SalesLogEvent;
+    'sales-actions': SalesAction;
+    'sales-proposals': SalesProposal;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
     'payload-locked-documents': PayloadLockedDocument;
@@ -119,6 +123,10 @@ export interface Config {
     'assistant-conversations': AssistantConversationsSelect<false> | AssistantConversationsSelect<true>;
     'assistant-eval-questions': AssistantEvalQuestionsSelect<false> | AssistantEvalQuestionsSelect<true>;
     'assistant-eval-runs': AssistantEvalRunsSelect<false> | AssistantEvalRunsSelect<true>;
+    'sales-schools': SalesSchoolsSelect<false> | SalesSchoolsSelect<true>;
+    'sales-log-events': SalesLogEventsSelect<false> | SalesLogEventsSelect<true>;
+    'sales-actions': SalesActionsSelect<false> | SalesActionsSelect<true>;
+    'sales-proposals': SalesProposalsSelect<false> | SalesProposalsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -135,6 +143,7 @@ export interface Config {
     'assistant-eval': AssistantEval;
     'kennisbasis-mijnleerlijn': KennisbasisMijnleerlijn;
     'helpdesk-instellingen': HelpdeskInstellingen;
+    'sales-instellingen': SalesInstellingen;
   };
   globalsSelect: {
     'gmail-connection': GmailConnectionSelect<false> | GmailConnectionSelect<true>;
@@ -142,6 +151,7 @@ export interface Config {
     'assistant-eval': AssistantEvalSelect<false> | AssistantEvalSelect<true>;
     'kennisbasis-mijnleerlijn': KennisbasisMijnleerlijnSelect<false> | KennisbasisMijnleerlijnSelect<true>;
     'helpdesk-instellingen': HelpdeskInstellingenSelect<false> | HelpdeskInstellingenSelect<true>;
+    'sales-instellingen': SalesInstellingenSelect<false> | SalesInstellingenSelect<true>;
   };
   locale: null;
   widgets: {
@@ -1378,6 +1388,181 @@ export interface AssistantEvalRun {
   createdAt: string;
 }
 /**
+ * Referentielaag naar Monday board '1: Scholen (Master Data)'. Monday blijft bron van waarheid.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-schools".
+ */
+export interface SalesSchool {
+  id: number;
+  mondayItemId: string;
+  mondayBoardId: string;
+  schoolName: string;
+  plaats?: string | null;
+  /**
+   * Alleen de naam uit Monday's board_relation-koppeling naar 8: Contactpersonen — geen e-mail/telefoon (board 8 nog niet onderzocht).
+   */
+  contactpersoonNaam?: string | null;
+  /**
+   * Leeg = geen variant-specifieke context. Nooit automatisch geraden bij sync — alleen handmatig of via een bevestigd AI-veldvoorstel.
+   */
+  onderwijstype?: (number | null) | Variant;
+  /**
+   * Ruwe waarde uit color_mm4vvg4r. Geïndexeerd — dit is het primaire filter voor 'openstaand' in lib/sales/backfill.ts.
+   */
+  relatiestatus?: string | null;
+  /**
+   * Ruwe waarde uit color_mm4vkv86.
+   */
+  salesfase?: string | null;
+  lastMondaySyncAt?: string | null;
+  lastMondayActivityAt?: string | null;
+  /**
+   * Cache van date_mm5qswfk — voorkomt een live Monday-call per school in backfill/Vandaag. Bron van waarheid blijft Monday.
+   */
+  mondayVolgendeActieDatum?: string | null;
+  /**
+   * Relatiestatus ∈ {Lead, Prospect, Wacht op handtekening} — zie lib/sales/backfill.ts.
+   */
+  actief?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Chronologisch logboek per school — audittrail voor Sales-acties/voorstellen/write-backs.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-log-events".
+ */
+export interface SalesLogEvent {
+  id: number;
+  school: number | SalesSchool;
+  occurredAt: string;
+  type:
+    | 'contact'
+    | 'mail'
+    | 'afspraak'
+    | 'monday_status'
+    | 'ai_voorstel'
+    | 'actie_gepland'
+    | 'actie_aangepast'
+    | 'actie_afgerond'
+    | 'actie_vervallen'
+    | 'notitie'
+    | 'systeem'
+    | 'monday_writeback';
+  source: 'monday' | 'creator' | 'sales-ai' | 'gebruiker' | 'systeem';
+  /**
+   * Bijv. Monday update-ID — voor idempotente dedup bij herhaald synchroniseren.
+   */
+  sourceExternalId?: string | null;
+  /**
+   * Kort — geen volledige ruwe brontekst, zie dataminimalisatie-eis.
+   */
+  summary: string;
+  /**
+   * Gestructureerde snapshot (bijv. voorstel-details), nooit volledige ruwe CRM-tekst zonder expliciete reden.
+   */
+  payload?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Leeg bij pure Monday-sync/systeemgebeurtenissen.
+   */
+  actor?: (number | null) | User;
+  relatedAction?: (number | null) | SalesAction;
+  relatedProposal?: (number | null) | SalesProposal;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Geaccepteerde of handmatig aangemaakte volgende stappen per school.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-actions".
+ */
+export interface SalesAction {
+  id: number;
+  school: number | SalesSchool;
+  type: 'mail' | 'bellen' | 'afspraak' | 'voorbereiding' | 'informatie_sturen' | 'anders';
+  description: string;
+  dueDate: string;
+  status: 'open' | 'afgerond' | 'vervallen';
+  channel?: ('mail' | 'telefoon' | 'in_persoon' | 'anders') | null;
+  sourceProposal?: (number | null) | SalesProposal;
+  createdBy?: (number | null) | User;
+  completedAt?: string | null;
+  cancellationReason?: string | null;
+  linkedMailDraft?: (number | null) | MailDraft;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * AI-voorstellen (volgende actie of veldcorrectie) — pending totdat een gebruiker beslist.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-proposals".
+ */
+export interface SalesProposal {
+  id: number;
+  school: number | SalesSchool;
+  /**
+   * 'bestaande_vervolgdatum': backfill vond een al ingevulde Datum volgende actie in Monday zonder lokale Sales-actie — de UI toont dan 'Maak Sales-actie'/'Andere datum'/'Negeer' i.p.v. de generieke labels.
+   */
+  proposalType: 'volgende_actie' | 'veld_correctie' | 'bestaande_vervolgdatum';
+  proposalText: string;
+  reason?: string | null;
+  proposedDate?: string | null;
+  proposedType?: ('mail' | 'bellen' | 'afspraak' | 'voorbereiding' | 'informatie_sturen' | 'anders') | null;
+  proposedChannel?: ('mail' | 'telefoon' | 'in_persoon' | 'anders') | null;
+  /**
+   * Uitsluitend één van de 3 toegestane write-back-kolommen, zie lib/sales/monday-columns.ts.
+   */
+  targetColumnId?: string | null;
+  proposedValue?: string | null;
+  /**
+   * Snapshot voor conflictdetectie bij write-back.
+   */
+  mondayValueAtProposalTime?: string | null;
+  /**
+   * Monday Update-ID's waarop het voorstel is gebaseerd — 'waarop de conclusie gebaseerd is'.
+   */
+  sourceUpdateIds?:
+    | {
+        updateId: string;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * 'Laag' wordt nooit in de UI getoond (zie lib/sales/enrichment.ts) — hier alleen ter volledigheid/audit bewaard.
+   */
+  confidence?: ('hoog' | 'middel' | 'laag') | null;
+  status: 'pending' | 'accepted' | 'modified' | 'rejected' | 'conflict';
+  /**
+   * Alleen gezet bij 'modified' — de daadwerkelijke waarde/datum/type die de gebruiker koos.
+   */
+  finalChoice?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  decidedBy?: (number | null) | User;
+  decidedAt?: string | null;
+  resultingAction?: (number | null) | SalesAction;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -1580,6 +1765,22 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'assistant-eval-runs';
         value: number | AssistantEvalRun;
+      } | null)
+    | ({
+        relationTo: 'sales-schools';
+        value: number | SalesSchool;
+      } | null)
+    | ({
+        relationTo: 'sales-log-events';
+        value: number | SalesLogEvent;
+      } | null)
+    | ({
+        relationTo: 'sales-actions';
+        value: number | SalesAction;
+      } | null)
+    | ({
+        relationTo: 'sales-proposals';
+        value: number | SalesProposal;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -2297,6 +2498,93 @@ export interface AssistantEvalRunsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-schools_select".
+ */
+export interface SalesSchoolsSelect<T extends boolean = true> {
+  mondayItemId?: T;
+  mondayBoardId?: T;
+  schoolName?: T;
+  plaats?: T;
+  contactpersoonNaam?: T;
+  onderwijstype?: T;
+  relatiestatus?: T;
+  salesfase?: T;
+  lastMondaySyncAt?: T;
+  lastMondayActivityAt?: T;
+  mondayVolgendeActieDatum?: T;
+  actief?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-log-events_select".
+ */
+export interface SalesLogEventsSelect<T extends boolean = true> {
+  school?: T;
+  occurredAt?: T;
+  type?: T;
+  source?: T;
+  sourceExternalId?: T;
+  summary?: T;
+  payload?: T;
+  actor?: T;
+  relatedAction?: T;
+  relatedProposal?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-actions_select".
+ */
+export interface SalesActionsSelect<T extends boolean = true> {
+  school?: T;
+  type?: T;
+  description?: T;
+  dueDate?: T;
+  status?: T;
+  channel?: T;
+  sourceProposal?: T;
+  createdBy?: T;
+  completedAt?: T;
+  cancellationReason?: T;
+  linkedMailDraft?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-proposals_select".
+ */
+export interface SalesProposalsSelect<T extends boolean = true> {
+  school?: T;
+  proposalType?: T;
+  proposalText?: T;
+  reason?: T;
+  proposedDate?: T;
+  proposedType?: T;
+  proposedChannel?: T;
+  targetColumnId?: T;
+  proposedValue?: T;
+  mondayValueAtProposalTime?: T;
+  sourceUpdateIds?:
+    | T
+    | {
+        updateId?: T;
+        id?: T;
+      };
+  confidence?: T;
+  status?: T;
+  finalChoice?: T;
+  decidedBy?: T;
+  decidedAt?: T;
+  resultingAction?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv_select".
  */
 export interface PayloadKvSelect<T extends boolean = true> {
@@ -2465,6 +2753,22 @@ export interface HelpdeskInstellingen {
   createdAt?: string | null;
 }
 /**
+ * Accountbrede instellingen voor de Sales-assistent.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-instellingen".
+ */
+export interface SalesInstellingen {
+  id: number;
+  /**
+   * Uitgangspunt voor AI-voorstellen zonder expliciete afspraak in de contactgeschiedenis.
+   */
+  standaardFollowUpTermijnDagen?: number | null;
+  voorkeurskanaal?: ('mail' | 'telefoon' | 'in_persoon' | 'anders') | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "gmail-connection_select".
  */
@@ -2516,6 +2820,17 @@ export interface KennisbasisMijnleerlijnSelect<T extends boolean = true> {
  */
 export interface HelpdeskInstellingenSelect<T extends boolean = true> {
   curriculumWerkplaatsUrl?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-instellingen_select".
+ */
+export interface SalesInstellingenSelect<T extends boolean = true> {
+  standaardFollowUpTermijnDagen?: T;
+  voorkeurskanaal?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

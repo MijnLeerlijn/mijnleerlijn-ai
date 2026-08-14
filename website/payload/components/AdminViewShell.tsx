@@ -9,6 +9,10 @@ import { VariantenView } from "./VariantenView";
 import { KennisbasisView } from "./KennisbasisView";
 import { CurriculumWerkplaatsView } from "./CurriculumWerkplaatsView";
 import { CreatorView } from "./CreatorView";
+import { SalesVandaagView } from "./SalesVandaagView";
+import { SalesScholenView } from "./SalesScholenView";
+import { SalesSchooldetailView } from "./SalesSchooldetailView";
+import { SalesActiesView } from "./SalesActiesView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -115,6 +119,38 @@ export function CreatorViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="creator">
       <CreatorView />
+    </InAdminShell>
+  );
+}
+
+export function SalesVandaagViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="salesVandaag">
+      <SalesVandaagView />
+    </InAdminShell>
+  );
+}
+
+export function SalesScholenViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="salesScholen">
+      <SalesScholenView />
+    </InAdminShell>
+  );
+}
+
+export function SalesSchooldetailViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="salesSchooldetail">
+      <SalesSchooldetailView />
+    </InAdminShell>
+  );
+}
+
+export function SalesActiesViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="salesActies">
+      <SalesActiesView />
     </InAdminShell>
   );
 }

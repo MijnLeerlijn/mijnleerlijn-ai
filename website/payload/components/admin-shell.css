@@ -59,7 +59,8 @@
 [id="nav-group-Basis — Technisch beheer"],
 [id="nav-group-Varianten"],
 [id="nav-group-Kennisbasis MijnLeerlijn"],
-[id="nav-group-Beheer"] {
+[id="nav-group-Beheer"],
+[id="nav-group-Sales"] {
   display: none;
 }
 
@@ -1247,4 +1248,337 @@ a.ml-dashboard__card:hover {
   .ml-creator__kolom--mail-output {
     grid-column: auto;
   }
+}
+
+/* --- Sales-assistent V1 (2026-08-14) --- */
+.ml-sales {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 0 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.ml-sales__header h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.ml-sales__header p {
+  margin: 0;
+  color: var(--theme-elevation-600);
+}
+
+.ml-sales__acties-rij {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ml-sales__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ml-sales__section-titel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ml-sales__section-titel h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ml-sales__section-count {
+  font-size: 12px;
+  color: var(--theme-elevation-500);
+  font-weight: 600;
+}
+
+.ml-sales__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.ml-sales__kaart {
+  border: 1px solid var(--theme-elevation-150);
+  border-radius: var(--ml-admin-radius);
+  background: var(--theme-input-bg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: var(--ml-admin-shadow);
+}
+
+.ml-sales__kaart-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ml-sales__kaart-header a {
+  font-weight: 700;
+  color: var(--theme-text);
+  text-decoration: none;
+}
+
+.ml-sales__kaart-header a:hover {
+  color: var(--ml-admin-accent);
+}
+
+.ml-sales__kaart-tekst {
+  margin: 0;
+  font-size: 13px;
+  color: var(--theme-elevation-600);
+}
+
+.ml-sales__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--theme-elevation-100);
+  color: var(--theme-elevation-700);
+  white-space: nowrap;
+}
+
+.ml-sales__badge--confidence-hoog {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.ml-sales__badge--confidence-middel {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.ml-sales__badge--confidence-middel::before {
+  content: "⚠";
+}
+
+.ml-sales__actie-knoppen {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.ml-sales__knop {
+  border: 1px solid var(--theme-elevation-200);
+  background: var(--theme-input-bg);
+  color: var(--theme-text);
+  border-radius: var(--ml-admin-radius-sm);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ml-sales__knop:hover {
+  border-color: var(--ml-admin-accent);
+}
+
+.ml-sales__knop--primair {
+  background: var(--ml-admin-accent);
+  border-color: var(--ml-admin-accent);
+  color: var(--ml-admin-accent-contrast);
+}
+
+.ml-sales__knop--primair:hover {
+  background: var(--ml-admin-accent-hover);
+}
+
+.ml-sales__knop--gevaar {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.ml-sales__knop:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ml-sales__leeg {
+  padding: 24px;
+  text-align: center;
+  color: var(--theme-elevation-500);
+  border: 1px dashed var(--theme-elevation-200);
+  border-radius: var(--ml-admin-radius);
+  font-size: 13px;
+}
+
+.ml-sales__veiligheidsnet {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.ml-sales__filter-balk {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ml-sales__tabel {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ml-sales__tabel th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--theme-elevation-150);
+  color: var(--theme-elevation-500);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.ml-sales__tabel td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--theme-elevation-100);
+}
+
+.ml-sales__tabel tr:hover td {
+  background: var(--theme-elevation-50);
+}
+
+.ml-sales__tabel a {
+  color: var(--theme-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ml-sales__tabel a:hover {
+  color: var(--ml-admin-accent);
+}
+
+.ml-sales__schooldetail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ml-sales__schooldetail-header h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.ml-sales__schooldetail-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.ml-sales__kaarten-rij {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.ml-sales__logboek {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ml-sales__logboek-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--theme-elevation-100);
+}
+
+.ml-sales__logboek-stip {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-top: 4px;
+  background: var(--theme-elevation-300);
+}
+
+.ml-sales__logboek-stip--contact {
+  background: #3b82f6;
+}
+.ml-sales__logboek-stip--ai_voorstel {
+  background: var(--ml-admin-purple);
+}
+.ml-sales__logboek-stip--actie_gepland,
+.ml-sales__logboek-stip--actie_afgerond {
+  background: #22c55e;
+}
+.ml-sales__logboek-stip--actie_vervallen {
+  background: #ef4444;
+}
+.ml-sales__logboek-stip--monday_writeback {
+  background: #f59e0b;
+}
+
+.ml-sales__logboek-meta {
+  font-size: 11px;
+  color: var(--theme-elevation-500);
+}
+
+.ml-sales__chat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ml-sales__chat-berichten {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.ml-sales__chat-bericht {
+  border-radius: var(--ml-admin-radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.ml-sales__chat-bericht--vraag {
+  background: var(--theme-elevation-100);
+  align-self: flex-end;
+}
+
+.ml-sales__chat-bericht--antwoord {
+  background: var(--ml-admin-purple-soft);
+  align-self: flex-start;
+}
+
+.ml-sales__chat-input-rij {
+  display: flex;
+  gap: 8px;
+}
+
+.ml-sales__chat-input-rij textarea {
+  flex: 1;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-200);
+  padding: 8px 10px;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 40px;
 }

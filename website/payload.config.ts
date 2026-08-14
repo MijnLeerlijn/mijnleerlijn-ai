@@ -30,11 +30,16 @@ import { AssistantEvalRuns } from "./payload/collections/AssistantEvalRuns";
 import { MailDrafts } from "./payload/collections/MailDrafts";
 import { MailTemplates } from "./payload/collections/MailTemplates";
 import { DerivedContent } from "./payload/collections/DerivedContent";
+import { SalesSchools } from "./payload/collections/SalesSchools";
+import { SalesLogEvents } from "./payload/collections/SalesLogEvents";
+import { SalesActions } from "./payload/collections/SalesActions";
+import { SalesProposals } from "./payload/collections/SalesProposals";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
 import { AssistantEval } from "./payload/globals/AssistantEval";
 import { KennisbasisMijnleerlijn } from "./payload/globals/KennisbasisMijnleerlijn";
 import { HelpdeskInstellingen } from "./payload/globals/HelpdeskInstellingen";
+import { SalesInstellingen } from "./payload/globals/SalesInstellingen";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -173,6 +178,42 @@ export default buildConfig({
           Component: "@/payload/components/AdminViewShell#CreatorViewShell",
           path: "/creator",
         },
+        // Sales-assistent V1 (2026-08-14): dezelfde aanpak als creator/
+        // curriculumWerkplaats hierboven — statische paden, client-side
+        // wisselen via query-params waar nodig (bv. schooldetail via
+        // ?id=<id>), geen dynamische routesegmenten.
+        //
+        // `exact: true` is HIER, anders dan bij elke andere custom view in
+        // dit bestand, wél verplicht: Payload's eigen route-matching
+        // (getCustomViewByRoute.js/isPathMatchingRoute.js) doet zonder
+        // `exact` een PREFIX-match (`currentRoute.startsWith(viewPath)`) en
+        // pakt de EERSTE match in registratievolgorde — "/sales" (Vandaag)
+        // is een prefix van "/sales/scholen"/"/sales/school"/"/sales/acties",
+        // dus zonder `exact: true` rendert elke sub-pagina stilzwijgend de
+        // Vandaag-view. Ontdekt tijdens browserverificatie (breadcrumb bleef
+        // "Sales / Vandaag" tonen op /admin/sales/scholen). Geen van de
+        // bestaande custom views hierboven had ooit deze prefix-relatie
+        // tussen paden, vandaar dat dit daar nooit nodig was.
+        salesVandaag: {
+          Component: "@/payload/components/AdminViewShell#SalesVandaagViewShell",
+          path: "/sales",
+          exact: true,
+        },
+        salesScholen: {
+          Component: "@/payload/components/AdminViewShell#SalesScholenViewShell",
+          path: "/sales/scholen",
+          exact: true,
+        },
+        salesSchooldetail: {
+          Component: "@/payload/components/AdminViewShell#SalesSchooldetailViewShell",
+          path: "/sales/school",
+          exact: true,
+        },
+        salesActies: {
+          Component: "@/payload/components/AdminViewShell#SalesActiesViewShell",
+          path: "/sales/acties",
+          exact: true,
+        },
       },
     },
   },
@@ -199,8 +240,12 @@ export default buildConfig({
     AssistantConversations,
     AssistantEvalQuestions,
     AssistantEvalRuns,
+    SalesSchools,
+    SalesLogEvents,
+    SalesActions,
+    SalesProposals,
   ],
-  globals: [GmailConnection, KnowledgeSearch, AssistantEval, KennisbasisMijnleerlijn, HelpdeskInstellingen],
+  globals: [GmailConnection, KnowledgeSearch, AssistantEval, KennisbasisMijnleerlijn, HelpdeskInstellingen, SalesInstellingen],
   editor: lexicalEditor(),
   db: postgresAdapter({
     pool: { connectionString: requireEnv("DATABASE_URI") },

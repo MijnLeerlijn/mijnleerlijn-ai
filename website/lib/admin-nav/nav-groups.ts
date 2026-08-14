@@ -17,12 +17,15 @@ import {
   LayoutGrid,
   Link2,
   ListChecks,
+  ListTodo,
   Mail,
   Megaphone,
   MessageSquare,
   PenTool,
+  School,
   Search,
   Settings,
+  Sunrise,
   Tag,
   Tags,
   ThumbsUp,
@@ -74,7 +77,7 @@ export interface NavItem {
 }
 
 export interface NavGroupDef {
-  id: "algemeen" | "helpdesk-ai" | "creator" | "curriculum-werkplaats";
+  id: "algemeen" | "helpdesk-ai" | "creator" | "curriculum-werkplaats" | "sales";
   label: string;
   icon: LucideIcon;
   items: NavItem[];
@@ -141,6 +144,17 @@ export const NAV_GROUPS: NavGroupDef[] = [
     label: "Curriculum Werkplaats",
     icon: PenTool,
     items: [{ label: "Curriculum Werkplaats", href: "/admin/curriculum-werkplaats", icon: PenTool, color: "teal", description: "Open de gekoppelde Curriculum Werkplaats-app." }],
+  },
+  {
+    id: "sales",
+    label: "Sales",
+    icon: Sunrise,
+    items: [
+      { label: "Vandaag", href: "/admin/sales", icon: Sunrise, color: "blue", description: "Dagelijks werkscherm: vandaag te doen, AI-voorstellen, wachtend." },
+      { label: "Scholen", href: "/admin/sales/scholen", icon: School, color: "teal", description: "Overzicht van alle scholen uit Monday." },
+      { label: "Acties", href: "/admin/sales/acties", icon: ListTodo, color: "orange", description: "Alle geaccepteerde Sales-acties." },
+      { label: "Sales Instellingen", href: "/admin/globals/sales-instellingen", icon: Settings, color: "slate", description: "Standaard follow-up-termijn en voorkeurskanaal.", permission: { type: "global", slug: "sales-instellingen" } },
+    ],
   },
 ];
 
@@ -224,16 +238,26 @@ export interface NavPathMatch {
  * opdracht: het gaat om het menu-item zelf, niet een los record erbinnen).
  * Draait op de volledige NAV_GROUPS (niet permissiebewust): wie de pagina al
  * ziet, heeft er per definitie toegang toe.
+ *
+ * Kiest bij meerdere subpad-matches (bv. "/admin/sales" én "/admin/sales/
+ * scholen" matchen allebei "/admin/sales/scholen" als subpad) altijd de
+ * LANGSTE/meest specifieke href, en geeft een exacte match altijd voorrang —
+ * zonder dat zou elke Sales-subpagina onterecht als "Vandaag" (het kortste,
+ * eerst-geregistreerde item) herkend worden. Ontdekt tijdens
+ * browserverificatie van de Sales-assistent-nav.
  */
 export function findNavItemByPath(pathname: string): NavPathMatch | null {
+  let beste: NavPathMatch | null = null;
   for (const group of NAV_GROUPS) {
     for (const item of [...group.items, ...(group.mutedItems ?? [])]) {
-      const exact = pathname === item.href;
+      if (pathname === item.href) {
+        return { group, item, exact: true };
+      }
       const binnenSubpad = pathname.startsWith(item.href) && ["/", undefined].includes(pathname[item.href.length]);
-      if (exact || binnenSubpad) {
-        return { group, item, exact };
+      if (binnenSubpad && (!beste || item.href.length > beste.item.href.length)) {
+        beste = { group, item, exact: false };
       }
     }
   }
-  return null;
+  return beste;
 }

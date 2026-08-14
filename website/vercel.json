@@ -1,3 +1,9 @@
 {
-  "buildCommand": "npm run build:production"
+  "buildCommand": "npm run build:production",
+  "crons": [
+    {
+      "path": "/api/sales/sync",
+      "schedule": "0 5 * * *"
+    }
+  ]
 }

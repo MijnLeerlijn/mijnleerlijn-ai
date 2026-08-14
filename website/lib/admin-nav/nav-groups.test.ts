@@ -50,8 +50,8 @@ function maakEditorPermissions(): SanitizedPermissions {
 }
 
 describe("nav-groups", () => {
-  it("bevat alle 4 verwachte hoofdgroepen, in vaste volgorde", () => {
-    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["algemeen", "helpdesk-ai", "creator", "curriculum-werkplaats"]);
+  it("bevat alle 5 verwachte hoofdgroepen, in vaste volgorde", () => {
+    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["algemeen", "helpdesk-ai", "creator", "curriculum-werkplaats", "sales"]);
   });
 
   it("elk item heeft een kleur en een omschrijving (nodig voor nav-icoon én dashboardkaart)", () => {
@@ -173,5 +173,31 @@ describe("nav-groups", () => {
   it("findNavItemByPath: onbekend pad levert niets op", () => {
     expect(findNavItemByPath("/admin/collections/onbekend")).toBeNull();
     expect(findNavItemByPath("/admin")).toBeNull();
+  });
+
+  // Regressietest (Sales-assistent V1, 2026-08-14): "/admin/sales" (Vandaag)
+  // is een prefix van "/admin/sales/scholen"/"/admin/sales/acties" — de
+  // eerste, kortste-match-wint implementatie herkende elke Sales-subpagina
+  // onterecht als "Vandaag". Ontdekt tijdens browserverificatie.
+  it("findNavItemByPath: een langer, exact matchend sub-item wint van een korter item waarvan het pad een prefix is", () => {
+    const matchScholen = findNavItemByPath("/admin/sales/scholen");
+    expect(matchScholen?.item.label).toBe("Scholen");
+    expect(matchScholen?.exact).toBe(true);
+
+    const matchActies = findNavItemByPath("/admin/sales/acties");
+    expect(matchActies?.item.label).toBe("Acties");
+    expect(matchActies?.exact).toBe(true);
+
+    const matchVandaag = findNavItemByPath("/admin/sales");
+    expect(matchVandaag?.item.label).toBe("Vandaag");
+    expect(matchVandaag?.exact).toBe(true);
+  });
+
+  it("findNavItemByPath: kiest bij meerdere subpad-matches (geen exacte match) de langste/meest specifieke", () => {
+    // "/admin/sales/scholen/iets-onbekends" matcht als subpad zowel Vandaag
+    // ("/admin/sales") als Scholen ("/admin/sales/scholen") — Scholen moet winnen.
+    const match = findNavItemByPath("/admin/sales/scholen/iets-onbekends");
+    expect(match?.item.label).toBe("Scholen");
+    expect(match?.exact).toBe(false);
   });
 });
