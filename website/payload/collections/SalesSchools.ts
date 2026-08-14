@@ -26,7 +26,7 @@ export const SalesSchools: CollectionConfig = {
   admin: {
     useAsTitle: "schoolName",
     defaultColumns: ["schoolName", "relatiestatus", "salesfase", "onderwijstype", "lastMondayActivityAt"],
-    group: "Sales",
+    group: "Sales — systeem",
     description: "Referentielaag naar Monday board '1: Scholen (Master Data)'. Monday blijft bron van waarheid.",
   },
   access: {

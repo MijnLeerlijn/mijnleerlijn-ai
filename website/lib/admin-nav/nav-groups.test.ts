@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { SanitizedPermissions } from "payload";
 import { NAV_GROUPS, getVisibleNavGroups, getSelectedDashboardCards, getSelectableNavItems, findNavItemByPath, isNavItemVisible } from "./nav-groups";
 
@@ -173,6 +175,46 @@ describe("nav-groups", () => {
   it("findNavItemByPath: onbekend pad levert niets op", () => {
     expect(findNavItemByPath("/admin/collections/onbekend")).toBeNull();
     expect(findNavItemByPath("/admin")).toBeNull();
+  });
+
+  /**
+   * Regressietest (fix-ronde, 2026-08-14): "Sales-navigatie ontbreekt in
+   * productiemenu". Bevestigde root cause: Payload's <NavGroup> stempelt
+   * id={`nav-group-${label}`} letterlijk (@payloadcms/ui, geen sanitatie).
+   * De Sales-collecties/-global gebruikten admin.group: "Sales" — exact
+   * dezelfde string als het label van deze eigen, custom Sales-groep. De
+   * CSS-regel die Payload's natieve (bedoelde) Sales-groep verbergt
+   * (admin-shell.css, op diezelfde id) verborg via die botsing ONBEDOELD ook
+   * de custom groep zelf: geen enkele test/typecheck/lint ving dit, want
+   * beide kanten waren voor zich genomen correct — pas een échte browser liet
+   * het zien. Deze test leest de daadwerkelijke admin.group-waarden uit
+   * payload/collections/*.ts en payload/globals/*.ts en bevestigt dat geen
+   * ervan ooit weer letterlijk gelijk is aan een NAV_GROUPS-label — zodat een
+   * toekomstige nieuwe collectie/global dezelfde fout niet stilzwijgend kan
+   * herhalen.
+   */
+  it("geen enkele admin.group-waarde van een collectie/global botst met een NAV_GROUPS-label (voorkomt de Sales-nav-regressie)", () => {
+    const customLabels = new Set(NAV_GROUPS.map((g) => g.label));
+    const projectRoot = join(__dirname, "../..");
+    const bronMappen = [join(projectRoot, "payload/collections"), join(projectRoot, "payload/globals")];
+
+    const gevondenGroepen: { bestand: string; group: string }[] = [];
+    for (const map of bronMappen) {
+      for (const bestand of readdirSync(map)) {
+        if (!bestand.endsWith(".ts") || bestand.endsWith(".test.ts")) continue;
+        const inhoud = readFileSync(join(map, bestand), "utf-8");
+        for (const match of inhoud.matchAll(/\bgroup:\s*"([^"]+)"/g)) {
+          gevondenGroepen.push({ bestand, group: match[1]! });
+        }
+      }
+    }
+
+    // Sanity check op de scan zelf — als dit ooit 0 oplevert, controleert de
+    // test hieronder stilzwijgend niets meer (bv. door een pad-wijziging).
+    expect(gevondenGroepen.length).toBeGreaterThan(10);
+
+    const botsingen = gevondenGroepen.filter((g) => customLabels.has(g.group));
+    expect(botsingen, `admin.group-waarde(s) botsen met een NAV_GROUPS-label: ${JSON.stringify(botsingen)}`).toEqual([]);
   });
 
   // Regressietest (Sales-assistent V1, 2026-08-14): "/admin/sales" (Vandaag)

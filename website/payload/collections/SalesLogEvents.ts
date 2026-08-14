@@ -26,7 +26,7 @@ export const SalesLogEvents: CollectionConfig = {
   admin: {
     useAsTitle: "summary",
     defaultColumns: ["school", "type", "occurredAt", "source", "summary"],
-    group: "Sales",
+    group: "Sales — systeem",
     description: "Chronologisch logboek per school — audittrail voor Sales-acties/voorstellen/write-backs.",
   },
   access: {

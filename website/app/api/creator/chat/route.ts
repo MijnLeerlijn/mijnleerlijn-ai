@@ -3,7 +3,7 @@ import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isEditor } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
-import { creatorChat, type CreatorChatBericht } from "@/lib/creator/creator-chat";
+import { creatorChat, type CreatorChatBericht, type ContextItemRef } from "@/lib/creator/creator-chat";
 
 // Creator V1 (2026-08-13) — backend voor het AI-schrijfgesprek
 // (payload/components/CreatorView.tsx). Zelfde sessieverificatiepatroon als
@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
       knowledgeType: "product" | "pedagogisch";
       variantId?: string;
       gepindeKnowledgeSourceIds?: number[];
+      uitgeslotenRefs?: ContextItemRef[];
     };
 
     if (!body.documentTitel || !Array.isArray(body.berichten) || body.berichten.length === 0) {
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
       knowledgeType: body.knowledgeType,
       variantId: body.variantId || undefined,
       gepindeKnowledgeSourceIds: body.gepindeKnowledgeSourceIds,
+      uitgeslotenRefs: body.uitgeslotenRefs,
     });
     return NextResponse.json(resultaat);
   } catch (error) {

@@ -27,7 +27,7 @@ export const SalesProposals: CollectionConfig = {
   admin: {
     useAsTitle: "proposalText",
     defaultColumns: ["school", "proposalType", "status", "confidence", "createdAt"],
-    group: "Sales",
+    group: "Sales — systeem",
     description: "AI-voorstellen (volgende actie of veldcorrectie) — pending totdat een gebruiker beslist.",
   },
   access: {

@@ -66,7 +66,15 @@ export async function deriveerContent(opties: DeriveChannelOpties): Promise<Deri
       ? `\n\nExtra kennis om eventueel te gebruiken:\n${opties.extraKennis.map((k) => `- ${k.titel}: ${k.tekst}`).join("\n")}`
       : "";
 
-  const systemPrompt = `Je maakt afgeleide content van een MijnLeerlijn-artikel voor het kanaal "${opties.channel}". ${KANAAL_INSTRUCTIE[opties.channel]} ${doelgroepInstructie}${extraKennisBlok}`.trim();
+  // Fix-ronde (2026-08-14) — bug "AI-output bevat rare tekens/opmaak": geen
+  // van de Creator-promptbouwers had een expliciete platte-tekst-instructie,
+  // dus kon het model vrij markdown/code-fences/aanhalingstekens toevoegen.
+  // Zelfde instructie als lib/creator/creator-chat.ts, hier ook van
+  // toepassing want "tekst" landt rechtstreeks in DerivedContent.content.
+  const opmaakInstructie =
+    "Schrijf platte tekst, direct klaar om te publiceren/kopiëren/plakken: GEEN markdown-opmaak (geen **vet**, geen # kopjes, geen `code`-fences, geen [links]), GEEN JSON, GEEN aanhalingstekens om de hele tekst, GEEN technische metadata.";
+
+  const systemPrompt = `Je maakt afgeleide content van een MijnLeerlijn-artikel voor het kanaal "${opties.channel}". ${KANAAL_INSTRUCTIE[opties.channel]} ${doelgroepInstructie}${extraKennisBlok}\n\n${opmaakInstructie}`.trim();
 
   return generateStructuredOutput({
     schema: ResultaatSchema,

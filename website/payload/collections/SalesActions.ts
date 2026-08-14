@@ -12,7 +12,7 @@ export const SalesActions: CollectionConfig = {
   admin: {
     useAsTitle: "description",
     defaultColumns: ["school", "type", "dueDate", "status", "channel"],
-    group: "Sales",
+    group: "Sales — systeem",
     description: "Geaccepteerde of handmatig aangemaakte volgende stappen per school.",
   },
   access: {

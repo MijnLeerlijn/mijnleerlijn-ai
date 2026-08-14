@@ -9,7 +9,7 @@ import { anyEditor } from "../access/roles";
 export const SalesInstellingen: GlobalConfig = {
   slug: "sales-instellingen",
   admin: {
-    group: "Sales",
+    group: "Sales — systeem",
     description: "Accountbrede instellingen voor de Sales-assistent.",
   },
   access: {

@@ -42,7 +42,10 @@ function bouwSysteemprompt(variantNaam: string, terminologie: VariantTerminologi
       ? `\n\nGebruik deze ${variantNaam}-terminologie in plaats van de centrale term, waar toepasselijk:\n${terminologie.map((t) => `- "${t.centralTerm}" → "${t.variantTerm}"`).join("\n")}`
       : "";
 
-  return `Je herschrijft een MijnLeerlijn-artikel tot een versie specifiek voor de onderwijsvariant "${variantNaam}". Dit is GEEN woord-voor-woord vervanging — pas aan waar dat de tekst echt beter bij "${variantNaam}" laat passen: terminologie, voorbeelden, context, positionering en toepassing. Behoud de kernboodschap en structuur van het origineel. Gebruik uitsluitend de meegegeven ${variantNaam}-specifieke kennis voor variant-specifieke claims — verzin geen ${variantNaam}-praktijken die niet in die kennis staan.${terminologieRegel}`;
+  // Fix-ronde (2026-08-14) — zelfde platte-tekst-eis als creator-chat.ts/
+  // derive-channel.ts/mail-reply.ts: aangepasteTekst landt rechtstreeks als
+  // documenttekst in een VariantOverride.
+  return `Je herschrijft een MijnLeerlijn-artikel tot een versie specifiek voor de onderwijsvariant "${variantNaam}". Dit is GEEN woord-voor-woord vervanging — pas aan waar dat de tekst echt beter bij "${variantNaam}" laat passen: terminologie, voorbeelden, context, positionering en toepassing. Behoud de kernboodschap en structuur van het origineel. Gebruik uitsluitend de meegegeven ${variantNaam}-specifieke kennis voor variant-specifieke claims — verzin geen ${variantNaam}-praktijken die niet in die kennis staan.${terminologieRegel}\n\nSchrijf platte tekst, direct klaar om te publiceren/kopiëren/plakken: GEEN markdown-opmaak (geen **vet**, geen # kopjes, geen \`code\`-fences, geen [links]), GEEN JSON, GEEN aanhalingstekens om de hele tekst, GEEN technische metadata.`;
 }
 
 export async function adapteerVoorVariant(payload: Payload, opties: VariantAdaptOpties): Promise<VariantAdaptResultaat> {

@@ -28,7 +28,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ContextItem } from "@/lib/assistant/build-context";
-import type { CreatorChatBericht } from "@/lib/creator/creator-chat";
+import type { CreatorChatBericht, ContextItemRef } from "@/lib/creator/creator-chat";
 import type { AfgeleideKanaal } from "@/lib/creator/derive-channel";
 import { NAV_COLOR_STYLES, type NavColor } from "@/lib/admin-nav/nav-colors";
 import { scrubPotentialPii } from "@/lib/support/pii-scrub";
@@ -140,8 +140,14 @@ function lexicalNaarTekst(waarde: unknown): string {
 }
 
 async function json<T>(res: Response): Promise<T> {
-  const data = (await res.json().catch(() => null)) as (T & { errors?: { message?: string }[] }) | null;
-  if (!res.ok) throw new Error(data?.errors?.[0]?.message || "Actie mislukt.");
+  // Fix-ronde (2026-08-14): Payload's eigen REST-API retourneert foutmeldingen
+  // als {errors:[{message}]}, maar alle custom app/api/creator/*-routes
+  // retourneren {error: string} (enkelvoud) — zonder deze tweede check werd
+  // elke echte foutmelding van een custom route stilzwijgend vervangen door
+  // de generieke fallback "Actie mislukt.", zowel voor de gebruiker als in
+  // toekomstige debugging.
+  const data = (await res.json().catch(() => null)) as (T & { errors?: { message?: string }[]; error?: string }) | null;
+  if (!res.ok) throw new Error(data?.errors?.[0]?.message || data?.error || "Actie mislukt.");
   return data as T;
 }
 
@@ -438,6 +444,11 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
   const [chatInvoer, setChatInvoer] = useState("");
   const [chatBezig, setChatBezig] = useState(false);
   const [gebruikteKennis, setGebruikteKennis] = useState<ContextItem[]>([]);
+  // Fix-ronde (2026-08-14) — expliciet door de gebruiker verwijderde
+  // "Gebruikte kennis"-bronnen (het ×-knopje); blijft geldig voor de rest van
+  // dit gesprek, meegestuurd als uitgeslotenRefs zodat de bron nooit meer
+  // terugkomt in context of antwoord (zie lib/creator/creator-chat.ts).
+  const [uitgeslotenKennis, setUitgeslotenKennis] = useState<ContextItemRef[]>([]);
 
   const [kennisZoekterm, setKennisZoekterm] = useState("");
   const [kennisResultaten, setKennisResultaten] = useState<KennisbronOptie[] | null>(null);
@@ -447,16 +458,29 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
   const [varianten, setVarianten] = useState<VariantOptie[]>([]);
   const [gekozenVariant, setGekozenVariant] = useState<string>("");
   const [variantBezig, setVariantBezig] = useState(false);
+  // Fix-ronde (2026-08-14) — vervangt window.open() na meerdere sequentiële
+  // awaits (bekend popup-blocker-risico: browsers kunnen dit als "geen
+  // user-gesture meer" beschouwen); een inline link is functioneel
+  // gelijkwaardig en heeft geen enkel nadeel.
+  const [variantResultaat, setVariantResultaat] = useState<{ id: number; naam: string } | null>(null);
 
   const [kanaalBezig, setKanaalBezig] = useState<AfgeleideKanaal | null>(null);
+  const [kanaalResultaten, setKanaalResultaten] = useState<Partial<Record<AfgeleideKanaal, number>>>({});
 
   const laadArtikel = useCallback(async () => {
     try {
       const res = await fetch(`/api/articles/${artikelId}?depth=0`, { credentials: "include" });
       const doc = await json<ArtikelDoc>(res);
       setArtikel(doc);
-      const eersteTekstBlok = doc.sections?.[0]?.blocks?.find((b) => b.blockType === "tekst");
-      setDocumentTekst(eersteTekstBlok ? lexicalNaarTekst(eersteTekstBlok.body) : "");
+      // Fix-ronde (2026-08-14) — bevestigde root cause van "document
+      // verdwijnt bij opslaan/AI-kennis-toggle": hier stond .find() (alleen
+      // het EERSTE tekst-blok), terwijl slaDocumentOp() hieronder alle
+      // tekst-blokken van sectie 1 in één keer vervangt. Bij een artikel met
+      // meerdere tekst-blokken in sectie 1 toonde de editor dus alleen het
+      // eerste stuk, en verving een volgende "Opslaan" de rest stilzwijgend.
+      // Alle tekst-blokken van sectie 1 samenvoegen voorkomt dit definitief.
+      const tekstBlokken = doc.sections?.[0]?.blocks?.filter((b) => b.blockType === "tekst") ?? [];
+      setDocumentTekst(tekstBlokken.map((b) => lexicalNaarTekst(b.body)).join("\n\n"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Artikel laden mislukt.");
     }
@@ -527,10 +551,17 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
           berichten: nieuweBerichten,
           knowledgeType: artikel.knowledgeType,
           gepindeKnowledgeSourceIds: gepindeKennis.map((k) => k.id),
+          uitgeslotenRefs: uitgeslotenKennis,
         }),
       });
-      const data = await json<{ antwoord: string; gebruikteKennis: ContextItem[] }>(res);
-      setBerichten([...nieuweBerichten, { role: "assistant", content: data.antwoord }]);
+      // Fix-ronde (2026-08-14) — creatorChat() geeft nu gescheiden
+      // assistantMessage/documentContent terug i.p.v. één ongestructureerd
+      // "antwoord" (zie lib/creator/creator-chat.ts): de chatbubbel toont
+      // alleen assistantMessage, het document wordt UITSLUITEND bijgewerkt
+      // als de AI expliciet nieuwe documentinhoud teruggeeft (niet null).
+      const data = await json<{ assistantMessage: string; documentContent: string | null; gebruikteKennis: ContextItem[] }>(res);
+      setBerichten([...nieuweBerichten, { role: "assistant", content: data.assistantMessage }]);
+      if (data.documentContent !== null) setDocumentTekst(data.documentContent);
       setGebruikteKennis(data.gebruikteKennis);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "AI-gesprek mislukt.");
@@ -538,6 +569,18 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
     } finally {
       setChatBezig(false);
     }
+  }
+
+  /**
+   * Fix-ronde (2026-08-14) — "Gebruikte kennis" (automatisch opgehaald) kon
+   * niet verwijderd worden, in tegenstelling tot handmatig gepinde kennis
+   * (verwijderGepindeKennis hieronder, al bestaand/werkend). Verwijdert de
+   * bron direct uit de weergave EN onthoudt 'm als uitgesloten voor de rest
+   * van dit gesprek — het onderliggende kennisitem zelf blijft ongewijzigd.
+   */
+  function verwijderGebruikteKennis(item: ContextItem) {
+    setUitgeslotenKennis((huidig) => [...huidig, { refCollection: item.refCollection, refId: item.refId }]);
+    setGebruikteKennis((huidig) => huidig.filter((k) => !(k.refCollection === item.refCollection && k.refId === item.refId)));
   }
 
   async function zoekKennis() {
@@ -612,7 +655,7 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
       });
       const overrideData = await json<{ doc: { id: number } }>(overrideRes);
       toast.success(`${variant.name}-versie aangemaakt (concept).`);
-      window.open(`/admin/collections/variant-overrides/${overrideData.doc.id}`, "_blank");
+      setVariantResultaat({ id: overrideData.doc.id, naam: variant.name });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Variant-versie maken mislukt.");
     } finally {
@@ -646,8 +689,8 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
         }),
       });
       const derivedData = await json<{ doc: { id: number } }>(derivedRes);
-      toast.success(`${channel} aangemaakt (concept).`);
-      window.open(`/admin/collections/derived-content/${derivedData.doc.id}`, "_blank");
+      toast.success(`${KANAAL_META[channel].label} aangemaakt (concept).`);
+      setKanaalResultaten((huidig) => ({ ...huidig, [channel]: derivedData.doc.id }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Afgeleide content maken mislukt.");
     } finally {
@@ -696,7 +739,12 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
           ) : (
             <ul>
               {gebruikteKennis.map((k) => (
-                <li key={`${k.refCollection}-${k.refId}`}>{k.title}</li>
+                <li key={`${k.refCollection}-${k.refId}`}>
+                  <span>{k.title}</span>
+                  <button type="button" onClick={() => verwijderGebruikteKennis(k)} aria-label={`${k.title} niet meer gebruiken`}>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </li>
               ))}
             </ul>
           )}
@@ -817,6 +865,13 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
           <Button buttonStyle="secondary" size="small" disabled={!gekozenVariant || variantBezig} onClick={maakVariantVersie}>
             {variantBezig ? "Bezig..." : "Maak variant-versie"}
           </Button>
+          {variantResultaat && (
+            <p className="ml-creator__resultaat-link">
+              <a href={`/admin/collections/variant-overrides/${variantResultaat.id}`} target="_blank" rel="noreferrer">
+                {variantResultaat.naam}-versie openen <ExternalLink size={12} aria-hidden="true" />
+              </a>
+            </p>
+          )}
         </section>
 
         <section className="ml-creator__actiekaart">
@@ -841,6 +896,19 @@ function Werkruimte({ artikelId }: { artikelId: string }) {
               );
             })}
           </div>
+          {(Object.keys(KANAAL_META) as AfgeleideKanaal[]).some((c) => kanaalResultaten[c]) && (
+            <ul className="ml-creator__resultaat-links">
+              {(Object.keys(KANAAL_META) as AfgeleideKanaal[])
+                .filter((c) => kanaalResultaten[c])
+                .map((c) => (
+                  <li key={c}>
+                    <a href={`/admin/collections/derived-content/${kanaalResultaten[c]}`} target="_blank" rel="noreferrer">
+                      {KANAAL_META[c].label} openen <ExternalLink size={12} aria-hidden="true" />
+                    </a>
+                  </li>
+                ))}
+            </ul>
+          )}
         </section>
       </div>
     </div>

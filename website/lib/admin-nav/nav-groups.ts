@@ -46,10 +46,17 @@ import type { NavColor } from "@/lib/admin-nav/nav-colors";
 // van-dashboard) lezen allemaal hieruit, zodat kleur/label/icoon/route/groep
 // maar op één plek hoeft te kloppen (Fase 1B-eis: niet dupliceren).
 //
-// Raakt bewust GEEN enkele collectie-/global-config aan (geen admin.group-
-// wijziging, geen admin.hidden) — de onderliggende Payload-nav/routes/
-// field-schema's blijven exact zoals vandaag; alleen de presentatielaag
-// verbergt de automatisch gegenereerde nav en vervangt 'm door wat hier staat.
+// Raakt bewust GEEN enkele collectie-/global-config aan (geen admin.hidden) —
+// de onderliggende Payload-routes/field-schema's blijven exact zoals vandaag;
+// alleen de presentatielaag verbergt de automatisch gegenereerde nav en
+// vervangt 'm door wat hier staat. Eén bewuste uitzondering (fix-ronde
+// 2026-08-14): de Sales-collecties/-global gebruikten admin.group: "Sales",
+// letterlijk dezelfde string als het label hieronder — Payload's <NavGroup>
+// stempelt id={`nav-group-${label}`} zonder sanitatie, dus de CSS-regel die
+// Payload's eigen (bedoelde) Sales-groep verbergt (admin-shell.css) verborg
+// via die gedeelde id ONBEDOELD ook deze custom groep. admin.group op die 5
+// bestanden is nu "Sales — systeem" (zuiver presentatie/organisatie, geen
+// schema-wijziging, geen migratie nodig) — dit label hieronder blijft "Sales".
 export type NavItemPermission = { type: "collection" | "global"; slug: string };
 
 export interface NavItem {

@@ -54,13 +54,25 @@
   --ml-admin-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
-/* --- 2. Native nav verbergen (presentatielaag, geen configuratiewijziging) --- */
+/* --- 2. Native nav verbergen (presentatielaag, geen configuratiewijziging) ---
+ * Fix-ronde (2026-08-14) — bevestigde root cause van "Sales-navigatie
+ * ontbreekt": Payload's <NavGroup> stempelt id={`nav-group-${label}`}
+ * LETTERLIJK (node_modules/@payloadcms/ui/dist/elements/NavGroup/index.js),
+ * zonder sanitatie. De Sales-collecties/-global gebruikten admin.group:
+ * "Sales" — exact dezelfde string als het label van de EIGEN, custom
+ * Sales-groep in BeheerNavLinks.tsx/nav-groups.ts. Een id-attribuutselector
+ * verbergt ALLE elementen met die id, dus deze regel verborg zowel Payload's
+ * natieve (bedoelde) Sales-groep als de custom-gerenderde groep die de
+ * gebruiker juist moest zien. Payload/collections/Sales*.ts en
+ * payload/globals/SalesInstellingen.ts gebruiken daarom nu admin.group:
+ * "Sales — systeem" (zelfde niet-botsende opzet als de bestaande "Basis —
+ * Technisch beheer") — de custom groep behoudt gewoon het label "Sales". */
 [id="nav-group-Basis"],
 [id="nav-group-Basis — Technisch beheer"],
 [id="nav-group-Varianten"],
 [id="nav-group-Kennisbasis MijnLeerlijn"],
 [id="nav-group-Beheer"],
-[id="nav-group-Sales"] {
+[id="nav-group-Sales — systeem"] {
   display: none;
 }
 
@@ -835,11 +847,40 @@ a.ml-dashboard__card:hover {
 }
 
 .ml-creator__gebruikte-kennis li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   color: var(--theme-elevation-600);
   padding: 7px 9px;
   background: var(--theme-elevation-50);
   border-radius: var(--ml-admin-radius-sm);
+}
+
+.ml-creator__gebruikte-kennis li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ml-creator__gebruikte-kennis li button {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: var(--theme-elevation-400);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ml-creator__gebruikte-kennis li button:hover {
+  background: var(--theme-error-100);
+  color: var(--theme-error-500);
 }
 
 /* --- "+ Kennis toevoegen" (artikel-chat) — echte zoek-en-pin-actie, zie
@@ -1088,6 +1129,39 @@ a.ml-dashboard__card:hover {
 .ml-creator__kanaal-knop svg {
   flex-shrink: 0;
   color: var(--item-fg);
+}
+
+/* Fix-ronde (2026-08-14) — vervangt window.open() (popup-blocker-risico) na
+ * "Maak variant-versie"/"Maak hiervan": een inline, altijd-zichtbare link
+ * i.p.v. een nieuw tabblad dat de browser mogelijk stil blokkeert. */
+.ml-creator__resultaat-link {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.ml-creator__resultaat-link a,
+.ml-creator__resultaat-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ml-admin-accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.ml-creator__resultaat-link a:hover,
+.ml-creator__resultaat-links a:hover {
+  text-decoration: underline;
+}
+
+.ml-creator__resultaat-links {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
 }
 
 /* --- Mail schrijven — boven/links Ontvangen mail, boven/rechts Wat wil ik
