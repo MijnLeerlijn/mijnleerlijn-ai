@@ -176,6 +176,38 @@ export async function haalUpdatesVoorItem(itemId: string, limit = 50): Promise<M
   return data.items[0]?.updates ?? [];
 }
 
+/**
+ * Sales UX-ronde 3 (2026-08-14) — "Lees volledig" op het schooldetail-
+ * logboek: haalt de volledige tekst van specifieke Updates on-demand op,
+ * uitsluitend wanneer een gebruiker een logboekregel daadwerkelijk uitklapt
+ * (of "Alles uitklappen" gebruikt, dan in één gebatchte aanroep i.p.v. N
+ * losse calls). Bewust GEEN opslag hier of bij de aanroeper — dit blijft
+ * strikt on-demand, respecteert de bestaande dataminimalisatie-eis
+ * (sales-log-events bewaart nooit de volledige ruwe tekst). Root-level
+ * `updates(ids: [...])`-query — zelfde "opgebouwd uit Monday's publieke,
+ * stabiele schema, nog niet live tegen een echt account getest"-voorbehoud
+ * als haalScholenPagina/haalRecenteUpdates hierboven (zie de disclaimer
+ * bovenaan dit bestand): aanbevolen smoke-test zodra MONDAY_API_TOKEN
+ * beschikbaar is, vóór onbewaakt productiegebruik.
+ */
+export async function haalUpdatesOpIds(updateIds: string[]): Promise<MondayUpdate[]> {
+  if (updateIds.length === 0) return [];
+  const query = `
+    query HaalUpdatesOpIds($ids: [ID!]) {
+      updates(ids: $ids) {
+        id
+        item_id
+        text_body
+        created_at
+        updated_at
+        creator { id name }
+      }
+    }
+  `;
+  const data = await mondayQuery<{ updates: MondayUpdate[] }>(query, { ids: updateIds });
+  return data.updates ?? [];
+}
+
 /** Leest de actuele waarde van één kolom van één item — nodig vóór elke write-back (lib/sales/writeback.ts). */
 export async function leesKolomWaarde(itemId: string, columnId: string): Promise<MondayColumnValue | null> {
   const query = `

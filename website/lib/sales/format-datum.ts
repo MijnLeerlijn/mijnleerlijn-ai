@@ -35,6 +35,18 @@ export function formatKorteDatum(iso: string | null | undefined): string {
   return datum.toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" });
 }
 
+/**
+ * Sales UX-ronde 3 (2026-08-14) — "13 mrt 2026, 14:32", voor het logboek
+ * (expliciete opdrachtseis: datum ÉN tijd per regel, i.t.t. de rest van
+ * Sales waar alleen de datum relevant is).
+ */
+export function formatKorteDatumTijd(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const datum = new Date(iso);
+  if (Number.isNaN(datum.getTime())) return "—";
+  return `${datum.toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" })}, ${datum.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 /** Aantal hele dagen sinds `iso` (voor "geen contact gepland sinds X dagen"-teksten). */
 export function dagenSinds(iso: string | null | undefined): number | null {
   if (!iso) return null;

@@ -16,10 +16,18 @@ import { adminOnly, anyEditor } from "../access/roles";
 // dus wordt hier GEEN e-mailadres/telefoonnummer-veld verzonnen. Zie
 // lib/sales/sync.ts.
 //
-// `onderwijstype` wordt nooit automatisch geraden bij het synchroniseren —
-// alleen handmatig gezet, of via een bevestigd AI-veldvoorstel
-// (lib/sales/enrichment.ts + write-back). Leeg = geen variant-specifieke
-// context, geen aanname.
+// `onderwijstype` (bijgewerkt Sales UX-ronde 3, 2026-08-14): WEL direct
+// gesynchroniseerd wanneer Monday's "Type school"-dropdown een waarde heeft
+// die 1-op-1 matcht met een bestaande variants.educationType
+// (lib/sales/education-type-sync.ts) — root cause van de eerdere "Sync nu
+// vult Onderwijstype niet bij" was dat deze koppeling simpelweg niet
+// bestond. Een lege Monday-cel laat een al gezette waarde altijd met rust;
+// een niet-mapbaar label wordt evenmin overschreven (wel gelogd, zie
+// SyncResultaat.onderwijstypeOnbekend). Daarnaast blijft het OOK handmatig
+// zetbaar, of via een bevestigd AI-veldvoorstel (lib/sales/enrichment.ts —
+// leidt het type af uit vrije contactnotities, voor het geval de
+// Monday-dropdown zelf leeg is; slaat zichzelf al over zodra dit veld gezet
+// is). Leeg = geen variant-specifieke context, geen aanname.
 export const SalesSchools: CollectionConfig = {
   slug: "sales-schools",
   labels: { singular: "Sales-school", plural: "Sales-scholen" },
@@ -51,7 +59,7 @@ export const SalesSchools: CollectionConfig = {
       type: "relationship",
       relationTo: "variants",
       label: "Onderwijstype/variant",
-      admin: { description: "Leeg = geen variant-specifieke context. Nooit automatisch geraden bij sync — alleen handmatig of via een bevestigd AI-veldvoorstel." },
+      admin: { description: "Leeg = geen variant-specifieke context. Wordt bij sync automatisch bijgewerkt zodra Monday's 'Type school' een bekende variant matcht — anders alleen handmatig of via een bevestigd AI-veldvoorstel." },
     },
     { name: "relatiestatus", type: "text", label: "Relatiestatus (Monday)", index: true, admin: { readOnly: true, description: "Ruwe waarde uit color_mm4vvg4r. Geïndexeerd — dit is het primaire filter voor 'openstaand' in lib/sales/backfill.ts." } },
     { name: "salesfase", type: "text", label: "Salesfase (Monday)", admin: { readOnly: true, description: "Ruwe waarde uit color_mm4vkv86." } },

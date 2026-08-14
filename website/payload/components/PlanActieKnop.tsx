@@ -19,7 +19,12 @@ const ACTIE_TYPES = [
   { value: "anders", label: "Anders" },
 ];
 
-export function PlanActieKnop({ schoolId }: { schoolId: number }) {
+// Sales UX-ronde 3 (2026-08-14) — optionele onGepland-callback toegevoegd:
+// router.refresh() ververst alleen server-gerenderde data, niet het
+// client-fetched state van SalesDashboardPaneel.tsx (nieuwe "To do"-tab).
+// Bestaand gebruik (SalesVandaagView.tsx) geeft geen onGepland mee en
+// behoudt dus exact het bestaande router.refresh()-gedrag.
+export function PlanActieKnop({ schoolId, onGepland }: { schoolId: number; onGepland?: () => void }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("bellen");
@@ -40,7 +45,8 @@ export function PlanActieKnop({ schoolId }: { schoolId: number }) {
       if (res.ok) {
         setOpen(false);
         setOmschrijving("");
-        router.refresh();
+        if (onGepland) onGepland();
+        else router.refresh();
       }
     } finally {
       setBezig(false);

@@ -4,22 +4,29 @@ import { Link } from "@payloadcms/ui";
 import { getSelectedDashboardCards } from "@/lib/admin-nav/nav-groups";
 import { getDashboardSelection } from "@/lib/admin-nav/dashboard-preferences";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
-import { SalesWidgetVandaag } from "./SalesWidgetVandaag";
+import { SalesDashboardPaneel } from "./SalesDashboardPaneel";
 
 // Fase 1B (2026-08-13), 65/35-indeling toegevoegd in Sales UX V2
 // (2026-08-14): het dashboard toont voortaan twee kolommen — links "Mijn
-// dag" (de nieuwe, altijd-aanwezige Sales-widget, geen gebruikerskeuze) en
-// rechts "Mijn favorieten" (ONGEWIJZIGD het bestaande, door de beheerder
-// zelf gekozen mechanisme — zie getSelectedDashboardCards/
-// dashboard-preferences.ts — nu alleen compacter gerenderd). De
-// preference-opslag/-uitlezing zelf (Payload's payload-preferences,
-// ml-dashboard-items) is hier NIET aangeraakt: dezelfde
+// dag" (altijd-aanwezig, geen gebruikerskeuze) en rechts "Mijn favorieten"
+// (ONGEWIJZIGD het bestaande, door de beheerder zelf gekozen mechanisme —
+// zie getSelectedDashboardCards/dashboard-preferences.ts — nu alleen
+// compacter gerenderd). De preference-opslag/-uitlezing zelf (Payload's
+// payload-preferences, ml-dashboard-items) is hier NIET aangeraakt: dezelfde
 // getDashboardSelection-aanroep, dezelfde BeheerTopBar.tsx-toggle blijft
 // werken zoals vandaag.
 //
+// Sales UX-ronde 3 (2026-08-14) — "Mijn dag" is niet langer het vaste
+// "Sales vandaag"-widget (SalesWidgetVandaag.tsx + lib/sales/
+// widget-prioritering.ts, VERWIJDERD — nergens anders meer gebruikt) maar
+// SalesDashboardPaneel.tsx: 3 tabs (Vandaag/To do/Vraag), client component
+// omdat de Vraag-tab client-side interactiviteit nodig heeft die een server
+// component niet kan bieden.
+//
 // `payload` zit al standaard in de serverProps die Payload's eigen
 // DashboardView doorgeeft (node_modules/@payloadcms/next/dist/views/
-// Dashboard/index.js) — geen extra doorgeefwerk nodig.
+// Dashboard/index.js) — geen extra doorgeefwerk nodig (SalesDashboardPaneel
+// heeft 'm overigens niet nodig, die haalt zijn eigen data client-side op).
 interface BeheerDashboardUser {
   id: number | string;
   collection: string;
@@ -46,7 +53,7 @@ export async function BeheerDashboard({ permissions, user, payload }: BeheerDash
       <div className="ml-dashboard__layout">
         <div className="ml-dashboard__mijn-dag">
           <h2 className="ml-dashboard__kolom-titel">Mijn dag</h2>
-          <SalesWidgetVandaag payload={payload} />
+          <SalesDashboardPaneel />
         </div>
 
         <div className="ml-dashboard__favorieten">

@@ -9,6 +9,16 @@
 /** Board "1: Scholen (Master Data)" — het enige board dat Sales V1 synchroniseert. */
 export const SCHOLEN_BOARD_ID = "18420120365";
 
+/**
+ * Sales UX-ronde 3 (2026-08-14) — hier (i.p.v. in sync.ts) omdat dit bestand
+ * GEEN Payload/Node-afhankelijkheden heeft en dus veilig is om zowel
+ * server-side (lib/sales/sync.ts, bij het maken van de samenvatting) als
+ * client-side (SalesSchooldetailView.tsx, als trigger voor "Lees volledig")
+ * te importeren — één bron van waarheid i.p.v. de drempel op twee plekken
+ * te laten drijven.
+ */
+export const LOGBOEK_SAMENVATTING_MAX_LENGTE = 160;
+
 export const SCHOLEN_KOLOM = {
   typeSchool: "dropdown_mm4v9rvg",
   relatiestatus: "color_mm4vvg4r",

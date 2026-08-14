@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
-import { formatKorteDatum, typeLabel } from "@/lib/sales/format-datum";
+import { formatKorteDatum, formatKorteDatumTijd, typeLabel } from "@/lib/sales/format-datum";
+import { LOGBOEK_SAMENVATTING_MAX_LENGTE } from "@/lib/sales/monday-columns";
 
 // Sales-assistent V1 (2026-08-14) — schooldetail: het centrale Sales-object.
 // Query-param-gebaseerd (?id=<schoolId>), zelfde patroon als CreatorView.tsx
@@ -53,7 +54,14 @@ interface SalesLogEventDoc {
   type: string;
   source: string;
   summary: string;
-  payload?: { gemigreerd?: boolean; datumOnzeker?: boolean } | null;
+  sourceExternalId?: string | null;
+  payload?: { gemigreerd?: boolean; datumOnzeker?: boolean; tekstlengte?: number; auteur?: string | null } | null;
+}
+
+/** Sales UX-ronde 3 — resultaat van een on-demand volledige-tekst-fetch, uitsluitend in React-state, nooit lokaal opgeslagen. */
+interface VolledigeTekst {
+  tekst: string;
+  auteur: string | null;
 }
 
 const ACTIE_TYPES = ["mail", "bellen", "afspraak", "voorbereiding", "informatie_sturen", "anders"];
@@ -150,6 +158,14 @@ function SchooldetailInner() {
   const [chatBerichten, setChatBerichten] = useState<{ vraag: string; antwoord: string }[]>([]);
   const [chatBezig, setChatBezig] = useState(false);
 
+  // Sales UX-ronde 3 (2026-08-14) — "Lees volledig" op het logboek.
+  // volledigeTeksten is puur in-memory React-state (nooit lokaal opgeslagen,
+  // verdwijnt bij het verlaten van de pagina) — zie app/api/sales/school/
+  // [id]/log-events/full-text/route.ts voor de on-demand-fetch zelf.
+  const [uitgeklapt, setUitgeklapt] = useState<Set<number>>(new Set());
+  const [volledigeTeksten, setVolledigeTeksten] = useState<Map<number, VolledigeTekst>>(new Map());
+  const [uitklapBezig, setUitklapBezig] = useState<Set<number>>(new Set());
+
   const laad = useCallback(async () => {
     if (!schoolId) return;
     setLaden(true);
@@ -212,6 +228,58 @@ function SchooldetailInner() {
       setSamenvattingBijgewerkt(data.gegenereerdOp);
     }
     setSamenvattingVernieuwenBezig(false);
+  }
+
+  function isUitklapbaar(event: SalesLogEventDoc): boolean {
+    return event.source === "monday" && Boolean(event.sourceExternalId) && (event.payload?.tekstlengte ?? 0) > LOGBOEK_SAMENVATTING_MAX_LENGTE;
+  }
+
+  async function haalVolledigeTekstenOp(ids: number[]): Promise<void> {
+    if (!schoolId || ids.length === 0) return;
+    setUitklapBezig((s) => new Set([...s, ...ids]));
+    const { ok, data } = await apiPost<{ resultaten: { logEventId: number; tekst: string; auteur: string | null }[] }>(
+      `/api/sales/school/${schoolId}/log-events/full-text`,
+      { logEventIds: ids }
+    );
+    if (ok && data?.resultaten) {
+      setVolledigeTeksten((m) => {
+        const nieuw = new Map(m);
+        for (const r of data.resultaten) nieuw.set(r.logEventId, { tekst: r.tekst, auteur: r.auteur });
+        return nieuw;
+      });
+    }
+    setUitklapBezig((s) => {
+      const nieuw = new Set(s);
+      for (const id of ids) nieuw.delete(id);
+      return nieuw;
+    });
+  }
+
+  async function toggleLogboekItem(event: SalesLogEventDoc) {
+    if (uitgeklapt.has(event.id)) {
+      setUitgeklapt((s) => {
+        const nieuw = new Set(s);
+        nieuw.delete(event.id);
+        return nieuw;
+      });
+      return;
+    }
+    if (!volledigeTeksten.has(event.id)) {
+      await haalVolledigeTekstenOp([event.id]);
+    }
+    setUitgeklapt((s) => new Set(s).add(event.id));
+  }
+
+  async function allesUitklappen() {
+    const uitklapbaar = logboek.filter(isUitklapbaar);
+    const alAllemaalOpen = uitklapbaar.length > 0 && uitklapbaar.every((e) => uitgeklapt.has(e.id));
+    if (alAllemaalOpen) {
+      setUitgeklapt(new Set());
+      return;
+    }
+    const nogOpTeHalen = uitklapbaar.filter((e) => !volledigeTeksten.has(e.id)).map((e) => e.id);
+    if (nogOpTeHalen.length > 0) await haalVolledigeTekstenOp(nogOpTeHalen);
+    setUitgeklapt(new Set(uitklapbaar.map((e) => e.id)));
   }
 
   if (!schoolId) return <div className="ml-sales__leeg">Geen school geselecteerd.</div>;
@@ -375,23 +443,48 @@ function SchooldetailInner() {
       </div>
 
       <div className="ml-sales__section">
-        <h2>Logboek</h2>
+        <div className="ml-sales__section-titel">
+          <h2>Logboek</h2>
+          {logboek.some(isUitklapbaar) && (
+            <button type="button" className="ml-sales__knop" onClick={allesUitklappen} style={{ padding: "2px 8px" }}>
+              {logboek.filter(isUitklapbaar).every((e) => uitgeklapt.has(e.id)) ? "Alles inklappen" : "Alles uitklappen"}
+            </button>
+          )}
+        </div>
         {logboek.length === 0 ? (
           <div className="ml-sales__leeg">Nog geen logboekregels.</div>
         ) : (
           <div className="ml-sales__logboek">
-            {logboek.map((event) => (
-              <div className="ml-sales__logboek-item" key={event.id}>
-                <span className={`ml-sales__logboek-stip ml-sales__logboek-stip--${event.type}`} />
-                <div>
-                  <div>{event.summary}</div>
-                  <div className="ml-sales__logboek-meta">
-                    {formatKorteDatum(event.occurredAt)}
-                    {event.payload?.datumOnzeker ? " (datum onzeker — gemigreerd)" : ""} · {typeLabel(event.type)} · {event.source}
+            {logboek.map((event) => {
+              const kanUitklappen = isUitklapbaar(event);
+              const isOpen = uitgeklapt.has(event.id);
+              const volledig = volledigeTeksten.get(event.id);
+              const auteur = event.payload?.auteur ?? volledig?.auteur ?? null;
+              return (
+                <div className="ml-sales__logboek-item" key={event.id}>
+                  <span className={`ml-sales__logboek-stip ml-sales__logboek-stip--${event.type}`} />
+                  <div>
+                    <div style={{ whiteSpace: isOpen ? "pre-wrap" : undefined }}>{isOpen && volledig ? volledig.tekst : event.summary}</div>
+                    <div className="ml-sales__logboek-meta">
+                      {formatKorteDatumTijd(event.occurredAt)}
+                      {event.payload?.datumOnzeker ? " (datum onzeker — gemigreerd)" : ""} · {typeLabel(event.type)} · {event.source}
+                      {auteur ? ` · ${auteur}` : ""}
+                    </div>
+                    {kanUitklappen && (
+                      <button
+                        type="button"
+                        className="ml-sales__knop"
+                        onClick={() => toggleLogboekItem(event)}
+                        disabled={uitklapBezig.has(event.id)}
+                        style={{ marginTop: 4, padding: "2px 8px" }}
+                      >
+                        {uitklapBezig.has(event.id) ? "Bezig…" : isOpen ? "Inklappen" : "Lees volledig"}
+                      </button>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

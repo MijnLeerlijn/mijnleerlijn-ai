@@ -157,7 +157,15 @@ export const NAV_GROUPS: NavGroupDef[] = [
     label: "Sales",
     icon: Sunrise,
     items: [
-      { label: "Vandaag", href: "/admin/sales", icon: Sunrise, color: "blue", description: "Dagelijks werkscherm: vandaag te doen, AI-voorstellen, wachtend." },
+      // Sales UX-ronde 3 (2026-08-14) — label "Overzicht" i.p.v. "Vandaag":
+      // het algemene dashboard (BeheerDashboard.tsx) heeft nu zijn eigen
+      // "Vandaag"-tab (SalesDashboardPaneel.tsx) die het letterlijke
+      // "wat moet ik vandaag doen"-antwoord geeft — dit menu-item/deze pagina
+      // (nog steeds SalesVandaagView.tsx, ONGEWIJZIGD qua inhoud) is het
+      // bredere Sales-overzicht (vandaag/AI-voorstellen/aandacht
+      // nodig/binnenkort). href blijft bewust /admin/sales (veiligste optie,
+      // geen routewijziging nodig voor een naamswijziging).
+      { label: "Overzicht", href: "/admin/sales", icon: Sunrise, color: "blue", description: "Sales-overzicht: vandaag te doen, AI-voorstellen, aandacht nodig." },
       { label: "Scholen", href: "/admin/sales/scholen", icon: School, color: "teal", description: "Overzicht van alle scholen uit Monday." },
       { label: "Acties", href: "/admin/sales/acties", icon: ListTodo, color: "orange", description: "Alle geaccepteerde Sales-acties." },
       { label: "Sales Instellingen", href: "/admin/globals/sales-instellingen", icon: Settings, color: "slate", description: "Standaard follow-up-termijn en voorkeurskanaal.", permission: { type: "global", slug: "sales-instellingen" } },

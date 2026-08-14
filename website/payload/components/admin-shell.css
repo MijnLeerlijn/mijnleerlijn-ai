@@ -1614,6 +1614,17 @@ a.ml-dashboard__card:hover {
   color: var(--ml-admin-accent);
 }
 
+/* Sales UX-ronde 3 (2026-08-14) — sorteerbare kolomkoppen (SalesScholenView.tsx). */
+.ml-sales__tabel-th--sorteerbaar {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.ml-sales__tabel-th--sorteerbaar:hover {
+  color: var(--ml-admin-accent);
+}
+
 .ml-sales__schooldetail-header {
   display: flex;
   align-items: flex-start;
@@ -1865,4 +1876,50 @@ a.ml-dashboard__card:hover {
   font-size: 13px;
   font-style: italic;
   color: var(--theme-elevation-600);
+}
+
+/* Sales UX-ronde 3 (2026-08-14) — 3 tabs (Vandaag/To do/Vraag), vervangt het
+ * vaste "Sales vandaag"-kopje van het oude widget (SalesWidgetVandaag.tsx). */
+.ml-sales-widget__tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--theme-elevation-100);
+}
+
+.ml-sales-widget__tab {
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-elevation-500);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.ml-sales-widget__tab:hover {
+  color: var(--theme-text);
+}
+
+.ml-sales-widget__tab--actief {
+  color: var(--ml-admin-accent);
+  border-bottom-color: var(--ml-admin-accent);
+}
+
+.ml-sales-widget__vraag {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ml-sales-widget__schoolselector {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-200);
+  background: var(--theme-input-bg);
+  color: var(--theme-text);
+  font-size: 13px;
 }

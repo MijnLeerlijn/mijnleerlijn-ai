@@ -217,10 +217,11 @@ describe("nav-groups", () => {
     expect(botsingen, `admin.group-waarde(s) botsen met een NAV_GROUPS-label: ${JSON.stringify(botsingen)}`).toEqual([]);
   });
 
-  // Regressietest (Sales-assistent V1, 2026-08-14): "/admin/sales" (Vandaag)
-  // is een prefix van "/admin/sales/scholen"/"/admin/sales/acties" — de
-  // eerste, kortste-match-wint implementatie herkende elke Sales-subpagina
-  // onterecht als "Vandaag". Ontdekt tijdens browserverificatie.
+  // Regressietest (Sales-assistent V1, 2026-08-14; label "Vandaag" ->
+  // "Overzicht" in Sales UX-ronde 3): "/admin/sales" (Overzicht) is een
+  // prefix van "/admin/sales/scholen"/"/admin/sales/acties" — de eerste,
+  // kortste-match-wint implementatie herkende elke Sales-subpagina onterecht
+  // als het kortste item. Ontdekt tijdens browserverificatie.
   it("findNavItemByPath: een langer, exact matchend sub-item wint van een korter item waarvan het pad een prefix is", () => {
     const matchScholen = findNavItemByPath("/admin/sales/scholen");
     expect(matchScholen?.item.label).toBe("Scholen");
@@ -230,13 +231,13 @@ describe("nav-groups", () => {
     expect(matchActies?.item.label).toBe("Acties");
     expect(matchActies?.exact).toBe(true);
 
-    const matchVandaag = findNavItemByPath("/admin/sales");
-    expect(matchVandaag?.item.label).toBe("Vandaag");
-    expect(matchVandaag?.exact).toBe(true);
+    const matchOverzicht = findNavItemByPath("/admin/sales");
+    expect(matchOverzicht?.item.label).toBe("Overzicht");
+    expect(matchOverzicht?.exact).toBe(true);
   });
 
   it("findNavItemByPath: kiest bij meerdere subpad-matches (geen exacte match) de langste/meest specifieke", () => {
-    // "/admin/sales/scholen/iets-onbekends" matcht als subpad zowel Vandaag
+    // "/admin/sales/scholen/iets-onbekends" matcht als subpad zowel Overzicht
     // ("/admin/sales") als Scholen ("/admin/sales/scholen") — Scholen moet winnen.
     const match = findNavItemByPath("/admin/sales/scholen/iets-onbekends");
     expect(match?.item.label).toBe("Scholen");

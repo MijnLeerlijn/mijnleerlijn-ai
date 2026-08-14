@@ -6,6 +6,7 @@ import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { RELATIESTATUS_BADGE } from "@/lib/sales/relatiestatus-badge";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { PENDING_VOORSTEL_TYPES_VOOR_AANDACHT } from "@/lib/sales/aandacht-nodig";
+import { sorteerScholen, type SorteerKolom, type SorteerRichting } from "@/lib/sales/scholen-sortering";
 
 // Sales UX V2 (2026-08-14) — echte CRM-werklijst: combineerbare filters
 // i.p.v. de vorige single-select ("actie_nodig"/"ai_voorstel" vielen daar
@@ -89,6 +90,8 @@ export function SalesScholenView() {
   const [aandachtNodigIds, setAandachtNodigIds] = useState<Set<number>>(new Set());
   const [filters, setFilters] = useState<FilterState>(LEGE_FILTERS);
   const [laden, setLaden] = useState(true);
+  const [sorteerKolom, setSorteerKolom] = useState<SorteerKolom | null>(null);
+  const [sorteerRichting, setSorteerRichting] = useState<SorteerRichting>("oplopend");
 
   const laad = useCallback(async () => {
     setLaden(true);
@@ -164,6 +167,36 @@ export function SalesScholenView() {
     });
   }, [scholen, filters, volgendeActiePerSchool, aandachtNodigIds]);
 
+  // Sales UX-ronde 3 — sortering werkt op de AL gefilterde lijst hierboven,
+  // dus filters + sortering combineren vanzelf (bv. "Prospect + geen
+  // volgende actie" + "laatste contact oudste eerst").
+  const gesorteerd = useMemo(() => {
+    const metSorteervelden = zichtbaar.map((s) => ({
+      school: s,
+      schoolName: s.schoolName,
+      relatiestatus: s.relatiestatus ?? null,
+      onderwijstypeNaam: s.onderwijstype && typeof s.onderwijstype !== "number" ? s.onderwijstype.name : null,
+      plaats: s.plaats ?? null,
+      lastMondayActivityAt: s.lastMondayActivityAt ?? null,
+      volgendeActieDatum: volgendeActiePerSchool.get(s.id) ?? null,
+    }));
+    return sorteerScholen(metSorteervelden, sorteerKolom, sorteerRichting).map((r) => r.school);
+  }, [zichtbaar, volgendeActiePerSchool, sorteerKolom, sorteerRichting]);
+
+  function kiesSortering(kolom: SorteerKolom) {
+    if (sorteerKolom === kolom) {
+      setSorteerRichting((r) => (r === "oplopend" ? "aflopend" : "oplopend"));
+    } else {
+      setSorteerKolom(kolom);
+      setSorteerRichting("oplopend");
+    }
+  }
+
+  function sorteerIndicator(kolom: SorteerKolom): string {
+    if (sorteerKolom !== kolom) return "";
+    return sorteerRichting === "oplopend" ? " ▲" : " ▼";
+  }
+
   return (
     <div className="ml-sales">
       <div className="ml-sales__header">
@@ -235,16 +268,28 @@ export function SalesScholenView() {
           <table className="ml-sales__tabel">
             <thead>
               <tr>
-                <th>School</th>
-                <th>Relatiestatus</th>
-                <th>Onderwijstype</th>
-                <th>Plaats</th>
-                <th>Laatste contact</th>
-                <th>Volgende actie</th>
+                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("schoolName")}>
+                  School{sorteerIndicator("schoolName")}
+                </th>
+                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("relatiestatus")}>
+                  Relatiestatus{sorteerIndicator("relatiestatus")}
+                </th>
+                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("onderwijstype")}>
+                  Onderwijstype{sorteerIndicator("onderwijstype")}
+                </th>
+                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("plaats")}>
+                  Plaats{sorteerIndicator("plaats")}
+                </th>
+                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("laatsteContact")}>
+                  Laatste contact{sorteerIndicator("laatsteContact")}
+                </th>
+                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("volgendeActie")}>
+                  Volgende actie{sorteerIndicator("volgendeActie")}
+                </th>
               </tr>
             </thead>
             <tbody>
-              {zichtbaar.map((school) => (
+              {gesorteerd.map((school) => (
                 <tr key={school.id}>
                   <td>
                     <Link href={`/admin/sales/school?id=${school.id}`}>{school.schoolName}</Link>

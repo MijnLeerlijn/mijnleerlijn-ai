@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Payload } from "payload";
-import { verwerkUpdate, herevalueerScholenMetNieuweActiviteit, type SyncResultaat } from "./sync";
-import { MIGRATIE_MARKER, probeerGemigreerdeDatumTeExtraheren } from "./monday-columns";
-import type { MondayUpdate } from "./monday-client";
+import { verwerkUpdate, verwerkSchoolItem, herevalueerScholenMetNieuweActiviteit, type SyncResultaat } from "./sync";
+import { MIGRATIE_MARKER, probeerGemigreerdeDatumTeExtraheren, SCHOLEN_KOLOM } from "./monday-columns";
+import type { MondayUpdate, MondaySchoolItem } from "./monday-client";
+import type { VariantVoorTypeSchoolMapping } from "./education-type-sync";
 import { beoordeelSchool } from "./backfill";
 import { genereerEnCacheSchoolSamenvatting } from "./school-summary";
 
@@ -13,13 +14,24 @@ const mockGenereerSamenvatting = vi.mocked(genereerEnCacheSchoolSamenvatting);
 
 const mockFind = vi.fn();
 const mockCreate = vi.fn();
+const mockUpdate = vi.fn();
 
 function maakPayload() {
-  return { find: mockFind, create: mockCreate } as unknown as Payload;
+  return { find: mockFind, create: mockCreate, update: mockUpdate } as unknown as Payload;
 }
 
 function leegResultaat(): SyncResultaat {
-  return { scholenVerwerkt: 0, scholenNieuw: 0, scholenBijgewerkt: 0, updatesNieuw: 0, updatesOvergeslagen: 0, nieuweVoorstellenViaSync: 0, samenvattingenVernieuwd: 0, fouten: [] };
+  return {
+    scholenVerwerkt: 0,
+    scholenNieuw: 0,
+    scholenBijgewerkt: 0,
+    updatesNieuw: 0,
+    updatesOvergeslagen: 0,
+    nieuweVoorstellenViaSync: 0,
+    samenvattingenVernieuwd: 0,
+    onderwijstypeOnbekend: [],
+    fouten: [],
+  };
 }
 
 function maakUpdate(overrides: Partial<MondayUpdate> = {}): MondayUpdate {
@@ -81,7 +93,7 @@ describe("verwerkUpdate — idempotentie en migratiedetectie", () => {
     expect(call.data.sourceExternalId).toBe("u1");
     expect(call.data.summary).not.toContain("MijnLeerlijn.\nLeuk"); // geen letterlijke meerregelige ruwe tekst
     expect(call.data.summary.length).toBeLessThanOrEqual(161); // 160 + ellipsis
-    expect(call.data.payload).toEqual({ gemigreerd: false, datumOnzeker: false, tekstlengte: expect.any(Number) });
+    expect(call.data.payload).toEqual({ gemigreerd: false, datumOnzeker: false, tekstlengte: expect.any(Number), auteur: "Michel de Hond" });
     expect(call.data.payload.tekstlengte).toBeGreaterThan(0);
   });
 
@@ -165,6 +177,93 @@ describe("verwerkUpdate — idempotentie en migratiedetectie", () => {
     const uitkomst = await verwerkUpdate(maakPayload(), maakUpdate({ text_body: "13/March/2026 komt hier toevallig ook in voor, maar dit is geen gemigreerd bericht." }), schoolMap, resultaat);
 
     expect(uitkomst?.occurredAt).toBe("2026-08-11T06:43:57.000Z"); // = maakUpdate()'s default created_at, ongewijzigd
+  });
+});
+
+// Sales UX-ronde 3 (2026-08-14) — regressietests voor de bevestigde root
+// cause "Type school ingevuld in Monday + Sync nu, maar Onderwijstype blijft
+// leeg": verwerkSchoolItem las dropdown_mm4v9rvg nooit uit. De 5 scenario's
+// hieronder zijn letterlijk de opdrachtseis.
+describe("verwerkSchoolItem — onderwijstype-sync", () => {
+  const MONTESSORI: VariantVoorTypeSchoolMapping = { id: 1, educationType: "montessori" };
+  const ALGEMEEN: VariantVoorTypeSchoolMapping = { id: 2, educationType: "algemeen" };
+
+  function maakSchoolItem(typeSchoolTekst: string | null): MondaySchoolItem {
+    return {
+      id: "999",
+      name: "Testschool",
+      updated_at: "2026-08-14T00:00:00.000Z",
+      column_values: [
+        { id: SCHOLEN_KOLOM.relatiestatus, text: "Prospect", value: null },
+        { id: SCHOLEN_KOLOM.typeSchool, text: typeSchoolTekst, value: null },
+      ],
+    };
+  }
+
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockCreate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+  });
+
+  it("nieuw schoolitem met Type school: onderwijstype wordt direct gezet bij het aanmaken", async () => {
+    mockFind.mockResolvedValue({ docs: [] }); // nog geen bestaande sales-school
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSchoolItem("Montessori"), resultaat, [MONTESSORI]);
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ onderwijstype: 1 }) }));
+    expect(resultaat.onderwijstypeOnbekend).toEqual([]);
+  });
+
+  it("bestaand schoolitem krijgt later Type school: wordt bijgewerkt bij een volgende sync", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55 }] }); // bestaande school, nog geen onderwijstype
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSchoolItem("Montessori"), resultaat, [MONTESSORI]);
+
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ id: 55, data: expect.objectContaining({ onderwijstype: 1 }) }));
+  });
+
+  it("Type school verandert: een volgende sync werkt de al gezette waarde bij naar de nieuwe variant", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55 }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSchoolItem("Algemeen"), resultaat, [MONTESSORI, ALGEMEEN]);
+
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ id: 55, data: expect.objectContaining({ onderwijstype: 2 }) }));
+  });
+
+  it("onbekende/niet-mapbare waarde: schrijft NIETS weg (verzint geen variant) en markeert het expliciet als onbekend", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55 }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSchoolItem("Domein onderwijs"), resultaat, [MONTESSORI]);
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate.mock.calls[0]![0].data).not.toHaveProperty("onderwijstype");
+    expect(resultaat.onderwijstypeOnbekend).toEqual(["Testschool (Domein onderwijs)"]);
+  });
+
+  it("lege waarde in Monday: schrijft onderwijstype niet weg — een bestaande waarde wordt nooit stil overschreven door een lege cel", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55 }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSchoolItem(null), resultaat, [MONTESSORI]);
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate.mock.calls[0]![0].data).not.toHaveProperty("onderwijstype");
+    expect(resultaat.onderwijstypeOnbekend).toEqual([]);
+  });
+
+  it("blijft variant-geïsoleerd: matcht uitsluitend op de exacte educationType-waarde, nooit op een andere variant", async () => {
+    mockFind.mockResolvedValue({ docs: [] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSchoolItem("Algemeen"), resultaat, [MONTESSORI]);
+
+    expect(mockCreate.mock.calls[0]![0].data).not.toHaveProperty("onderwijstype");
+    expect(resultaat.onderwijstypeOnbekend).toEqual(["Testschool (Algemeen)"]);
   });
 });
 
