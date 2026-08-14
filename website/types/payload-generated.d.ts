@@ -1425,6 +1425,11 @@ export interface SalesSchool {
    * Relatiestatus ∈ {Lead, Prospect, Wacht op handtekening} — zie lib/sales/backfill.ts.
    */
   actief?: boolean | null;
+  /**
+   * AI-samenvatting van 'waar staan we' — door scrubPotentialPii gehaald vóór opslag (lib/sales/context.ts se genereerSchoolSamenvatting). Wordt opnieuw gegenereerd zodra sync nieuwe, betrouwbare Monday-activiteit vindt — nooit bij elke paginaweergave.
+   */
+  cachedSummary?: string | null;
+  cachedSummaryGeneratedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1478,6 +1483,10 @@ export interface SalesLogEvent {
   actor?: (number | null) | User;
   relatedAction?: (number | null) | SalesAction;
   relatedProposal?: (number | null) | SalesProposal;
+  /**
+   * Verwijzing naar het bestaande mail-drafts-record — de volledige mailtekst wordt hier NOOIT gedupliceerd, alleen een korte summary (bv. 'Mailconcept gemaakt · Onderwerp').
+   */
+  relatedMailDraft?: (number | null) | MailDraft;
   updatedAt: string;
   createdAt: string;
 }
@@ -2513,6 +2522,8 @@ export interface SalesSchoolsSelect<T extends boolean = true> {
   lastMondayActivityAt?: T;
   mondayVolgendeActieDatum?: T;
   actief?: T;
+  cachedSummary?: T;
+  cachedSummaryGeneratedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2531,6 +2542,7 @@ export interface SalesLogEventsSelect<T extends boolean = true> {
   actor?: T;
   relatedAction?: T;
   relatedProposal?: T;
+  relatedMailDraft?: T;
   updatedAt?: T;
   createdAt?: T;
 }

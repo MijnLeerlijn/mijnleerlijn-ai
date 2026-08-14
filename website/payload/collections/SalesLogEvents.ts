@@ -77,5 +77,12 @@ export const SalesLogEvents: CollectionConfig = {
     { name: "actor", type: "relationship", relationTo: "users", label: "Door wie", admin: { description: "Leeg bij pure Monday-sync/systeemgebeurtenissen." } },
     { name: "relatedAction", type: "relationship", relationTo: "sales-actions", label: "Gekoppelde actie" },
     { name: "relatedProposal", type: "relationship", relationTo: "sales-proposals", label: "Gekoppeld voorstel" },
+    {
+      name: "relatedMailDraft",
+      type: "relationship",
+      relationTo: "mail-drafts",
+      label: "Gekoppeld mailconcept",
+      admin: { description: "Verwijzing naar het bestaande mail-drafts-record — de volledige mailtekst wordt hier NOOIT gedupliceerd, alleen een korte summary (bv. 'Mailconcept gemaakt · Onderwerp')." },
+    },
   ],
 };

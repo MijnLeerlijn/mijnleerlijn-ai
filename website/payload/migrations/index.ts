@@ -24,6 +24,7 @@ import * as migration_20260811_080000_helpdesk_instellingen from './20260811_080
 import * as migration_20260813_090000_creator_v1_datamodel from './20260813_090000_creator_v1_datamodel';
 import * as migration_20260813_150000_mail_templates from './20260813_150000_mail_templates';
 import * as migration_20260814_090000_sales_v1_datamodel from './20260814_090000_sales_v1_datamodel';
+import * as migration_20260814_102738_sales_v2_ux_velden from './20260814_102738_sales_v2_ux_velden';
 
 export const migrations = [
   {
@@ -155,5 +156,10 @@ export const migrations = [
     up: migration_20260814_090000_sales_v1_datamodel.up,
     down: migration_20260814_090000_sales_v1_datamodel.down,
     name: '20260814_090000_sales_v1_datamodel',
+  },
+  {
+    up: migration_20260814_102738_sales_v2_ux_velden.up,
+    down: migration_20260814_102738_sales_v2_ux_velden.down,
+    name: '20260814_102738_sales_v2_ux_velden',
   },
 ];

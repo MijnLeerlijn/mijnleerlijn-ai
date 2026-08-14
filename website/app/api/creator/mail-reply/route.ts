@@ -16,9 +16,21 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = (await request.json()) as { ontvangenTekst?: string; instructie: string; templateTekst?: string; variantId?: string };
+    const body = (await request.json()) as { ontvangenTekst?: string; instructie: string; templateTekst?: string; variantId?: string; schoolId?: number };
     if (!body.instructie || !body.instructie.trim()) {
       return NextResponse.json({ error: "instructie is verplicht — vertel wat de mail moet zeggen." }, { status: 400 });
+    }
+
+    let schoolId: number | undefined;
+    if (body.schoolId !== undefined) {
+      schoolId = Number(body.schoolId);
+      if (!Number.isInteger(schoolId) || schoolId <= 0) {
+        return NextResponse.json({ error: "Ongeldig school-ID." }, { status: 400 });
+      }
+      const bestaat = await payload.findByID({ collection: "sales-schools", id: schoolId, overrideAccess: true, depth: 0 }).catch(() => null);
+      if (!bestaat) {
+        return NextResponse.json({ error: "School niet gevonden." }, { status: 404 });
+      }
     }
 
     const resultaat = await schrijfMailAntwoord(payload, {
@@ -26,6 +38,7 @@ export async function POST(request: NextRequest) {
       instructie: body.instructie,
       templateTekst: body.templateTekst || undefined,
       variantId: body.variantId || undefined,
+      schoolId,
     });
     return NextResponse.json(resultaat);
   } catch (error) {

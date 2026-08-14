@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Payload } from "payload";
-import { bouwSchoolContext, bouwSchoolPrompt } from "./context";
+import { bouwSchoolContext, bouwSchoolPrompt, bouwSchoolMailContext } from "./context";
 import { searchKnowledgePhased } from "@/lib/embeddings/similarity-search";
 import { buildContext } from "@/lib/assistant/build-context";
 import { haalAchtergrondKennisbasisVoorVariant } from "@/lib/assistant/kennisbasis-context";
@@ -126,5 +126,61 @@ describe("bouwSchoolPrompt — prompt-injectie-scheiding", () => {
 
     expect(contextBericht).toContain("School A");
     expect(contextBericht).not.toMatch(/School B/);
+  });
+});
+
+// Sales UX V2 (2026-08-14) — schoolcontext voor de Creator-mailflow.
+describe("bouwSchoolMailContext", () => {
+  beforeEach(() => {
+    mockFindByID.mockReset();
+    mockFind.mockReset();
+    mockSearch.mockReset().mockResolvedValue(LEGE_ZOEKRESULTAAT);
+    mockBuildContext.mockReset().mockResolvedValue([]);
+    mockKennisbasis.mockReset().mockResolvedValue(null);
+  });
+
+  it("doet GEEN eigen MijnLeerlijn-kennis-zoekopdracht — mail-reply.ts doet die zelf, op basis van de mailinstructie", async () => {
+    mockFindByID.mockResolvedValue({ id: 42, schoolName: "School A", relatiestatus: "Prospect", salesfase: "Demo gepland", plaats: "Oss", onderwijstype: null });
+    mockFind.mockResolvedValue({ docs: [] });
+
+    await bouwSchoolMailContext(maakPayload(), 42);
+
+    expect(mockSearch).not.toHaveBeenCalled();
+  });
+
+  it("bevraagt sales-log-events met school op WHERE-niveau — zelfde schoolisolatie als bouwSchoolContext", async () => {
+    mockFindByID.mockResolvedValue({ id: 42, schoolName: "School A", relatiestatus: "Prospect", salesfase: null, plaats: null, onderwijstype: null });
+    mockFind.mockResolvedValue({ docs: [{ occurredAt: "2026-08-01T00:00:00.000Z", type: "contact", source: "monday", summary: "Notitie" }] });
+
+    const context = await bouwSchoolMailContext(maakPayload(), 42);
+
+    expect(mockFind.mock.calls[0]![0].where.school.equals).toBe(42);
+    expect(context.recenteLogEvents).toHaveLength(1);
+    expect(context.schoolNaam).toBe("School A");
+    expect(context.relatiestatus).toBe("Prospect");
+  });
+
+  it("zoekt de variantnaam apart op wanneer de school een onderwijstype heeft", async () => {
+    mockFindByID.mockImplementation(({ collection, id }: { collection: string; id: unknown }) => {
+      if (collection === "sales-schools") return Promise.resolve({ id: 42, schoolName: "School A", relatiestatus: null, salesfase: null, plaats: null, onderwijstype: 9 });
+      if (collection === "variants" && id === "9") return Promise.resolve({ id: 9, name: "Montessori" });
+      return Promise.resolve(null);
+    });
+    mockFind.mockResolvedValue({ docs: [] });
+
+    const context = await bouwSchoolMailContext(maakPayload(), 42);
+
+    expect(context.variantId).toBe("9");
+    expect(context.variantNaam).toBe("Montessori");
+  });
+
+  it("laat variantNaam null als er geen onderwijstype gezet is — geen aanname", async () => {
+    mockFindByID.mockResolvedValue({ id: 42, schoolName: "School A", relatiestatus: null, salesfase: null, plaats: null, onderwijstype: null });
+    mockFind.mockResolvedValue({ docs: [] });
+
+    const context = await bouwSchoolMailContext(maakPayload(), 42);
+
+    expect(context.variantId).toBeUndefined();
+    expect(context.variantNaam).toBeNull();
   });
 });

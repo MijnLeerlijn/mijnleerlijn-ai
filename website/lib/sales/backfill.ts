@@ -3,6 +3,7 @@ import type { Payload } from "payload";
 import { generateStructuredOutput } from "@/services/ai-client";
 import { haalUpdatesVoorItem } from "./monday-client";
 import { isGemigreerdeUpdate } from "./monday-columns";
+import { vindActieveScholenZonderVervolgactie } from "./aandacht-nodig";
 
 // Sales-assistent V1 (2026-08-14) — initiële analyse/backfill. "Openstaand"
 // wordt NIET hier opnieuw bepaald maar rechtstreeks gelezen uit
@@ -176,7 +177,13 @@ async function genereerVolgendeActieVoorstel(
   return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "ai_voorstel_klaar", proposalId: nieuwVoorstel.id as number };
 }
 
-async function beoordeelSchool(
+/**
+ * Sales UX V2 (2026-08-14) — geëxporteerd (was module-privé) zodat
+ * lib/sales/sync.ts dezelfde beoordeling per-school kan hergebruiken voor de
+ * proactieve her-evaluatie na nieuwe, echte Monday-activiteit — geen tweede
+ * implementatie van dezelfde idempotentie-/veiligheidsregels.
+ */
+export async function beoordeelSchool(
   payload: Payload,
   school: { id: number; schoolName: string; mondayItemId: string; mondayVolgendeActieDatum?: string | null }
 ): Promise<BackfillSchoolResultaat> {
@@ -233,4 +240,17 @@ export async function voerBackfillUit(payload: Payload): Promise<BackfillResulta
   }
 
   return resultaat;
+}
+
+/**
+ * Sales UX V2 (2026-08-14) — vooraf-telling voor de backfill-knop ("Laat AI
+ * vervolgacties voorstellen voor N scholen"). Puur informatief: hergebruikt
+ * dezelfde "Aandacht nodig"-set als de dashboardwidget/Vandaag, telt dus
+ * niet 1-op-1 hoeveel scholen straks daadwerkelijk een voorstel krijgen (een
+ * deel valt af als "onvoldoende_context") — bewust dezelfde, voor de
+ * gebruiker herkenbare definitie i.p.v. een tweede, subtiel andere telling.
+ */
+export async function telScholenVoorBackfill(payload: Payload): Promise<number> {
+  const scholen = await vindActieveScholenZonderVervolgactie(payload);
+  return scholen.length;
 }

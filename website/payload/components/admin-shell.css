@@ -307,6 +307,79 @@ a.ml-dashboard__card:hover {
   margin: 0;
 }
 
+/* --- Sales UX V2 (2026-08-14): 65/35-dashboardindeling. "Mijn dag" (de
+ * Sales-widget) links, "Mijn favorieten" (ongewijzigd mechanisme, alleen
+ * compacter) rechts. Zelfde breakpoint-conventie als Creator's
+ * --werkruimte hieronder. */
+.ml-dashboard__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 65fr) minmax(0, 35fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.ml-dashboard__kolom-titel {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--theme-elevation-500);
+  margin: 0 0 12px;
+}
+
+.ml-dashboard__groups-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ml-dashboard__compact-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ml-dashboard__compact-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--ml-admin-radius-sm);
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.ml-dashboard__compact-card:hover {
+  background: var(--theme-elevation-50);
+}
+
+.ml-dashboard__compact-card-icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--item-bg, var(--ml-admin-accent-soft));
+  color: var(--item-fg, var(--ml-admin-accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ml-dashboard__compact-card-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--theme-elevation-800);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1000px) {
+  .ml-dashboard__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* --- 3. Inlogpagina (BeheerLoginView.tsx) — alleen .login.template-minimal, uniek voor deze route --- */
 .login.template-minimal {
   max-width: none;
@@ -1581,4 +1654,141 @@ a.ml-dashboard__card:hover {
   font-size: 13px;
   resize: vertical;
   min-height: 40px;
+}
+
+/* --- Sales UX V2 (2026-08-14) --- */
+
+/* Centrale relatiestatus-badge (RelatiestatusBadge.tsx) — zelfde
+ * --item-fg/--item-bg-mechanisme als overal elders, kleur komt uit
+ * lib/sales/relatiestatus-badge.ts, nooit hier hardgecodeerd. */
+.ml-sales__status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--item-bg);
+  color: var(--item-fg);
+  white-space: nowrap;
+}
+
+/* Ontbrekende informatie (Scholenoverzicht-tabel) — rustig, niet alarmerend. */
+.ml-sales__ontbrekend {
+  color: var(--theme-elevation-400);
+  font-style: italic;
+}
+
+/* "Binnenkort gepland" — ingeklapt blokje onderaan Vandaag. */
+.ml-sales__section--ingeklapt .ml-sales__section-titel--klikbaar {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  font-family: inherit;
+}
+
+.ml-sales__section-titel--klikbaar h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Inline "Plan actie"-formulier (PlanActieKnop.tsx). */
+.ml-sales__plan-actie-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  margin-top: 4px;
+  border-radius: var(--ml-admin-radius-sm);
+  background: var(--theme-elevation-50);
+}
+
+.ml-sales__plan-actie-form select,
+.ml-sales__plan-actie-form input {
+  padding: 6px 8px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-200);
+  font-size: 12px;
+}
+
+/* --- Dashboardwidget (SalesWidgetVandaag.tsx) --- */
+.ml-sales-widget {
+  border: 1px solid var(--theme-elevation-150);
+  border-radius: var(--ml-admin-radius);
+  background: var(--theme-input-bg);
+  padding: 18px 20px;
+  box-shadow: var(--ml-admin-shadow);
+}
+
+.ml-sales-widget__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ml-sales-widget__header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ml-sales-widget__alles-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ml-admin-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ml-sales-widget__alles-link:hover {
+  color: var(--ml-admin-accent-hover);
+}
+
+.ml-sales-widget__lijst {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ml-sales-widget__item {
+  padding: 12px 14px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-100);
+  background: var(--theme-elevation-0);
+}
+
+.ml-sales-widget__item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ml-sales-widget__schoolnaam {
+  font-weight: 700;
+  color: var(--theme-text);
+  text-decoration: none;
+}
+
+.ml-sales-widget__schoolnaam:hover {
+  color: var(--ml-admin-accent);
+}
+
+.ml-sales-widget__meta {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--theme-elevation-500);
+}
+
+.ml-sales-widget__context {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--theme-elevation-600);
 }

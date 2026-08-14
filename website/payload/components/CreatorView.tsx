@@ -32,6 +32,7 @@ import type { CreatorChatBericht } from "@/lib/creator/creator-chat";
 import type { AfgeleideKanaal } from "@/lib/creator/derive-channel";
 import { NAV_COLOR_STYLES, type NavColor } from "@/lib/admin-nav/nav-colors";
 import { scrubPotentialPii } from "@/lib/support/pii-scrub";
+import { RelatiestatusBadge } from "./RelatiestatusBadge";
 
 // Creator V1 (2026-08-13) — zie de sessie-onderzoeksfase (technisch
 // voorstel A-M) voor de volledige architectuur-onderbouwing. Eén statisch
@@ -167,9 +168,13 @@ function CreatorViewInner() {
   const artikelId = searchParams.get("artikel");
   const mailId = searchParams.get("mail");
   const templateId = searchParams.get("template");
+  // Sales UX V2 (2026-08-14) — "Schrijf mail" vanaf een Sales-kaart/schooldetail
+  // linkt naar /admin/creator?mail=nieuw&school=<id>. Zelfde
+  // querystring-patroon als artikel/mail/template hierboven.
+  const schoolId = searchParams.get("school");
 
   if (artikelId) return <Werkruimte artikelId={artikelId} />;
-  if (mailId) return <MailFlow mailId={mailId} templateId={templateId ?? undefined} />;
+  if (mailId) return <MailFlow mailId={mailId} templateId={templateId ?? undefined} schoolId={schoolId ?? undefined} />;
   return <StartScreen />;
 }
 
@@ -853,10 +858,16 @@ interface MailDraftDoc {
   linkedKnowledgeDraft?: number | null;
 }
 
-function MailFlow({ mailId, templateId }: { mailId: string; templateId?: string }) {
+function MailFlow({ mailId, templateId, schoolId }: { mailId: string; templateId?: string; schoolId?: string }) {
   const router = useRouter();
   const isNieuw = mailId === "nieuw";
   const [mail, setMail] = useState<MailDraftDoc | null>(isNieuw ? { id: 0, status: "concept" } : null);
+  // Sales UX V2 (2026-08-14) — lichte schoolinfo voor de contextchip, apart
+  // van de volledige schoolcontext die schrijfMailAntwoord() server-side
+  // zelf opbouwt (lib/sales/context.ts) — hier alleen wat nodig is om te
+  // tonen, hergebruikt gewoon het bestaande, publieke sales-schools-REST-
+  // endpoint (zelfde patroon als SalesSchooldetailView.tsx).
+  const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; relatiestatus: string | null } | null>(null);
   const [ontvangenTekst, setOntvangenTekst] = useState("");
   const [instructie, setInstructie] = useState("");
   const [mailTekst, setMailTekst] = useState("");
@@ -935,6 +946,20 @@ function MailFlow({ mailId, templateId }: { mailId: string; templateId?: string 
     })();
   }, []);
 
+  useEffect(() => {
+    if (!schoolId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/sales-schools/${schoolId}?depth=0`, { credentials: "include" });
+        const doc = await json<{ schoolName: string; relatiestatus: string | null }>(res);
+        setSchoolInfo({ schoolName: doc.schoolName, relatiestatus: doc.relatiestatus });
+      } catch {
+        // Contextchip is puur informatief — geen alarmerende toast als de school niet (meer) op te halen is.
+        setSchoolInfo(null);
+      }
+    })();
+  }, [schoolId]);
+
   async function schrijfMail() {
     if (!instructie.trim()) return;
     setBezig(true);
@@ -943,7 +968,7 @@ function MailFlow({ mailId, templateId }: { mailId: string; templateId?: string 
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ontvangenTekst: ontvangenTekst.trim() || undefined, instructie, templateTekst }),
+        body: JSON.stringify({ ontvangenTekst: ontvangenTekst.trim() || undefined, instructie, templateTekst, schoolId: schoolId ? Number(schoolId) : undefined }),
       });
       const data = await json<{ conceptAntwoord: string; gebruikteKennis: { titel: string; tekst: string }[] }>(res);
       setMailTekst(data.conceptAntwoord);
@@ -968,7 +993,19 @@ function MailFlow({ mailId, templateId }: { mailId: string; templateId?: string 
         const res = await fetch("/api/mail-drafts", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body });
         const data = await json<{ doc: { id: number } }>(res);
         toast.success("Mailconcept opgeslagen.");
-        router.push(`/admin/creator?mail=${data.doc.id}`);
+        if (schoolId) {
+          // Sales UX V2 (2026-08-14) — minimale Sales-logboekvermelding, alleen
+          // bij de EERSTE keer opslaan (niet bij latere bewerkingen van
+          // hetzelfde concept). Best-effort: het mailconcept zelf is al
+          // succesvol opgeslagen, dus geen foutmelding als alleen dit faalt.
+          fetch(`/api/sales/school/${schoolId}/log-mail-draft`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mailDraftId: data.doc.id, onderwerp: templateSubject || (ontvangenTekst || instructie).slice(0, 80) }),
+          }).catch(() => {});
+        }
+        router.push(schoolId ? `/admin/creator?mail=${data.doc.id}&school=${schoolId}` : `/admin/creator?mail=${data.doc.id}`);
       } else {
         const res = await fetch(`/api/mail-drafts/${mail.id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body });
         await json(res);
@@ -1086,6 +1123,19 @@ function MailFlow({ mailId, templateId }: { mailId: string; templateId?: string 
             </>
           ) : (
             "Nieuwe mail"
+          )}
+        </div>
+      )}
+      {schoolId && (
+        <div className="ml-creator__sjabloon-indicator">
+          <Building2 size={13} aria-hidden="true" />
+          {schoolInfo ? (
+            <>
+              Schoolcontext: {schoolInfo.schoolName}
+              <RelatiestatusBadge relatiestatus={schoolInfo.relatiestatus} />
+            </>
+          ) : (
+            "Schoolcontext laden…"
           )}
         </div>
       )}

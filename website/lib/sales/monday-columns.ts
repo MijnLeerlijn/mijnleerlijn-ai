@@ -65,3 +65,60 @@ export const MIGRATIE_MARKER = "📜 Gemigreerde CRM-gegevens";
 export function isGemigreerdeUpdate(tekst: string): boolean {
   return tekst.trimStart().startsWith(MIGRATIE_MARKER);
 }
+
+/**
+ * Sales UX V2 (2026-08-14) — root cause van "verkeerde datum in het
+ * logboek": voor een gemigreerde Update is `update.created_at` (Monday's
+ * eigen tijdstempel) de MIGRATIEDATUM, niet de echte historische
+ * contactdatum. Die echte datum staat als platte tekst ergens vooraan in
+ * `text_body` zelf. Deze functie probeert 'm te herkennen — CONSERVATIEF:
+ * precies één patroon, gebaseerd op precies één live-bevestigd voorbeeld
+ * ("13/March/2026", zie de sessiegeschiedenis). Bewust NIET uitgebreid met
+ * ongeverifieerde varianten (NL-maandnamen, DD-MM-JJJJ, "Laatste contact:
+ * ..."-labels e.d.) — bij twijfel/geen match: null, nooit gokken. Zie het
+ * opleverrapport voor de aanbeveling om dit patroon te herzien zodra er meer
+ * echte voorbeelden beschikbaar zijn.
+ *
+ * Verandert NIETS aan `isGemigreerdeUpdate`/de `gemigreerd`-vlag: een
+ * gemigreerde Update blijft altijd uitgesloten van "recente/betrouwbare
+ * activiteit" (lib/sales/sync.ts, lib/sales/backfill.ts), ook als de datum
+ * hier wél herkend wordt — een herkende datum maakt de INHOUD niet actueel.
+ */
+const ENGELSE_MAANDEN: Record<string, number> = {
+  january: 0,
+  february: 1,
+  march: 2,
+  april: 3,
+  may: 4,
+  june: 5,
+  july: 6,
+  august: 7,
+  september: 8,
+  october: 9,
+  november: 10,
+  december: 11,
+};
+
+const GEMIGREERDE_DATUM_PATROON = /\b(\d{1,2})\/([A-Za-z]+)\/(\d{4})\b/;
+const ZOEKVENSTER_LENGTE = 300;
+
+export function probeerGemigreerdeDatumTeExtraheren(tekst: string): string | null {
+  const match = GEMIGREERDE_DATUM_PATROON.exec(tekst.slice(0, ZOEKVENSTER_LENGTE));
+  if (!match) return null;
+
+  const [, dagTekst, maandNaam, jaarTekst] = match as unknown as [string, string, string, string];
+  const maand = ENGELSE_MAANDEN[maandNaam.toLowerCase()];
+  if (maand === undefined) return null;
+
+  const dag = Number(dagTekst);
+  const jaar = Number(jaarTekst);
+  if (!Number.isInteger(dag) || dag < 1 || dag > 31) return null;
+  if (!Number.isInteger(jaar) || jaar < 2000 || jaar > 2100) return null;
+
+  const datum = new Date(Date.UTC(jaar, maand, dag));
+  // Ongeldige kalenderdatum (bv. 31 februari) rolt in JS door naar de
+  // volgende maand i.p.v. te falen — expliciet terugvalideren, nooit gokken.
+  if (datum.getUTCFullYear() !== jaar || datum.getUTCMonth() !== maand || datum.getUTCDate() !== dag) return null;
+
+  return datum.toISOString();
+}

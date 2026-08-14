@@ -70,5 +70,21 @@ export const SalesSchools: CollectionConfig = {
       label: "Actief (openstaand)",
       admin: { description: "Relatiestatus ∈ {Lead, Prospect, Wacht op handtekening} — zie lib/sales/backfill.ts." },
     },
+    {
+      name: "cachedSummary",
+      type: "textarea",
+      label: "Samenvatting (gecached)",
+      admin: {
+        readOnly: true,
+        description:
+          "AI-samenvatting van 'waar staan we' — door scrubPotentialPii gehaald vóór opslag (lib/sales/context.ts se genereerSchoolSamenvatting). Wordt opnieuw gegenereerd zodra sync nieuwe, betrouwbare Monday-activiteit vindt — nooit bij elke paginaweergave.",
+      },
+    },
+    {
+      name: "cachedSummaryGeneratedAt",
+      type: "date",
+      label: "Samenvatting gegenereerd op",
+      admin: { readOnly: true },
+    },
   ],
 };

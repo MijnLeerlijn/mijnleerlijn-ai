@@ -2,6 +2,9 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { RelatiestatusBadge } from "./RelatiestatusBadge";
+import { formatKorteDatum, typeLabel } from "@/lib/sales/format-datum";
 
 // Sales-assistent V1 (2026-08-14) — schooldetail: het centrale Sales-object.
 // Query-param-gebaseerd (?id=<schoolId>), zelfde patroon als CreatorView.tsx
@@ -22,6 +25,8 @@ interface SalesSchoolDoc {
   mondayBoardId: string;
   lastMondayActivityAt?: string | null;
   mondayVolgendeActieDatum?: string | null;
+  cachedSummary?: string | null;
+  cachedSummaryGeneratedAt?: string | null;
 }
 interface SalesActionDoc {
   id: number;
@@ -48,6 +53,7 @@ interface SalesLogEventDoc {
   type: string;
   source: string;
   summary: string;
+  payload?: { gemigreerd?: boolean; datumOnzeker?: boolean } | null;
 }
 
 const ACTIE_TYPES = ["mail", "bellen", "afspraak", "voorbereiding", "informatie_sturen", "anders"];
@@ -138,6 +144,8 @@ function SchooldetailInner() {
   const [aanpasVoorstelId, setAanpasVoorstelId] = useState<number | null>(null);
 
   const [samenvatting, setSamenvatting] = useState<string | null>(null);
+  const [samenvattingBijgewerkt, setSamenvattingBijgewerkt] = useState<string | null>(null);
+  const [samenvattingVernieuwenBezig, setSamenvattingVernieuwenBezig] = useState(false);
   const [chatVraag, setChatVraag] = useState("");
   const [chatBerichten, setChatBerichten] = useState<{ vraag: string; antwoord: string }[]>([]);
   const [chatBezig, setChatBezig] = useState(false);
@@ -152,6 +160,8 @@ function SchooldetailInner() {
       apiGet<SalesLogEventDoc>(`/api/sales-log-events?where[school][equals]=${schoolId}&sort=-occurredAt&limit=50`),
     ]);
     setSchool(schoolDoc);
+    setSamenvatting(schoolDoc?.cachedSummary ?? null);
+    setSamenvattingBijgewerkt(schoolDoc?.cachedSummaryGeneratedAt ?? null);
     setOpenActie(acties[0] ?? null);
     setVoorstellen(proposals);
     setLogboek(logEvents);
@@ -188,14 +198,20 @@ function SchooldetailInner() {
     setChatBezig(false);
   }
 
-  async function genereerSamenvatting() {
-    setSamenvatting(null);
-    setChatBezig(true);
-    const { ok, data } = await apiPost<{ antwoord: string }>(`/api/sales/school/${schoolId}/chat`, {
-      vraag: "Geef in maximaal 4 zinnen een samenvatting van waar we nu staan met deze school, gebaseerd op de beschikbare context.",
-    });
-    if (ok && data) setSamenvatting(data.antwoord);
-    setChatBezig(false);
+  // Sales UX V2 (2026-08-14) — de samenvatting komt voortaan uit de cache
+  // (sales-schools.cachedSummary, automatisch bijgewerkt door lib/sales/
+  // sync.ts na nieuwe, betrouwbare Monday-activiteit — zie laad()
+  // hierboven). Deze knop is uitsluitend de expliciete, handmatige
+  // uitzondering daarop.
+  async function vernieuwSamenvatting() {
+    if (!schoolId) return;
+    setSamenvattingVernieuwenBezig(true);
+    const { ok, data } = await apiPost<{ samenvatting: string; gegenereerdOp: string }>(`/api/sales/school/${schoolId}/summary`);
+    if (ok && data) {
+      setSamenvatting(data.samenvatting);
+      setSamenvattingBijgewerkt(data.gegenereerdOp);
+    }
+    setSamenvattingVernieuwenBezig(false);
   }
 
   if (!schoolId) return <div className="ml-sales__leeg">Geen school geselecteerd.</div>;
@@ -211,16 +227,24 @@ function SchooldetailInner() {
         <div>
           <h1>{school.schoolName}</h1>
           <div className="ml-sales__schooldetail-meta">
-            {school.plaats && <span className="ml-sales__badge">{school.plaats}</span>}
-            {school.relatiestatus && <span className="ml-sales__badge">{school.relatiestatus}</span>}
-            {school.salesfase && <span className="ml-sales__badge">{school.salesfase}</span>}
+            <RelatiestatusBadge relatiestatus={school.relatiestatus} />
             {onderwijstypeNaam && <span className="ml-sales__badge">{onderwijstypeNaam}</span>}
+            {school.plaats && <span className="ml-sales__badge">{school.plaats}</span>}
+            {school.salesfase && <span className="ml-sales__badge">{school.salesfase}</span>}
             {school.contactpersoonNaam && <span className="ml-sales__badge">Contact: {school.contactpersoonNaam}</span>}
           </div>
+          <p className="ml-sales__kaart-tekst">
+            Laatste contact: {formatKorteDatum(school.lastMondayActivityAt)} · Volgende actie: {openActie ? formatKorteDatum(openActie.dueDate) : formatKorteDatum(school.mondayVolgendeActieDatum)}
+          </p>
         </div>
-        <a href={mondayUrl} target="_blank" rel="noreferrer" className="ml-sales__knop">
-          Open in Monday
-        </a>
+        <div className="ml-sales__actie-knoppen">
+          <Link href={`/admin/creator?mail=nieuw&school=${school.id}`} className="ml-sales__knop">
+            Schrijf mail
+          </Link>
+          <a href={mondayUrl} target="_blank" rel="noreferrer" className="ml-sales__knop">
+            Open in Monday
+          </a>
+        </div>
       </div>
 
       <div className="ml-sales__kaarten-rij">
@@ -229,22 +253,31 @@ function SchooldetailInner() {
             <strong>Waar staan we?</strong>
           </div>
           {samenvatting ? (
-            <p className="ml-sales__kaart-tekst">{samenvatting}</p>
+            <>
+              <p className="ml-sales__kaart-tekst">{samenvatting}</p>
+              <p className="ml-sales__logboek-meta">
+                {samenvattingBijgewerkt ? `Bijgewerkt op ${formatKorteDatum(samenvattingBijgewerkt)}` : ""}
+                {" · "}
+                <button type="button" className="ml-sales__knop" onClick={vernieuwSamenvatting} disabled={samenvattingVernieuwenBezig} style={{ padding: "2px 8px" }}>
+                  {samenvattingVernieuwenBezig ? "Bezig…" : "Vernieuwen"}
+                </button>
+              </p>
+            </>
           ) : (
-            <button type="button" className="ml-sales__knop" onClick={genereerSamenvatting} disabled={chatBezig}>
-              {chatBezig ? "Bezig…" : "Genereer samenvatting"}
+            <button type="button" className="ml-sales__knop" onClick={vernieuwSamenvatting} disabled={samenvattingVernieuwenBezig}>
+              {samenvattingVernieuwenBezig ? "Bezig…" : "Genereer samenvatting"}
             </button>
           )}
         </div>
 
         <div className="ml-sales__kaart">
           <div className="ml-sales__kaart-header">
-            <strong>Volgende actie</strong>
+            <strong>Volgende stap</strong>
           </div>
           {openActie ? (
             <>
               <p className="ml-sales__kaart-tekst">
-                {openActie.type} — {openActie.dueDate.slice(0, 10)}
+                {openActie.type} — {formatKorteDatum(openActie.dueDate)}
                 {openActie.channel ? ` · ${openActie.channel}` : ""}
               </p>
               <p className="ml-sales__kaart-tekst">{openActie.description}</p>
@@ -264,8 +297,8 @@ function SchooldetailInner() {
             <strong>Schoolcontext</strong>
           </div>
           <p className="ml-sales__kaart-tekst">Onderwijstype: {onderwijstypeNaam ?? "onbekend"}</p>
-          <p className="ml-sales__kaart-tekst">Laatste Monday-activiteit: {school.lastMondayActivityAt ? school.lastMondayActivityAt.slice(0, 10) : "onbekend"}</p>
-          <p className="ml-sales__kaart-tekst">Volgende actie in Monday: {school.mondayVolgendeActieDatum ? school.mondayVolgendeActieDatum.slice(0, 10) : "geen"}</p>
+          <p className="ml-sales__kaart-tekst">Laatste Monday-activiteit: {formatKorteDatum(school.lastMondayActivityAt)}</p>
+          <p className="ml-sales__kaart-tekst">Volgende actie in Monday: {school.mondayVolgendeActieDatum ? formatKorteDatum(school.mondayVolgendeActieDatum) : "geen"}</p>
         </div>
       </div>
 
@@ -353,7 +386,8 @@ function SchooldetailInner() {
                 <div>
                   <div>{event.summary}</div>
                   <div className="ml-sales__logboek-meta">
-                    {event.occurredAt.slice(0, 10)} · {event.type} · {event.source}
+                    {formatKorteDatum(event.occurredAt)}
+                    {event.payload?.datumOnzeker ? " (datum onzeker — gemigreerd)" : ""} · {typeLabel(event.type)} · {event.source}
                   </div>
                 </div>
               </div>

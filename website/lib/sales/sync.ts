@@ -1,7 +1,9 @@
 import type { Payload } from "payload";
 import { haalScholenPagina, haalRecenteUpdates, type MondaySchoolItem, type MondayUpdate } from "./monday-client";
-import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM, isOpenstaandeRelatiestatus, isGemigreerdeUpdate } from "./monday-columns";
+import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM, isOpenstaandeRelatiestatus, isGemigreerdeUpdate, probeerGemigreerdeDatumTeExtraheren } from "./monday-columns";
 import { scrubPotentialPii } from "@/lib/support/pii-scrub";
+import { beoordeelSchool } from "./backfill";
+import { genereerEnCacheSchoolSamenvatting } from "./school-summary";
 
 // Sales-assistent V1 (2026-08-14) — synchroniseert board "1: Scholen (Master
 // Data)" naar sales-schools + sales-log-events. Monday blijft bron van
@@ -41,6 +43,17 @@ export interface SyncResultaat {
   scholenBijgewerkt: number;
   updatesNieuw: number;
   updatesOvergeslagen: number;
+  /**
+   * Sales UX V2: scholen met nieuwe, betrouwbare activiteit die na
+   * herevaluatie een (nieuw of — bij een school met al een pending
+   * voorstel — ongewijzigd bestaand) AI-voorstel klaar hebben staan. Geen
+   * scherp "N gloednieuwe voorstellen"-getal (beoordeelSchool's eigen
+   * idempotentie bepaalt per school of er iets nieuws ontstaat), wél een
+   * betrouwbare bovengrens/indicatie voor het sync-rapport.
+   */
+  nieuweVoorstellenViaSync: number;
+  /** Sales UX V2: scholen waarvoor de gecachte "Waar staan we?"-samenvatting is vernieuwd. */
+  samenvattingenVernieuwd: number;
   fouten: string[];
 }
 
@@ -121,21 +134,37 @@ export async function verwerkUpdate(
   }
 
   const gemigreerd = isGemigreerdeUpdate(update.text_body);
+  // Sales UX V2 (2026-08-14) — root cause "verkeerde datum in het logboek":
+  // voor een gemigreerde Update is update.created_at de MIGRATIEdatum, niet
+  // de echte historische contactdatum (die staat als platte tekst vooraan in
+  // text_body). Alleen bij een betrouwbaar herkend patroon corrigeren (zie
+  // monday-columns.ts) — bij twijfel/geen match blijft het bestaande gedrag
+  // (migratiedatum) ongewijzigd. Verandert NIETS aan `gemigreerd` zelf: ook
+  // met een correct herkende datum telt dit nooit als actuele activiteit
+  // (zie hieronder, `laatsteEchteActiviteit` blijft uitsluitend niet-
+  // gemigreerde Updates volgen).
+  const herkendeDatum = gemigreerd ? probeerGemigreerdeDatumTeExtraheren(update.text_body) : null;
+  const occurredAt = gemigreerd ? (herkendeDatum ?? update.created_at) : update.created_at;
+  // datumOnzeker: alleen bij een gemigreerde Update zonder herkend patroon —
+  // occurredAt valt dan terug op de migratiedatum, niet de echte
+  // contactdatum. De UI (SalesSchooldetailView) toont dit expliciet i.p.v.
+  // een datum te suggereren die er niet betrouwbaar is.
+  const datumOnzeker = gemigreerd && !herkendeDatum;
   await payload.create({
     collection: "sales-log-events",
     data: {
       school: schoolId,
-      occurredAt: update.created_at,
+      occurredAt,
       type: "contact",
       source: "monday",
       sourceExternalId: update.id,
       summary: maakSamenvatting(update.text_body),
-      payload: { gemigreerd, tekstlengte: update.text_body.length },
+      payload: { gemigreerd, datumOnzeker, tekstlengte: update.text_body.length },
     },
     overrideAccess: true,
   });
   resultaat.updatesNieuw++;
-  return { occurredAt: update.created_at, gemigreerd, schoolId };
+  return { occurredAt, gemigreerd, schoolId };
 }
 
 async function synchroniseerUpdates(payload: Payload, resultaat: SyncResultaat, vanaf: Date): Promise<void> {
@@ -174,6 +203,55 @@ async function synchroniseerUpdates(payload: Payload, resultaat: SyncResultaat, 
       await payload.update({ collection: "sales-schools", id: schoolId, data: { lastMondayActivityAt: occurredAt }, overrideAccess: true });
     }
   }
+
+  await herevalueerScholenMetNieuweActiviteit(payload, scholen.docs, laatsteEchteActiviteit, resultaat);
+}
+
+/**
+ * Sales UX V2 (2026-08-14) — proactieve AI-herevaluatie (opdrachtseis: geen
+ * per-school AI-knop nodig, wél altijd na relevante nieuwe sync-activiteit).
+ * Draait UITSLUITEND voor scholen die deze sync-run echt nieuwe (niet-
+ * gemigreerde) activiteit kregen — nooit voor alle scholen, nooit bij een
+ * paginaweergave. Alleen voor actieve scholen (Lead/Prospect/Wacht op
+ * handtekening) — Klant/Gestopt/Inactief krijgen hier geen automatische
+ * AI-beoordeling.
+ *
+ * Hergebruikt beoordeelSchool() (lib/sales/backfill.ts) ongewijzigd: die
+ * functie bewaakt zelf al "maximaal één pending voorstel per situatie"
+ * (skipt als er al een open actie of pending volgende_actie/
+ * bestaande_vervolgdatum-voorstel bestaat) en maakt nooit een geaccepteerde
+ * actie aan — dezelfde garanties als bij handmatige backfill, hier alleen
+ * per-school en event-gedreven i.p.v. in bulk.
+ */
+export async function herevalueerScholenMetNieuweActiviteit(
+  payload: Payload,
+  scholenDocs: unknown[],
+  laatsteEchteActiviteit: Map<number, string>,
+  resultaat: SyncResultaat
+): Promise<void> {
+  type SchoolVoorHerevaluatie = { id: number; schoolName: string; mondayItemId: string; mondayVolgendeActieDatum?: string | null; actief?: boolean };
+  const scholen = scholenDocs as SchoolVoorHerevaluatie[];
+
+  for (const schoolId of laatsteEchteActiviteit.keys()) {
+    const school = scholen.find((s) => s.id === schoolId);
+    if (!school || !school.actief) continue; // Klant/Gestopt/Inactief: geen automatische AI-beoordeling.
+
+    try {
+      const uitkomst = await beoordeelSchool(payload, school);
+      if (uitkomst.uitkomst === "ai_voorstel_klaar" && uitkomst.proposalId) {
+        resultaat.nieuweVoorstellenViaSync++;
+      }
+    } catch (error) {
+      resultaat.fouten.push(`AI-herevaluatie school ${schoolId} (${school.schoolName}): ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    try {
+      await genereerEnCacheSchoolSamenvatting(payload, schoolId);
+      resultaat.samenvattingenVernieuwd++;
+    } catch (error) {
+      resultaat.fouten.push(`Samenvatting vernieuwen school ${schoolId} (${school.schoolName}): ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 }
 
 /**
@@ -184,7 +262,16 @@ async function synchroniseerUpdates(payload: Payload, resultaat: SyncResultaat, 
  * sourceExternalId.
  */
 export async function synchroniseerScholenBoard(payload: Payload, updatesLookbackDagen = 365): Promise<SyncResultaat> {
-  const resultaat: SyncResultaat = { scholenVerwerkt: 0, scholenNieuw: 0, scholenBijgewerkt: 0, updatesNieuw: 0, updatesOvergeslagen: 0, fouten: [] };
+  const resultaat: SyncResultaat = {
+    scholenVerwerkt: 0,
+    scholenNieuw: 0,
+    scholenBijgewerkt: 0,
+    updatesNieuw: 0,
+    updatesOvergeslagen: 0,
+    nieuweVoorstellenViaSync: 0,
+    samenvattingenVernieuwd: 0,
+    fouten: [],
+  };
   await synchroniseerScholen(payload, resultaat);
   const vanaf = new Date(Date.now() - updatesLookbackDagen * 24 * 60 * 60 * 1000);
   await synchroniseerUpdates(payload, resultaat, vanaf);
