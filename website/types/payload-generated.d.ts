@@ -1552,7 +1552,10 @@ export interface SalesProposal {
    * 'Laag' wordt nooit in de UI getoond (zie lib/sales/enrichment.ts) — hier alleen ter volledigheid/audit bewaard.
    */
   confidence?: ('hoog' | 'middel' | 'laag') | null;
-  status: 'pending' | 'accepted' | 'modified' | 'rejected' | 'conflict';
+  /**
+   * 'superseded': vervangen door een nieuw voorstel (Opnieuw analyseren of Bespreek met AI → Maak hiervan nieuw voorstel) — zie 'supersedes' op het nieuwe voorstel. Nooit stil overschreven, blijft auditeerbaar.
+   */
+  status: 'pending' | 'accepted' | 'modified' | 'rejected' | 'conflict' | 'superseded';
   /**
    * Alleen gezet bij 'modified' — de daadwerkelijke waarde/datum/type die de gebruiker koos.
    */
@@ -1580,6 +1583,22 @@ export interface SalesProposal {
   decidedBy?: (number | null) | User;
   decidedAt?: string | null;
   resultingAction?: (number | null) | SalesAction;
+  /**
+   * Gezet op het NIEUWE voorstel, wijst naar het oude — dat oude voorstel krijgt zelf status 'superseded'. Nooit het oude voorstel overschrijven, altijd een nieuw record.
+   */
+  supersedes?: (number | null) | SalesProposal;
+  /**
+   * Alleen gezet wanneer dit voorstel ontstond via 'Bespreek met AI' → 'Maak hiervan nieuw voorstel' — de chatgeschiedenis die tot dit voorstel leidde (audit: oorspronkelijk voorstel via supersedes, overleg hier, nieuw voorstel dit record).
+   */
+  overlegGeschiedenis?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2605,6 +2624,8 @@ export interface SalesProposalsSelect<T extends boolean = true> {
   decidedBy?: T;
   decidedAt?: T;
   resultingAction?: T;
+  supersedes?: T;
+  overlegGeschiedenis?: T;
   updatedAt?: T;
   createdAt?: T;
 }

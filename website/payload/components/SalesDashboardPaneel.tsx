@@ -7,6 +7,7 @@ import { usePreferences } from "@payloadcms/ui";
 import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCircle } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
+import { SalesProposalActies } from "./SalesProposalActies";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 import type { TodoResultaat } from "@/lib/sales/dashboard-todo";
@@ -116,7 +117,6 @@ export function SalesDashboardPaneel() {
   const [todo, setTodo] = useState<TodoResultaat | null>(null);
   const [scholenVoorSelector, setScholenVoorSelector] = useState<SchoolOptie[]>([]);
   const [laden, setLaden] = useState(true);
-  const [bezig, setBezig] = useState<string | null>(null);
 
   const [schoolKeuze, setSchoolKeuze] = useState<string>("alle");
   const [vraagInvoer, setVraagInvoer] = useState("");
@@ -164,13 +164,6 @@ export function SalesDashboardPaneel() {
   useEffect(() => {
     laadData();
   }, [laadData]);
-
-  async function beslis(proposalId: number, beslissing: "accepted" | "rejected") {
-    setBezig(`voorstel-${proposalId}`);
-    await apiPost(`/api/sales/proposals/${proposalId}/decide`, { beslissing });
-    setBezig(null);
-    laadData();
-  }
 
   async function stelVraag() {
     const vraag = vraagInvoer.trim();
@@ -298,17 +291,7 @@ export function SalesDashboardPaneel() {
                     </p>
                     <p className="ml-sales-widget__context">{voorstel.proposalText}</p>
                     {voorstel.reason && <p className="ml-sales-widget__meta">AI: {voorstel.reason}</p>}
-                    <div className="ml-sales__actie-knoppen">
-                      <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig !== null} onClick={() => beslis(voorstel.id, "accepted")}>
-                        {voorstel.proposalType === "bestaande_vervolgdatum" ? "Maak Sales-actie" : voorstel.proposalType === "veld_correctie" ? "Bevestigen" : "Accepteren"}
-                      </button>
-                      <Link href={`/admin/sales/school?id=${school.id}#voorstel-${voorstel.id}`} className="ml-sales__knop" prefetch={false}>
-                        Aanpassen
-                      </Link>
-                      <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => beslis(voorstel.id, "rejected")}>
-                        {voorstel.proposalType === "veld_correctie" ? "Negeren" : "Niet nodig"}
-                      </button>
-                    </div>
+                    <SalesProposalActies voorstel={voorstel} onGewijzigd={laadData} />
                   </div>
                 );
               })}

@@ -65,6 +65,9 @@ describe("haalTodoItems", () => {
         status: "pending",
         proposedValue: null,
         targetColumnId: null,
+        proposedDate: null,
+        proposedType: null,
+        proposedChannel: null,
         school: { id: 10, schoolName: "Testschool", relatiestatus: "Prospect", plaats: "Zwolle" },
       },
     ]);

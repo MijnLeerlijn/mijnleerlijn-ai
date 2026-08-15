@@ -1575,6 +1575,36 @@ a.ml-dashboard__card:hover {
   color: #dc2626;
 }
 
+/* Relatie-analyse V1.1 (2026-08-15) — secundaire voorstel-acties (Opnieuw
+ * analyseren/Bespreek met AI): visueel duidelijk lichter dan de primaire rij
+ * (Bevestigen/Aanpassen/Niet nodig) — geen rand, gedempte tekstkleur, kleiner. */
+.ml-sales__actie-knoppen--secundair {
+  margin-top: 6px;
+}
+
+.ml-sales__knop--secundair {
+  border: none;
+  background: none;
+  color: var(--theme-elevation-500);
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.ml-sales__knop--secundair:hover {
+  color: var(--ml-admin-purple);
+  border-color: transparent;
+}
+
+.ml-sales__proposal-chat {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: var(--ml-admin-radius-sm);
+  background: var(--ml-admin-purple-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .ml-sales__knop:disabled {
   opacity: 0.5;
   cursor: not-allowed;

@@ -193,3 +193,67 @@ export async function beslisOverVoorstel(payload: Payload, proposalId: number, o
 
   return { proposalId, actionId: actie.id as number, writeback };
 }
+
+// Relatie-analyse V1.1 (2026-08-15) — gedeelde "vervang voorstel"-primitief
+// voor "Opnieuw analyseren" (lib/sales/proposal-reanalyze.ts) EN "Bespreek
+// met AI → Maak hiervan nieuw voorstel" (lib/sales/proposal-chat.ts): een
+// oud voorstel wordt NOOIT overschreven — het krijgt status "superseded",
+// het nieuwe voorstel wijst er via `supersedes` naar terug. Beide bestaande
+// records blijven dus staan (auditeerbaarheid), zelfde principe als
+// `finalChoice` hierboven. Callers zijn zelf verantwoordelijk voor de
+// voorafgaande check "is het oude voorstel nog pending/conflict?" (zelfde
+// verantwoordelijkheidsverdeling als beslisOverVoorstel hierboven) — dit
+// voorkomt dat twee gelijktijdige acties (bv. iemand accepteert het oude
+// voorstel terwijl een collega "Opnieuw analyseren" draait) een dubbel
+// pending voorstel opleveren.
+export interface VervangVoorstelData {
+  school: number;
+  proposalType: "volgende_actie";
+  proposalText: string;
+  reason: string;
+  proposedDate: string | null;
+  proposedType: ActieType | null;
+  proposedChannel: Kanaal | null;
+  confidence: "hoog" | "middel" | "laag";
+  sourceUpdateIds?: { updateId: string }[];
+  relatieAnalyse?: Record<string, unknown>;
+  overlegGeschiedenis?: Record<string, unknown>[];
+}
+
+export interface VervangVoorstelOpties {
+  oudProposalId: number;
+  nieuwVoorstel: VervangVoorstelData;
+  actorId: number;
+  logSamenvatting: string;
+}
+
+export async function vervangVoorstel(payload: Payload, opties: VervangVoorstelOpties): Promise<{ nieuwProposalId: number }> {
+  const nieuw = await payload.create({
+    collection: "sales-proposals",
+    data: { ...opties.nieuwVoorstel, supersedes: opties.oudProposalId, status: "pending" },
+    overrideAccess: true,
+  });
+
+  await payload.update({
+    collection: "sales-proposals",
+    id: opties.oudProposalId,
+    data: { status: "superseded" },
+    overrideAccess: true,
+  });
+
+  await payload.create({
+    collection: "sales-log-events",
+    data: {
+      school: opties.nieuwVoorstel.school,
+      occurredAt: new Date().toISOString(),
+      type: "ai_voorstel",
+      source: "sales-ai",
+      summary: opties.logSamenvatting,
+      actor: opties.actorId,
+      relatedProposal: nieuw.id,
+    },
+    overrideAccess: true,
+  });
+
+  return { nieuwProposalId: nieuw.id as number };
+}

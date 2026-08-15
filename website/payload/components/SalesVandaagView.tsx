@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
+import { SalesProposalActies } from "./SalesProposalActies";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { PENDING_VOORSTEL_TYPES_VOOR_AANDACHT } from "@/lib/sales/aandacht-nodig";
 
@@ -38,6 +39,8 @@ interface SalesProposalDoc {
   proposalType: "volgende_actie" | "veld_correctie" | "bestaande_vervolgdatum";
   confidence?: "hoog" | "middel" | "laag" | null;
   proposedDate?: string | null;
+  proposedType?: string | null;
+  proposedChannel?: string | null;
   proposedValue?: string | null;
   targetColumnId?: string | null;
   school: SchoolRef | number;
@@ -189,13 +192,6 @@ export function SalesVandaagView() {
     laadAlles();
   }
 
-  async function beslis(proposalId: number, beslissing: "accepted" | "rejected") {
-    setBezig(`voorstel-${proposalId}`);
-    await apiPost(`/api/sales/proposals/${proposalId}/decide`, { beslissing });
-    setBezig(null);
-    laadAlles();
-  }
-
   if (laden) {
     return <div className="ml-sales__leeg">Laden…</div>;
   }
@@ -290,35 +286,14 @@ export function SalesVandaagView() {
                     )}
                   </p>
                   {voorstel.reason && <p className="ml-sales__kaart-tekst">AI: {voorstel.reason}</p>}
-                  <div className="ml-sales__actie-knoppen">
-                    <button
-                      type="button"
-                      className="ml-sales__knop ml-sales__knop--primair"
-                      disabled={bezig !== null}
-                      onClick={() => beslis(voorstel.id, "accepted")}
-                    >
-                      {voorstel.proposalType === "bestaande_vervolgdatum"
-                        ? "Maak Sales-actie"
-                        : voorstel.proposalType === "veld_correctie"
-                          ? "Bevestigen en invullen in Monday"
-                          : "Accepteren"}
-                    </button>
-                    <Link href={`/admin/sales/school?id=${school.id}#voorstel-${voorstel.id}`} className="ml-sales__knop">
-                      {voorstel.proposalType === "bestaande_vervolgdatum"
-                        ? "Andere datum"
-                        : voorstel.proposalType === "veld_correctie"
-                          ? "Andere waarde"
-                          : "Aanpassen"}
-                    </Link>
+                  <SalesProposalActies voorstel={voorstel} onGewijzigd={laadAlles} />
+                  <div className="ml-sales__actie-knoppen" style={{ marginTop: 8 }}>
                     <Link href={`/admin/creator?mail=nieuw&school=${school.id}`} className="ml-sales__knop">
                       Schrijf mail
                     </Link>
                     <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales__knop">
                       Bekijk school
                     </Link>
-                    <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => beslis(voorstel.id, "rejected")}>
-                      {voorstel.proposalType === "veld_correctie" ? "Negeren" : "Niet nodig"}
-                    </button>
                   </div>
                 </div>
               );

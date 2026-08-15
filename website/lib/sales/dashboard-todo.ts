@@ -28,6 +28,12 @@ export interface TodoProposalItem {
   status: "pending" | "conflict";
   proposedValue: string | null;
   targetColumnId: string | null;
+  // Relatie-analyse V1.1 (2026-08-15) — nodig zodat SalesProposalActies'
+  // "Aanpassen"-formulier (SalesAanpasFormulier) op het dashboard hetzelfde
+  // kan voorinvullen als op schooldetail/Overzicht.
+  proposedDate: string | null;
+  proposedType: string | null;
+  proposedChannel: string | null;
   school: TodoSchoolRef;
 }
 
@@ -49,6 +55,9 @@ interface SalesProposalDoc {
   status: "pending" | "conflict";
   proposedValue?: string | null;
   targetColumnId?: string | null;
+  proposedDate?: string | null;
+  proposedType?: string | null;
+  proposedChannel?: string | null;
   school: number | TodoSchoolRef;
 }
 
@@ -74,6 +83,9 @@ export async function haalTodoItems(payload: Payload): Promise<TodoResultaat> {
     status: p.status,
     proposedValue: p.proposedValue ?? null,
     targetColumnId: p.targetColumnId ?? null,
+    proposedDate: p.proposedDate ?? null,
+    proposedType: p.proposedType ?? null,
+    proposedChannel: p.proposedChannel ?? null,
     school: schoolRef(p.school),
   }));
 

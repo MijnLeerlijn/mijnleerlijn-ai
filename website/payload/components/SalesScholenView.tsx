@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
+import { SalesOnderwijstypeInstellen } from "./SalesOnderwijstypeInstellen";
 import { RELATIESTATUS_BADGE } from "@/lib/sales/relatiestatus-badge";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { PENDING_VOORSTEL_TYPES_VOOR_AANDACHT } from "@/lib/sales/aandacht-nodig";
@@ -297,7 +298,12 @@ export function SalesScholenView() {
                   <td>
                     <RelatiestatusBadge relatiestatus={school.relatiestatus} />
                   </td>
-                  <td>{onderwijstypeLabel(school.onderwijstype)}</td>
+                  <td>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {onderwijstypeLabel(school.onderwijstype)}
+                      {!school.onderwijstype && <SalesOnderwijstypeInstellen schoolId={school.id} label="Instellen" compact onGewijzigd={laad} />}
+                    </span>
+                  </td>
                   <td>{school.plaats || "—"}</td>
                   <td className={school.lastMondayActivityAt ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(school.lastMondayActivityAt)}</td>
                   <td className={volgendeActiePerSchool.has(school.id) ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(volgendeActiePerSchool.get(school.id))}</td>

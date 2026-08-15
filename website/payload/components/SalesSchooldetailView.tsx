@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Compass, ListTodo, School, Sparkles } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
+import { SalesProposalActies } from "./SalesProposalActies";
+import { SalesOnderwijstypeInstellen } from "./SalesOnderwijstypeInstellen";
 import { formatKorteDatum, formatKorteDatumTijd, typeLabel } from "@/lib/sales/format-datum";
 import { LOGBOEK_SAMENVATTING_MAX_LENGTE } from "@/lib/sales/monday-columns";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
@@ -67,9 +69,6 @@ interface VolledigeTekst {
   auteur: string | null;
 }
 
-const ACTIE_TYPES = ["mail", "bellen", "afspraak", "voorbereiding", "informatie_sturen", "anders"];
-const KANALEN = ["mail", "telefoon", "in_persoon", "anders"];
-
 async function apiGet<T>(url: string): Promise<T[]> {
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) return [];
@@ -97,51 +96,6 @@ async function apiPost<T>(url: string, body?: unknown): Promise<{ ok: boolean; d
   return { ok: res.ok, data };
 }
 
-function AanpasFormulier({ voorstel, onBevestig }: { voorstel: SalesProposalDoc; onBevestig: (waarde: Record<string, string>) => void }) {
-  const [datum, setDatum] = useState(voorstel.proposedDate?.slice(0, 10) ?? "");
-  const [type, setType] = useState(voorstel.proposedType ?? "anders");
-  const [kanaal, setKanaal] = useState(voorstel.proposedChannel ?? "mail");
-  const [waarde, setWaarde] = useState(voorstel.proposedValue ?? "");
-
-  if (voorstel.proposalType === "veld_correctie") {
-    return (
-      <div className="ml-sales__actie-knoppen" style={{ marginTop: 8 }}>
-        <input value={waarde} onChange={(e) => setWaarde(e.target.value)} style={{ padding: "6px 10px", borderRadius: "var(--ml-admin-radius-sm)", border: "1px solid var(--theme-elevation-200)" }} />
-        <button type="button" className="ml-sales__knop ml-sales__knop--primair" onClick={() => onBevestig({ proposedValue: waarde })}>
-          Bevestig andere waarde
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="ml-sales__actie-knoppen" style={{ marginTop: 8, flexWrap: "wrap" }}>
-      <input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} style={{ padding: "6px 10px", borderRadius: "var(--ml-admin-radius-sm)", border: "1px solid var(--theme-elevation-200)" }} />
-      <select value={type} onChange={(e) => setType(e.target.value)} style={{ padding: "6px 10px", borderRadius: "var(--ml-admin-radius-sm)", border: "1px solid var(--theme-elevation-200)" }}>
-        {ACTIE_TYPES.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </select>
-      <select value={kanaal} onChange={(e) => setKanaal(e.target.value)} style={{ padding: "6px 10px", borderRadius: "var(--ml-admin-radius-sm)", border: "1px solid var(--theme-elevation-200)" }}>
-        {KANALEN.map((k) => (
-          <option key={k} value={k}>
-            {k}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        className="ml-sales__knop ml-sales__knop--primair"
-        onClick={() => onBevestig({ proposedDate: datum, proposedType: type, proposedChannel: kanaal })}
-      >
-        Bevestig aanpassing
-      </button>
-    </div>
-  );
-}
-
 function SchooldetailInner() {
   const searchParams = useSearchParams();
   const schoolId = searchParams.get("id");
@@ -152,7 +106,6 @@ function SchooldetailInner() {
   const [logboek, setLogboek] = useState<SalesLogEventDoc[]>([]);
   const [laden, setLaden] = useState(true);
   const [bezig, setBezig] = useState<string | null>(null);
-  const [aanpasVoorstelId, setAanpasVoorstelId] = useState<number | null>(null);
 
   const [samenvatting, setSamenvatting] = useState<string | null>(null);
   const [samenvattingBijgewerkt, setSamenvattingBijgewerkt] = useState<string | null>(null);
@@ -190,14 +143,6 @@ function SchooldetailInner() {
   useEffect(() => {
     laad();
   }, [laad]);
-
-  async function beslis(proposalId: number, beslissing: "accepted" | "rejected" | "modified", aangepasteWaarde?: Record<string, string>) {
-    setBezig(`voorstel-${proposalId}`);
-    await apiPost(`/api/sales/proposals/${proposalId}/decide`, { beslissing, aangepasteWaarde });
-    setAanpasVoorstelId(null);
-    setBezig(null);
-    laad();
-  }
 
   async function genereerVerrijking() {
     if (!schoolId) return;
@@ -367,9 +312,12 @@ function SchooldetailInner() {
             <p className="ml-sales__kaart-tekst">Geen open actie. Zie eventueel AI-voorstellen hieronder, of vraag de AI om een suggestie.</p>
           )}
           {!school.onderwijstype && (
-            <button type="button" className="ml-sales__knop" onClick={genereerVerrijking} disabled={bezig !== null}>
-              {bezig === "enrich" ? "Bezig…" : "Onderwijstype herkennen"}
-            </button>
+            <div className="ml-sales__actie-knoppen">
+              <button type="button" className="ml-sales__knop" onClick={genereerVerrijking} disabled={bezig !== null}>
+                {bezig === "enrich" ? "Bezig…" : "Onderwijstype herkennen"}
+              </button>
+              <SalesOnderwijstypeInstellen schoolId={school.id} label="Zelf instellen" onGewijzigd={laad} />
+            </div>
           )}
         </div>
 
@@ -401,24 +349,7 @@ function SchooldetailInner() {
                   )}
                 </div>
                 {voorstel.reason && <p className="ml-sales__kaart-tekst">Waarom: {voorstel.reason}</p>}
-                <div className="ml-sales__actie-knoppen">
-                  <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig !== null} onClick={() => beslis(voorstel.id, "accepted")}>
-                    {voorstel.proposalType === "bestaande_vervolgdatum"
-                      ? "Maak Sales-actie"
-                      : voorstel.proposalType === "veld_correctie"
-                        ? "Bevestigen en invullen in Monday"
-                        : "Bevestigen"}
-                  </button>
-                  <button type="button" className="ml-sales__knop" onClick={() => setAanpasVoorstelId(aanpasVoorstelId === voorstel.id ? null : voorstel.id)}>
-                    {voorstel.proposalType === "bestaande_vervolgdatum" ? "Andere datum" : voorstel.proposalType === "veld_correctie" ? "Andere waarde" : "Aanpassen"}
-                  </button>
-                  <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => beslis(voorstel.id, "rejected")}>
-                    {voorstel.proposalType === "veld_correctie" ? "Negeren" : "Niet nodig"}
-                  </button>
-                </div>
-                {aanpasVoorstelId === voorstel.id && (
-                  <AanpasFormulier voorstel={voorstel} onBevestig={(waarde) => beslis(voorstel.id, "modified", waarde)} />
-                )}
+                <SalesProposalActies voorstel={voorstel} onGewijzigd={laad} />
               </div>
             ))}
           </div>

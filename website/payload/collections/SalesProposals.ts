@@ -117,7 +117,11 @@ export const SalesProposals: CollectionConfig = {
         { label: "Aangepast geaccepteerd", value: "modified" },
         { label: "Afgewezen", value: "rejected" },
         { label: "Conflict bij write-back", value: "conflict" },
+        { label: "Vervangen (superseded)", value: "superseded" },
       ],
+      admin: {
+        description: "'superseded': vervangen door een nieuw voorstel (Opnieuw analyseren of Bespreek met AI → Maak hiervan nieuw voorstel) — zie 'supersedes' op het nieuwe voorstel. Nooit stil overschreven, blijft auditeerbaar.",
+      },
     },
     { name: "finalChoice", type: "json", label: "Definitieve keuze", admin: { description: "Alleen gezet bij 'modified' — de daadwerkelijke waarde/datum/type die de gebruiker koos." } },
     {
@@ -133,5 +137,21 @@ export const SalesProposals: CollectionConfig = {
     { name: "decidedBy", type: "relationship", relationTo: "users", label: "Beslist door" },
     { name: "decidedAt", type: "date", label: "Beslist op" },
     { name: "resultingAction", type: "relationship", relationTo: "sales-actions", label: "Resulterende actie" },
+    {
+      name: "supersedes",
+      type: "relationship",
+      relationTo: "sales-proposals",
+      label: "Vervangt voorstel",
+      admin: { readOnly: true, description: "Gezet op het NIEUWE voorstel, wijst naar het oude — dat oude voorstel krijgt zelf status 'superseded'. Nooit het oude voorstel overschrijven, altijd een nieuw record." },
+    },
+    {
+      name: "overlegGeschiedenis",
+      type: "json",
+      label: "Overleg met AI",
+      admin: {
+        readOnly: true,
+        description: "Alleen gezet wanneer dit voorstel ontstond via 'Bespreek met AI' → 'Maak hiervan nieuw voorstel' — de chatgeschiedenis die tot dit voorstel leidde (audit: oorspronkelijk voorstel via supersedes, overleg hier, nieuw voorstel dit record).",
+      },
+    },
   ],
 };
