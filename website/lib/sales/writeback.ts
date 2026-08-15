@@ -1,24 +1,41 @@
 import type { Payload } from "payload";
-import { leesKolomWaarde } from "./monday-client";
-import { SCHOLEN_KOLOM, type SchrijfbareKolomId } from "./monday-columns";
+import { optionalEnv } from "@/config/env";
+import { leesKolomWaarde, wijzigKolomWaarde } from "./monday-client";
+import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM, TYPE_SCHOOL_WAARDEN, type SchrijfbareKolomId } from "./monday-columns";
 
-// Sales-assistent V1 (2026-08-14) — write-back-service. BEWUST NIET
-// VOLLEDIG AF: het read-then-write/conflictdetectie/logging-deel hieronder
-// is volledig geïmplementeerd en getest, maar `voerMondayMutatieUit()` —
-// het daadwerkelijk versturen van de mutatie naar Monday — gooit bewust een
-// duidelijke, herkenbare fout. De exacte mutation-JSON-vorm per kolomtype is
-// deze sessie NIET live tegen het echte Monday-schema geverifieerd (alleen
-// read-only tools zijn gebruikt, zoals opgedragen) — verzin die vorm hier
-// niet. Rond dit specifieke functielichaam af zodra MONDAY_API_TOKEN +
-// schema-introspectie (bv. get_column_type_info) weer beschikbaar zijn.
+// Sales-assistent V1 (2026-08-14), write-back geactiveerd 2026-08-15 —
+// write-back-service. Het read-then-write/conflictdetectie/logging-deel
+// hieronder was al volledig geïmplementeerd en getest; `voerMondayMutatieUit()`
+// verstuurt nu de echte mutatie via lib/sales/monday-client.ts se
+// wijzigKolomWaarde() (Monday's publieke `change_simple_column_value`,
+// algemene platformkennis — zie de disclaimer in monday-client.ts: deze
+// sandbox heeft geen MONDAY_API_TOKEN en het netwerkbeleid blokkeert
+// api.monday.com actief, dus deze vorm is NIET live getest vanuit deze
+// sessie).
 //
-// Alles ERomheen is wél de bouw-/testeis die al is afgesproken:
+// MONDAY_WRITEBACK_ENABLED-gate (2026-08-15): de 3 PRODUCTIEPADEN hieronder
+// (schrijfDatumLaatsteContactTerug/schrijfDatumVolgendeActieTerug/
+// schrijfTypeSchoolTerug — automatisch of ná een echte gebruikersbeslissing
+// over een echte lead) blijven inert totdat deze omgevingsvariabele letterlijk
+// "true" is in de ECHTE, gedeployde omgeving — een bewuste, aparte stap los
+// van elke codepush, precies om nooit per ongeluk naar echte leads te
+// schrijven vóór de live smoke-test (lib/sales/monday-diagnostics.ts, het
+// tijdelijke diagnosescherm) is geslaagd. Het diagnosepad zelf omzeilt deze
+// gate bewust (`forceerDiagnostisch: true`) — het is al even streng bewaakt
+// via admin-only autorisatie + expliciete bevestiging per schrijfactie in de
+// UI, en is precies het mechanisme waarmee Michel de gate straks bewust omzet.
+//
+// Alles ERomheen blijft de al afgesproken bouw-/testeis:
 // - Lees eerst de actuele Monday-waarde (nooit blind schrijven).
 // - Weiger bij een conflict — nooit stilzwijgend overschrijven.
 // - Log altijd (geschreven, conflict, of mislukt) in sales-log-events met
 //   oude waarde, nieuwe waarde, actor en tijdstip.
 // - Accepteert uitsluitend een SchrijfbareKolomId — een zichtbare
 //   kolomnaam of niet-toegestane kolom-ID compileert simpelweg niet.
+// - Type school schrijft uitsluitend een van de live bevestigde
+//   TYPE_SCHOOL_WAARDEN — nooit doorgestuurd naar Monday als het niet exact
+//   matcht (dubbele bodem naast create_labels_if_missing: false in
+//   monday-client.ts).
 export type WriteBackStatus = "geschreven" | "conflict" | "niet_geactiveerd" | "mislukt";
 
 export interface WriteBackResultaat {
@@ -35,9 +52,15 @@ export interface WriteBackOpties {
   verwachteHuidigeWaarde: string | null;
   /** null = automatische write-back (bv. Datum laatste contact), geen menselijke actor. */
   actorId: number | null;
-  bron: "veld_correctie_voorstel" | "actie_geaccepteerd" | "automatisch_laatste_contact";
+  bron: "veld_correctie_voorstel" | "actie_geaccepteerd" | "automatisch_laatste_contact" | "diagnostische_test" | "diagnostische_terugzetting";
   relatedProposalId?: number;
   relatedActionId?: number;
+  /**
+   * Uitsluitend gezet door lib/sales/monday-diagnostics.ts — omzeilt de
+   * MONDAY_WRITEBACK_ENABLED-productiegate. Nooit vanuit een echte
+   * proposal-/sync-/education-type-flow zetten.
+   */
+  forceerDiagnostisch?: boolean;
 }
 
 async function logWriteBackPoging(
@@ -65,13 +88,31 @@ async function logWriteBackPoging(
 }
 
 /**
- * BEWUST NIET GEÏMPLEMENTEERD — zie module-comment. Gooit altijd een
- * duidelijke fout in plaats van een gegokte mutation-vorm te versturen.
+ * Onderscheidt "de productiegate staat nog uit" (status "niet_geactiveerd",
+ * verwacht/onschuldig) van elke andere mutatiefout (status "mislukt", een
+ * echt probleem) — zie voerWriteBackUit hieronder. Zonder dit type zou een
+ * genuine Monday-fout ná het aanzetten van de gate ten onrechte nog als
+ * "niet_geactiveerd" gelogd worden.
  */
-async function voerMondayMutatieUit(_itemId: string, columnId: SchrijfbareKolomId, _waarde: string): Promise<void> {
-  throw new Error(
-    `Write-back naar Monday-kolom "${columnId}" is nog niet geactiveerd: de exacte mutation-vorm is nog niet live geverifieerd tegen het echte Monday-schema. Rond lib/sales/writeback.ts se voerMondayMutatieUit() af zodra MONDAY_API_TOKEN + schema-introspectie beschikbaar zijn — verzin de vorm niet.`
-  );
+class WriteBackNietGeactiveerdError extends Error {}
+
+/**
+ * Verstuurt de echte mutatie naar Monday — uitsluitend via wijzigKolomWaarde()
+ * (monday-client.ts). Twee bewakingen vóór er ooit een netwerkaanroep gebeurt:
+ * (1) een Type-school-waarde moet exact een van TYPE_SCHOOL_WAARDEN zijn;
+ * (2) een productie-aanroep (forceerDiagnostisch niet gezet) moet
+ * MONDAY_WRITEBACK_ENABLED="true" hebben, anders inert (zie module-comment).
+ */
+async function voerMondayMutatieUit(itemId: string, columnId: SchrijfbareKolomId, waarde: string, forceerDiagnostisch: boolean): Promise<void> {
+  if (columnId === SCHOLEN_KOLOM.typeSchool && !(TYPE_SCHOOL_WAARDEN as readonly string[]).includes(waarde)) {
+    throw new Error(`Ongeldige waarde voor Type school: "${waarde}" — moet exact een van ${TYPE_SCHOOL_WAARDEN.join(", ")} zijn. Niet naar Monday verstuurd.`);
+  }
+  if (!forceerDiagnostisch && optionalEnv("MONDAY_WRITEBACK_ENABLED") !== "true") {
+    throw new WriteBackNietGeactiveerdError(
+      `Write-back naar Monday-kolom "${columnId}" staat nog niet aan voor productiegebruik (MONDAY_WRITEBACK_ENABLED). Test eerst via het diagnosescherm (/admin/sales/monday-diagnose) vóór dit voor echte leads wordt geactiveerd.`
+    );
+  }
+  await wijzigKolomWaarde(itemId, SCHOLEN_BOARD_ID, columnId, waarde);
 }
 
 /** Kernpad: lees → vergelijk → (weiger bij conflict) → schrijf → log. Alle 3 toegestane kolommen lopen hierdoorheen. */
@@ -93,11 +134,12 @@ export async function voerWriteBackUit(payload: Payload, opties: WriteBackOpties
   }
 
   try {
-    await voerMondayMutatieUit(opties.mondayItemId, opties.columnId, opties.nieuweWaarde);
+    await voerMondayMutatieUit(opties.mondayItemId, opties.columnId, opties.nieuweWaarde, opties.forceerDiagnostisch ?? false);
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);
-    await logWriteBackPoging(payload, opties, "niet_geactiveerd", boodschap, actueleWaarde);
-    return { status: "niet_geactiveerd", boodschap };
+    const status: WriteBackStatus = error instanceof WriteBackNietGeactiveerdError ? "niet_geactiveerd" : "mislukt";
+    await logWriteBackPoging(payload, opties, status, boodschap, actueleWaarde);
+    return { status, boodschap };
   }
 
   await logWriteBackPoging(payload, opties, "geschreven", `${opties.columnId}: "${actueleWaarde}" -> "${opties.nieuweWaarde}"`, actueleWaarde);

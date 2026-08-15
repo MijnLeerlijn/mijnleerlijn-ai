@@ -214,6 +214,16 @@ export default buildConfig({
           path: "/sales/acties",
           exact: true,
         },
+        // Write-back-diagnose (2026-08-15) — TIJDELIJK, geen nav-groups.ts-item
+        // (dat is de permanente IA; dit scherm hoort daar expliciet niet in
+        // thuis, zie de opdracht: verwijderen/verbergen na succesvolle
+        // verificatie). Alleen bereikbaar via directe URL. `exact: true` om
+        // dezelfde reden als de andere /sales/*-paden hierboven.
+        salesMondayDiagnose: {
+          Component: "@/payload/components/AdminViewShell#SalesMondayDiagnoseViewShell",
+          path: "/sales/monday-diagnose",
+          exact: true,
+        },
       },
     },
   },

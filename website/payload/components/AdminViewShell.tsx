@@ -13,6 +13,7 @@ import { SalesVandaagView } from "./SalesVandaagView";
 import { SalesScholenView } from "./SalesScholenView";
 import { SalesSchooldetailView } from "./SalesSchooldetailView";
 import { SalesActiesView } from "./SalesActiesView";
+import { SalesMondayDiagnoseView } from "./SalesMondayDiagnoseView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -151,6 +152,14 @@ export function SalesActiesViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="salesActies">
       <SalesActiesView />
+    </InAdminShell>
+  );
+}
+
+export function SalesMondayDiagnoseViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="salesMondayDiagnose">
+      <SalesMondayDiagnoseView />
     </InAdminShell>
   );
 }

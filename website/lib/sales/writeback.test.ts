@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Payload } from "payload";
 import { voerWriteBackUit, schrijfDatumLaatsteContactTerug, schrijfDatumVolgendeActieTerug, schrijfTypeSchoolTerug } from "./writeback";
-import { leesKolomWaarde } from "./monday-client";
-import { SCHOLEN_KOLOM } from "./monday-columns";
+import { leesKolomWaarde, wijzigKolomWaarde } from "./monday-client";
+import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM } from "./monday-columns";
 
-vi.mock("./monday-client", () => ({ leesKolomWaarde: vi.fn() }));
+vi.mock("./monday-client", () => ({ leesKolomWaarde: vi.fn(), wijzigKolomWaarde: vi.fn() }));
 const mockLeesKolomWaarde = vi.mocked(leesKolomWaarde);
+const mockWijzigKolomWaarde = vi.mocked(wijzigKolomWaarde);
 const mockCreate = vi.fn();
 
 function maakPayload(): Payload {
@@ -14,7 +15,12 @@ function maakPayload(): Payload {
 
 beforeEach(() => {
   mockLeesKolomWaarde.mockReset();
+  mockWijzigKolomWaarde.mockReset();
   mockCreate.mockReset().mockResolvedValue({ id: 1 });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("voerWriteBackUit — read-then-write, conflictdetectie, logging", () => {
@@ -66,11 +72,13 @@ describe("voerWriteBackUit — read-then-write, conflictdetectie, logging", () =
       bron: "veld_correctie_voorstel",
     });
 
-    // Geen conflict — maar de mutatie zelf is bewust nog niet geactiveerd (zie volgende test).
+    // Geen conflict — maar de productiegate (MONDAY_WRITEBACK_ENABLED) staat
+    // in deze test niet aan, dus blijft dit pad inert (zie volgende test).
     expect(resultaat.status).toBe("niet_geactiveerd");
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
   });
 
-  it("BEWUST: de daadwerkelijke Monday-mutatie is nog niet geactiveerd — geen gegokte mutation-vorm verzonden", async () => {
+  it("PRODUCTIEGATE: zonder MONDAY_WRITEBACK_ENABLED=true blijft write-back naar echte leads inert, ook als de mutatie-code zelf al actief is", async () => {
     mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.typeSchool, text: null, value: null });
 
     const resultaat = await voerWriteBackUit(maakPayload(), {
@@ -84,7 +92,8 @@ describe("voerWriteBackUit — read-then-write, conflictdetectie, logging", () =
     });
 
     expect(resultaat.status).toBe("niet_geactiveerd");
-    expect(resultaat.boodschap).toMatch(/niet geactiveerd|niet.*geverifieerd/i);
+    expect(resultaat.boodschap).toMatch(/niet aan voor productiegebruik|MONDAY_WRITEBACK_ENABLED/i);
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
   });
 
   it("logt oude waarde, nieuwe waarde, actor en tijdstip bij elke poging", async () => {
@@ -113,6 +122,85 @@ describe("voerWriteBackUit — read-then-write, conflictdetectie, logging", () =
     expect(SCHOLEN_KOLOM.typeSchool).toBe("dropdown_mm4v9rvg");
     expect(SCHOLEN_KOLOM.datumLaatsteContact).toBe("date_mm5q1phd");
     expect(SCHOLEN_KOLOM.datumVolgendeActie).toBe("date_mm5qswfk");
+  });
+});
+
+describe("voerWriteBackUit — echte Monday-mutatie (2026-08-15, achter MONDAY_WRITEBACK_ENABLED)", () => {
+  it("schrijft echt weg zodra MONDAY_WRITEBACK_ENABLED=true staat", async () => {
+    vi.stubEnv("MONDAY_WRITEBACK_ENABLED", "true");
+    mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.typeSchool, text: null, value: null });
+    mockWijzigKolomWaarde.mockResolvedValue(undefined);
+
+    const resultaat = await voerWriteBackUit(maakPayload(), {
+      schoolId: 1,
+      mondayItemId: "123",
+      columnId: SCHOLEN_KOLOM.typeSchool,
+      nieuweWaarde: "Montessori",
+      verwachteHuidigeWaarde: null,
+      actorId: 7,
+      bron: "veld_correctie_voorstel",
+    });
+
+    expect(resultaat.status).toBe("geschreven");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith("123", SCHOLEN_BOARD_ID, SCHOLEN_KOLOM.typeSchool, "Montessori");
+  });
+
+  it("geeft 'mislukt' (niet 'niet_geactiveerd') wanneer de echte mutatie faalt terwijl de gate wél aan staat", async () => {
+    vi.stubEnv("MONDAY_WRITEBACK_ENABLED", "true");
+    mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.typeSchool, text: null, value: null });
+    mockWijzigKolomWaarde.mockRejectedValue(new Error("Monday GraphQL-fout: column not found"));
+
+    const resultaat = await voerWriteBackUit(maakPayload(), {
+      schoolId: 1,
+      mondayItemId: "123",
+      columnId: SCHOLEN_KOLOM.typeSchool,
+      nieuweWaarde: "Montessori",
+      verwachteHuidigeWaarde: null,
+      actorId: 7,
+      bron: "veld_correctie_voorstel",
+    });
+
+    expect(resultaat.status).toBe("mislukt");
+    expect(resultaat.boodschap).toMatch(/column not found/);
+  });
+
+  it("het diagnosepad (forceerDiagnostisch) omzeilt de productiegate — schrijft ook zonder MONDAY_WRITEBACK_ENABLED", async () => {
+    mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.datumLaatsteContact, text: null, value: null });
+    mockWijzigKolomWaarde.mockResolvedValue(undefined);
+
+    const resultaat = await voerWriteBackUit(maakPayload(), {
+      schoolId: 1,
+      mondayItemId: "123",
+      columnId: SCHOLEN_KOLOM.datumLaatsteContact,
+      nieuweWaarde: "2026-08-15",
+      verwachteHuidigeWaarde: null,
+      actorId: 7,
+      bron: "diagnostische_test",
+      forceerDiagnostisch: true,
+    });
+
+    expect(resultaat.status).toBe("geschreven");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith("123", SCHOLEN_BOARD_ID, SCHOLEN_KOLOM.datumLaatsteContact, "2026-08-15");
+  });
+
+  it("weigert een ongeldige Type-school-waarde vóór Monday ooit aangeroepen wordt — zelfs met de gate aan en diagnostisch geforceerd", async () => {
+    vi.stubEnv("MONDAY_WRITEBACK_ENABLED", "true");
+    mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.typeSchool, text: null, value: null });
+
+    const resultaat = await voerWriteBackUit(maakPayload(), {
+      schoolId: 1,
+      mondayItemId: "123",
+      columnId: SCHOLEN_KOLOM.typeSchool,
+      nieuweWaarde: "Onzin — bestaat niet",
+      verwachteHuidigeWaarde: null,
+      actorId: 7,
+      bron: "diagnostische_test",
+      forceerDiagnostisch: true,
+    });
+
+    expect(resultaat.status).toBe("mislukt");
+    expect(resultaat.boodschap).toMatch(/Ongeldige waarde voor Type school/);
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
   });
 });
 

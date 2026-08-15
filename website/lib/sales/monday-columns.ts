@@ -43,6 +43,18 @@ export type SchrijfbareKolomId =
   | typeof SCHOLEN_KOLOM.datumVolgendeActie
   | typeof SCHOLEN_KOLOM.typeSchool;
 
+const SCHRIJFBARE_KOLOM_IDS: readonly string[] = [SCHOLEN_KOLOM.datumLaatsteContact, SCHOLEN_KOLOM.datumVolgendeActie, SCHOLEN_KOLOM.typeSchool];
+
+/**
+ * Runtime-poortwachter voor elke plek die een column-ID van een client
+ * ontvangt (bv. het diagnosescherm) — TypeScript's compile-time garantie
+ * (SchrijfbareKolomId) bestaat niet meer zodra een waarde over de draad kwam
+ * als losse string. Nooit vertrouwen dat de client alleen deze 3 verstuurt.
+ */
+export function isSchrijfbareKolomId(waarde: string): waarde is SchrijfbareKolomId {
+  return SCHRIJFBARE_KOLOM_IDS.includes(waarde);
+}
+
 /**
  * Live bevestigde, echte waarden van "Type school" (dropdown_mm4v9rvg) —
  * GEEN Dalton/Jenaplan/Vrijeschool/SBO/regulier, ook al zijn dat in de

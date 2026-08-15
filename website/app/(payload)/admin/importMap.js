@@ -50,6 +50,7 @@ import { SalesVandaagViewShell as SalesVandaagViewShell_1e788d78f4aade245b171d8f
 import { SalesScholenViewShell as SalesScholenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { SalesSchooldetailViewShell as SalesSchooldetailViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { SalesActiesViewShell as SalesActiesViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { SalesMondayDiagnoseViewShell as SalesMondayDiagnoseViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -106,5 +107,6 @@ export const importMap = {
   "@/payload/components/AdminViewShell#SalesScholenViewShell": SalesScholenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#SalesSchooldetailViewShell": SalesSchooldetailViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#SalesActiesViewShell": SalesActiesViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#SalesMondayDiagnoseViewShell": SalesMondayDiagnoseViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }
