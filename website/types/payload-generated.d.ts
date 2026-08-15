@@ -1404,7 +1404,7 @@ export interface SalesSchool {
    */
   contactpersoonNaam?: string | null;
   /**
-   * Leeg = geen variant-specifieke context. Nooit automatisch geraden bij sync — alleen handmatig of via een bevestigd AI-veldvoorstel.
+   * Leeg = geen variant-specifieke context. Wordt bij sync automatisch bijgewerkt zodra Monday's 'Type school' een bekende variant matcht — anders alleen handmatig of via een bevestigd AI-veldvoorstel.
    */
   onderwijstype?: (number | null) | Variant;
   /**
@@ -1557,6 +1557,18 @@ export interface SalesProposal {
    * Alleen gezet bij 'modified' — de daadwerkelijke waarde/datum/type die de gebruiker koos.
    */
   finalChoice?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Relatie-analyse V1 (2026-08-15) — audit-snapshot van de gestructureerde analyse (lib/sales/relationship-analysis.ts) waarop dit voorstel is gebaseerd: laatste betrouwbare contactdatum, afspraken, wie aan zet is, risico, enz. Alleen gezet bij proposalType 'volgende_actie'.
+   */
+  relatieAnalyse?:
     | {
         [k: string]: unknown;
       }
@@ -2589,6 +2601,7 @@ export interface SalesProposalsSelect<T extends boolean = true> {
   confidence?: T;
   status?: T;
   finalChoice?: T;
+  relatieAnalyse?: T;
   decidedBy?: T;
   decidedAt?: T;
   resultingAction?: T;

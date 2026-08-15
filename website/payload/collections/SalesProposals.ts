@@ -120,6 +120,16 @@ export const SalesProposals: CollectionConfig = {
       ],
     },
     { name: "finalChoice", type: "json", label: "Definitieve keuze", admin: { description: "Alleen gezet bij 'modified' — de daadwerkelijke waarde/datum/type die de gebruiker koos." } },
+    {
+      name: "relatieAnalyse",
+      type: "json",
+      label: "Relatie-analyse",
+      admin: {
+        readOnly: true,
+        description:
+          "Relatie-analyse V1 (2026-08-15) — audit-snapshot van de gestructureerde analyse (lib/sales/relationship-analysis.ts) waarop dit voorstel is gebaseerd: laatste betrouwbare contactdatum, afspraken, wie aan zet is, risico, enz. Alleen gezet bij proposalType 'volgende_actie'.",
+      },
+    },
     { name: "decidedBy", type: "relationship", relationTo: "users", label: "Beslist door" },
     { name: "decidedAt", type: "date", label: "Beslist op" },
     { name: "resultingAction", type: "relationship", relationTo: "sales-actions", label: "Resulterende actie" },

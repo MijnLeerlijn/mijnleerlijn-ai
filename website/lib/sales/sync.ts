@@ -12,6 +12,7 @@ import { scrubPotentialPii } from "@/lib/support/pii-scrub";
 import { beoordeelSchool } from "./backfill";
 import { genereerEnCacheSchoolSamenvatting } from "./school-summary";
 import { vindVariantVoorTypeSchool, haalVariantenVoorTypeSchoolMapping, type VariantVoorTypeSchoolMapping } from "./education-type-sync";
+import { schrijfDatumLaatsteContactTerug } from "./writeback";
 
 // Sales-assistent V1 (2026-08-14) — synchroniseert board "1: Scholen (Master
 // Data)" naar sales-schools + sales-log-events. Monday blijft bron van
@@ -211,7 +212,8 @@ export async function verwerkUpdate(
   return { occurredAt, gemigreerd, schoolId };
 }
 
-async function synchroniseerUpdates(payload: Payload, resultaat: SyncResultaat, vanaf: Date): Promise<void> {
+/** Geëxporteerd voor directe, ongemockte tests (zelfde precedent als verwerkUpdate/verwerkSchoolItem hierboven) — vermijdt de school-paginatie van synchroniseerScholen te moeten mocken om de write-back-wiring hieronder te testen. */
+export async function synchroniseerUpdates(payload: Payload, resultaat: SyncResultaat, vanaf: Date): Promise<void> {
   const scholen = await payload.find({
     collection: "sales-schools",
     where: { mondayBoardId: { equals: SCHOLEN_BOARD_ID } },
@@ -241,10 +243,25 @@ async function synchroniseerUpdates(payload: Payload, resultaat: SyncResultaat, 
   }
 
   for (const [schoolId, occurredAt] of laatsteEchteActiviteit) {
-    const school = scholen.docs.find((s) => s.id === schoolId) as { lastMondayActivityAt?: string | null } | undefined;
+    const school = scholen.docs.find((s) => s.id === schoolId) as { mondayItemId: string; lastMondayActivityAt?: string | null } | undefined;
     const bestaandeWaarde = school?.lastMondayActivityAt ? new Date(school.lastMondayActivityAt).getTime() : 0;
     if (new Date(occurredAt).getTime() > bestaandeWaarde) {
       await payload.update({ collection: "sales-schools", id: schoolId, data: { lastMondayActivityAt: occurredAt }, overrideAccess: true });
+    }
+
+    // Relatie-analyse V1 (2026-08-15) — "Datum laatste contact" mag
+    // automatisch worden bijgewerkt zodra het laatste ECHTE contact
+    // betrouwbaar is vastgesteld (opdrachtseis). `laatsteEchteActiviteit`
+    // bevat per-definitie uitsluitend niet-gemigreerde Updates (zie
+    // synchroniseerUpdates hierboven) — precies het "betrouwbaar"-criterium.
+    // schrijfDatumLaatsteContactTerug bewaakt zelf al de datumvergelijking/
+    // conflictdetectie/logging — hier alleen de aanroep, geen dubbele logica.
+    if (school) {
+      try {
+        await schrijfDatumLaatsteContactTerug(payload, schoolId, school.mondayItemId, occurredAt);
+      } catch (error) {
+        resultaat.fouten.push(`Write-back laatste contact school ${schoolId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 
@@ -273,7 +290,16 @@ export async function herevalueerScholenMetNieuweActiviteit(
   laatsteEchteActiviteit: Map<number, string>,
   resultaat: SyncResultaat
 ): Promise<void> {
-  type SchoolVoorHerevaluatie = { id: number; schoolName: string; mondayItemId: string; mondayVolgendeActieDatum?: string | null; actief?: boolean };
+  type SchoolVoorHerevaluatie = {
+    id: number;
+    schoolName: string;
+    mondayItemId: string;
+    mondayVolgendeActieDatum?: string | null;
+    actief?: boolean;
+    relatiestatus?: string | null;
+    salesfase?: string | null;
+    onderwijstype?: number | { id: number } | null;
+  };
   const scholen = scholenDocs as SchoolVoorHerevaluatie[];
 
   for (const schoolId of laatsteEchteActiviteit.keys()) {

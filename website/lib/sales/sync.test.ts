@@ -1,16 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Payload } from "payload";
-import { verwerkUpdate, verwerkSchoolItem, herevalueerScholenMetNieuweActiviteit, type SyncResultaat } from "./sync";
+import { verwerkUpdate, verwerkSchoolItem, herevalueerScholenMetNieuweActiviteit, synchroniseerUpdates, type SyncResultaat } from "./sync";
 import { MIGRATIE_MARKER, probeerGemigreerdeDatumTeExtraheren, SCHOLEN_KOLOM } from "./monday-columns";
 import type { MondayUpdate, MondaySchoolItem } from "./monday-client";
+import { haalRecenteUpdates } from "./monday-client";
 import type { VariantVoorTypeSchoolMapping } from "./education-type-sync";
 import { beoordeelSchool } from "./backfill";
 import { genereerEnCacheSchoolSamenvatting } from "./school-summary";
+import { schrijfDatumLaatsteContactTerug } from "./writeback";
 
 vi.mock("./backfill", () => ({ beoordeelSchool: vi.fn() }));
 vi.mock("./school-summary", () => ({ genereerEnCacheSchoolSamenvatting: vi.fn() }));
+vi.mock("./monday-client", () => ({ haalScholenPagina: vi.fn(), haalRecenteUpdates: vi.fn() }));
+vi.mock("./writeback", () => ({ schrijfDatumLaatsteContactTerug: vi.fn() }));
 const mockBeoordeelSchool = vi.mocked(beoordeelSchool);
 const mockGenereerSamenvatting = vi.mocked(genereerEnCacheSchoolSamenvatting);
+const mockHaalRecenteUpdates = vi.mocked(haalRecenteUpdates);
+const mockSchrijfLaatsteContact = vi.mocked(schrijfDatumLaatsteContactTerug);
 
 const mockFind = vi.fn();
 const mockCreate = vi.fn();
@@ -340,5 +346,78 @@ describe("herevalueerScholenMetNieuweActiviteit", () => {
 
     expect(resultaat.nieuweVoorstellenViaSync).toBe(1);
     expect(resultaat.fouten.length).toBe(1);
+  });
+});
+
+// Relatie-analyse V1 (2026-08-15) — "Datum laatste contact mag automatisch
+// worden bijgewerkt als het laatste echte contact betrouwbaar is
+// vastgesteld" (opdrachtseis). schrijfDatumLaatsteContactTerug bestond al
+// (writeback.ts, eigen tests) maar werd nergens aangeroepen — dit sluit die
+// hiaat.
+describe("synchroniseerUpdates — automatische write-back van 'Datum laatste contact'", () => {
+  const SCHOOL = { id: 1, mondayItemId: "111", lastMondayActivityAt: null };
+
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockCreate.mockReset().mockResolvedValue({ id: 999 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+    mockHaalRecenteUpdates.mockReset();
+    mockSchrijfLaatsteContact.mockReset().mockResolvedValue({ status: "geschreven", boodschap: "ok" });
+    mockBeoordeelSchool.mockReset();
+    mockGenereerSamenvatting.mockReset();
+
+    mockFind.mockImplementation(({ collection }: { collection: string }) => {
+      if (collection === "sales-schools") return Promise.resolve({ docs: [SCHOOL] });
+      if (collection === "sales-log-events") return Promise.resolve({ docs: [] }); // nooit al bestaand -> verwerkUpdate slaat niet over
+      return Promise.resolve({ docs: [] });
+    });
+  });
+
+  it("schrijft de nieuwste, betrouwbare (niet-gemigreerde) contactdatum automatisch terug naar Monday", async () => {
+    mockHaalRecenteUpdates.mockResolvedValue([
+      { id: "u1", item_id: "111", text_body: "Kort telefoongesprek.", created_at: "2026-08-14T00:00:00.000Z", updated_at: "x", creator: null },
+    ]);
+    const resultaat = leegResultaat();
+
+    await synchroniseerUpdates(maakPayload(), resultaat, new Date("2026-01-01"));
+
+    expect(mockSchrijfLaatsteContact).toHaveBeenCalledWith(expect.anything(), 1, "111", "2026-08-14T00:00:00.000Z");
+  });
+
+  it("schrijft NIET terug wanneer de enige nieuwe activiteit gemigreerde geschiedenis is — die telt nooit als betrouwbaar laatste contact", async () => {
+    mockHaalRecenteUpdates.mockResolvedValue([
+      { id: "u1", item_id: "111", text_body: `${MIGRATIE_MARKER} (oud Sales-board)\nOude notitie.`, created_at: "2026-08-14T00:00:00.000Z", updated_at: "x", creator: null },
+    ]);
+    const resultaat = leegResultaat();
+
+    await synchroniseerUpdates(maakPayload(), resultaat, new Date("2026-01-01"));
+
+    expect(mockSchrijfLaatsteContact).not.toHaveBeenCalled();
+  });
+
+  it("isoleert een write-back-fout — blokkeert de rest van de sync niet, logt de fout in resultaat.fouten", async () => {
+    mockHaalRecenteUpdates.mockResolvedValue([
+      { id: "u1", item_id: "111", text_body: "Contact.", created_at: "2026-08-14T00:00:00.000Z", updated_at: "x", creator: null },
+    ]);
+    mockSchrijfLaatsteContact.mockRejectedValue(new Error("Monday API-aanroep mislukt (HTTP 500)."));
+    const resultaat = leegResultaat();
+
+    await synchroniseerUpdates(maakPayload(), resultaat, new Date("2026-01-01"));
+
+    expect(resultaat.fouten.some((f) => f.includes("Monday API-aanroep mislukt"))).toBe(true);
+    expect(resultaat.updatesNieuw).toBe(1); // het logboek-record zelf is wel gewoon aangemaakt, ondanks de write-back-fout
+  });
+
+  it("gebruikt de MEEST RECENTE betrouwbare datum en schrijft per school maar één keer terug, ook bij meerdere nieuwe Updates", async () => {
+    mockHaalRecenteUpdates.mockResolvedValue([
+      { id: "u1", item_id: "111", text_body: "Ouder contact.", created_at: "2026-08-01T00:00:00.000Z", updated_at: "x", creator: null },
+      { id: "u2", item_id: "111", text_body: "Recenter contact.", created_at: "2026-08-14T00:00:00.000Z", updated_at: "x", creator: null },
+    ]);
+    const resultaat = leegResultaat();
+
+    await synchroniseerUpdates(maakPayload(), resultaat, new Date("2026-01-01"));
+
+    expect(mockSchrijfLaatsteContact).toHaveBeenCalledTimes(1);
+    expect(mockSchrijfLaatsteContact).toHaveBeenCalledWith(expect.anything(), 1, "111", "2026-08-14T00:00:00.000Z");
   });
 });

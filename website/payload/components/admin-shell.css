@@ -1508,6 +1508,7 @@ a.ml-dashboard__card:hover {
   margin: 0;
   font-size: 13px;
   color: var(--theme-elevation-600);
+  white-space: pre-line;
 }
 
 .ml-sales__badge {
@@ -1950,6 +1951,7 @@ a.ml-dashboard__card:hover {
   margin: 3px 0 0;
   font-size: 12px;
   color: var(--theme-elevation-500);
+  white-space: pre-line;
 }
 
 .ml-sales-widget__context {

@@ -25,6 +25,7 @@ import * as migration_20260813_090000_creator_v1_datamodel from './20260813_0900
 import * as migration_20260813_150000_mail_templates from './20260813_150000_mail_templates';
 import * as migration_20260814_090000_sales_v1_datamodel from './20260814_090000_sales_v1_datamodel';
 import * as migration_20260814_102738_sales_v2_ux_velden from './20260814_102738_sales_v2_ux_velden';
+import * as migration_20260815_090000_sales_relatie_analyse_veld from './20260815_090000_sales_relatie_analyse_veld';
 
 export const migrations = [
   {
@@ -161,5 +162,10 @@ export const migrations = [
     up: migration_20260814_102738_sales_v2_ux_velden.up,
     down: migration_20260814_102738_sales_v2_ux_velden.down,
     name: '20260814_102738_sales_v2_ux_velden',
+  },
+  {
+    up: migration_20260815_090000_sales_relatie_analyse_veld.up,
+    down: migration_20260815_090000_sales_relatie_analyse_veld.down,
+    name: '20260815_090000_sales_relatie_analyse_veld',
   },
 ];

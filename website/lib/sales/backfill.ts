@@ -1,8 +1,5 @@
-import { z } from "zod";
 import type { Payload } from "payload";
-import { generateStructuredOutput } from "@/services/ai-client";
-import { haalUpdatesVoorItem } from "./monday-client";
-import { isGemigreerdeUpdate } from "./monday-columns";
+import { maakSchoolRelatieAnalyse, bouwVoorstelRedenTekst } from "./relationship-analysis";
 import { vindActieveScholenZonderVervolgactie } from "./aandacht-nodig";
 
 // Sales-assistent V1 (2026-08-14) — initiële analyse/backfill. "Openstaand"
@@ -13,6 +10,13 @@ import { vindActieveScholenZonderVervolgactie } from "./aandacht-nodig";
 // sales-proposals met status "pending". Idempotent: een school met al een
 // open actie of al een pending voorstel wordt overgeslagen (geen dubbele
 // voorstellen bij een herhaalde run).
+//
+// Relatie-analyse V1 (2026-08-15) — de daadwerkelijke AI-redenering
+// (structured output, harde regels rond expliciete afspraken/gemigreerde
+// geschiedenis/onvoldoende context) zit voortaan in
+// lib/sales/relationship-analysis.ts — dit bestand blijft verantwoordelijk
+// voor de idempotentie-/veiligheidsgates hieronder (ongewijzigd), niet voor
+// de inhoudelijke AI-logica zelf.
 const MAX_VOORBEELD_SCHOLEN_PER_RUN = 500; // veiligheidslimiet, geen aanname over datasetgrootte
 
 export type BackfillUitkomst =
@@ -34,23 +38,6 @@ export interface BackfillResultaat {
   resultaten: BackfillSchoolResultaat[];
   fouten: string[];
 }
-
-const VolgendeActieVoorstelSchema = z.object({
-  uitkomst: z.enum(["voorstel", "mogelijk_afgesloten"]),
-  voorgesteldeActie: z.string().nullable(),
-  voorgesteldeDatum: z.string().nullable(),
-  voorgesteldType: z.enum(["mail", "bellen", "afspraak", "voorbereiding", "informatie_sturen", "anders"]).nullable(),
-  voorgesteldKanaal: z.enum(["mail", "telefoon", "in_persoon", "anders"]).nullable(),
-  reden: z.string(),
-});
-
-const SYSTEEMPROMPT = `Je bent de MijnLeerlijn Sales-assistent. Je krijgt recente, betrouwbare contactverslagen van één school en stelt een concrete vervolgstap voor — of concludeert dat de school inhoudelijk waarschijnlijk is afgesloten/afgewezen, ook als de status daar in Monday nog niet op is bijgewerkt.
-
-HARDE REGEL: als een verslag een EXPLICIETE datum, toezegging of afspraak bevat (bijv. "ik bel op 4 september", "ik stuur volgende week voorbeelden"), gebruik dan DIE datum/dat tijdsbestek — verzin nooit een andere termijn als die er al expliciet staat.
-
-Geef "uitkomst": "mogelijk_afgesloten" ALLEEN als de tekst een duidelijke afwijzing/einde van interesse bevat (bijv. "we gaan niet verder met MijnLeerlijn"). Twijfel je, kies dan "voorstel".
-
-"reden" moet concreet naar de tekst verwijzen — verzin niets.`;
 
 async function bestaatOpenActie(payload: Payload, schoolId: number): Promise<boolean> {
   const result = await payload.find({
@@ -122,40 +109,47 @@ async function verwerkBestaandeVervolgdatum(
 
 async function genereerVolgendeActieVoorstel(
   payload: Payload,
-  school: { id: number; schoolName: string; mondayItemId: string }
-): Promise<BackfillSchoolResultaat> {
-  const updates = await haalUpdatesVoorItem(school.mondayItemId);
-  const betrouwbareUpdates = updates.filter((u) => !isGemigreerdeUpdate(u.text_body));
-  if (betrouwbareUpdates.length === 0) {
-    return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "onvoldoende_context" };
+  school: {
+    id: number;
+    schoolName: string;
+    mondayItemId: string;
+    relatiestatus?: string | null;
+    salesfase?: string | null;
+    onderwijstype?: number | { id: number } | null;
   }
-
-  const brontekst = betrouwbareUpdates
-    .slice(0, 10)
-    .map((u) => `[${u.created_at}]\n${u.text_body}`)
-    .join("\n\n---\n\n");
-
-  const voorstel = await generateStructuredOutput({
-    schema: VolgendeActieVoorstelSchema,
-    systemPrompt: SYSTEEMPROMPT,
-    userPrompt: brontekst,
+): Promise<BackfillSchoolResultaat> {
+  const uitkomst = await maakSchoolRelatieAnalyse(payload, {
+    id: school.id,
+    schoolName: school.schoolName,
+    mondayItemId: school.mondayItemId,
+    relatiestatus: school.relatiestatus,
+    salesfase: school.salesfase,
+    onderwijstype: school.onderwijstype,
+    mondayVolgendeActieDatum: null, // beoordeelSchool heeft dit pad hierboven al uitgesloten wanneer dit gezet is
   });
 
-  if (voorstel.uitkomst === "mogelijk_afgesloten") {
+  if (uitkomst.status === "geen_context" || uitkomst.status === "onvoldoende_context") {
+    return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "onvoldoende_context" };
+  }
+  if (uitkomst.status === "mogelijk_afgesloten") {
     return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "mogelijk_afgesloten" };
   }
+
+  const { analyse, brontekstUpdateIds } = uitkomst;
 
   const nieuwVoorstel = await payload.create({
     collection: "sales-proposals",
     data: {
       school: school.id,
       proposalType: "volgende_actie",
-      proposalText: voorstel.voorgesteldeActie ?? "Vervolgstap voorstellen.",
-      reason: voorstel.reden,
-      proposedDate: voorstel.voorgesteldeDatum,
-      proposedType: voorstel.voorgesteldType,
-      proposedChannel: voorstel.voorgesteldKanaal,
-      sourceUpdateIds: betrouwbareUpdates.slice(0, 10).map((u) => ({ updateId: u.id })),
+      proposalText: analyse.aanbevolenVolgendeStap ?? "Vervolgstap voorstellen.",
+      reason: bouwVoorstelRedenTekst(analyse),
+      proposedDate: analyse.aanbevolenDatum,
+      proposedType: analyse.aanbevolenType,
+      proposedChannel: analyse.aanbevolenKanaal,
+      sourceUpdateIds: brontekstUpdateIds.map((id) => ({ updateId: id })),
+      relatieAnalyse: analyse as unknown as Record<string, unknown>,
+      confidence: analyse.confidence,
       status: "pending",
     },
     overrideAccess: true,
@@ -168,7 +162,7 @@ async function genereerVolgendeActieVoorstel(
       occurredAt: new Date().toISOString(),
       type: "ai_voorstel",
       source: "sales-ai",
-      summary: `AI-voorstel vervolgactie: ${voorstel.voorgesteldeActie ?? "(geen beschrijving)"}`,
+      summary: `AI-voorstel vervolgactie: ${analyse.aanbevolenVolgendeStap ?? "(geen beschrijving)"}`,
       relatedProposal: nieuwVoorstel.id,
     },
     overrideAccess: true,
@@ -185,7 +179,15 @@ async function genereerVolgendeActieVoorstel(
  */
 export async function beoordeelSchool(
   payload: Payload,
-  school: { id: number; schoolName: string; mondayItemId: string; mondayVolgendeActieDatum?: string | null }
+  school: {
+    id: number;
+    schoolName: string;
+    mondayItemId: string;
+    mondayVolgendeActieDatum?: string | null;
+    relatiestatus?: string | null;
+    salesfase?: string | null;
+    onderwijstype?: number | { id: number } | null;
+  }
 ): Promise<BackfillSchoolResultaat> {
   if (await bestaatOpenActie(payload, school.id)) {
     return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "vervolgactie_bestaat" };
@@ -228,7 +230,15 @@ export async function voerBackfillUit(payload: Payload): Promise<BackfillResulta
   };
 
   for (const doc of scholen.docs) {
-    const school = doc as unknown as { id: number; schoolName: string; mondayItemId: string; mondayVolgendeActieDatum?: string | null };
+    const school = doc as unknown as {
+      id: number;
+      schoolName: string;
+      mondayItemId: string;
+      mondayVolgendeActieDatum?: string | null;
+      relatiestatus?: string | null;
+      salesfase?: string | null;
+      onderwijstype?: number | { id: number } | null;
+    };
     try {
       const uitkomst = await beoordeelSchool(payload, school);
       resultaat.resultaten.push(uitkomst);
