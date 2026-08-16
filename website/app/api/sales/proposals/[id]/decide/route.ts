@@ -32,7 +32,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: "Voorstel niet gevonden." }, { status: 404 });
     }
 
-    const body = (await request.json()) as { beslissing?: string; aangepasteWaarde?: AangepasteWaarde };
+    const body = (await request.json()) as { beslissing?: string; aangepasteWaarde?: AangepasteWaarde; bevestigdeMondayDatum?: string | null };
     if (!body.beslissing || !GELDIGE_BESLISSINGEN.includes(body.beslissing as ProposalBeslissing)) {
       return NextResponse.json({ error: "beslissing moet accepted, modified of rejected zijn." }, { status: 400 });
     }
@@ -41,6 +41,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       beslissing: body.beslissing as ProposalBeslissing,
       gebruikerId: sessieControle.user!.id,
       aangepasteWaarde: body.aangepasteWaarde,
+      // "datumconflict" al getoond aan de gebruiker (frontend stuurt dit
+      // veld pas mee ná een expliciete Monday-datum/Sales-datum/andere-datum
+      // -keuze, zie SalesProposalActies.tsx) — undefined blijft de normale,
+      // ongewijzigde precheck-flow.
+      bevestigdeMondayDatum: body.bevestigdeMondayDatum,
     });
     return NextResponse.json(resultaat);
   } catch (error) {

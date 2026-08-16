@@ -186,6 +186,129 @@ describe("maakSchoolRelatieAnalyse", () => {
     expect(call.userPrompt).toContain("UITSLUITEND achtergrond");
     expect(call.userPrompt).toContain("Oude notitie uit vorig systeem");
   });
+
+  it("productiecorrectie punt 7+11 — de systeemprompt bevat de expliciete prioriteitshiërarchie (Monday-datum boven generieke inschatting)", async () => {
+    mockHaalUpdates.mockResolvedValue([{ id: "u1", item_id: "111", text_body: "x", created_at: "2026-08-01T00:00:00.000Z", updated_at: "x", creator: null }]);
+    mockGenerate.mockResolvedValue(VOLLEDIG_LLM_ANTWOORD);
+
+    await maakSchoolRelatieAnalyse(maakPayload(), SCHOOL);
+
+    const call = mockGenerate.mock.calls[0]![0] as { systemPrompt: string };
+    expect(call.systemPrompt).toContain("Bestaande vervolgdatum in Monday");
+    expect(call.systemPrompt).toMatch(/Verzin NOOIT een eerdere of afwijkende datum/);
+  });
+
+  it("productiecorrectie punt 5 — het AI-outputschema bevat GEEN relatiestatus/salesfase-veld: het model kan deze structureel nooit zelf zetten (alleen als context meegegeven, nooit als uitkomst gevraagd)", async () => {
+    mockHaalUpdates.mockResolvedValue([{ id: "u1", item_id: "111", text_body: "x", created_at: "2026-08-01T00:00:00.000Z", updated_at: "x", creator: null }]);
+    mockGenerate.mockResolvedValue(VOLLEDIG_LLM_ANTWOORD);
+
+    await maakSchoolRelatieAnalyse(maakPayload(), SCHOOL);
+
+    const call = mockGenerate.mock.calls[0]![0] as unknown as { schema: { shape: Record<string, unknown> } };
+    expect(call.schema.shape).not.toHaveProperty("relatiestatus");
+    expect(call.schema.shape).not.toHaveProperty("salesfase");
+  });
+
+  it("draait nu ALTIJD (geen bypass meer) ook wanneer de school al een Monday-vervolgdatum heeft, en zet datumHerkomst op 'bestaande_monday_datum' wanneer het model die datum respecteert", async () => {
+    mockHaalUpdates.mockResolvedValue([{ id: "u1", item_id: "111", text_body: "Kort belletje, niets nieuws afgesproken.", created_at: "2026-08-01T00:00:00.000Z", updated_at: "x", creator: null }]);
+    mockGenerate.mockResolvedValue({ ...VOLLEDIG_LLM_ANTWOORD, aanbevolenDatum: "2026-11-03", afspraken: [] });
+
+    const uitkomst = await maakSchoolRelatieAnalyse(maakPayload(), { ...SCHOOL, mondayVolgendeActieDatum: "2026-11-03" });
+
+    expect(mockGenerate).toHaveBeenCalled(); // GEEN bypass — de analyse draait echt
+    expect(uitkomst.status).toBe("klaar");
+    if (uitkomst.status !== "klaar") throw new Error("onverwacht");
+    expect(uitkomst.analyse.bestaandeVervolgdatum).toBe("2026-11-03");
+    expect(uitkomst.analyse.aanbevolenDatum).toBe("2026-11-03");
+    expect(uitkomst.analyse.datumHerkomst).toBe("bestaande_monday_datum");
+  });
+
+  it("zet datumHerkomst op 'nieuwe_afspraak_uit_logs' wanneer het model een AFWIJKENDE datum voorstelt mét een geëxtraheerde afspraak (regel 1 versloeg regel 2)", async () => {
+    mockHaalUpdates.mockResolvedValue([{ id: "u1", item_id: "111", text_body: "Michel belt op 10 september, dat is eerder dan de Monday-planning.", created_at: "2026-08-20T00:00:00.000Z", updated_at: "x", creator: null }]);
+    mockGenerate.mockResolvedValue({
+      ...VOLLEDIG_LLM_ANTWOORD,
+      aanbevolenDatum: "2026-09-10",
+      afspraken: [{ tekst: "Michel belt op 10 september", wie: "michel" }],
+    });
+
+    const uitkomst = await maakSchoolRelatieAnalyse(maakPayload(), { ...SCHOOL, mondayVolgendeActieDatum: "2026-11-03" });
+
+    expect(uitkomst.status).toBe("klaar");
+    if (uitkomst.status !== "klaar") throw new Error("onverwacht");
+    expect(uitkomst.analyse.datumHerkomst).toBe("nieuwe_afspraak_uit_logs");
+  });
+
+  it("zet datumHerkomst op 'generieke_inschatting' wanneer er geen bestaande Monday-datum is", async () => {
+    mockHaalUpdates.mockResolvedValue([{ id: "u1", item_id: "111", text_body: "x", created_at: "2026-08-01T00:00:00.000Z", updated_at: "x", creator: null }]);
+    mockGenerate.mockResolvedValue(VOLLEDIG_LLM_ANTWOORD);
+
+    const uitkomst = await maakSchoolRelatieAnalyse(maakPayload(), SCHOOL); // SCHOOL.mondayVolgendeActieDatum is null
+
+    expect(uitkomst.status).toBe("klaar");
+    if (uitkomst.status !== "klaar") throw new Error("onverwacht");
+    expect(uitkomst.analyse.datumHerkomst).toBe("generieke_inschatting");
+  });
+
+  it("zet datumHerkomst op null bij onvoldoende context (geen aanbevolenDatum)", async () => {
+    mockHaalUpdates.mockResolvedValue([{ id: "u1", item_id: "111", text_body: "x", created_at: "2026-08-01T00:00:00.000Z", updated_at: "x", creator: null }]);
+    mockGenerate.mockResolvedValue({ ...VOLLEDIG_LLM_ANTWOORD, onvoldoendeContext: true, aanbevolenVolgendeStap: null, aanbevolenDatum: null, aanbevolenKanaal: null, aanbevolenType: null });
+
+    const uitkomst = await maakSchoolRelatieAnalyse(maakPayload(), SCHOOL);
+
+    if (uitkomst.status !== "onvoldoende_context") throw new Error("onverwacht");
+    expect(uitkomst.analyse.datumHerkomst).toBeNull();
+  });
+
+  // Productiecorrectie 2026-08-16 (punt 14) — expliciet genoemd
+  // testscenario, hier het AI-deel: "AI noemt 3 november als bestaande
+  // planning; AI stelt geen concurrerende eerdere datum voor zonder een
+  // nieuwe expliciete log-afspraak." Zie sync.test.ts/aandacht-nodig.test.ts
+  // voor het sync- resp. "niet als geen-vervolgactie"-deel van hetzelfde
+  // scenario (zelfde schoolnaam/datum).
+  const WINTERKONINKJE = {
+    id: 2,
+    schoolName: "2de Montessorischool Winterkoninkje",
+    mondayItemId: "222",
+    relatiestatus: "Lead",
+    salesfase: "Afspraak plannen",
+    onderwijstype: null,
+    mondayVolgendeActieDatum: "2026-11-03",
+  };
+
+  it("'2de Montessorischool Winterkoninkje' — geen nieuwe expliciete log-afspraak: AI respecteert 3 november, reden noemt dit expliciet, geen concurrerende datum", async () => {
+    mockHaalUpdates.mockResolvedValue([
+      { id: "u1", item_id: "222", text_body: "Kort telefonisch contact, verder niets concreets afgesproken.", created_at: "2026-08-10T00:00:00.000Z", updated_at: "x", creator: null },
+    ]);
+    mockGenerate.mockResolvedValue({ ...VOLLEDIG_LLM_ANTWOORD, aanbevolenDatum: "2026-11-03", afspraken: [] });
+
+    const uitkomst = await maakSchoolRelatieAnalyse(maakPayload(), WINTERKONINKJE);
+
+    expect(uitkomst.status).toBe("klaar");
+    if (uitkomst.status !== "klaar") throw new Error("onverwacht");
+    expect(uitkomst.analyse.aanbevolenDatum).toBe("2026-11-03");
+    expect(uitkomst.analyse.datumHerkomst).toBe("bestaande_monday_datum");
+    const reden = bouwVoorstelRedenTekst(uitkomst.analyse);
+    expect(reden).toContain("Er staat al een vervolg gepland op 2026-11-03 (Monday)");
+  });
+
+  it("'2de Montessorischool Winterkoninkje' — WEL een nieuwe expliciete log-afspraak: mag de Monday-datum vervangen, datumHerkomst reflecteert dit", async () => {
+    mockHaalUpdates.mockResolvedValue([
+      { id: "u1", item_id: "222", text_body: "Michel belt op 20 augustus, dat is eerder dan de geplande afspraak.", created_at: "2026-08-15T00:00:00.000Z", updated_at: "x", creator: null },
+    ]);
+    mockGenerate.mockResolvedValue({
+      ...VOLLEDIG_LLM_ANTWOORD,
+      aanbevolenDatum: "2026-08-20",
+      afspraken: [{ tekst: "Michel belt op 20 augustus", wie: "michel" }],
+    });
+
+    const uitkomst = await maakSchoolRelatieAnalyse(maakPayload(), WINTERKONINKJE);
+
+    expect(uitkomst.status).toBe("klaar");
+    if (uitkomst.status !== "klaar") throw new Error("onverwacht");
+    expect(uitkomst.analyse.datumHerkomst).toBe("nieuwe_afspraak_uit_logs");
+    const reden = bouwVoorstelRedenTekst(uitkomst.analyse);
+    expect(reden).toContain("Nieuwere afspraak gevonden in de logs die de eerdere Monday-datum (2026-11-03) vervangt.");
+  });
 });
 
 describe("bouwVoorstelRedenTekst", () => {
@@ -204,6 +327,7 @@ describe("bouwVoorstelRedenTekst", () => {
     aanbevolenDatum: "2026-08-25",
     aanbevolenKanaal: "mail",
     aanbevolenType: "mail",
+    datumHerkomst: "generieke_inschatting",
     reden: "Er is geen vervolgdatum en de afgesproken terugkoppeling is uitgebleven.",
     confidence: "hoog",
     onvoldoendeContext: false,
@@ -225,5 +349,23 @@ describe("bouwVoorstelRedenTekst", () => {
 
     expect(tekst).not.toContain("Afspraak:");
     expect(tekst.split("\n")).toHaveLength(2);
+  });
+
+  it("productiecorrectie punt 11 — toont expliciet 'er staat al een vervolg gepland' wanneer datumHerkomst bestaande_monday_datum is", () => {
+    const tekst = bouwVoorstelRedenTekst({ ...BASIS, bestaandeVervolgdatum: "2026-11-03", aanbevolenDatum: "2026-11-03", datumHerkomst: "bestaande_monday_datum" });
+
+    expect(tekst.split("\n")[0]).toBe("Er staat al een vervolg gepland op 2026-11-03 (Monday) — dat advies respecteert dit.");
+  });
+
+  it("productiecorrectie punt 11 — toont expliciet dat een nieuwere logafspraak de Monday-datum vervangt wanneer datumHerkomst nieuwe_afspraak_uit_logs is", () => {
+    const tekst = bouwVoorstelRedenTekst({ ...BASIS, bestaandeVervolgdatum: "2026-11-03", aanbevolenDatum: "2026-09-10", datumHerkomst: "nieuwe_afspraak_uit_logs" });
+
+    expect(tekst.split("\n")[0]).toBe("Nieuwere afspraak gevonden in de logs die de eerdere Monday-datum (2026-11-03) vervangt.");
+  });
+
+  it("voegt geen extra regel toe bij een generieke inschatting (geen bestaande Monday-datum)", () => {
+    const tekst = bouwVoorstelRedenTekst({ ...BASIS, datumHerkomst: "generieke_inschatting" });
+
+    expect(tekst.split("\n")[0]).toBe("Laatste echte contact: 11 dagen geleden");
   });
 });

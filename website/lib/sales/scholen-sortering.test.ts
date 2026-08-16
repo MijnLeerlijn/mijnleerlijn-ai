@@ -5,6 +5,7 @@ function school(overrides: Partial<SorteerbareSchool> = {}): SorteerbareSchool {
   return {
     schoolName: "School",
     relatiestatus: null,
+    salesfase: null,
     onderwijstypeNaam: null,
     plaats: null,
     lastMondayActivityAt: null,
@@ -44,6 +45,19 @@ describe("vergelijkScholen", () => {
     expect(vergelijkScholen(a, b, "relatiestatus", "oplopend")).toBeGreaterThan(0);
     expect(vergelijkScholen(a, b, "onderwijstype", "oplopend")).toBeGreaterThan(0);
     expect(vergelijkScholen(a, b, "plaats", "oplopend")).toBeGreaterThan(0);
+  });
+
+  it("sorteert op salesfase, tekstueel (productiecorrectie 2026-08-16, punt 10)", () => {
+    const a = school({ schoolName: "X", salesfase: "Voorstel" });
+    const b = school({ schoolName: "Y", salesfase: "Afspraak plannen" });
+    expect(vergelijkScholen(a, b, "salesfase", "oplopend")).toBeGreaterThan(0);
+    expect(vergelijkScholen(a, b, "salesfase", "aflopend")).toBeLessThan(0);
+  });
+
+  it("sorteert op salesfase, geen salesfase (null) telt als leeg/eerst bij oplopend", () => {
+    const zonderFase = school({ schoolName: "X", salesfase: null });
+    const metFase = school({ schoolName: "Y", salesfase: "Eerste contact" });
+    expect(vergelijkScholen(zonderFase, metFase, "salesfase", "oplopend")).toBeLessThan(0);
   });
 });
 

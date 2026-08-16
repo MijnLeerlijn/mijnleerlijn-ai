@@ -10,12 +10,14 @@
 // widget-prioritering.ts: een school zonder laatste-contactdatum is voor
 // "oudste eerst"-sortering per definitie de langst-stille (of nooit
 // gecontacteerde) school, en hoort dus vooraan.
-export type SorteerKolom = "schoolName" | "relatiestatus" | "onderwijstype" | "plaats" | "laatsteContact" | "volgendeActie";
+export type SorteerKolom = "schoolName" | "relatiestatus" | "salesfase" | "onderwijstype" | "plaats" | "laatsteContact" | "volgendeActie";
 export type SorteerRichting = "oplopend" | "aflopend";
 
 export interface SorteerbareSchool {
   schoolName: string;
   relatiestatus: string | null;
+  /** Productiecorrectie 2026-08-16 (punt 10) — ontbrak nog als sorteerbare kolom. */
+  salesfase: string | null;
   onderwijstypeNaam: string | null;
   plaats: string | null;
   lastMondayActivityAt: string | null;
@@ -38,6 +40,9 @@ export function vergelijkScholen(a: SorteerbareSchool, b: SorteerbareSchool, kol
       break;
     case "relatiestatus":
       resultaat = vergelijkTekst(a.relatiestatus, b.relatiestatus);
+      break;
+    case "salesfase":
+      resultaat = vergelijkTekst(a.salesfase, b.salesfase);
       break;
     case "onderwijstype":
       resultaat = vergelijkTekst(a.onderwijstypeNaam, b.onderwijstypeNaam);

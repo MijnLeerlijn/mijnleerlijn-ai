@@ -188,10 +188,36 @@ export async function schrijfDatumLaatsteContactTerug(
 }
 
 /**
+ * Live leesactie voor de datumconflict-precheck in lib/sales/proposals.ts
+ * (Sales-logica productiecorrectie 2026-08-16, punt 12) — vóór er ooit een
+ * lokale sales-actions-record wordt aangemaakt moet bekend zijn of Monday's
+ * Datum volgende actie inmiddels afwijkt van wat de gebruiker nu accepteert.
+ * Kale leesfunctie zonder conflictlogica — de aanroeper bepaalt zelf wat
+ * "conflict" betekent voor die specifieke beslissing. Losse export i.p.v. de
+ * aanroeper rechtstreeks lib/sales/monday-client.ts te laten importeren: dit
+ * bestand blijft de enige plek die Monday-kolomtoegang voor Sales beheert.
+ */
+export async function leesActueleVolgendeActieDatum(mondayItemId: string): Promise<string | null> {
+  const kolomWaarde = await leesKolomWaarde(mondayItemId, SCHOLEN_KOLOM.datumVolgendeActie);
+  return kolomWaarde?.text ?? null;
+}
+
+/**
  * `Datum volgende actie` — automatisch ná acceptatie/aanpassing van een
  * Sales-voorstel/actie (bevestigd: geen aparte bevestigingsstap), maar
  * respecteert altijd een al bestaande, andere Monday-waarde (nooit stil
  * overschrijven — bevestigd).
+ *
+ * `bevestigdeMondayWaarde` (Sales-logica productiecorrectie 2026-08-16, punt
+ * 12): alleen gezet door lib/sales/proposals.ts nadat een al aan de
+ * gebruiker getoond datumconflict expliciet is opgelost (Gebruik
+ * Monday-datum / Gebruik Sales-datum / Kies andere datum). Slaat dan de
+ * "elke afwijkende bestaande waarde = weigeren"-precheck hieronder over —
+ * dat conflict is al gezien en bewust opgelost — maar geeft de tóén getoonde
+ * Monday-waarde door als verwachteHuidigeWaarde aan het generieke
+ * read-conflict-write-pad, dat nog steeds live opnieuw leest: een 3e
+ * wijziging ná het tonen van de keuze telt nog steeds als conflict, nooit
+ * blind overschrijven.
  */
 export async function schrijfDatumVolgendeActieTerug(
   payload: Payload,
@@ -200,8 +226,23 @@ export async function schrijfDatumVolgendeActieTerug(
   nieuweDatum: string,
   actorId: number,
   relatedProposalId?: number,
-  relatedActionId?: number
+  relatedActionId?: number,
+  bevestigdeMondayWaarde?: string | null
 ): Promise<WriteBackResultaat> {
+  if (bevestigdeMondayWaarde !== undefined) {
+    return voerWriteBackUit(payload, {
+      schoolId,
+      mondayItemId,
+      columnId: SCHOLEN_KOLOM.datumVolgendeActie,
+      nieuweWaarde: nieuweDatum,
+      verwachteHuidigeWaarde: bevestigdeMondayWaarde,
+      actorId,
+      bron: "actie_geaccepteerd",
+      relatedProposalId,
+      relatedActionId,
+    });
+  }
+
   const huidig = await leesKolomWaarde(mondayItemId, SCHOLEN_KOLOM.datumVolgendeActie);
   const huidigeTekst = huidig?.text ?? null;
 

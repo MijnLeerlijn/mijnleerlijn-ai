@@ -8,9 +8,11 @@ import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCir
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
 import { SalesProposalActies } from "./SalesProposalActies";
-import { formatKorteDatum } from "@/lib/sales/format-datum";
+import { formatKorteDatum, lokaleDatumIso, vandaagIso, voegDagenToe } from "@/lib/sales/format-datum";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 import type { TodoResultaat } from "@/lib/sales/dashboard-todo";
+import type { LaatsteSyncStatus } from "@/lib/sales/sync";
+import { bepaalVandaagWeergave, VANDAAG_SNELKEUZES } from "@/lib/sales/vandaag";
 
 // Sales UX-ronde 3 (2026-08-14) — vervangt SalesWidgetVandaag.tsx (het oude
 // server-gerenderde "Sales vandaag"-widget, gebaseerd op
@@ -22,9 +24,13 @@ import type { TodoResultaat } from "@/lib/sales/dashboard-todo";
 // SalesVandaagView.tsx/SalesScholenView.tsx — geen nieuw visueel systeem.
 //
 // Drie tabs, strikt gescheiden datasets (expliciete opdrachtseis):
-// - "Vandaag": UITSLUITEND open sales-acties met dueDate <= vandaag. Geen
-//   AI-voorstellen, geen "scholen zonder actie" — letterlijk "wat moet ik
-//   vandaag doen".
+// - "Vandaag": UITSLUITEND open sales-acties, datumgestuurd (productiecorrectie
+//   2026-08-16, punt 2) — de gebruiker kiest via ←/Vandaag/Morgen/Overmorgen/
+//   Kies datum/→ welke dag getoond wordt (lib/sales/vandaag.ts se
+//   bepaalVandaagWeergave); achterstallige acties verschijnen uitsluitend als
+//   aparte subgroep wanneer de gekozen datum vandaag zelf is, nooit vermengd
+//   met een andere datum. Geen AI-voorstellen, geen "scholen zonder actie" —
+//   letterlijk "wat moet ik op die dag doen".
 // - "To do": sales-proposals (pending/conflict) + het "mogelijk afgesloten/
 //   inactief"-signaal — via lib/sales/dashboard-todo.ts, dat op zijn beurt
 //   uitsluitend bestaande statusvelden/functies hergebruikt (geen nieuw
@@ -63,10 +69,6 @@ function schoolRef(school: SchoolRef | number): SchoolRef {
   return typeof school === "number" ? { id: school, schoolName: `School #${school}` } : school;
 }
 
-function vandaagIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 // Visuele polish (2026-08-14) — urgentie is puur een afgeleide weergave van
 // het al aanwezige dueDate, geen nieuw veld/model.
 function urgentieVanActie(actie: SalesActionDoc): "achterstallig" | "vandaag" | null {
@@ -75,6 +77,53 @@ function urgentieVanActie(actie: SalesActionDoc): "achterstallig" | "vandaag" | 
   if (datum < vandaag) return "achterstallig";
   if (datum === vandaag) return "vandaag";
   return null;
+}
+
+// Sales-logica productiecorrectie 2026-08-16 (punt 1) — "Laatste sync:
+// 11:58" wanneer de sync vandaag liep (lokale kalenderdag, nooit UTC — zie
+// lokaleDatumIso), anders inclusief datum zodat een oude sync nooit
+// aanvoelt alsof die net gebeurd is.
+function formatSyncTijd(iso: string | null): string | null {
+  if (!iso) return null;
+  const datum = new Date(iso);
+  if (Number.isNaN(datum.getTime())) return null;
+  const tijd = datum.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+  return lokaleDatumIso(datum) === vandaagIso() ? tijd : `${formatKorteDatum(iso)}, ${tijd}`;
+}
+
+// Productiecorrectie 2026-08-16 (punt 2) — geëxtraheerd uit de "vandaag"-tab
+// JSX zodat zowel de achterstallig-subgroep als de lijst-op-de-gekozen-datum
+// hetzelfde kaartje renderen, zonder duplicatie.
+function ActieKaart({ actie }: { actie: SalesActionDoc }) {
+  const school = schoolRef(actie.school);
+  const urgentie = urgentieVanActie(actie);
+  return (
+    <div className={`ml-sales-widget__item${urgentie ? ` ml-sales-widget__item--${urgentie}` : ""}`}>
+      <div className="ml-sales-widget__item-header">
+        <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
+          {school.schoolName}
+        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {urgentie && (
+            <span className={`ml-sales-widget__urgentie ml-sales-widget__urgentie--${urgentie}`}>{urgentie === "achterstallig" ? "Achterstallig" : "Vandaag"}</span>
+          )}
+          <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+        </div>
+      </div>
+      <p className="ml-sales-widget__meta">
+        {actie.type} · {formatKorteDatum(actie.dueDate)}
+      </p>
+      <p className="ml-sales-widget__context">{actie.description}</p>
+      <div className="ml-sales__actie-knoppen">
+        <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales__knop" prefetch={false}>
+          Bekijk
+        </Link>
+        <Link href={`/admin/creator?mail=nieuw&school=${school.id}`} className="ml-sales__knop" prefetch={false}>
+          Schrijf mail
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 function voorstelAccentKlasse(proposalType: string, status: string): string {
@@ -112,11 +161,18 @@ export function SalesDashboardPaneel() {
   const [tab, setTab] = useState<Tab>("vandaag");
   const [tabGeladen, setTabGeladen] = useState(false);
 
-  const [vandaagActies, setVandaagActies] = useState<SalesActionDoc[]>([]);
+  const [alleOpenActies, setAlleOpenActies] = useState<SalesActionDoc[]>([]);
   const [actiesDezeWeekAantal, setActiesDezeWeekAantal] = useState(0);
   const [todo, setTodo] = useState<TodoResultaat | null>(null);
   const [scholenVoorSelector, setScholenVoorSelector] = useState<SchoolOptie[]>([]);
   const [laden, setLaden] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<LaatsteSyncStatus | null>(null);
+  const [syncBezig, setSyncBezig] = useState(false);
+  const [syncFout, setSyncFout] = useState<string | null>(null);
+
+  // Productiecorrectie 2026-08-16 (punt 2) — datumgestuurde "Vandaag"-tab.
+  const [gekozenDatum, setGekozenDatum] = useState(vandaagIso());
+  const [datumPickerOpen, setDatumPickerOpen] = useState(false);
 
   const [schoolKeuze, setSchoolKeuze] = useState<string>("alle");
   const [vraagInvoer, setVraagInvoer] = useState("");
@@ -143,27 +199,43 @@ export function SalesDashboardPaneel() {
 
   const laadData = useCallback(async () => {
     setLaden(true);
-    const vandaag = vandaagIso();
-    const [openActies, todoData, scholenLijst] = await Promise.all([
+    const [openActies, todoData, scholenLijst, syncStatusData] = await Promise.all([
       apiGet<SalesActionDoc>(`/api/sales-actions?where[status][equals]=open&depth=1&sort=dueDate&limit=200`),
       fetch("/api/sales/dashboard/todo", { credentials: "include" })
         .then((r) => (r.ok ? (r.json() as Promise<TodoResultaat>) : null))
         .catch(() => null),
       apiGet<SchoolOptie>(`/api/sales-schools?depth=0&sort=schoolName&limit=1000`),
+      fetch("/api/sales/sync/status", { credentials: "include" })
+        .then((r) => (r.ok ? (r.json() as Promise<LaatsteSyncStatus>) : null))
+        .catch(() => null),
     ]);
-    setVandaagActies(openActies.filter((a) => a.dueDate.slice(0, 10) <= vandaag));
+    setAlleOpenActies(openActies);
     const over7Dagen = new Date();
     over7Dagen.setDate(over7Dagen.getDate() + 7);
     const over7DagenIso = over7Dagen.toISOString().slice(0, 10);
     setActiesDezeWeekAantal(openActies.filter((a) => a.dueDate.slice(0, 10) <= over7DagenIso).length);
     setTodo(todoData);
     setScholenVoorSelector(scholenLijst);
+    setSyncStatus(syncStatusData);
     setLaden(false);
   }, []);
 
   useEffect(() => {
     laadData();
   }, [laadData]);
+
+  // Sales-logica productiecorrectie 2026-08-16 (punt 1) — EXACT dezelfde
+  // sync-route/logica als de "Sync nu"-knop op Sales Overzicht
+  // (SalesVandaagView.tsx): geen tweede sync-implementatie, alleen een
+  // andere, compactere weergave van de uitkomst.
+  async function voerSyncUit() {
+    setSyncBezig(true);
+    setSyncFout(null);
+    const { ok } = await apiPost("/api/sales/sync");
+    if (!ok) setSyncFout("Sync mislukt — probeer het opnieuw.");
+    setSyncBezig(false);
+    laadData();
+  }
 
   async function stelVraag() {
     const vraag = vraagInvoer.trim();
@@ -181,7 +253,36 @@ export function SalesDashboardPaneel() {
     setVraagBezig(false);
   }
 
-  const todoAantal = todo ? todo.proposals.length + todo.mogelijkAfgeslotenScholen.length : 0;
+  // Productiecorrectie punt 13 (2026-08-16) — geplandInMonday telt bewust
+  // NIET mee in todoAantal/het tabbadge: die scholen hebben al een geldige
+  // Monday-planning en vragen geen beslissing, in tegenstelling tot
+  // zonderVervolgactie (het vroegere "mogelijk afgesloten"-veiligheidsnet).
+  const todoAantal = todo ? todo.proposals.length + todo.zonderVervolgactie.length : 0;
+
+  // Productiecorrectie 2026-08-16 (punt 2) — vandaagWeergave stuurt de
+  // tab-INHOUD (reageert op gekozenDatum); het tabbadge zelf blijft altijd
+  // "wat moet er vandaag/achterstallig gebeuren" tonen, ongeacht welke datum
+  // net binnen de tab bekeken wordt (anders zou het badge van betekenis
+  // veranderen zodra iemand op "Morgen" klikt, terwijl een ANDERE tab actief is).
+  const vandaagWeergave = bepaalVandaagWeergave(alleOpenActies, gekozenDatum);
+  const badgeWeergave = bepaalVandaagWeergave(alleOpenActies, vandaagIso());
+  const vandaagBadgeAantal = badgeWeergave.achterstallig.length + badgeWeergave.opGekozenDatum.length;
+
+  // Sales-logica productiecorrectie 2026-08-16 (punt 1) — "159 scholen
+  // bijgewerkt · 6 wijzigingen" bij de sync-knop. scholenGewijzigd is de
+  // striktere teller (echte CRM-kernveldwijzigingen, zie lib/sales/sync.ts)
+  // — bewust géén updatesNieuw (nieuwe Monday-comments zeggen niets over of
+  // een CRM-kernveld ook echt veranderde).
+  const syncSamenvatting =
+    syncStatus?.scholenVerwerkt != null
+      ? [
+          `${syncStatus.scholenVerwerkt} school${syncStatus.scholenVerwerkt === 1 ? "" : "en"} bijgewerkt`,
+          `${syncStatus.scholenGewijzigd ?? 0} wijziging${(syncStatus.scholenGewijzigd ?? 0) === 1 ? "" : "en"}`,
+          syncStatus.fouten ? `${syncStatus.fouten} fout${syncStatus.fouten === 1 ? "" : "en"}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
 
   // Snelle inzichten + AI-tip (visuele polish, 2026-08-14) — uitsluitend
   // afgeleid van hierboven al opgehaalde data, geen nieuwe fetch/AI-call.
@@ -189,9 +290,9 @@ export function SalesDashboardPaneel() {
   const prospectsAantal = scholenVoorSelector.filter((s) => s.relatiestatus === "Prospect").length;
   const tipTekst = (() => {
     if (!todo) return null;
-    const prospectsZonderVervolg = todo.mogelijkAfgeslotenScholen.filter((s) => s.relatiestatus === "Prospect").length;
+    const prospectsZonderVervolg = todo.zonderVervolgactie.filter((s) => s.relatiestatus === "Prospect").length;
     if (prospectsZonderVervolg > 0) return `Er zijn ${prospectsZonderVervolg} prospect${prospectsZonderVervolg === 1 ? "" : "s"} zonder vervolgactie.`;
-    const totaal = todo.mogelijkAfgeslotenScholen.length;
+    const totaal = todo.zonderVervolgactie.length;
     if (totaal > 0) return `Er ${totaal === 1 ? "is" : "zijn"} ${totaal} school${totaal === 1 ? "" : "en"} mogelijk zonder vervolgactie.`;
     return null;
   })();
@@ -206,11 +307,22 @@ export function SalesDashboardPaneel() {
 
   return (
     <section className="ml-sales-widget">
+      <div className="ml-sales-widget__sync-rij">
+        <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={syncBezig} onClick={voerSyncUit}>
+          {syncBezig ? "Bezig…" : "Sync met Monday"}
+        </button>
+        <div className="ml-sales-widget__sync-status">
+          <p className="ml-sales-widget__meta">{syncStatus?.laatsteSyncOp ? `Laatste sync: ${formatSyncTijd(syncStatus.laatsteSyncOp)}` : "Nog niet gesynchroniseerd"}</p>
+          {syncSamenvatting && <p className="ml-sales-widget__meta">{syncSamenvatting}</p>}
+          {syncFout && <p className="ml-sales-widget__meta">{syncFout}</p>}
+        </div>
+      </div>
+
       <div className="ml-sales-widget__tabs">
         <button type="button" className={`ml-sales-widget__tab${tab === "vandaag" ? " ml-sales-widget__tab--actief" : ""}`} onClick={() => kiesTab("vandaag")}>
           <Calendar size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.blue.fg }} />
           Vandaag
-          {vandaagActies.length > 0 && <span className="ml-sales-widget__tab-badge">{vandaagActies.length}</span>}
+          {vandaagBadgeAantal > 0 && <span className="ml-sales-widget__tab-badge">{vandaagBadgeAantal}</span>}
         </button>
         <button type="button" className={`ml-sales-widget__tab${tab === "todo" ? " ml-sales-widget__tab--actief" : ""}`} onClick={() => kiesTab("todo")}>
           <ClipboardList size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.orange.fg }} />
@@ -225,42 +337,60 @@ export function SalesDashboardPaneel() {
 
       {tab === "vandaag" && (
         <div className="ml-sales-widget__lijst">
-          {vandaagActies.length === 0 ? (
-            <div className="ml-sales__leeg">Niets openstaand voor vandaag.</div>
-          ) : (
-            vandaagActies.map((actie) => {
-              const school = schoolRef(actie.school);
-              const urgentie = urgentieVanActie(actie);
+          <div className="ml-sales-widget__datumnav">
+            <button type="button" className="ml-sales__knop" onClick={() => setGekozenDatum(voegDagenToe(gekozenDatum, -1))} aria-label="Vorige dag">
+              ←
+            </button>
+            {VANDAAG_SNELKEUZES.map((keuze) => {
+              const datum = voegDagenToe(vandaagIso(), keuze.dagenVanaf);
               return (
-                <div className={`ml-sales-widget__item${urgentie ? ` ml-sales-widget__item--${urgentie}` : ""}`} key={actie.id}>
-                  <div className="ml-sales-widget__item-header">
-                    <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
-                      {school.schoolName}
-                    </Link>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {urgentie && (
-                        <span className={`ml-sales-widget__urgentie ml-sales-widget__urgentie--${urgentie}`}>
-                          {urgentie === "achterstallig" ? "Achterstallig" : "Vandaag"}
-                        </span>
-                      )}
-                      <RelatiestatusBadge relatiestatus={school.relatiestatus} />
-                    </div>
-                  </div>
-                  <p className="ml-sales-widget__meta">
-                    {actie.type} · {formatKorteDatum(actie.dueDate)}
-                  </p>
-                  <p className="ml-sales-widget__context">{actie.description}</p>
-                  <div className="ml-sales__actie-knoppen">
-                    <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales__knop" prefetch={false}>
-                      Bekijk
-                    </Link>
-                    <Link href={`/admin/creator?mail=nieuw&school=${school.id}`} className="ml-sales__knop" prefetch={false}>
-                      Schrijf mail
-                    </Link>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  key={keuze.label}
+                  className={`ml-sales__knop${gekozenDatum === datum ? " ml-sales__knop--primair" : ""}`}
+                  onClick={() => setGekozenDatum(datum)}
+                >
+                  {keuze.label}
+                </button>
               );
-            })
+            })}
+            <button type="button" className="ml-sales__knop" onClick={() => setDatumPickerOpen((o) => !o)}>
+              Kies datum
+            </button>
+            <button type="button" className="ml-sales__knop" onClick={() => setGekozenDatum(voegDagenToe(gekozenDatum, 1))} aria-label="Volgende dag">
+              →
+            </button>
+            {!vandaagWeergave.isVandaag && <span className="ml-sales-widget__meta">{formatKorteDatum(gekozenDatum)}</span>}
+          </div>
+          {datumPickerOpen && (
+            <input
+              type="date"
+              value={gekozenDatum}
+              onChange={(e) => {
+                setGekozenDatum(e.target.value);
+                setDatumPickerOpen(false);
+              }}
+              style={{ padding: "6px 10px", borderRadius: "var(--ml-admin-radius-sm)", border: "1px solid var(--theme-elevation-200)", marginBottom: 4 }}
+            />
+          )}
+
+          {vandaagWeergave.achterstallig.length > 0 && (
+            <>
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+                Achterstallig ({vandaagWeergave.achterstallig.length})
+              </p>
+              {vandaagWeergave.achterstallig.map((actie) => (
+                <ActieKaart actie={actie} key={actie.id} />
+              ))}
+            </>
+          )}
+
+          {vandaagWeergave.opGekozenDatum.length === 0 ? (
+            <div className="ml-sales__leeg">
+              {vandaagWeergave.isVandaag ? "Niets openstaand voor vandaag." : `Niets openstaand op ${formatKorteDatum(gekozenDatum)}.`}
+            </div>
+          ) : (
+            vandaagWeergave.opGekozenDatum.map((actie) => <ActieKaart actie={actie} key={actie.id} />)
           )}
         </div>
       )}
@@ -295,7 +425,7 @@ export function SalesDashboardPaneel() {
                   </div>
                 );
               })}
-              {todo?.mogelijkAfgeslotenScholen.map((school) => (
+              {todo?.zonderVervolgactie.map((school) => (
                 <div className="ml-sales-widget__item ml-sales-widget__item--veiligheidsnet" key={`veiligheidsnet-${school.id}`}>
                   <div className="ml-sales-widget__item-header">
                     <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
@@ -316,6 +446,24 @@ export function SalesDashboardPaneel() {
                 </div>
               ))}
             </>
+          )}
+          {(todo?.geplandInMonday.length ?? 0) > 0 && (
+            <div className="ml-sales-widget__gepland-monday">
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+                Gepland in Monday ({todo!.geplandInMonday.length}) — geen actie nodig
+              </p>
+              {todo!.geplandInMonday.map((school) => (
+                <div className="ml-sales-widget__item ml-sales-widget__item--rustig" key={`gepland-${school.id}`}>
+                  <div className="ml-sales-widget__item-header">
+                    <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
+                      {school.schoolName}
+                    </Link>
+                    <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                  </div>
+                  <p className="ml-sales-widget__meta">Volgende actie in Monday: {formatKorteDatum(school.mondayVolgendeActieDatum)}</p>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

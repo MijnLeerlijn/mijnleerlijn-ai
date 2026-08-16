@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Payload } from "payload";
-import { verwerkUpdate, verwerkSchoolItem, herevalueerScholenMetNieuweActiviteit, synchroniseerUpdates, type SyncResultaat } from "./sync";
+import {
+  verwerkUpdate,
+  verwerkSchoolItem,
+  herevalueerScholenMetNieuweActiviteit,
+  synchroniseerUpdates,
+  bewaarSyncStatus,
+  haalLaatsteSyncStatus,
+  type SyncResultaat,
+} from "./sync";
 import { MIGRATIE_MARKER, probeerGemigreerdeDatumTeExtraheren, SCHOLEN_KOLOM } from "./monday-columns";
 import type { MondayUpdate, MondaySchoolItem } from "./monday-client";
 import { haalRecenteUpdates } from "./monday-client";
@@ -21,9 +29,11 @@ const mockSchrijfLaatsteContact = vi.mocked(schrijfDatumLaatsteContactTerug);
 const mockFind = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
+const mockUpdateGlobal = vi.fn();
+const mockFindGlobal = vi.fn();
 
 function maakPayload() {
-  return { find: mockFind, create: mockCreate, update: mockUpdate } as unknown as Payload;
+  return { find: mockFind, create: mockCreate, update: mockUpdate, updateGlobal: mockUpdateGlobal, findGlobal: mockFindGlobal } as unknown as Payload;
 }
 
 function leegResultaat(): SyncResultaat {
@@ -31,6 +41,7 @@ function leegResultaat(): SyncResultaat {
     scholenVerwerkt: 0,
     scholenNieuw: 0,
     scholenBijgewerkt: 0,
+    scholenGewijzigd: 0,
     updatesNieuw: 0,
     updatesOvergeslagen: 0,
     nieuweVoorstellenViaSync: 0,
@@ -273,6 +284,166 @@ describe("verwerkSchoolItem — onderwijstype-sync", () => {
   });
 });
 
+describe("verwerkSchoolItem — scholenGewijzigd-teller (productiecorrectie 2026-08-16, punt 1/3)", () => {
+  function maakVolledigItem(overrides: { relatiestatus?: string | null; salesfase?: string | null; datumVolgendeActie?: string | null; typeSchool?: string | null } = {}): MondaySchoolItem {
+    return {
+      id: "999",
+      name: "Testschool",
+      updated_at: "2026-08-16T00:00:00.000Z",
+      column_values: [
+        { id: SCHOLEN_KOLOM.relatiestatus, text: overrides.relatiestatus ?? "Prospect", value: null },
+        { id: SCHOLEN_KOLOM.salesfase, text: overrides.salesfase ?? "Eerste contact", value: null },
+        { id: SCHOLEN_KOLOM.datumVolgendeActie, text: overrides.datumVolgendeActie ?? null, value: null },
+        { id: SCHOLEN_KOLOM.typeSchool, text: overrides.typeSchool ?? null, value: null },
+      ],
+    };
+  }
+  const MONTESSORI: VariantVoorTypeSchoolMapping = { id: 1, educationType: "montessori" };
+
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockCreate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+  });
+
+  it("telt een school NIET mee bij het aanmaken (create-pad) — er is nog geen 'oud' om mee te vergelijken", async () => {
+    mockFind.mockResolvedValue({ docs: [] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakVolledigItem(), resultaat, []);
+
+    expect(resultaat.scholenGewijzigd).toBe(0);
+  });
+
+  it("telt niet mee wanneer geen van de 4 kernvelden verschilt", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55, relatiestatus: "Prospect", salesfase: "Eerste contact", mondayVolgendeActieDatum: null, onderwijstype: null }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakVolledigItem(), resultaat, []);
+
+    expect(resultaat.scholenGewijzigd).toBe(0);
+  });
+
+  it("telt mee wanneer Relatiestatus verandert", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55, relatiestatus: "Lead", salesfase: "Eerste contact", mondayVolgendeActieDatum: null, onderwijstype: null }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakVolledigItem({ relatiestatus: "Prospect" }), resultaat, []);
+
+    expect(resultaat.scholenGewijzigd).toBe(1);
+  });
+
+  it("regressietest punt 4 — bestaand schoolrecord Prospect wordt Lead in Monday: na sync is de lokale Relatiestatus exact Lead", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 90, relatiestatus: "Prospect", salesfase: "Eerste contact", mondayVolgendeActieDatum: null, onderwijstype: null }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakVolledigItem({ relatiestatus: "Lead" }), resultaat, []);
+
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ id: 90, data: expect.objectContaining({ relatiestatus: "Lead" }) }));
+    expect(resultaat.scholenGewijzigd).toBe(1);
+    // De UI-badge zelf (RelatiestatusBadge) leest dit veld rechtstreeks over —
+    // zie lib/sales/relatiestatus-badge.test.ts voor de badge-mapping, en de
+    // Playwright-verificatie in het opleverrapport voor de daadwerkelijke
+    // schermweergave (dit bestand test uitsluitend lib-logica, geen UI).
+  });
+
+  it("telt mee wanneer Salesfase verandert", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55, relatiestatus: "Prospect", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: null, onderwijstype: null }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakVolledigItem({ salesfase: "Eerste contact" }), resultaat, []);
+
+    expect(resultaat.scholenGewijzigd).toBe(1);
+  });
+
+  it("telt mee wanneer Datum volgende actie verandert", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55, relatiestatus: "Prospect", salesfase: "Eerste contact", mondayVolgendeActieDatum: "2026-08-01", onderwijstype: null }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakVolledigItem({ datumVolgendeActie: "2026-11-03" }), resultaat, []);
+
+    expect(resultaat.scholenGewijzigd).toBe(1);
+  });
+
+  it("telt mee wanneer Type school (onderwijstype) verandert", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55, relatiestatus: "Prospect", salesfase: "Eerste contact", mondayVolgendeActieDatum: null, onderwijstype: null }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakVolledigItem({ typeSchool: "Montessori" }), resultaat, [MONTESSORI]);
+
+    expect(resultaat.scholenGewijzigd).toBe(1);
+  });
+
+  it("telt niet mee wanneer Monday's Type-school-cel leeg is — geen vergelijking, een bestaande waarde blijft met rust", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 55, relatiestatus: "Prospect", salesfase: "Eerste contact", mondayVolgendeActieDatum: null, onderwijstype: 1 }] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakVolledigItem({ typeSchool: null }), resultaat, [MONTESSORI]);
+
+    expect(resultaat.scholenGewijzigd).toBe(0);
+  });
+});
+
+// Productiecorrectie 2026-08-16 (punt 14) — expliciet genoemd testscenario:
+// fixture-school "2de Montessorischool Winterkoninkje", Relatiestatus=Lead,
+// Salesfase=Afspraak plannen, Datum volgende actie=3 november 2026. Dit
+// bestand dekt het sync-deel (de upsert schrijft de 3 velden correct weg,
+// ook op een bestaand record). De rest van het scenario — "school
+// verschijnt niet als 'geen vervolgactie'" en "AI respecteert 3 november
+// zonder een concurrerende datum voor te stellen" — staat met dezelfde
+// schoolnaam in aandacht-nodig.test.ts resp. relationship-analysis.test.ts,
+// zodat de drie lagen samen traceerbaar zijn naar dezelfde opdrachtseis.
+describe("verwerkSchoolItem — '2de Montessorischool Winterkoninkje'-scenario (punt 14)", () => {
+  function maakWinterkoninkjeItem(): MondaySchoolItem {
+    return {
+      id: "winterkoninkje-1",
+      name: "2de Montessorischool Winterkoninkje",
+      updated_at: "2026-08-16T00:00:00.000Z",
+      column_values: [
+        { id: SCHOLEN_KOLOM.relatiestatus, text: "Lead", value: null },
+        { id: SCHOLEN_KOLOM.salesfase, text: "Afspraak plannen", value: null },
+        { id: SCHOLEN_KOLOM.datumVolgendeActie, text: "2026-11-03", value: null },
+      ],
+    };
+  }
+
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockCreate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+  });
+
+  it("schrijft Relatiestatus=Lead, Salesfase=Afspraak plannen, Datum volgende actie=2026-11-03 correct weg bij het aanmaken", async () => {
+    mockFind.mockResolvedValue({ docs: [] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakWinterkoninkjeItem(), resultaat, []);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: "2026-11-03" }),
+      })
+    );
+  });
+
+  it("werkt een al bestaand lokaal record bij naar dezelfde 3 waarden — een oude lokale waarde wint nooit", async () => {
+    mockFind.mockResolvedValue({
+      docs: [{ id: 77, relatiestatus: "Prospect", salesfase: "Eerste contact", mondayVolgendeActieDatum: null, onderwijstype: null }],
+    });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakWinterkoninkjeItem(), resultaat, []);
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 77,
+        data: expect.objectContaining({ relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: "2026-11-03" }),
+      })
+    );
+    expect(resultaat.scholenGewijzigd).toBe(1); // alle 3 kernvelden veranderden tegelijk
+  });
+});
+
 // Sales UX V2 (2026-08-14) — proactieve AI-herevaluatie na nieuwe, echte
 // Monday-activiteit. Expliciete bouweis: nooit voor Klant/Gestopt/Inactief,
 // nooit voor scholen zonder nieuwe activiteit deze sync-run, fouten per
@@ -419,5 +590,62 @@ describe("synchroniseerUpdates — automatische write-back van 'Datum laatste co
 
     expect(mockSchrijfLaatsteContact).toHaveBeenCalledTimes(1);
     expect(mockSchrijfLaatsteContact).toHaveBeenCalledWith(expect.anything(), 1, "111", "2026-08-14T00:00:00.000Z");
+  });
+});
+
+// Sales-logica productiecorrectie 2026-08-16 (punt 1) — "Laatste sync"
+// zichtbaar op zowel het dashboard als Sales Overzicht, ongeacht wie/wat de
+// sync triggerde (cron of een handmatige knop). Bewaard op het bestaande
+// sales-instellingen-global, niet in client-only React-state.
+describe("bewaarSyncStatus / haalLaatsteSyncStatus — sync-statusweergave", () => {
+  beforeEach(() => {
+    mockUpdateGlobal.mockReset().mockResolvedValue({});
+    mockFindGlobal.mockReset();
+  });
+
+  it("schrijft de sync-uitkomst weg op het sales-instellingen-global", async () => {
+    const resultaat = leegResultaat();
+    resultaat.scholenVerwerkt = 159;
+    resultaat.scholenGewijzigd = 6;
+    resultaat.fouten = ["iets ging mis"];
+
+    await bewaarSyncStatus(maakPayload(), resultaat);
+
+    expect(mockUpdateGlobal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slug: "sales-instellingen",
+        data: expect.objectContaining({ laatsteSyncScholenVerwerkt: 159, laatsteSyncWijzigingen: 6, laatsteSyncFouten: 1 }),
+      })
+    );
+  });
+
+  it("een mislukte opslag breekt de sync-run niet — logt zichzelf als fout in resultaat.fouten", async () => {
+    mockUpdateGlobal.mockRejectedValue(new Error("Database niet bereikbaar."));
+    const resultaat = leegResultaat();
+
+    await expect(bewaarSyncStatus(maakPayload(), resultaat)).resolves.toBeUndefined();
+
+    expect(resultaat.fouten.some((f) => f.includes("Database niet bereikbaar"))).toBe(true);
+  });
+
+  it("haalLaatsteSyncStatus geeft de bewaarde velden terug", async () => {
+    mockFindGlobal.mockResolvedValue({
+      laatsteSyncOp: "2026-08-16T11:58:00.000Z",
+      laatsteSyncScholenVerwerkt: 159,
+      laatsteSyncWijzigingen: 6,
+      laatsteSyncFouten: 0,
+    });
+
+    const status = await haalLaatsteSyncStatus(maakPayload());
+
+    expect(status).toEqual({ laatsteSyncOp: "2026-08-16T11:58:00.000Z", scholenVerwerkt: 159, scholenGewijzigd: 6, fouten: 0 });
+  });
+
+  it("haalLaatsteSyncStatus geeft null-waarden terug wanneer er nog nooit gesynchroniseerd is", async () => {
+    mockFindGlobal.mockResolvedValue({});
+
+    const status = await haalLaatsteSyncStatus(maakPayload());
+
+    expect(status).toEqual({ laatsteSyncOp: null, scholenVerwerkt: null, scholenGewijzigd: null, fouten: null });
   });
 });

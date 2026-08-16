@@ -34,6 +34,7 @@ const KLAAR_ANALYSE = {
   aanbevolenDatum: "2026-08-25",
   aanbevolenKanaal: "mail" as const,
   aanbevolenType: "mail" as const,
+  datumHerkomst: "generieke_inschatting" as const,
   reden: "Test.",
   confidence: "hoog" as const,
   onvoldoendeContext: false,

@@ -36,6 +36,16 @@ export interface AfspraakItem {
   wie: WieIsAanZet;
 }
 
+/**
+ * Productiecorrectie (2026-08-16, punt 7+11) — DETERMINISTISCH in code
+ * afgeleid (nooit aan het model gevraagd, zelfde filosofie als de rest van
+ * dit bestand): waar komt aanbevolenDatum vandaan? Bepaalt hoe
+ * bouwVoorstelRedenTekst de reden formuleert — "Er staat al een vervolg
+ * gepland op X" i.p.v. een generiek "ik stel voor over N dagen" wanneer
+ * Monday allang een datum heeft.
+ */
+export type DatumHerkomst = "bestaande_monday_datum" | "nieuwe_afspraak_uit_logs" | "generieke_inschatting";
+
 export interface SchoolRelatieAnalyse {
   laatsteEchteContactDatum: string | null;
   dagenSindsLaatsteContact: number | null;
@@ -51,6 +61,8 @@ export interface SchoolRelatieAnalyse {
   aanbevolenDatum: string | null;
   aanbevolenKanaal: AanbevolenKanaal | null;
   aanbevolenType: AanbevolenType | null;
+  /** Zie DatumHerkomst hierboven — null wanneer er geen aanbevolenDatum is (onvoldoende context). */
+  datumHerkomst: DatumHerkomst | null;
   reden: string;
   confidence: "hoog" | "middel" | "laag";
   onvoldoendeContext: boolean;
@@ -93,21 +105,37 @@ const RelatieAnalyseSchema = z.object({
   confidence: z.enum(["hoog", "middel", "laag"]),
 });
 
+// Productiecorrectie (2026-08-16, punt 7+11) — expliciete hiërarchie,
+// hard geordend: harde CRM-feiten (een al bestaande Monday-datum, Salesfase,
+// Relatiestatus) gaan vóór AI-inferentie. Vervangt het eerdere gedrag waarbij
+// backfill.ts deze analyse HELEMAAL OVERSLOEG zodra Monday al een
+// vervolgdatum had (zie backfill.ts se verwerkBestaandeVervolgdatum) — die
+// bypass leverde nooit een advies op wat er op die datum te doen staat, en
+// kon niet herkennen wanneer de logs een aantoonbaar nieuwere afspraak
+// bevatten. Nu draait deze analyse altijd, met de Monday-datum als expliciete
+// prioriteit-2-regel.
 const SYSTEEMPROMPT = `Je bent de MijnLeerlijn Sales-assistent. Je krijgt een gestructureerd dossier van één school en maakt daar een relatie-analyse + voorstel van.
 
 Een aantal feiten staat al vast (zie "Bekende feiten" hieronder) — die zijn deterministisch berekend, herbereken of betwijfel ze niet, neem ze gewoon over.
 
-HARDE REGELS, in deze volgorde van prioriteit:
-1. Een EXPLICIETE datum, toezegging of afspraak in een betrouwbare Update (bijv. "ik bel op 4 september", "ik stuur volgende week voorbeelden") gaat ALTIJD vóór een generieke follow-upregel. Gebruik die datum/dat tijdsbestek letterlijk — verzin nooit een andere termijn als er al een concrete staat.
-2. Een toezegging die MICHEL zelf heeft gedaan (bijv. "ik stuur je de handleiding", "ik kom er woensdag op terug") is een PRIORITAIRE actie: Michel moet zijn eigen belofte nakomen. Zet zo'n afspraak met wie: "michel" en laat aanbevolenVolgendeStap die belofte zijn.
-3. Als de SCHOOL aan zet is (ze hebben zelf toegezegd iets te doen/bespreken/terugkomen), dring dan geen actie "vandaag" op — stel in plaats daarvan een redelijke wachttermijn + concreet follow-up-/check-in-moment voor.
-4. Is er onvoldoende betrouwbare context om een verantwoord advies te geven? Zet dan onvoldoendeContext op true en aanbevolenVolgendeStap/aanbevolenDatum/aanbevolenKanaal/aanbevolenType op null. Verzin NOOIT een advies zonder concrete basis in de betrouwbare Updates.
-5. Zet mogelijkAfgesloten ALLEEN op true bij een ondubbelzinnige afwijzing/einde van interesse in de betrouwbare Updates (bijv. "we gaan niet verder met MijnLeerlijn"). Twijfel je, laat 'm dan op false staan.
+HARDE REGELS voor aanbevolenDatum, in deze exacte volgorde van prioriteit (harde CRM-feiten gaan vóór AI-inferentie — ga pas naar de volgende regel als de vorige geen concreet aanknopingspunt geeft):
+1. Een EXPLICIETE datum, toezegging of afspraak in een betrouwbare Update (bijv. "ik bel op 4 september", "ik stuur volgende week voorbeelden") gaat ALTIJD vóór alles hieronder — ook vóór een al bestaande Monday-datum. Gebruik die datum/dat tijdsbestek letterlijk.
+2. Staat er in "Bekende feiten" al een "Bestaande vervolgdatum in Monday"? Gebruik DIE datum als aanbevolenDatum, TENZIJ regel 1 hierboven een aantoonbaar NIEUWERE, expliciete afspraak oplevert die deze vervangt. Verzin NOOIT een eerdere of afwijkende datum enkel op basis van een generieke follow-up-inschatting wanneer Monday al een datum heeft — vermeld in "reden" expliciet dat er al een vervolg gepland staat (bijv. "Er staat al een vervolg gepland op 3 november") en adviseer eventueel wat op dat moment het beste te doen is.
+3. Weeg de Salesfase mee (zie Bekende feiten) — "Afspraak plannen" vraagt een andere insteek/toon dan bijvoorbeeld "Eerste contact".
+4. Weeg de Relatiestatus mee (Lead/Prospect/Wacht op handtekening vragen elk een andere urgentie/toon).
+5. Gebruik de historische contactcontext (laatste-contact-datum, eerdere Updates) als achtergrond voor je inschatting.
+6. Alleen als geen van regel 1–5 een concreet aanknopingspunt geeft, maak een generieke follow-up-inschatting.
+
+Overige harde regels:
+- Een toezegging die MICHEL zelf heeft gedaan (bijv. "ik stuur je de handleiding", "ik kom er woensdag op terug") is een PRIORITAIRE actie: Michel moet zijn eigen belofte nakomen. Zet zo'n afspraak met wie: "michel" en laat aanbevolenVolgendeStap die belofte zijn.
+- Als de SCHOOL aan zet is (ze hebben zelf toegezegd iets te doen/bespreken/terugkomen), dring dan geen actie "vandaag" op — stel in plaats daarvan een redelijke wachttermijn + concreet follow-up-/check-in-moment voor (tenzij regel 2 hierboven al een Monday-datum voorschrijft).
+- Is er onvoldoende betrouwbare context om een verantwoord advies te geven? Zet dan onvoldoendeContext op true en aanbevolenVolgendeStap/aanbevolenDatum/aanbevolenKanaal/aanbevolenType op null. Verzin NOOIT een advies zonder concrete basis in de betrouwbare Updates.
+- Zet mogelijkAfgesloten ALLEEN op true bij een ondubbelzinnige afwijzing/einde van interesse in de betrouwbare Updates (bijv. "we gaan niet verder met MijnLeerlijn"). Twijfel je, laat 'm dan op false staan.
 
 Oude, gemigreerde geschiedenis (indien meegegeven, apart gelabeld) is UITSLUITEND achtergrond over de relatie — gebruik die nooit om te bepalen wanneer het laatste contact was of om een afspraak te veronderstellen die niet expliciet in de betrouwbare Updates staat.
 
 "laatsteContactSamenvatting" is een korte, feitelijke samenvatting van het laatste betrouwbare contactmoment (wat is er besproken/gebeurd).
-"reden" moet concreet naar de brontekst verwijzen — verzin niets. Als de historische voorkeur van Michel (indien meegegeven) je aanbevolenDatum heeft beïnvloed, benoem dat expliciet in "reden" (bijv. "Bij vergelijkbare situaties kies je meestal ongeveer N dagen; daarom stel ik N dagen voor.").`;
+"reden" moet concreet naar de brontekst verwijzen — verzin niets, en volg de prioriteitsvolgorde hierboven expliciet (bijv. "Monday heeft al een vervolgdatum op 3 november, dus die respecteer ik" of "In de logs staat een nieuwere, expliciete afspraak op 10 september die de eerdere Monday-datum vervangt"). Als de historische voorkeur van Michel (indien meegegeven) je aanbevolenDatum heeft beïnvloed (alleen relevant bij regel 6), benoem dat expliciet in "reden" (bijv. "Bij vergelijkbare situaties kies je meestal ongeveer N dagen; daarom stel ik N dagen voor.").`;
 
 function formatUpdate(u: MondayUpdate): string {
   return `[${u.created_at.slice(0, 10)}${u.creator ? `, door ${u.creator.name}` : ""}]\n${u.text_body}`;
@@ -153,6 +181,21 @@ function bouwPrompt(opties: {
   }
 
   return delen.join("\n\n===\n\n");
+}
+
+/**
+ * DatumHerkomst-bepaling — puur op de reeds-berekende waarden, geen nieuwe
+ * aanname: gelijk aan de Monday-datum → die is gerespecteerd (regel 2);
+ * verschilt ÉN er is minstens één afspraak uit de logs geëxtraheerd → een
+ * nieuwere afspraak heeft 'm terecht vervangen (regel 1); anders (geen
+ * bestaande Monday-datum om mee te vergelijken) → generieke inschatting
+ * (regel 3–6).
+ */
+function bepaalDatumHerkomst(aanbevolenDatum: string | null, bestaandeVervolgdatum: string | null, afspraken: AfspraakItem[]): DatumHerkomst | null {
+  if (!aanbevolenDatum) return null;
+  if (bestaandeVervolgdatum && aanbevolenDatum === bestaandeVervolgdatum) return "bestaande_monday_datum";
+  if (bestaandeVervolgdatum && aanbevolenDatum !== bestaandeVervolgdatum && afspraken.length > 0) return "nieuwe_afspraak_uit_logs";
+  return "generieke_inschatting";
 }
 
 /**
@@ -210,6 +253,8 @@ export async function analyseerUitBrontekst(payload: Payload, school: SchoolVoor
   const llmDeel = await generateStructuredOutput({ schema: RelatieAnalyseSchema, systemPrompt: SYSTEEMPROMPT, userPrompt });
 
   const onvoldoende = llmDeel.onvoldoendeContext || !llmDeel.aanbevolenVolgendeStap || !llmDeel.aanbevolenDatum;
+  const bestaandeVervolgdatum = school.mondayVolgendeActieDatum ?? null;
+  const aanbevolenDatum = onvoldoende ? null : llmDeel.aanbevolenDatum;
 
   const analyse: SchoolRelatieAnalyse = {
     laatsteEchteContactDatum,
@@ -217,15 +262,16 @@ export async function analyseerUitBrontekst(payload: Payload, school: SchoolVoor
     laatsteContactSamenvatting: llmDeel.laatsteContactSamenvatting,
     afspraken: llmDeel.afspraken,
     wieIsAanZet: llmDeel.wieIsAanZet,
-    bestaandeVervolgdatum: school.mondayVolgendeActieDatum ?? null,
+    bestaandeVervolgdatum,
     relatiestatus: school.relatiestatus ?? null,
     salesfase: school.salesfase ?? null,
     onderwijstype: onderwijstypeNaam,
     risicoDatLeadStilvalt: llmDeel.risicoDatLeadStilvalt,
     aanbevolenVolgendeStap: onvoldoende ? null : llmDeel.aanbevolenVolgendeStap,
-    aanbevolenDatum: onvoldoende ? null : llmDeel.aanbevolenDatum,
+    aanbevolenDatum,
     aanbevolenKanaal: onvoldoende ? null : llmDeel.aanbevolenKanaal,
     aanbevolenType: onvoldoende ? null : llmDeel.aanbevolenType,
+    datumHerkomst: bepaalDatumHerkomst(aanbevolenDatum, bestaandeVervolgdatum, llmDeel.afspraken),
     reden: llmDeel.reden,
     confidence: llmDeel.confidence,
     onvoldoendeContext: onvoldoende,
@@ -246,9 +292,21 @@ export async function analyseerUitBrontekst(payload: Payload, school: SchoolVoor
  * altijd toont: wat het laatste contact was, hoe lang geleden, welke afspraak
  * daaruit volgt, en waarom dit het advies is (opdrachtseis — het "Voorstel:"
  * zelf staat al apart/prominent in proposalText, dus niet nogmaals hier).
+ *
+ * Productiecorrectie punt 11 ("Toon dit ook in de reden van het voorstel") —
+ * de eerste regel toont nu expliciet WAAR aanbevolenDatum vandaan komt
+ * (datumHerkomst, deterministisch berekend, zie bepaalDatumHerkomst), zodat
+ * "er staat al een vervolg gepland op 3 november" nooit verstopt zit in de
+ * losse modeltekst.
  */
 export function bouwVoorstelRedenTekst(analyse: SchoolRelatieAnalyse): string {
-  const regels: string[] = [`Laatste echte contact: ${analyse.dagenSindsLaatsteContact ?? "onbekend"} dagen geleden`];
+  const regels: string[] = [];
+  if (analyse.datumHerkomst === "bestaande_monday_datum" && analyse.bestaandeVervolgdatum) {
+    regels.push(`Er staat al een vervolg gepland op ${analyse.bestaandeVervolgdatum.slice(0, 10)} (Monday) — dat advies respecteert dit.`);
+  } else if (analyse.datumHerkomst === "nieuwe_afspraak_uit_logs" && analyse.bestaandeVervolgdatum) {
+    regels.push(`Nieuwere afspraak gevonden in de logs die de eerdere Monday-datum (${analyse.bestaandeVervolgdatum.slice(0, 10)}) vervangt.`);
+  }
+  regels.push(`Laatste echte contact: ${analyse.dagenSindsLaatsteContact ?? "onbekend"} dagen geleden`);
   const eersteAfspraak = analyse.afspraken[0];
   if (eersteAfspraak) regels.push(`Afspraak: ${eersteAfspraak.tekst}`);
   regels.push(`Waarom: ${analyse.reden}`);

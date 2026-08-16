@@ -5,7 +5,7 @@ import Link from "next/link";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
 import { SalesProposalActies } from "./SalesProposalActies";
-import { formatKorteDatum } from "@/lib/sales/format-datum";
+import { formatKorteDatum, vandaagIso } from "@/lib/sales/format-datum";
 import { PENDING_VOORSTEL_TYPES_VOOR_AANDACHT } from "@/lib/sales/aandacht-nodig";
 
 // Sales UX V2 (2026-08-14) — dagelijks werkscherm, herbouwd van 4
@@ -85,10 +85,6 @@ async function apiPost<T>(url: string, body?: unknown): Promise<{ ok: boolean; d
 
 function schoolRef(school: SchoolRef | number): SchoolRef {
   return typeof school === "number" ? { id: school, schoolName: `School #${school}` } : school;
-}
-
-function vandaagIso(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 // Visuele polish (2026-08-14) — zelfde urgentie-afleiding als

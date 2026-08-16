@@ -54,3 +54,31 @@ export function dagenSinds(iso: string | null | undefined): number | null {
   if (Number.isNaN(datum)) return null;
   return Math.max(0, Math.floor((Date.now() - datum) / (1000 * 60 * 60 * 24)));
 }
+
+// Sales-productiecorrectie (2026-08-16) — timezone-veilige "vandaag"-bepaling.
+// BUG gevonden bij onderzoek: SalesDashboardPaneel.tsx/SalesVandaagView.tsx
+// hadden allebei hun EIGEN `vandaagIso()` als `new Date().toISOString().slice(0,10)`
+// — dat rekent in UTC. Rond lokale middernacht (bv. 00:30 in Nederland, UTC+1/+2)
+// geeft dat nog de vorige kalenderdag terug. `getFullYear()/getMonth()/getDate()`
+// (i.p.v. de UTC-varianten) lezen de datum in de tijdzone van de browser zelf —
+// dat IS de tijdzone van de gebruiker, precies wat hier nodig is. Nooit
+// `toISOString()`/`getUTC*` gebruiken voor "welke kalenderdag is het nu".
+export function lokaleDatumIso(datum: Date): string {
+  const jaar = datum.getFullYear();
+  const maand = String(datum.getMonth() + 1).padStart(2, "0");
+  const dag = String(datum.getDate()).padStart(2, "0");
+  return `${jaar}-${maand}-${dag}`;
+}
+
+/** "Vandaag" in de lokale tijdzone van de gebruiker (browser) — vervangt elke losse `new Date().toISOString().slice(0,10)`. */
+export function vandaagIso(): string {
+  return lokaleDatumIso(new Date());
+}
+
+/** Telt `dagen` (mag negatief) op bij een "YYYY-MM-DD"-datum — puur kalenderrekenen, geen tijdzone-gevoelige Date-aritmetiek op momenten. */
+export function voegDagenToe(iso: string, dagen: number): string {
+  const [jaar, maand, dag] = iso.split("-").map(Number) as [number, number, number];
+  const datum = new Date(jaar, maand - 1, dag);
+  datum.setDate(datum.getDate() + dagen);
+  return lokaleDatumIso(datum);
+}

@@ -36,5 +36,35 @@ export const SalesInstellingen: GlobalConfig = {
         { label: "Anders", value: "anders" },
       ],
     },
+    // Sales-logica productiecorrectie 2026-08-16 (punt 1) — bijgehouden door
+    // lib/sales/sync.ts se synchroniseerScholenBoard() aan het eind van elke
+    // sync-run (cron ÉN handmatige "Sync nu"/"Sync met Monday"-knop, want
+    // beide roepen exact diezelfde functie aan). readOnly: geen mens vult dit
+    // handmatig in — puur bijschrift voor de sync-statusweergave op het
+    // dashboard en Sales Overzicht.
+    {
+      name: "laatsteSyncOp",
+      type: "date",
+      label: "Laatste sync",
+      admin: { readOnly: true, description: "Automatisch bijgewerkt na elke sync-run — niet handmatig aanpassen." },
+    },
+    {
+      name: "laatsteSyncScholenVerwerkt",
+      type: "number",
+      label: "Scholen verwerkt (laatste sync)",
+      admin: { readOnly: true },
+    },
+    {
+      name: "laatsteSyncWijzigingen",
+      type: "number",
+      label: "Scholen met een gewijzigd CRM-kernveld (laatste sync)",
+      admin: { readOnly: true, description: "Relatiestatus, Salesfase, Type school of Datum volgende actie afweek van de al lokaal bekende waarde." },
+    },
+    {
+      name: "laatsteSyncFouten",
+      type: "number",
+      label: "Fouten (laatste sync)",
+      admin: { readOnly: true },
+    },
   ],
 };

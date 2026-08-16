@@ -2811,6 +2811,16 @@ export interface SalesInstellingen {
    */
   standaardFollowUpTermijnDagen?: number | null;
   voorkeurskanaal?: ('mail' | 'telefoon' | 'in_persoon' | 'anders') | null;
+  /**
+   * Automatisch bijgewerkt na elke sync-run — niet handmatig aanpassen.
+   */
+  laatsteSyncOp?: string | null;
+  laatsteSyncScholenVerwerkt?: number | null;
+  /**
+   * Relatiestatus, Salesfase, Type school of Datum volgende actie afweek van de al lokaal bekende waarde.
+   */
+  laatsteSyncWijzigingen?: number | null;
+  laatsteSyncFouten?: number | null;
   updatedAt?: string | null;
   createdAt?: string | null;
 }
@@ -2877,6 +2887,10 @@ export interface HelpdeskInstellingenSelect<T extends boolean = true> {
 export interface SalesInstellingenSelect<T extends boolean = true> {
   standaardFollowUpTermijnDagen?: T;
   voorkeurskanaal?: T;
+  laatsteSyncOp?: T;
+  laatsteSyncScholenVerwerkt?: T;
+  laatsteSyncWijzigingen?: T;
+  laatsteSyncFouten?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

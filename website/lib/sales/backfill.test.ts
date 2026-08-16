@@ -69,6 +69,7 @@ const VOLLEDIGE_ANALYSE_UITKOMST = {
     aanbevolenDatum: "2026-08-20",
     aanbevolenKanaal: "mail" as const,
     aanbevolenType: "afspraak" as const,
+    datumHerkomst: "generieke_inschatting" as const,
     reden: "Ze vroegen expliciet om een demo.",
     confidence: "hoog" as const,
     onvoldoendeContext: false,
@@ -155,20 +156,77 @@ describe("voerBackfillUit — idempotentie", () => {
     expect(mockCreate).not.toHaveBeenCalledWith(expect.objectContaining({ collection: "sales-actions" }));
   });
 
-  it("respecteert een al bestaande Monday-vervolgdatum als 'bestaande_vervolgdatum'-voorstel, i.p.v. de AI te vragen iets te verzinnen", async () => {
+  it("geeft een bestaande Monday-vervolgdatum door aan de relatie-analyse i.p.v. de analyse over te slaan (productiecorrectie 2026-08-16, punt 6/7/11)", async () => {
+    mockFind.mockImplementation(({ collection }: { collection: string }) => {
+      if (collection === "sales-schools") return Promise.resolve({ docs: [{ ...SCHOOL_A, mondayVolgendeActieDatum: "2026-09-01" }] });
+      if (collection === "sales-log-events") return Promise.resolve({ docs: [{ payload: { gemigreerd: false } }] });
+      return Promise.resolve({ docs: [] }); // sales-actions, sales-proposals: geen bestaand record
+    });
+    mockAnalyse.mockResolvedValue({
+      status: "klaar",
+      analyse: { ...VOLLEDIGE_ANALYSE_UITKOMST.analyse, aanbevolenDatum: "2026-09-01", datumHerkomst: "bestaande_monday_datum" as const },
+      brontekstUpdateIds: ["u1"],
+    });
+
+    const resultaat = await voerBackfillUit(maakPayload());
+
+    expect(mockAnalyse).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mondayVolgendeActieDatum: "2026-09-01" }));
+    expect(resultaat.perUitkomst.ai_voorstel_klaar).toBe(1);
+    const voorstelCall = mockCreate.mock.calls.find((c) => c[0].collection === "sales-proposals")![0];
+    expect(voorstelCall.data.proposalType).toBe("volgende_actie"); // niet meer het uitgefaseerde 'bestaande_vervolgdatum'
+    expect(voorstelCall.data.proposedDate).toBe("2026-09-01");
+  });
+
+  it("slaat een school met al een pending 'bestaande_vervolgdatum'-voorstel over — idempotentie voor oude, nog niet afgehandelde voorstelrijen van dit uitgefaseerde type", async () => {
     mockFind.mockImplementation(({ collection, where }: { collection: string; where?: Record<string, unknown> }) => {
       if (collection === "sales-schools") return Promise.resolve({ docs: [{ ...SCHOOL_A, mondayVolgendeActieDatum: "2026-09-01" }] });
       if (collection === "sales-actions") return Promise.resolve({ docs: [] });
-      if (collection === "sales-proposals") return Promise.resolve({ docs: [] });
+      if (collection === "sales-proposals") {
+        const proposalType = (where?.proposalType as { equals: string } | undefined)?.equals;
+        return Promise.resolve({ docs: proposalType === "bestaande_vervolgdatum" ? [{ id: 42 }] : [] });
+      }
       return Promise.resolve({ docs: [] });
     });
 
     const resultaat = await voerBackfillUit(maakPayload());
 
     expect(resultaat.perUitkomst.ai_voorstel_klaar).toBe(1);
-    expect(mockAnalyse).not.toHaveBeenCalled(); // geen AI-redenering nodig — de datum kwam al uit Monday
-    const voorstelCall = mockCreate.mock.calls.find((c) => c[0].collection === "sales-proposals")![0];
-    expect(voorstelCall.data.proposalType).toBe("bestaande_vervolgdatum");
-    expect(voorstelCall.data.proposedDate).toBe("2026-09-01");
+    expect(resultaat.resultaten[0]!.proposalId).toBe(42);
+    expect(mockAnalyse).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("voerBackfillUit — Inactief/Gestopt/Klant nooit in actieve Sales-assistentlogica (punt 8, regressietests)", () => {
+  it("bevraagt sales-schools altijd met actief: true — Inactief/Gestopt/Klant-zonder-actie matchen dit filter per definitie nooit (actief wordt op sync bepaald door isOpenstaandeRelatiestatus)", async () => {
+    mockFind.mockImplementation(({ collection, where }: { collection: string; where?: Record<string, unknown> }) => {
+      if (collection === "sales-schools") {
+        expect(where).toEqual({ actief: { equals: true } });
+        return Promise.resolve({ docs: [] });
+      }
+      return Promise.resolve({ docs: [] });
+    });
+
+    const resultaat = await voerBackfillUit(maakPayload());
+
+    expect(resultaat.scholenBeoordeeld).toBe(0);
+    expect(mockAnalyse).not.toHaveBeenCalled();
+  });
+
+  it("een school die niet in de actief:true-resultaatset zit (Inactief/Gestopt/Klant) wordt nooit beoordeeld, ook al staan er open acties/voorstellen los in de database", async () => {
+    // sales-schools levert bewust GEEN scholen op (simuleert dat de enige
+    // bestaande scholen Inactief/Gestopt/Klant zijn, dus buiten actief:true
+    // vallen) — als voerBackfillUit toch iets zou beoordelen zou dat een
+    // regressie zijn (bv. een aparte, niet-gefilterde query ergens).
+    mockFind.mockImplementation(({ collection }: { collection: string }) => {
+      if (collection === "sales-schools") return Promise.resolve({ docs: [] });
+      return Promise.resolve({ docs: [{ id: 999 }] }); // zou, als 't wel bevraagd werd, een open actie/voorstel voorspiegelen
+    });
+
+    const resultaat = await voerBackfillUit(maakPayload());
+
+    expect(resultaat.scholenBeoordeeld).toBe(0);
+    expect(resultaat.resultaten).toEqual([]);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

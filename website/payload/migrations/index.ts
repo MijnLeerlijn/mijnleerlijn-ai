@@ -27,6 +27,7 @@ import * as migration_20260814_090000_sales_v1_datamodel from './20260814_090000
 import * as migration_20260814_102738_sales_v2_ux_velden from './20260814_102738_sales_v2_ux_velden';
 import * as migration_20260815_090000_sales_relatie_analyse_veld from './20260815_090000_sales_relatie_analyse_veld';
 import * as migration_20260815_120000_sales_proposal_superseded from './20260815_120000_sales_proposal_superseded';
+import * as migration_20260816_090000_sales_sync_status from './20260816_090000_sales_sync_status';
 
 export const migrations = [
   {
@@ -173,5 +174,10 @@ export const migrations = [
     up: migration_20260815_120000_sales_proposal_superseded.up,
     down: migration_20260815_120000_sales_proposal_superseded.down,
     name: '20260815_120000_sales_proposal_superseded',
+  },
+  {
+    up: migration_20260816_090000_sales_sync_status.up,
+    down: migration_20260816_090000_sales_sync_status.down,
+    name: '20260816_090000_sales_sync_status',
   },
 ];

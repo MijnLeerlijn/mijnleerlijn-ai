@@ -55,10 +55,38 @@ function maakSamenvatting(tekst: string): string {
   return `${geschoond.slice(0, LOGBOEK_SAMENVATTING_MAX_LENGTE)}…`;
 }
 
+/**
+ * Sales-logica productiecorrectie 2026-08-16 (punt 1/3) — vergelijkt
+ * uitsluitend de 4 CRM-kernvelden (Relatiestatus/Salesfase/Datum volgende
+ * actie/Type school) tussen de al lokaal bekende waarde en wat deze
+ * sync-run net uit Monday las. `onderwijstype` staat alleen in `nieuw`
+ * wanneer Monday's dropdown deze run matchte (zie verwerkSchoolItem) — een
+ * afwezige sleutel betekent "deze run zegt hier niets over", geen wijziging.
+ */
+function isKernveldGewijzigd(
+  oud: { relatiestatus?: string | null; salesfase?: string | null; mondayVolgendeActieDatum?: string | null; onderwijstype?: number | null },
+  nieuw: { relatiestatus: string | null; salesfase: string | null; mondayVolgendeActieDatum: string | null; onderwijstype?: number }
+): boolean {
+  if ((oud.relatiestatus ?? null) !== nieuw.relatiestatus) return true;
+  if ((oud.salesfase ?? null) !== nieuw.salesfase) return true;
+  if ((oud.mondayVolgendeActieDatum ?? null) !== nieuw.mondayVolgendeActieDatum) return true;
+  if ("onderwijstype" in nieuw && (oud.onderwijstype ?? null) !== nieuw.onderwijstype) return true;
+  return false;
+}
+
 export interface SyncResultaat {
   scholenVerwerkt: number;
   scholenNieuw: number;
   scholenBijgewerkt: number;
+  /**
+   * Sales-logica productiecorrectie 2026-08-16 (punt 1/3) — scholen waarvan
+   * minstens één CRM-kernveld (Relatiestatus/Salesfase/Type school/Datum
+   * volgende actie) deze run een ANDERE waarde kreeg dan wat er lokaal al
+   * stond. Bewust een striktere, betekenisvollere teller dan updatesNieuw
+   * (een nieuwe Monday-comment zegt niets over of een CRM-kernveld ook echt
+   * veranderde) — dit is de "N wijzigingen" op de sync-statusweergave.
+   */
+  scholenGewijzigd: number;
   updatesNieuw: number;
   updatesOvergeslagen: number;
   /**
@@ -116,6 +144,10 @@ export async function verwerkSchoolItem(payload: Payload, item: MondaySchoolItem
   });
 
   if (bestaand.docs.length > 0) {
+    const oud = bestaand.docs[0] as unknown as { relatiestatus?: string | null; salesfase?: string | null; mondayVolgendeActieDatum?: string | null; onderwijstype?: number | null };
+    if (isKernveldGewijzigd(oud, data)) {
+      resultaat.scholenGewijzigd++;
+    }
     await payload.update({ collection: "sales-schools", id: bestaand.docs[0]!.id, data, overrideAccess: true });
     resultaat.scholenBijgewerkt++;
   } else {
@@ -325,6 +357,58 @@ export async function herevalueerScholenMetNieuweActiviteit(
 }
 
 /**
+ * Sales-logica productiecorrectie 2026-08-16 (punt 1) — schrijft de
+ * sync-uitkomst weg op het sales-instellingen-global, zodat "Laatste sync"
+ * zichtbaar is ONGEACHT wie/wat de sync triggerde (cron of een handmatige
+ * knop, op elk scherm) — geen client-only React-state die verdwijnt zodra de
+ * pagina ververst. Faalt deze opslag zelf, dan telt dat als een fout in het
+ * sync-rapport, maar breekt de sync-run niet: de daadwerkelijke sync is dan
+ * al gelukt, alleen het bijschrift niet. Geëxporteerd voor directe,
+ * ongemockte tests (zelfde precedent als verwerkUpdate/verwerkSchoolItem
+ * hierboven) — vermijdt de school-/updates-paginatie van
+ * synchroniseerScholenBoard te moeten mocken om dit los te testen.
+ */
+export async function bewaarSyncStatus(payload: Payload, resultaat: SyncResultaat): Promise<void> {
+  try {
+    await payload.updateGlobal({
+      slug: "sales-instellingen",
+      data: {
+        laatsteSyncOp: new Date().toISOString(),
+        laatsteSyncScholenVerwerkt: resultaat.scholenVerwerkt,
+        laatsteSyncWijzigingen: resultaat.scholenGewijzigd,
+        laatsteSyncFouten: resultaat.fouten.length,
+      },
+      overrideAccess: true,
+    });
+  } catch (error) {
+    resultaat.fouten.push(`Sync-status opslaan mislukt: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export interface LaatsteSyncStatus {
+  laatsteSyncOp: string | null;
+  scholenVerwerkt: number | null;
+  scholenGewijzigd: number | null;
+  fouten: number | null;
+}
+
+/** Leest de door bewaarSyncStatus() weggeschreven laatste-sync-info — gebruikt door GET /api/sales/sync/status voor de dashboard-/Overzicht-knop. */
+export async function haalLaatsteSyncStatus(payload: Payload): Promise<LaatsteSyncStatus> {
+  const instellingen = (await payload.findGlobal({ slug: "sales-instellingen", overrideAccess: true, depth: 0 })) as unknown as {
+    laatsteSyncOp?: string | null;
+    laatsteSyncScholenVerwerkt?: number | null;
+    laatsteSyncWijzigingen?: number | null;
+    laatsteSyncFouten?: number | null;
+  };
+  return {
+    laatsteSyncOp: instellingen.laatsteSyncOp ?? null,
+    scholenVerwerkt: instellingen.laatsteSyncScholenVerwerkt ?? null,
+    scholenGewijzigd: instellingen.laatsteSyncWijzigingen ?? null,
+    fouten: instellingen.laatsteSyncFouten ?? null,
+  };
+}
+
+/**
  * Volledige sync-run: alle schoolitems (upsert) + recente Updates
  * (idempotent, geminimaliseerd opgeslagen). `updatesLookbackDagen` is een
  * vast venster (geen bewaarde "laatste sync"-cursor in V1) — royaal genoeg
@@ -336,6 +420,7 @@ export async function synchroniseerScholenBoard(payload: Payload, updatesLookbac
     scholenVerwerkt: 0,
     scholenNieuw: 0,
     scholenBijgewerkt: 0,
+    scholenGewijzigd: 0,
     updatesNieuw: 0,
     updatesOvergeslagen: 0,
     nieuweVoorstellenViaSync: 0,
@@ -346,5 +431,6 @@ export async function synchroniseerScholenBoard(payload: Payload, updatesLookbac
   await synchroniseerScholen(payload, resultaat);
   const vanaf = new Date(Date.now() - updatesLookbackDagen * 24 * 60 * 60 * 1000);
   await synchroniseerUpdates(payload, resultaat, vanaf);
+  await bewaarSyncStatus(payload, resultaat);
   return resultaat;
 }

@@ -1,5 +1,5 @@
 import type { Payload } from "payload";
-import { schrijfDatumVolgendeActieTerug, schrijfTypeSchoolTerug, type WriteBackResultaat } from "./writeback";
+import { leesActueleVolgendeActieDatum, schrijfDatumVolgendeActieTerug, schrijfTypeSchoolTerug, type WriteBackResultaat } from "./writeback";
 
 // Sales-assistent V1 (2026-08-14) — accept/modify/reject voor
 // sales-proposals. Bewust een eigen, gecontroleerde functie i.p.v. een losse
@@ -24,12 +24,39 @@ export interface BeslisOpties {
   beslissing: ProposalBeslissing;
   gebruikerId: number;
   aangepasteWaarde?: AangepasteWaarde;
+  /**
+   * Sales-logica productiecorrectie 2026-08-16 (punt 12) — alleen gezet
+   * wanneer de aanroeper een eerder in BeslisResultaat.datumconflict getoonde
+   * keuze nu expliciet oplost ("Gebruik Monday-datum" / "Gebruik
+   * Sales-datum" / "Kies andere datum"). Waarde: de Monday-vervolgdatum die
+   * tóén aan de gebruiker getoond is (of `null` als Monday op dat moment geen
+   * datum had) — slaat de hernieuwde precheck hieronder over en dient als
+   * bevestigde basislijn voor de write-back, die nog steeds live herleest
+   * (een 3e wijziging sinds het tonen van de keuze telt nog als conflict).
+   */
+  bevestigdeMondayDatum?: string | null;
+}
+
+export interface DatumConflict {
+  /** Monday's live Datum-volgende-actie op het moment van de precheck. */
+  mondayDatum: string;
+  /** De datum die deze beslissing net probeerde te gebruiken (voorstel of aangepaste waarde). */
+  salesDatum: string;
 }
 
 export interface BeslisResultaat {
   proposalId: number;
   actionId?: number;
   writeback?: WriteBackResultaat;
+  /**
+   * Gezet i.p.v. actionId/writeback: de lokale Sales-datum en Monday's live
+   * Datum volgende actie verschillen. Nog GEEN sales-actions-record
+   * aangemaakt, nog GEEN write-back geprobeerd — vereist een expliciete
+   * herhaalde aanroep met bevestigdeMondayDatum (zie BeslisOpties hierboven)
+   * vóór er iets wordt vastgelegd. Nooit stilzwijgend één datum laten winnen
+   * (opdrachtseis).
+   */
+  datumconflict?: DatumConflict;
 }
 
 type ActieType = "mail" | "bellen" | "afspraak" | "voorbereiding" | "informatie_sturen" | "anders";
@@ -135,6 +162,27 @@ export async function beslisOverVoorstel(payload: Payload, proposalId: number, o
   const type = finalChoice?.proposedType ?? voorstel.proposedType ?? "anders";
   const channel = finalChoice?.proposedChannel ?? voorstel.proposedChannel ?? undefined;
 
+  // Datumconflict-precheck (punt 12) — vóórdat er ooit een lokale
+  // sales-actions-record bestaat: is Monday's live vervolgdatum inmiddels
+  // een ANDERE dan wat hier zou worden vastgelegd? Alleen overslaan wanneer
+  // dit al een bevestigde, eerder getoonde keuze is (opties.bevestigdeMondayDatum
+  // gezet) — anders zou elke conflictoplossing zichzelf opnieuw blokkeren.
+  // Kan de precheck zelf niet lezen (Monday tijdelijk onbereikbaar)? Dan NIET
+  // de hele acceptatie blokkeren — het generieke read-conflict-write-pad in
+  // schrijfDatumVolgendeActieTerug hieronder blijft de echte, laatste
+  // vangnet-controle (zelfde degradatiefilosofie als de rest van dit
+  // bestand: een write-back-probleem mag nooit de kernactie tegenhouden).
+  if (opties.bevestigdeMondayDatum === undefined) {
+    try {
+      const mondayDatum = await leesActueleVolgendeActieDatum(school.mondayItemId);
+      if (mondayDatum && mondayDatum !== dueDate) {
+        return { proposalId, datumconflict: { mondayDatum, salesDatum: dueDate } };
+      }
+    } catch {
+      // Precheck kon niet lezen — negeren, doorgaan als hieronder.
+    }
+  }
+
   const actie = await payload.create({
     collection: "sales-actions",
     data: {
@@ -180,7 +228,9 @@ export async function beslisOverVoorstel(payload: Payload, proposalId: number, o
 
   // Datum volgende actie: automatisch, geen aparte bevestiging (bevestigd) —
   // maar altijd via het generieke read-conflict-write-log-pad, dat een
-  // inmiddels-andere Monday-waarde nooit stilzwijgend overschrijft.
+  // inmiddels-andere Monday-waarde nooit stilzwijgend overschrijft. Bij een
+  // zojuist opgeloste datumconflict-keuze wordt de tóén getoonde Monday-
+  // waarde meegegeven als bevestigde basislijn (zie schrijfDatumVolgendeActieTerug).
   const writeback = await schrijfDatumVolgendeActieTerug(
     payload,
     school.id,
@@ -188,7 +238,8 @@ export async function beslisOverVoorstel(payload: Payload, proposalId: number, o
     dueDate,
     opties.gebruikerId,
     proposalId,
-    actie.id as number
+    actie.id as number,
+    opties.bevestigdeMondayDatum
   );
 
   return { proposalId, actionId: actie.id as number, writeback };

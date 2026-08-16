@@ -1745,6 +1745,47 @@ a.ml-dashboard__card:hover {
   gap: 16px;
 }
 
+/* Productiecorrectie 2026-08-16 (punt 9) — CRM (Monday) vs Planning
+ * (AI/Sales-assistent), visueel onderscheiden met een eigen accentkleur per
+ * blok (blauw = harde Monday-feiten, paars = wat de Sales-assistent
+ * daaromheen plant), zodat direct zichtbaar is waar een verschil vandaan
+ * komt. */
+.ml-sales__schooldetail-blokken {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.ml-sales__schooldetail-blok {
+  border: 1px solid var(--theme-elevation-150);
+  border-left: 3px solid var(--theme-elevation-200);
+  border-radius: var(--ml-admin-radius-sm);
+  padding: 12px 14px;
+  background: var(--theme-elevation-50);
+}
+
+.ml-sales__schooldetail-blok--crm {
+  border-left-color: #1588c9; /* zelfde blauw als NAV_COLOR_STYLES.blue (lib/admin-nav/nav-colors.ts) */
+}
+
+.ml-sales__schooldetail-blok--planning {
+  border-left-color: var(--ml-admin-purple);
+}
+
+.ml-sales__schooldetail-blok-label {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--theme-elevation-500);
+}
+
+.ml-sales__schooldetail-blok .ml-sales__kaart-tekst {
+  margin: 4px 0;
+}
+
 .ml-sales__logboek {
   display: flex;
   flex-direction: column;
@@ -1991,6 +2032,35 @@ a.ml-dashboard__card:hover {
   color: var(--theme-elevation-600);
 }
 
+/* Sales-logica productiecorrectie 2026-08-16 (punt 1) — sync-knop + compacte
+ * statusweergave bovenaan "Mijn dag", vóór de tabs. */
+.ml-sales-widget__sync-rij {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ml-sales-widget__sync-status {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ml-sales-widget__sync-status .ml-sales-widget__meta {
+  margin: 0;
+}
+
+/* Productiecorrectie 2026-08-16 (punt 2) — compacte datumnavigatie
+ * (←/Vandaag/Morgen/Overmorgen/Kies datum/→) bovenaan de "Vandaag"-tab. */
+.ml-sales-widget__datumnav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
 /* Sales UX-ronde 3 (2026-08-14) — 3 tabs (Vandaag/To do/Vraag), vervangt het
  * vaste "Sales vandaag"-kopje van het oude widget (SalesWidgetVandaag.tsx).
  * Visuele polish (2026-08-14): iconslot + tellerbadge + zachte actieve
@@ -2089,9 +2159,42 @@ a.ml-dashboard__card:hover {
   border-left-color: #f59e0b;
 }
 
+/* Productiecorrectie punt 13 (2026-08-16) — "Gepland in Monday": bewust
+ * rustiger dan --veiligheidsnet (geen amber randkleur/achtergrond) — deze
+ * scholen vragen geen beslissing, alleen ter info. */
+.ml-sales-widget__gepland-monday {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--theme-elevation-100);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ml-sales-widget__item--rustig {
+  opacity: 0.85;
+}
+
 .ml-sales-widget__item--conflict {
   background: #fef2f2;
   border-left-color: #ef4444;
+}
+
+/* Sales-logica productiecorrectie 2026-08-16 (punt 12) — "Planning
+ * verschilt"-keuzepaneel in SalesProposalActies.tsx, zelfde rood/conflict-
+ * palet als .ml-sales-widget__item--conflict hierboven. */
+.ml-sales__datumconflict {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--ml-admin-radius-sm);
+  padding: 10px 14px;
+  margin-top: 4px;
+}
+
+.ml-sales__datumconflict-titel {
+  font-weight: 700;
+  color: #b91c1c;
+  margin: 0 0 4px;
 }
 
 .ml-sales-widget__urgentie {

@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Compass, ListTodo, School, Sparkles } from "lucide-react";
+import { Compass, Sparkles } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { SalesProposalActies } from "./SalesProposalActies";
 import { SalesOnderwijstypeInstellen } from "./SalesOnderwijstypeInstellen";
@@ -243,15 +243,9 @@ function SchooldetailInner() {
         <div>
           <h1>{school.schoolName}</h1>
           <div className="ml-sales__schooldetail-meta">
-            <RelatiestatusBadge relatiestatus={school.relatiestatus} />
-            {onderwijstypeNaam && <span className="ml-sales__badge">{onderwijstypeNaam}</span>}
             {school.plaats && <span className="ml-sales__badge">{school.plaats}</span>}
-            {school.salesfase && <span className="ml-sales__badge">{school.salesfase}</span>}
             {school.contactpersoonNaam && <span className="ml-sales__badge">Contact: {school.contactpersoonNaam}</span>}
           </div>
-          <p className="ml-sales__kaart-tekst">
-            Laatste contact: {formatKorteDatum(school.lastMondayActivityAt)} · Volgende actie: {openActie ? formatKorteDatum(openActie.dueDate) : formatKorteDatum(school.mondayVolgendeActieDatum)}
-          </p>
         </div>
         <div className="ml-sales__actie-knoppen">
           <Link href={`/admin/creator?mail=nieuw&school=${school.id}`} className="ml-sales__knop">
@@ -260,6 +254,45 @@ function SchooldetailInner() {
           <a href={mondayUrl} target="_blank" rel="noreferrer" className="ml-sales__knop">
             Open in Monday
           </a>
+        </div>
+      </div>
+
+      {/* Productiecorrectie 2026-08-16 (punt 9) — CRM (Monday) en Planning
+       * (AI/Sales-assistent) bewust in twee apart gelabelde blokken: de oude
+       * ene "Laatste contact: X · Volgende actie: Y"-regel liet niet zien of
+       * "Volgende actie" van Monday of van een lokale actie kwam — precies
+       * de bron-van-verwarring die deze correctieronde oplost (zie ook punt
+       * 6/7). Vervangt de vorige "Volgende stap"/"Schoolcontext"-kaarten
+       * (dezelfde velden, nu zonder overlap/dubbele weergave). */}
+      <div className="ml-sales__schooldetail-blokken">
+        <div className="ml-sales__schooldetail-blok ml-sales__schooldetail-blok--crm">
+          <p className="ml-sales__schooldetail-blok-label">CRM (Monday)</p>
+          <div className="ml-sales__schooldetail-meta">
+            <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+            <span className="ml-sales__badge">{school.salesfase ?? "Salesfase onbekend"}</span>
+            <span className="ml-sales__badge">{onderwijstypeNaam ?? "Onderwijstype onbekend"}</span>
+          </div>
+          {!school.onderwijstype && (
+            <div className="ml-sales__actie-knoppen" style={{ marginTop: 10 }}>
+              <button type="button" className="ml-sales__knop" onClick={genereerVerrijking} disabled={bezig !== null}>
+                {bezig === "enrich" ? "Bezig…" : "Onderwijstype herkennen"}
+              </button>
+              <SalesOnderwijstypeInstellen schoolId={school.id} label="Zelf instellen" onGewijzigd={laad} />
+            </div>
+          )}
+        </div>
+
+        <div className="ml-sales__schooldetail-blok ml-sales__schooldetail-blok--planning">
+          <p className="ml-sales__schooldetail-blok-label">Planning</p>
+          <p className="ml-sales__kaart-tekst">Laatste echte contact: {formatKorteDatum(school.lastMondayActivityAt)}</p>
+          <p className="ml-sales__kaart-tekst">
+            Volgende actie in Monday: {school.mondayVolgendeActieDatum ? formatKorteDatum(school.mondayVolgendeActieDatum) : "geen"}
+          </p>
+          <p className="ml-sales__kaart-tekst">
+            Lokale Sales-actie:{" "}
+            {openActie ? `${openActie.type} op ${formatKorteDatum(openActie.dueDate)}${openActie.channel ? ` · ${openActie.channel}` : ""}` : "nog niet aangemaakt"}
+          </p>
+          {openActie && <p className="ml-sales__kaart-tekst">{openActie.description}</p>}
         </div>
       </div>
 
@@ -289,50 +322,6 @@ function SchooldetailInner() {
               {samenvattingVernieuwenBezig ? "Bezig…" : "Genereer samenvatting"}
             </button>
           )}
-        </div>
-
-        <div className="ml-sales__kaart">
-          <div className="ml-sales__kaart-header">
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="ml-sales__kaart-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.orange.fg, "--item-bg": NAV_COLOR_STYLES.orange.bg } as CSSProperties}>
-                <ListTodo size={15} aria-hidden="true" />
-              </span>
-              <strong>Volgende stap</strong>
-            </span>
-          </div>
-          {openActie ? (
-            <>
-              <p className="ml-sales__kaart-tekst">
-                {openActie.type} — {formatKorteDatum(openActie.dueDate)}
-                {openActie.channel ? ` · ${openActie.channel}` : ""}
-              </p>
-              <p className="ml-sales__kaart-tekst">{openActie.description}</p>
-            </>
-          ) : (
-            <p className="ml-sales__kaart-tekst">Geen open actie. Zie eventueel AI-voorstellen hieronder, of vraag de AI om een suggestie.</p>
-          )}
-          {!school.onderwijstype && (
-            <div className="ml-sales__actie-knoppen">
-              <button type="button" className="ml-sales__knop" onClick={genereerVerrijking} disabled={bezig !== null}>
-                {bezig === "enrich" ? "Bezig…" : "Onderwijstype herkennen"}
-              </button>
-              <SalesOnderwijstypeInstellen schoolId={school.id} label="Zelf instellen" onGewijzigd={laad} />
-            </div>
-          )}
-        </div>
-
-        <div className="ml-sales__kaart">
-          <div className="ml-sales__kaart-header">
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="ml-sales__kaart-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.teal.fg, "--item-bg": NAV_COLOR_STYLES.teal.bg } as CSSProperties}>
-                <School size={15} aria-hidden="true" />
-              </span>
-              <strong>Schoolcontext</strong>
-            </span>
-          </div>
-          <p className="ml-sales__kaart-tekst">Onderwijstype: {onderwijstypeNaam ?? "onbekend"}</p>
-          <p className="ml-sales__kaart-tekst">Laatste Monday-activiteit: {formatKorteDatum(school.lastMondayActivityAt)}</p>
-          <p className="ml-sales__kaart-tekst">Volgende actie in Monday: {school.mondayVolgendeActieDatum ? formatKorteDatum(school.mondayVolgendeActieDatum) : "geen"}</p>
         </div>
       </div>
 

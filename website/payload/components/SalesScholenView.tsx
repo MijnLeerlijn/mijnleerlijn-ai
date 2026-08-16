@@ -176,6 +176,7 @@ export function SalesScholenView() {
       school: s,
       schoolName: s.schoolName,
       relatiestatus: s.relatiestatus ?? null,
+      salesfase: s.salesfase ?? null,
       onderwijstypeNaam: s.onderwijstype && typeof s.onderwijstype !== "number" ? s.onderwijstype.name : null,
       plaats: s.plaats ?? null,
       lastMondayActivityAt: s.lastMondayActivityAt ?? null,
@@ -275,6 +276,9 @@ export function SalesScholenView() {
                 <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("relatiestatus")}>
                   Relatiestatus{sorteerIndicator("relatiestatus")}
                 </th>
+                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("salesfase")}>
+                  Salesfase{sorteerIndicator("salesfase")}
+                </th>
                 <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("onderwijstype")}>
                   Onderwijstype{sorteerIndicator("onderwijstype")}
                 </th>
@@ -298,6 +302,7 @@ export function SalesScholenView() {
                   <td>
                     <RelatiestatusBadge relatiestatus={school.relatiestatus} />
                   </td>
+                  <td className={school.salesfase ? undefined : "ml-sales__ontbrekend"}>{school.salesfase || "—"}</td>
                   <td>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                       {onderwijstypeLabel(school.onderwijstype)}

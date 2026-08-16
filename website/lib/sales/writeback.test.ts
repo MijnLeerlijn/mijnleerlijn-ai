@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Payload } from "payload";
-import { voerWriteBackUit, schrijfDatumLaatsteContactTerug, schrijfDatumVolgendeActieTerug, schrijfTypeSchoolTerug } from "./writeback";
+import { voerWriteBackUit, schrijfDatumLaatsteContactTerug, schrijfDatumVolgendeActieTerug, schrijfTypeSchoolTerug, leesActueleVolgendeActieDatum } from "./writeback";
 import { leesKolomWaarde, wijzigKolomWaarde } from "./monday-client";
 import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM } from "./monday-columns";
 
@@ -238,6 +238,58 @@ describe("schrijfDatumVolgendeActieTerug — respecteert een al bestaande Monday
     const resultaat = await schrijfDatumVolgendeActieTerug(maakPayload(), 1, "123", "2026-09-10", 7);
 
     expect(resultaat.status).toBe("conflict");
+  });
+
+  it("bevestigdeMondayWaarde (productiecorrectie 2026-08-16, punt 12): slaat de eigen precheck over en gebruikt de meegegeven waarde als verwachte basislijn — geen extra leesActueleVolgendeActieDatum-achtige aanroep nodig, wél nog het generieke read-conflict-write-pad", async () => {
+    vi.stubEnv("MONDAY_WRITEBACK_ENABLED", "true");
+    mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.datumVolgendeActie, text: "2026-11-03", value: null });
+    mockWijzigKolomWaarde.mockResolvedValue(undefined);
+
+    const resultaat = await schrijfDatumVolgendeActieTerug(maakPayload(), 1, "123", "2026-09-01", 7, 55, 900, "2026-11-03");
+
+    // De live her-lezing (binnen voerWriteBackUit) bevestigt nog steeds dat
+    // Monday op de destijds-getoonde waarde staat — geen conflict, wél
+    // schrijven, ook al wijkt de nieuwe waarde af van wat er al stond.
+    expect(resultaat.status).toBe("geschreven");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith("123", SCHOLEN_BOARD_ID, SCHOLEN_KOLOM.datumVolgendeActie, "2026-09-01");
+  });
+
+  it("bevestigdeMondayWaarde: gaat alsnog in conflict wanneer Monday sinds het tonen van de keuze een 3e keer is gewijzigd", async () => {
+    mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.datumVolgendeActie, text: "2026-12-01", value: null }); // inmiddels wéér anders
+
+    const resultaat = await schrijfDatumVolgendeActieTerug(maakPayload(), 1, "123", "2026-09-01", 7, 55, 900, "2026-11-03");
+
+    expect(resultaat.status).toBe("conflict");
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
+  });
+
+  it("bevestigdeMondayWaarde=null (Monday had destijds geen datum): schrijft door zonder de eigen precheck opnieuw te doen", async () => {
+    vi.stubEnv("MONDAY_WRITEBACK_ENABLED", "true");
+    mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.datumVolgendeActie, text: null, value: null });
+    mockWijzigKolomWaarde.mockResolvedValue(undefined);
+
+    const resultaat = await schrijfDatumVolgendeActieTerug(maakPayload(), 1, "123", "2026-09-01", 7, 55, 900, null);
+
+    expect(resultaat.status).toBe("geschreven");
+  });
+});
+
+describe("leesActueleVolgendeActieDatum — kale leesfunctie voor de datumconflict-precheck (proposals.ts)", () => {
+  it("geeft de tekstwaarde van de Datum-volgende-actie-kolom terug", async () => {
+    mockLeesKolomWaarde.mockResolvedValue({ id: SCHOLEN_KOLOM.datumVolgendeActie, text: "2026-11-03", value: null });
+
+    const resultaat = await leesActueleVolgendeActieDatum("123");
+
+    expect(resultaat).toBe("2026-11-03");
+    expect(mockLeesKolomWaarde).toHaveBeenCalledWith("123", SCHOLEN_KOLOM.datumVolgendeActie);
+  });
+
+  it("geeft null terug wanneer Monday geen waarde heeft", async () => {
+    mockLeesKolomWaarde.mockResolvedValue(null);
+
+    const resultaat = await leesActueleVolgendeActieDatum("123");
+
+    expect(resultaat).toBeNull();
   });
 });
 

@@ -76,43 +76,13 @@ async function heeftBetrouwbareLokaleContactcontext(payload: Payload, schoolId: 
   });
 }
 
-async function verwerkBestaandeVervolgdatum(
-  payload: Payload,
-  school: { id: number; schoolName: string; mondayVolgendeActieDatum?: string | null }
-): Promise<BackfillSchoolResultaat> {
-  const nieuwVoorstel = await payload.create({
-    collection: "sales-proposals",
-    data: {
-      school: school.id,
-      proposalType: "bestaande_vervolgdatum",
-      proposalText: `Monday heeft al een vervolgdatum (${school.mondayVolgendeActieDatum}) zonder lokale Sales-actie.`,
-      reason: "Datum volgende actie stond al in Monday vóórdat de Sales-assistent deze school beoordeelde.",
-      proposedDate: school.mondayVolgendeActieDatum,
-      status: "pending",
-    },
-    overrideAccess: true,
-  });
-  await payload.create({
-    collection: "sales-log-events",
-    data: {
-      school: school.id,
-      occurredAt: new Date().toISOString(),
-      type: "ai_voorstel",
-      source: "systeem",
-      summary: `Bestaande vervolgdatum gevonden in Monday: ${school.mondayVolgendeActieDatum}`,
-      relatedProposal: nieuwVoorstel.id,
-    },
-    overrideAccess: true,
-  });
-  return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "ai_voorstel_klaar", proposalId: nieuwVoorstel.id as number };
-}
-
 async function genereerVolgendeActieVoorstel(
   payload: Payload,
   school: {
     id: number;
     schoolName: string;
     mondayItemId: string;
+    mondayVolgendeActieDatum?: string | null;
     relatiestatus?: string | null;
     salesfase?: string | null;
     onderwijstype?: number | { id: number } | null;
@@ -125,7 +95,7 @@ async function genereerVolgendeActieVoorstel(
     relatiestatus: school.relatiestatus,
     salesfase: school.salesfase,
     onderwijstype: school.onderwijstype,
-    mondayVolgendeActieDatum: null, // beoordeelSchool heeft dit pad hierboven al uitgesloten wanneer dit gezet is
+    mondayVolgendeActieDatum: school.mondayVolgendeActieDatum ?? null,
   });
 
   if (uitkomst.status === "geen_context" || uitkomst.status === "onvoldoende_context") {
@@ -197,13 +167,15 @@ export async function beoordeelSchool(
   if (bestaandVolgendeActieVoorstel) {
     return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "ai_voorstel_klaar", proposalId: bestaandVolgendeActieVoorstel };
   }
+  // "bestaande_vervolgdatum" is een uitgefaseerd voorsteltype (Sales-logica
+  // productiecorrectie 2026-08-16, punt 6/7/11): een Monday-vervolgdatum is
+  // voortaan harde context vóór de AI-analyse (zie genereerVolgendeActieVoorstel
+  // hieronder), niet langer een kortsluiting die de analyse overslaat. Deze
+  // check blijft puur voor idempotentie — een school met nog een oud, niet
+  // afgehandeld voorstel van dit type uit een eerdere run krijgt geen tweede.
   const bestaandeVervolgdatumVoorstel = await bestaandPendingVoorstel(payload, school.id, "bestaande_vervolgdatum");
   if (bestaandeVervolgdatumVoorstel) {
     return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "ai_voorstel_klaar", proposalId: bestaandeVervolgdatumVoorstel };
-  }
-
-  if (school.mondayVolgendeActieDatum) {
-    return verwerkBestaandeVervolgdatum(payload, school);
   }
 
   if (!(await heeftBetrouwbareLokaleContactcontext(payload, school.id))) {
