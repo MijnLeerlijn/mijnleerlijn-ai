@@ -38,18 +38,42 @@ describe("GET /api/sales/sync/status", () => {
 
   it("geeft de laatste sync-status terug voor een ingelogde editor", async () => {
     mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
-    mockHaalStatus.mockResolvedValue({ laatsteSyncOp: "2026-08-16T11:58:00.000Z", scholenVerwerkt: 159, scholenGewijzigd: 6, fouten: 0 });
+    mockHaalStatus.mockResolvedValue({
+      laatsteSyncOp: "2026-08-16T11:58:00.000Z",
+      scholenVerwerkt: 159,
+      scholenGewijzigd: 6,
+      fouten: 0,
+      bestaandePlanningenHerkend: 12,
+      scholenVanBoardGehaald: 1,
+      verouderdeVoorstellenGesloten: 2,
+    });
 
     const response = await GET(maakRequest("geldig-editor"));
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data).toEqual({ laatsteSyncOp: "2026-08-16T11:58:00.000Z", scholenVerwerkt: 159, scholenGewijzigd: 6, fouten: 0 });
+    expect(data).toEqual({
+      laatsteSyncOp: "2026-08-16T11:58:00.000Z",
+      scholenVerwerkt: 159,
+      scholenGewijzigd: 6,
+      fouten: 0,
+      bestaandePlanningenHerkend: 12,
+      scholenVanBoardGehaald: 1,
+      verouderdeVoorstellenGesloten: 2,
+    });
   });
 
   it("geeft null-waarden terug wanneer er nog nooit gesynchroniseerd is", async () => {
     mockVerify.mockResolvedValue({ user: { id: 1, role: "admin" }, cookieAanwezig: true });
-    mockHaalStatus.mockResolvedValue({ laatsteSyncOp: null, scholenVerwerkt: null, scholenGewijzigd: null, fouten: null });
+    mockHaalStatus.mockResolvedValue({
+      laatsteSyncOp: null,
+      scholenVerwerkt: null,
+      scholenGewijzigd: null,
+      fouten: null,
+      bestaandePlanningenHerkend: null,
+      scholenVanBoardGehaald: null,
+      verouderdeVoorstellenGesloten: null,
+    });
 
     const response = await GET(maakRequest("geldig-admin"));
     const data = await response.json();

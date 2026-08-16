@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePreferences } from "@payloadcms/ui";
 import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCircle } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
+import { PlanningStatusBadge } from "./PlanningStatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
 import { SalesProposalActies } from "./SalesProposalActies";
 import { formatKorteDatum, lokaleDatumIso, vandaagIso, voegDagenToe } from "@/lib/sales/format-datum";
@@ -13,6 +14,7 @@ import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 import type { TodoResultaat } from "@/lib/sales/dashboard-todo";
 import type { LaatsteSyncStatus } from "@/lib/sales/sync";
 import { bepaalVandaagWeergave, VANDAAG_SNELKEUZES } from "@/lib/sales/vandaag";
+import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
 
 // Sales UX-ronde 3 (2026-08-14) — vervangt SalesWidgetVandaag.tsx (het oude
 // server-gerenderde "Sales vandaag"-widget, gebaseerd op
@@ -97,6 +99,12 @@ function formatSyncTijd(iso: string | null): string | null {
 function ActieKaart({ actie }: { actie: SalesActionDoc }) {
   const school = schoolRef(actie.school);
   const urgentie = urgentieVanActie(actie);
+  // Productiecorrectie 2026-08-16 (punt 6) — ÉÉN badge voor vandaag/
+  // achterstallig/gepland, hergebruikt bepaalPlanningStatus() i.p.v. een
+  // eigen urgentie-label — dezelfde badge als To-do/Scholenoverzicht/
+  // Schooldetail. De kaart-brede achtergrondkleur (ml-sales-widget__item--*)
+  // blijft ongewijzigd op urgentieVanActie() gebaseerd, puur visuele nadruk.
+  const planningStatus = bepaalPlanningStatus({ actief: true, openActieDatum: actie.dueDate });
   return (
     <div className={`ml-sales-widget__item${urgentie ? ` ml-sales-widget__item--${urgentie}` : ""}`}>
       <div className="ml-sales-widget__item-header">
@@ -104,9 +112,7 @@ function ActieKaart({ actie }: { actie: SalesActionDoc }) {
           {school.schoolName}
         </Link>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {urgentie && (
-            <span className={`ml-sales-widget__urgentie ml-sales-widget__urgentie--${urgentie}`}>{urgentie === "achterstallig" ? "Achterstallig" : "Vandaag"}</span>
-          )}
+          <PlanningStatusBadge status={planningStatus.status} datum={planningStatus.datum} />
           <RelatiestatusBadge relatiestatus={school.relatiestatus} />
         </div>
       </div>
@@ -268,16 +274,25 @@ export function SalesDashboardPaneel() {
   const badgeWeergave = bepaalVandaagWeergave(alleOpenActies, vandaagIso());
   const vandaagBadgeAantal = badgeWeergave.achterstallig.length + badgeWeergave.opGekozenDatum.length;
 
-  // Sales-logica productiecorrectie 2026-08-16 (punt 1) — "159 scholen
-  // bijgewerkt · 6 wijzigingen" bij de sync-knop. scholenGewijzigd is de
-  // striktere teller (echte CRM-kernveldwijzigingen, zie lib/sales/sync.ts)
-  // — bewust géén updatesNieuw (nieuwe Monday-comments zeggen niets over of
-  // een CRM-kernveld ook echt veranderde).
+  // Sales-logica productiecorrectie 2026-08-16 (punt 1/11) — "159 scholen
+  // bijgewerkt · 6 wijzigingen · Y bestaande planningen herkend · Z scholen
+  // niet meer op Master Data-board gedeactiveerd · N verouderde AI-voorstellen
+  // gesloten" bij de sync-knop. scholenGewijzigd is de striktere teller
+  // (echte CRM-kernveldwijzigingen, zie lib/sales/sync.ts) — bewust géén
+  // updatesNieuw (nieuwe Monday-comments zeggen niets over of een
+  // CRM-kernveld ook echt veranderde). De 3 nieuwe tellers staan er, net als
+  // scholenGewijzigd, ALTIJD bij (ook op 0) — opdrachtseis: "dan zie ik dat
+  // reconciliation daadwerkelijk is uitgevoerd", 0 is hier een zichtbaar
+  // bevestigd feit, geen weggelaten stilte. Alleen fouten blijft conditioneel
+  // (0 fouten is de normale, geen-vermelding-waardige staat).
   const syncSamenvatting =
     syncStatus?.scholenVerwerkt != null
       ? [
           `${syncStatus.scholenVerwerkt} school${syncStatus.scholenVerwerkt === 1 ? "" : "en"} bijgewerkt`,
           `${syncStatus.scholenGewijzigd ?? 0} wijziging${(syncStatus.scholenGewijzigd ?? 0) === 1 ? "" : "en"}`,
+          `${syncStatus.bestaandePlanningenHerkend ?? 0} bestaande planning${(syncStatus.bestaandePlanningenHerkend ?? 0) === 1 ? "" : "en"} herkend`,
+          `${syncStatus.scholenVanBoardGehaald ?? 0} school${(syncStatus.scholenVanBoardGehaald ?? 0) === 1 ? "" : "en"} niet meer op Master Data-board gedeactiveerd`,
+          `${syncStatus.verouderdeVoorstellenGesloten ?? 0} verouderd${(syncStatus.verouderdeVoorstellenGesloten ?? 0) === 1 ? "" : "e"} AI-voorstel${(syncStatus.verouderdeVoorstellenGesloten ?? 0) === 1 ? "" : "len"} gesloten`,
           syncStatus.fouten ? `${syncStatus.fouten} fout${syncStatus.fouten === 1 ? "" : "en"}` : null,
         ]
           .filter(Boolean)
@@ -409,7 +424,10 @@ export function SalesDashboardPaneel() {
                       <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
                         {school.schoolName}
                       </Link>
-                      <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <PlanningStatusBadge status="voorstel_te_beoordelen" />
+                        <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                      </div>
                     </div>
                     <p className="ml-sales-widget__meta">
                       {[school.plaats, voorstel.confidence ? `vertrouwen: ${voorstel.confidence}` : null].filter(Boolean).join(" · ")}
@@ -431,7 +449,10 @@ export function SalesDashboardPaneel() {
                     <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
                       {school.schoolName}
                     </Link>
-                    <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <PlanningStatusBadge status="actie_nodig" />
+                      <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    </div>
                   </div>
                   <p className="ml-sales-widget__meta">
                     Mogelijk afgesloten/inactief — geen open actie of voorstel
@@ -458,7 +479,10 @@ export function SalesDashboardPaneel() {
                     <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
                       {school.schoolName}
                     </Link>
-                    <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <PlanningStatusBadge status="gepland" datum={school.mondayVolgendeActieDatum} />
+                      <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    </div>
                   </div>
                   <p className="ml-sales-widget__meta">Volgende actie in Monday: {formatKorteDatum(school.mondayVolgendeActieDatum)}</p>
                 </div>

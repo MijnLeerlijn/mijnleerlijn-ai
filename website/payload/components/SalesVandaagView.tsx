@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
+import { PlanningStatusBadge } from "./PlanningStatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
 import { SalesProposalActies } from "./SalesProposalActies";
 import { formatKorteDatum, vandaagIso } from "@/lib/sales/format-datum";
 import { PENDING_VOORSTEL_TYPES_VOOR_AANDACHT } from "@/lib/sales/aandacht-nodig";
+import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
 
 // Sales UX V2 (2026-08-14) — dagelijks werkscherm, herbouwd van 4
 // vrijwel-identieke kaartsecties naar 3 duidelijke onderdelen (Vandaag doen /
@@ -169,10 +171,22 @@ export function SalesVandaagView() {
   async function voerSyncUit() {
     setBezig("sync");
     setMelding(null);
-    const { ok, data } = await apiPost<{ scholenVerwerkt: number; updatesNieuw: number; nieuweVoorstellenViaSync: number; fouten: string[] }>("/api/sales/sync");
+    const { ok, data } = await apiPost<{
+      scholenVerwerkt: number;
+      updatesNieuw: number;
+      nieuweVoorstellenViaSync: number;
+      bestaandePlanningenHerkend: number;
+      scholenVanBoardGehaald: number;
+      verouderdeVoorstellenGesloten: number;
+      fouten: string[];
+    }>("/api/sales/sync");
+    // Productiecorrectie 2026-08-16 (punt 11) — zelfde uitgebreide
+    // sync-samenvatting als SalesDashboardPaneel.tsx se syncSamenvatting,
+    // hier als losse meldingtekst i.p.v. bewaarde status (deze pagina las de
+    // sync-uitkomst altijd al rechtstreeks uit de POST-respons).
     setMelding(
       ok
-        ? `Sync klaar: ${data?.scholenVerwerkt ?? 0} scholen verwerkt, ${data?.updatesNieuw ?? 0} nieuwe Updates, ${data?.nieuweVoorstellenViaSync ?? 0} school(en) met een nieuw AI-voorstel.${data?.fouten?.length ? ` (${data.fouten.length} fouten)` : ""}`
+        ? `Sync klaar: ${data?.scholenVerwerkt ?? 0} scholen verwerkt, ${data?.updatesNieuw ?? 0} nieuwe Updates, ${data?.nieuweVoorstellenViaSync ?? 0} school(en) met een nieuw AI-voorstel, ${data?.bestaandePlanningenHerkend ?? 0} bestaande planning(en) herkend, ${data?.scholenVanBoardGehaald ?? 0} school(en) niet meer op Master Data-board gedeactiveerd, ${data?.verouderdeVoorstellenGesloten ?? 0} verouderd(e) AI-voorstel(len) gesloten.${data?.fouten?.length ? ` (${data.fouten.length} fouten)` : ""}`
         : "Sync mislukt."
     );
     setBezig(null);
@@ -224,16 +238,17 @@ export function SalesVandaagView() {
             {vandaagActies.map((actie) => {
               const school = schoolRef(actie.school);
               const urgentie = urgentieVanActie(actie);
+              // Productiecorrectie 2026-08-16 (punt 6) — zelfde gedeelde
+              // badge als SalesDashboardPaneel.tsx (ActieKaart), i.p.v. het
+              // eigen urgentie-label. Kaartkleur blijft op urgentieVanActie
+              // gebaseerd (visuele nadruk, ongewijzigd).
+              const planningStatus = bepaalPlanningStatus({ actief: true, openActieDatum: actie.dueDate });
               return (
                 <div className={`ml-sales__kaart${urgentie ? ` ml-sales-widget__item--${urgentie}` : ""}`} key={actie.id}>
                   <div className="ml-sales__kaart-header">
                     <Link href={`/admin/sales/school?id=${school.id}`}>{school.schoolName}</Link>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {urgentie && (
-                        <span className={`ml-sales-widget__urgentie ml-sales-widget__urgentie--${urgentie}`}>
-                          {urgentie === "achterstallig" ? "Achterstallig" : "Vandaag"}
-                        </span>
-                      )}
+                      <PlanningStatusBadge status={planningStatus.status} datum={planningStatus.datum} />
                       <RelatiestatusBadge relatiestatus={school.relatiestatus} />
                     </div>
                   </div>
@@ -270,7 +285,10 @@ export function SalesVandaagView() {
                 <div className="ml-sales__kaart" key={voorstel.id}>
                   <div className="ml-sales__kaart-header">
                     <Link href={`/admin/sales/school?id=${school.id}`}>{school.schoolName}</Link>
-                    <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <PlanningStatusBadge status="voorstel_te_beoordelen" />
+                      <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                    </div>
                   </div>
                   <SchoolMeta school={school} />
                   <p className="ml-sales__kaart-tekst">
@@ -311,7 +329,10 @@ export function SalesVandaagView() {
               <div className="ml-sales__kaart ml-sales__veiligheidsnet" key={school.id}>
                 <div className="ml-sales__kaart-header">
                   <Link href={`/admin/sales/school?id=${school.id}`}>{school.schoolName}</Link>
-                  <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <PlanningStatusBadge status="actie_nodig" />
+                    <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+                  </div>
                 </div>
                 <SchoolMeta
                   school={school}

@@ -13,6 +13,8 @@ import { beoordeelSchool } from "./backfill";
 import { genereerEnCacheSchoolSamenvatting } from "./school-summary";
 import { vindVariantVoorTypeSchool, haalVariantenVoorTypeSchoolMapping, type VariantVoorTypeSchoolMapping } from "./education-type-sync";
 import { schrijfDatumLaatsteContactTerug } from "./writeback";
+import { heeftGeldigeMondayPlanning, PENDING_VOORSTEL_TYPES_VOOR_AANDACHT } from "./aandacht-nodig";
+import { bepaalGeplandeActie } from "./actie-extractie";
 
 // Sales-assistent V1 (2026-08-14) — synchroniseert board "1: Scholen (Master
 // Data)" naar sales-schools + sales-log-events. Monday blijft bron van
@@ -108,6 +110,12 @@ export interface SyncResultaat {
    */
   onderwijstypeOnbekend: string[];
   fouten: string[];
+  /** Sales-logica productiecorrectie 2026-08-16 (punt 1) — lokale scholen die deze sync-run niet meer op '1: Scholen (Master Data)' voorkwamen en daarom gedeactiveerd zijn. Blijft 0 wanneer de board-sync niet volledig/foutloos afrondde (zie reconcilieerVerwijderdeScholen — nooit deactiveren op een onvolledige snapshot). */
+  scholenVanBoardGehaald: number;
+  /** Productiecorrectie 2026-08-16 (punt 9) — pending volgende_actie-/bestaande_vervolgdatum-voorstellen die superseded zijn omdat Monday deze run al een geldige vervolgdatum had (vangt ook bestaande achterstand van vóór deze fix). */
+  verouderdeVoorstellenGesloten: number;
+  /** Productiecorrectie 2026-08-16 (punt 2/3/11) — scholen met een geldige (niet-verlopen) Monday-vervolgdatum, herkend als "al gepland" (heeftGeldigeMondayPlanning). */
+  bestaandePlanningenHerkend: number;
 }
 
 /** Geëxporteerd voor directe, ongemockte tests van de onderwijstype-sync-regressiescenario's (zelfde precedent als verwerkUpdate hieronder). */
@@ -124,6 +132,13 @@ export async function verwerkSchoolItem(payload: Payload, item: MondaySchoolItem
     mondayVolgendeActieDatum: vindKolomTekst(item, SCHOLEN_KOLOM.datumVolgendeActie),
     lastMondaySyncAt: new Date().toISOString(),
     actief: isOpenstaandeRelatiestatus(relatiestatus),
+    // Productiecorrectie 2026-08-16 (punt 1) — elk item dat via een
+    // succesvolle boardpagina hier terechtkomt, staat DEFINITIE op het board
+    // NU — self-healing reactivatie van een eerder van-board-gehaalde school
+    // (zie reconcilieerVerwijderdeScholen hieronder): geen aparte
+    // "is dit een terugkeer?"-detectie nodig, gewoon onvoorwaardelijk true.
+    nogOpMondayBoard: true,
+    verwijderdVanBoardOp: null,
   };
 
   const typeSchoolUitkomst = vindVariantVoorTypeSchool(vindKolomTekst(item, SCHOLEN_KOLOM.typeSchool), varianten);
@@ -143,28 +158,157 @@ export async function verwerkSchoolItem(payload: Payload, item: MondaySchoolItem
     depth: 0,
   });
 
+  let schoolId: number;
+  let vorigeCacheDatum: string | null | undefined;
+
   if (bestaand.docs.length > 0) {
-    const oud = bestaand.docs[0] as unknown as { relatiestatus?: string | null; salesfase?: string | null; mondayVolgendeActieDatum?: string | null; onderwijstype?: number | null };
+    const oud = bestaand.docs[0] as unknown as {
+      relatiestatus?: string | null;
+      salesfase?: string | null;
+      mondayVolgendeActieDatum?: string | null;
+      onderwijstype?: number | null;
+      cachedGeplandeActieDatum?: string | null;
+    };
     if (isKernveldGewijzigd(oud, data)) {
       resultaat.scholenGewijzigd++;
     }
-    await payload.update({ collection: "sales-schools", id: bestaand.docs[0]!.id, data, overrideAccess: true });
+    vorigeCacheDatum = oud.cachedGeplandeActieDatum;
+    schoolId = bestaand.docs[0]!.id as number;
+    await payload.update({ collection: "sales-schools", id: schoolId, data, overrideAccess: true });
     resultaat.scholenBijgewerkt++;
   } else {
-    await payload.create({ collection: "sales-schools", data, overrideAccess: true });
+    const nieuw = await payload.create({ collection: "sales-schools", data, overrideAccess: true });
+    schoolId = nieuw.id as number;
     resultaat.scholenNieuw++;
   }
   resultaat.scholenVerwerkt++;
+
+  // Productiecorrectie 2026-08-16 (punt 2/3/4/5/9) — "Springplank"-scenario:
+  // Monday heeft al een geldige (niet-verlopen) vervolgdatum, dus deze school
+  // geldt als "al gepland" (planning-status.ts). Los van de kern-upsert
+  // hierboven, en met een eigen try/catch: een AI-/DB-fout hier mag de
+  // geslaagde school-upsert nooit ongedaan maken of verkeerd tellen. Alleen
+  // voor actieve scholen (data.actief) — planning-status.ts toont dit
+  // sowieso nooit voor Inactief/Gestopt, dus geen onnodige AI-call/supersede
+  // voor een school die al buiten dit systeem valt.
+  if (data.actief && heeftGeldigeMondayPlanning(data.mondayVolgendeActieDatum)) {
+    resultaat.bestaandePlanningenHerkend++;
+    try {
+      await verwerkGeldigeMondayPlanning(
+        payload,
+        schoolId,
+        vorigeCacheDatum,
+        { schoolName: item.name, mondayItemId: item.id, salesfase: data.salesfase, mondayVolgendeActieDatum: data.mondayVolgendeActieDatum! },
+        resultaat
+      );
+    } catch (error) {
+      resultaat.fouten.push(`Planning verwerken school ${schoolId} (${item.name}): ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 }
 
-async function synchroniseerScholen(payload: Payload, resultaat: SyncResultaat): Promise<void> {
+/**
+ * Productiecorrectie 2026-08-16 (punt 5/9) — draait voor elke school met een
+ * geldige Monday-vervolgdatum, ELKE sync (niet uitsluitend bij een
+ * gewijzigde datum): (1) sluit pending volgende_actie-/
+ * bestaande_vervolgdatum-voorstellen als superseded — cheap (geen AI-call),
+ * bewust ONVOORWAARDELIJK zodat ook een bestaande achterstand van vóór deze
+ * fix in één sync-run wordt opgeruimd (punt 9), nooit vervangen door een
+ * nieuw voorstel (in tegenstelling tot vervangVoorstel() — hier is er
+ * simpelweg niets meer te beslissen, Monday's datum staat al vast); (2)
+ * ververst de gecachte actie-extractie (lib/sales/actie-extractie.ts) —
+ * uitsluitend bij een NIEUWE/gewijzigde datum t.o.v. de laatste cache, om
+ * geen onnodige AI-call te doen wanneer een school gewoon dezelfde, al
+ * eerder verwerkte planning behoudt.
+ */
+async function verwerkGeldigeMondayPlanning(
+  payload: Payload,
+  schoolId: number,
+  vorigeCacheDatum: string | null | undefined,
+  school: { schoolName: string; mondayItemId: string; salesfase: string | null; mondayVolgendeActieDatum: string },
+  resultaat: SyncResultaat
+): Promise<void> {
+  const pendingVoorstellen = await payload.find({
+    collection: "sales-proposals",
+    where: { school: { equals: schoolId }, proposalType: { in: PENDING_VOORSTEL_TYPES_VOOR_AANDACHT }, status: { equals: "pending" } },
+    limit: 20,
+    overrideAccess: true,
+    depth: 0,
+  });
+  for (const voorstel of pendingVoorstellen.docs) {
+    await payload.update({ collection: "sales-proposals", id: voorstel.id, data: { status: "superseded" }, overrideAccess: true });
+    await payload.create({
+      collection: "sales-log-events",
+      data: {
+        school: schoolId,
+        occurredAt: new Date().toISOString(),
+        type: "systeem",
+        source: "systeem",
+        summary: `Voorstel verouderd — Monday heeft al een geldige vervolgdatum (${school.mondayVolgendeActieDatum.slice(0, 10)}).`,
+        relatedProposal: voorstel.id,
+      },
+      overrideAccess: true,
+    });
+    resultaat.verouderdeVoorstellenGesloten++;
+  }
+
+  const huidigeDatum = school.mondayVolgendeActieDatum.slice(0, 10);
+  if (vorigeCacheDatum?.slice(0, 10) === huidigeDatum) return; // Al gecached voor exact deze datum — geen nieuwe AI-call nodig.
+
+  const extractie = await bepaalGeplandeActie(school);
+  await payload.update({
+    collection: "sales-schools",
+    id: schoolId,
+    data: {
+      cachedGeplandeActieTekst: extractie.geplandeActieTekst,
+      cachedGeplandeActieDatum: extractie.gekoppeldAanDatum,
+      cachedGeplandeActieConfidence: extractie.confidence,
+      cachedGeplandeActieBronUpdateIds: extractie.sourceUpdateIds.map((id) => ({ updateId: id })),
+      cachedGeplandeActieGegenereerdOp: new Date().toISOString(),
+    },
+    overrideAccess: true,
+  });
+}
+
+/**
+ * Sales-logica productiecorrectie 2026-08-16 (punt 1/12, veiligheidsregel
+ * expliciet toegevoegd door Michel) — `succesvolVolledig` bepaalt of
+ * reconcilieerVerwijderdeScholen() hieronder MAG draaien: alleen op een
+ * complete, foutloze snapshot van board 18420120365. Faalt haalScholenPagina
+ * halverwege (netwerkfout, Monday-API-fout, onvolledige paginering)? Dan
+ * stopt de paginering direct, blijft `huidigeItemIds` een ONVOLLEDIGE set,
+ * en wordt succesvolVolledig false — de aanroeper mag dan GEEN enkele school
+ * als verwijderd/inactief markeren op basis van die onvolledige lijst.
+ * Item-niveau-fouten (een enkel school-item dat niet verwerkt kon worden)
+ * blijven zoals voorheen: die worden gelogd maar breken de paginering zelf
+ * niet af (verwerkSchoolItem is nog steeds in Monday's opgehaalde pagina
+ * gezien — hoort dus wél in huidigeItemIds, ook als de lokale upsert faalde).
+ */
+export interface SynchroniseerScholenResultaat {
+  huidigeItemIds: Set<string>;
+  succesvolVolledig: boolean;
+}
+
+/** Geëxporteerd voor directe, ongemockte tests (zelfde precedent als verwerkUpdate/verwerkSchoolItem hierboven) — vermijdt de volledige synchroniseerScholenBoard-pijplijn te moeten mocken om de paginerings-/veiligheidsgatelogica los te testen. */
+export async function synchroniseerScholen(payload: Payload, resultaat: SyncResultaat): Promise<SynchroniseerScholenResultaat> {
   // Eén keer per sync-run opgehaald (niet per school) — zie education-type-sync.ts.
   const varianten = await haalVariantenVoorTypeSchoolMapping(payload);
   let cursor: string | null = null;
   const alleKolommen = Object.values(SCHOLEN_KOLOM);
+  const huidigeItemIds = new Set<string>();
+  let succesvolVolledig = true;
+
   do {
-    const pagina = await haalScholenPagina({ boardId: SCHOLEN_BOARD_ID, columnIds: alleKolommen, limit: 100, cursor });
+    let pagina;
+    try {
+      pagina = await haalScholenPagina({ boardId: SCHOLEN_BOARD_ID, columnIds: alleKolommen, limit: 100, cursor });
+    } catch (error) {
+      resultaat.fouten.push(`Scholen-pagina ophalen mislukt — paginering afgebroken, reconciliation overgeslagen: ${error instanceof Error ? error.message : String(error)}`);
+      succesvolVolledig = false;
+      break;
+    }
     for (const item of pagina.items) {
+      huidigeItemIds.add(item.id);
       try {
         await verwerkSchoolItem(payload, item, resultaat, varianten);
       } catch (error) {
@@ -173,6 +317,56 @@ async function synchroniseerScholen(payload: Payload, resultaat: SyncResultaat):
     }
     cursor = pagina.cursor;
   } while (cursor);
+
+  return { huidigeItemIds, succesvolVolledig };
+}
+
+/**
+ * Sales-logica productiecorrectie 2026-08-16 (punt 1) — "schoolbestuur
+ * Tjongerwerven"-scenario: een school die niet meer op '1: Scholen (Master
+ * Data)' staat (bv. verplaatst naar het Besturen-board) mag niet langer als
+ * actieve Sales-school gelden. Vergelijkt de lokale scholen die nog als "op
+ * dit board" gemarkeerd staan tegen de zojuist opgehaalde, VOLLEDIGE
+ * item-ID-set — nooit hard-delete (audit-eis): alleen nogOpMondayBoard/
+ * verwijderdVanBoardOp/actief bijwerken + een logregel, historie blijft
+ * staan. Wordt uitsluitend aangeroepen wanneer succesvolVolledig true is EN
+ * huidigeItemIds niet leeg is (zie synchroniseerScholenBoard) — 0 items bij
+ * een succesvolle paginering is verdacht genoeg (een board met 150+ scholen
+ * hoort nooit legitiem leeg terug te komen) om nooit als "board is leeg" te
+ * interpreteren.
+ */
+export async function reconcilieerVerwijderdeScholen(payload: Payload, huidigeItemIds: Set<string>, resultaat: SyncResultaat): Promise<void> {
+  const lokaleScholen = await payload.find({
+    collection: "sales-schools",
+    where: { mondayBoardId: { equals: SCHOLEN_BOARD_ID }, nogOpMondayBoard: { equals: true } },
+    limit: 5000,
+    overrideAccess: true,
+    depth: 0,
+  });
+
+  for (const doc of lokaleScholen.docs) {
+    const school = doc as unknown as { id: number; schoolName: string; mondayItemId: string };
+    if (huidigeItemIds.has(school.mondayItemId)) continue;
+
+    await payload.update({
+      collection: "sales-schools",
+      id: school.id,
+      data: { nogOpMondayBoard: false, verwijderdVanBoardOp: new Date().toISOString(), actief: false },
+      overrideAccess: true,
+    });
+    await payload.create({
+      collection: "sales-log-events",
+      data: {
+        school: school.id,
+        occurredAt: new Date().toISOString(),
+        type: "systeem",
+        source: "systeem",
+        summary: `School niet meer gevonden op Monday-board '1: Scholen (Master Data)' — gedeactiveerd in Sales.`,
+      },
+      overrideAccess: true,
+    });
+    resultaat.scholenVanBoardGehaald++;
+  }
 }
 
 /**
@@ -377,6 +571,9 @@ export async function bewaarSyncStatus(payload: Payload, resultaat: SyncResultaa
         laatsteSyncScholenVerwerkt: resultaat.scholenVerwerkt,
         laatsteSyncWijzigingen: resultaat.scholenGewijzigd,
         laatsteSyncFouten: resultaat.fouten.length,
+        laatsteSyncBestaandePlanningenHerkend: resultaat.bestaandePlanningenHerkend,
+        laatsteSyncScholenVanBoardGehaald: resultaat.scholenVanBoardGehaald,
+        laatsteSyncVerouderdeVoorstellenGesloten: resultaat.verouderdeVoorstellenGesloten,
       },
       overrideAccess: true,
     });
@@ -390,6 +587,9 @@ export interface LaatsteSyncStatus {
   scholenVerwerkt: number | null;
   scholenGewijzigd: number | null;
   fouten: number | null;
+  bestaandePlanningenHerkend: number | null;
+  scholenVanBoardGehaald: number | null;
+  verouderdeVoorstellenGesloten: number | null;
 }
 
 /** Leest de door bewaarSyncStatus() weggeschreven laatste-sync-info — gebruikt door GET /api/sales/sync/status voor de dashboard-/Overzicht-knop. */
@@ -399,12 +599,18 @@ export async function haalLaatsteSyncStatus(payload: Payload): Promise<LaatsteSy
     laatsteSyncScholenVerwerkt?: number | null;
     laatsteSyncWijzigingen?: number | null;
     laatsteSyncFouten?: number | null;
+    laatsteSyncBestaandePlanningenHerkend?: number | null;
+    laatsteSyncScholenVanBoardGehaald?: number | null;
+    laatsteSyncVerouderdeVoorstellenGesloten?: number | null;
   };
   return {
     laatsteSyncOp: instellingen.laatsteSyncOp ?? null,
     scholenVerwerkt: instellingen.laatsteSyncScholenVerwerkt ?? null,
     scholenGewijzigd: instellingen.laatsteSyncWijzigingen ?? null,
     fouten: instellingen.laatsteSyncFouten ?? null,
+    bestaandePlanningenHerkend: instellingen.laatsteSyncBestaandePlanningenHerkend ?? null,
+    scholenVanBoardGehaald: instellingen.laatsteSyncScholenVanBoardGehaald ?? null,
+    verouderdeVoorstellenGesloten: instellingen.laatsteSyncVerouderdeVoorstellenGesloten ?? null,
   };
 }
 
@@ -427,8 +633,31 @@ export async function synchroniseerScholenBoard(payload: Payload, updatesLookbac
     samenvattingenVernieuwd: 0,
     onderwijstypeOnbekend: [],
     fouten: [],
+    scholenVanBoardGehaald: 0,
+    verouderdeVoorstellenGesloten: 0,
+    bestaandePlanningenHerkend: 0,
   };
-  await synchroniseerScholen(payload, resultaat);
+  const { huidigeItemIds, succesvolVolledig } = await synchroniseerScholen(payload, resultaat);
+
+  // Veiligheidsregel (expliciet door Michel toegevoegd, 2026-08-16) —
+  // reconciliation mag UITSLUITEND draaien op een complete, foutloze
+  // board-snapshot. Een lege set ondanks succesvolVolledig (0 items terug
+  // van een geslaagde paginering) is voor dit board — dat structureel 150+
+  // scholen bevat — verdachter dan een legitiem leeg board, en wordt daarom
+  // NOOIT als "board is leeg" geïnterpreteerd: geen enkele school wordt dan
+  // gedeactiveerd, wél een duidelijke fout in het sync-rapport.
+  if (succesvolVolledig && huidigeItemIds.size > 0) {
+    try {
+      await reconcilieerVerwijderdeScholen(payload, huidigeItemIds, resultaat);
+    } catch (error) {
+      resultaat.fouten.push(`Board-reconciliation mislukt: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  } else if (succesvolVolledig) {
+    resultaat.fouten.push(
+      "Board-sync gaf 0 scholen terug ondanks een geslaagde paginering — reconciliation overgeslagen als veiligheidsmaatregel (mogelijk een API-probleem, geen leeg board)."
+    );
+  }
+
   const vanaf = new Date(Date.now() - updatesLookbackDagen * 24 * 60 * 60 * 1000);
   await synchroniseerUpdates(payload, resultaat, vanaf);
   await bewaarSyncStatus(payload, resultaat);

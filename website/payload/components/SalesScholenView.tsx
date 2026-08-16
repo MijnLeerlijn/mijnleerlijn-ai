@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
+import { PlanningStatusBadge } from "./PlanningStatusBadge";
 import { SalesOnderwijstypeInstellen } from "./SalesOnderwijstypeInstellen";
 import { RELATIESTATUS_BADGE } from "@/lib/sales/relatiestatus-badge";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { PENDING_VOORSTEL_TYPES_VOOR_AANDACHT } from "@/lib/sales/aandacht-nodig";
 import { sorteerScholen, type SorteerKolom, type SorteerRichting } from "@/lib/sales/scholen-sortering";
+import { bepaalPlanningStatus, planningStatusSorteerRang } from "@/lib/sales/planning-status";
 
 // Sales UX V2 (2026-08-14) — echte CRM-werklijst: combineerbare filters
 // i.p.v. de vorige single-select ("actie_nodig"/"ai_voorstel" vielen daar
@@ -89,6 +91,11 @@ export function SalesScholenView() {
   const [varianten, setVarianten] = useState<VariantRef[]>([]);
   const [volgendeActiePerSchool, setVolgendeActiePerSchool] = useState<Map<number, string>>(new Map());
   const [aandachtNodigIds, setAandachtNodigIds] = useState<Set<number>>(new Set());
+  // Productiecorrectie 2026-08-16 (punt 7) — apart van volgendeActiePerSchool
+  // (die Monday-/lokale datum al samenvoegt): bepaalPlanningStatus() heeft
+  // de OPEN lokale actie-datum en een pending-voorstel-signaal apart nodig.
+  const [openActieDatumPerSchool, setOpenActieDatumPerSchool] = useState<Map<number, string>>(new Map());
+  const [pendingVoorstelIds, setPendingVoorstelIds] = useState<Set<number>>(new Set());
   const [filters, setFilters] = useState<FilterState>(LEGE_FILTERS);
   const [laden, setLaden] = useState(true);
   const [sorteerKolom, setSorteerKolom] = useState<SorteerKolom | null>(null);
@@ -118,11 +125,42 @@ export function SalesScholenView() {
     }
     setVolgendeActiePerSchool(volgendeActie);
 
-    const schoolIdsMetActie = new Set(openActies.map((a) => idVan(a.school)));
+    // Productiecorrectie 2026-08-16 (punt 7) — de open lokale actie se EIGEN
+    // datum, apart van de samengevoegde volgendeActie hierboven: nodig als
+    // afzonderlijke input voor bepaalPlanningStatus (lib/sales/planning-status.ts).
+    const openActieDatum = new Map<number, string>();
+    for (const actie of openActies) {
+      const id = idVan(actie.school);
+      const huidig = openActieDatum.get(id);
+      if (!huidig || actie.dueDate < huidig) openActieDatum.set(id, actie.dueDate);
+    }
+    setOpenActieDatumPerSchool(openActieDatum);
+
     const schoolIdsMetVoorstel = new Set(
       pendingVoorstellen.filter((p) => (PENDING_VOORSTEL_TYPES_VOOR_AANDACHT as readonly string[]).includes(p.proposalType)).map((p) => idVan(p.school))
     );
-    setAandachtNodigIds(new Set(docs.filter((s) => s.actief && !schoolIdsMetActie.has(s.id) && !schoolIdsMetVoorstel.has(s.id)).map((s) => s.id)));
+    setPendingVoorstelIds(schoolIdsMetVoorstel);
+
+    // Productiecorrectie 2026-08-16 (punt 7, root-cause-fix) — "Aandacht
+    // nodig" hergebruikt nu bepaalPlanningStatus (status === "actie_nodig")
+    // i.p.v. een eigen, kortere berekening die géén rekening hield met een
+    // geldige, niet-verlopen Monday-vervolgdatum zonder lokaal record — exact
+    // hetzelfde bugpatroon als de rest van deze productiecorrectie-ronde.
+    setAandachtNodigIds(
+      new Set(
+        docs
+          .filter(
+            (s) =>
+              bepaalPlanningStatus({
+                actief: s.actief,
+                openActieDatum: openActieDatum.get(s.id) ?? null,
+                mondayVolgendeActieDatum: s.mondayVolgendeActieDatum ?? null,
+                heeftPendingVoorstel: schoolIdsMetVoorstel.has(s.id),
+              }).status === "actie_nodig"
+          )
+          .map((s) => s.id)
+      )
+    );
 
     setLaden(false);
   }, []);
@@ -181,9 +219,17 @@ export function SalesScholenView() {
       plaats: s.plaats ?? null,
       lastMondayActivityAt: s.lastMondayActivityAt ?? null,
       volgendeActieDatum: volgendeActiePerSchool.get(s.id) ?? null,
+      planningStatusRang: planningStatusSorteerRang(
+        bepaalPlanningStatus({
+          actief: s.actief,
+          openActieDatum: openActieDatumPerSchool.get(s.id) ?? null,
+          mondayVolgendeActieDatum: s.mondayVolgendeActieDatum ?? null,
+          heeftPendingVoorstel: pendingVoorstelIds.has(s.id),
+        }).status
+      ),
     }));
     return sorteerScholen(metSorteervelden, sorteerKolom, sorteerRichting).map((r) => r.school);
-  }, [zichtbaar, volgendeActiePerSchool, sorteerKolom, sorteerRichting]);
+  }, [zichtbaar, volgendeActiePerSchool, openActieDatumPerSchool, pendingVoorstelIds, sorteerKolom, sorteerRichting]);
 
   function kiesSortering(kolom: SorteerKolom) {
     if (sorteerKolom === kolom) {
@@ -273,6 +319,9 @@ export function SalesScholenView() {
                 <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("schoolName")}>
                   School{sorteerIndicator("schoolName")}
                 </th>
+                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("planningStatus")}>
+                  Planning{sorteerIndicator("planningStatus")}
+                </th>
                 <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("relatiestatus")}>
                   Relatiestatus{sorteerIndicator("relatiestatus")}
                 </th>
@@ -294,10 +343,20 @@ export function SalesScholenView() {
               </tr>
             </thead>
             <tbody>
-              {gesorteerd.map((school) => (
+              {gesorteerd.map((school) => {
+                const planningStatus = bepaalPlanningStatus({
+                  actief: school.actief,
+                  openActieDatum: openActieDatumPerSchool.get(school.id) ?? null,
+                  mondayVolgendeActieDatum: school.mondayVolgendeActieDatum ?? null,
+                  heeftPendingVoorstel: pendingVoorstelIds.has(school.id),
+                });
+                return (
                 <tr key={school.id}>
                   <td>
                     <Link href={`/admin/sales/school?id=${school.id}`}>{school.schoolName}</Link>
+                  </td>
+                  <td>
+                    <PlanningStatusBadge status={planningStatus.status} datum={planningStatus.datum} />
                   </td>
                   <td>
                     <RelatiestatusBadge relatiestatus={school.relatiestatus} />
@@ -313,7 +372,8 @@ export function SalesScholenView() {
                   <td className={school.lastMondayActivityAt ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(school.lastMondayActivityAt)}</td>
                   <td className={volgendeActiePerSchool.has(school.id) ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(volgendeActiePerSchool.get(school.id))}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

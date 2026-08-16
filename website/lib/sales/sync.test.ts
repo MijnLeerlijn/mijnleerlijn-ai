@@ -5,26 +5,33 @@ import {
   verwerkSchoolItem,
   herevalueerScholenMetNieuweActiviteit,
   synchroniseerUpdates,
+  synchroniseerScholen,
+  reconcilieerVerwijderdeScholen,
+  synchroniseerScholenBoard,
   bewaarSyncStatus,
   haalLaatsteSyncStatus,
   type SyncResultaat,
 } from "./sync";
-import { MIGRATIE_MARKER, probeerGemigreerdeDatumTeExtraheren, SCHOLEN_KOLOM } from "./monday-columns";
+import { MIGRATIE_MARKER, probeerGemigreerdeDatumTeExtraheren, SCHOLEN_KOLOM, SCHOLEN_BOARD_ID } from "./monday-columns";
 import type { MondayUpdate, MondaySchoolItem } from "./monday-client";
-import { haalRecenteUpdates } from "./monday-client";
+import { haalRecenteUpdates, haalScholenPagina } from "./monday-client";
 import type { VariantVoorTypeSchoolMapping } from "./education-type-sync";
 import { beoordeelSchool } from "./backfill";
 import { genereerEnCacheSchoolSamenvatting } from "./school-summary";
 import { schrijfDatumLaatsteContactTerug } from "./writeback";
+import { bepaalGeplandeActie } from "./actie-extractie";
 
 vi.mock("./backfill", () => ({ beoordeelSchool: vi.fn() }));
 vi.mock("./school-summary", () => ({ genereerEnCacheSchoolSamenvatting: vi.fn() }));
 vi.mock("./monday-client", () => ({ haalScholenPagina: vi.fn(), haalRecenteUpdates: vi.fn() }));
 vi.mock("./writeback", () => ({ schrijfDatumLaatsteContactTerug: vi.fn() }));
+vi.mock("./actie-extractie", () => ({ bepaalGeplandeActie: vi.fn() }));
 const mockBeoordeelSchool = vi.mocked(beoordeelSchool);
 const mockGenereerSamenvatting = vi.mocked(genereerEnCacheSchoolSamenvatting);
 const mockHaalRecenteUpdates = vi.mocked(haalRecenteUpdates);
+const mockHaalScholenPagina = vi.mocked(haalScholenPagina);
 const mockSchrijfLaatsteContact = vi.mocked(schrijfDatumLaatsteContactTerug);
+const mockBepaalGeplandeActie = vi.mocked(bepaalGeplandeActie);
 
 const mockFind = vi.fn();
 const mockCreate = vi.fn();
@@ -48,6 +55,9 @@ function leegResultaat(): SyncResultaat {
     samenvattingenVernieuwd: 0,
     onderwijstypeOnbekend: [],
     fouten: [],
+    scholenVanBoardGehaald: 0,
+    verouderdeVoorstellenGesloten: 0,
+    bestaandePlanningenHerkend: 0,
   };
 }
 
@@ -634,11 +644,22 @@ describe("bewaarSyncStatus / haalLaatsteSyncStatus — sync-statusweergave", () 
       laatsteSyncScholenVerwerkt: 159,
       laatsteSyncWijzigingen: 6,
       laatsteSyncFouten: 0,
+      laatsteSyncBestaandePlanningenHerkend: 12,
+      laatsteSyncScholenVanBoardGehaald: 1,
+      laatsteSyncVerouderdeVoorstellenGesloten: 2,
     });
 
     const status = await haalLaatsteSyncStatus(maakPayload());
 
-    expect(status).toEqual({ laatsteSyncOp: "2026-08-16T11:58:00.000Z", scholenVerwerkt: 159, scholenGewijzigd: 6, fouten: 0 });
+    expect(status).toEqual({
+      laatsteSyncOp: "2026-08-16T11:58:00.000Z",
+      scholenVerwerkt: 159,
+      scholenGewijzigd: 6,
+      fouten: 0,
+      bestaandePlanningenHerkend: 12,
+      scholenVanBoardGehaald: 1,
+      verouderdeVoorstellenGesloten: 2,
+    });
   });
 
   it("haalLaatsteSyncStatus geeft null-waarden terug wanneer er nog nooit gesynchroniseerd is", async () => {
@@ -646,6 +667,389 @@ describe("bewaarSyncStatus / haalLaatsteSyncStatus — sync-statusweergave", () 
 
     const status = await haalLaatsteSyncStatus(maakPayload());
 
-    expect(status).toEqual({ laatsteSyncOp: null, scholenVerwerkt: null, scholenGewijzigd: null, fouten: null });
+    expect(status).toEqual({
+      laatsteSyncOp: null,
+      scholenVerwerkt: null,
+      scholenGewijzigd: null,
+      fouten: null,
+      bestaandePlanningenHerkend: null,
+      scholenVanBoardGehaald: null,
+      verouderdeVoorstellenGesloten: null,
+    });
+  });
+
+  it("schrijft de 3 nieuwe reconciliation-/planningstellers mee weg (punt 11)", async () => {
+    const resultaat = leegResultaat();
+    resultaat.bestaandePlanningenHerkend = 12;
+    resultaat.scholenVanBoardGehaald = 1;
+    resultaat.verouderdeVoorstellenGesloten = 2;
+
+    await bewaarSyncStatus(maakPayload(), resultaat);
+
+    expect(mockUpdateGlobal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          laatsteSyncBestaandePlanningenHerkend: 12,
+          laatsteSyncScholenVanBoardGehaald: 1,
+          laatsteSyncVerouderdeVoorstellenGesloten: 2,
+        }),
+      })
+    );
+  });
+});
+
+function maakSimpelItem(id: string): MondaySchoolItem {
+  return { id, name: `School ${id}`, updated_at: "2026-08-16T00:00:00.000Z", column_values: [{ id: SCHOLEN_KOLOM.relatiestatus, text: "Lead", value: null }] };
+}
+
+// Sales-logica productiecorrectie 2026-08-16 (punt 1/12) — veiligheidsregel
+// EXPLICIET toegevoegd door Michel: reconciliation mag uitsluitend draaien op
+// een complete, foutloze snapshot van board 18420120365. De 3 tests
+// hieronder dekken precies de door hem genoemde randgevallen.
+describe("synchroniseerScholen — paginering + veiligheidsgate (punt 1/12)", () => {
+  beforeEach(() => {
+    mockFind.mockReset().mockResolvedValue({ docs: [] }); // upsert-lookup: elk item telt in deze tests als "nieuw"
+    mockCreate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+    mockHaalScholenPagina.mockReset();
+    mockBepaalGeplandeActie.mockReset();
+  });
+
+  it("verzamelt alle item-ID's over meerdere pagina's en geeft succesvolVolledig true terug bij een geslaagde, volledige paginering", async () => {
+    mockHaalScholenPagina
+      .mockResolvedValueOnce({ items: [maakSimpelItem("1"), maakSimpelItem("2")], cursor: "cursor-2" })
+      .mockResolvedValueOnce({ items: [maakSimpelItem("3")], cursor: null });
+    const resultaat = leegResultaat();
+
+    const { huidigeItemIds, succesvolVolledig } = await synchroniseerScholen(maakPayload(), resultaat);
+
+    expect(succesvolVolledig).toBe(true);
+    expect(huidigeItemIds).toEqual(new Set(["1", "2", "3"]));
+  });
+
+  it("API faalt halverwege: stopt de paginering direct, geeft succesvolVolledig false + een ONVOLLEDIGE item-ID-set terug", async () => {
+    mockHaalScholenPagina
+      .mockResolvedValueOnce({ items: [maakSimpelItem("1")], cursor: "cursor-2" })
+      .mockRejectedValueOnce(new Error("Monday API-aanroep mislukt (HTTP 500)."));
+    const resultaat = leegResultaat();
+
+    const { huidigeItemIds, succesvolVolledig } = await synchroniseerScholen(maakPayload(), resultaat);
+
+    expect(succesvolVolledig).toBe(false);
+    expect(huidigeItemIds).toEqual(new Set(["1"])); // alleen de wél gelukte eerste pagina — nooit als compleet behandelen
+    expect(resultaat.fouten.some((f) => f.includes("Scholen-pagina ophalen mislukt"))).toBe(true);
+    expect(mockCreate).toHaveBeenCalledTimes(1); // uitsluitend het item van de gelukte pagina, niets ná de fout
+  });
+
+  it("0 items ondanks een technisch geslaagde paginering: succesvolVolledig blijft true, maar de set is leeg — de aanroeper beslist hoe dit te interpreteren", async () => {
+    mockHaalScholenPagina.mockResolvedValueOnce({ items: [], cursor: null });
+    const resultaat = leegResultaat();
+
+    const { huidigeItemIds, succesvolVolledig } = await synchroniseerScholen(maakPayload(), resultaat);
+
+    expect(succesvolVolledig).toBe(true);
+    expect(huidigeItemIds.size).toBe(0);
+  });
+});
+
+// "schoolbestuur Tjongerwerven" (productievoorbeeld, punt 1) — verplaatst
+// naar het Besturen-board, dus niet meer op '1: Scholen (Master Data)'.
+describe("reconcilieerVerwijderdeScholen — 'schoolbestuur Tjongerwerven'-scenario (punt 1)", () => {
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockCreate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+  });
+
+  it("bevraagt sales-schools uitsluitend op dit board én nog-als-aanwezig-gemarkeerd", async () => {
+    mockFind.mockImplementation(({ where }: { where?: Record<string, unknown> }) => {
+      expect(where).toEqual({ mondayBoardId: { equals: SCHOLEN_BOARD_ID }, nogOpMondayBoard: { equals: true } });
+      return Promise.resolve({ docs: [] });
+    });
+
+    await reconcilieerVerwijderdeScholen(maakPayload(), new Set(), leegResultaat());
+  });
+
+  it("deactiveert een lokale school die niet meer in de item-ID-set voorkomt: nogOpMondayBoard false, verwijderdVanBoardOp gezet, actief false", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 42, schoolName: "schoolbestuur Tjongerwerven", mondayItemId: "12752900049" }] });
+    const resultaat = leegResultaat();
+    const huidigeItemIds = new Set(["11111", "22222"]); // Tjongerwerven staat er niet meer bij
+
+    await reconcilieerVerwijderdeScholen(maakPayload(), huidigeItemIds, resultaat);
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        collection: "sales-schools",
+        id: 42,
+        data: expect.objectContaining({ nogOpMondayBoard: false, actief: false, verwijderdVanBoardOp: expect.any(String) }),
+      })
+    );
+    expect(resultaat.scholenVanBoardGehaald).toBe(1);
+  });
+
+  it("logt een audit-regel i.p.v. de school hard te verwijderen — historie blijft auditeerbaar", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 42, schoolName: "schoolbestuur Tjongerwerven", mondayItemId: "12752900049" }] });
+    const resultaat = leegResultaat();
+
+    await reconcilieerVerwijderdeScholen(maakPayload(), new Set(), resultaat);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ collection: "sales-log-events", data: expect.objectContaining({ school: 42, type: "systeem", source: "systeem" }) })
+    );
+  });
+
+  it("raakt een school die WEL nog op het board staat niet aan (bv. 'Springplank')", async () => {
+    mockFind.mockResolvedValue({ docs: [{ id: 7, schoolName: "Springplank", mondayItemId: "12752900010" }] });
+    const resultaat = leegResultaat();
+
+    await reconcilieerVerwijderdeScholen(maakPayload(), new Set(["12752900010"]), resultaat);
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(resultaat.scholenVanBoardGehaald).toBe(0);
+  });
+});
+
+describe("verwerkSchoolItem — reactivatie na terugkeer op het board (punt 1)", () => {
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockCreate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+    mockBepaalGeplandeActie.mockReset();
+  });
+
+  it("een eerder van het board gehaalde school die weer in een sync-pagina verschijnt, wordt onvoorwaardelijk weer 'op het board' + actief", async () => {
+    mockFind.mockResolvedValue({
+      docs: [
+        {
+          id: 42,
+          relatiestatus: "Lead",
+          salesfase: null,
+          mondayVolgendeActieDatum: null,
+          onderwijstype: null,
+          nogOpMondayBoard: false,
+          verwijderdVanBoardOp: "2026-08-10T00:00:00.000Z",
+        },
+      ],
+    });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSimpelItem("12752900049"), resultaat, []);
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 42, data: expect.objectContaining({ nogOpMondayBoard: true, verwijderdVanBoardOp: null, actief: true }) })
+    );
+  });
+});
+
+// Productiecorrectie 2026-08-16 (punt 3/4/5/9) — "Springplank": Relatiestatus
+// Lead, Salesfase Afspraak plannen, Datum volgende actie = 24 augustus. Dekt
+// hier het sync-deel (supersede + actie-extractie-cache); het AI-deel
+// (geen nieuw voorstel wanneer Monday's datum gerespecteerd wordt) staat met
+// dezelfde schoolnaam/datum in backfill.test.ts.
+describe("verwerkSchoolItem — geldige Monday-planning: supersede + actie-extractie-cache (punt 3/4/5/9)", () => {
+  function maakSpringplankItem(datum: string): MondaySchoolItem {
+    return {
+      id: "12752900010",
+      name: "Springplank",
+      updated_at: "2026-08-16T00:00:00.000Z",
+      column_values: [
+        { id: SCHOLEN_KOLOM.relatiestatus, text: "Lead", value: null },
+        { id: SCHOLEN_KOLOM.salesfase, text: "Afspraak plannen", value: null },
+        { id: SCHOLEN_KOLOM.datumVolgendeActie, text: datum, value: null },
+      ],
+    };
+  }
+
+  function toekomstigeDatum(dagen: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + dagen);
+    return d.toISOString().slice(0, 10);
+  }
+
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockCreate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+    mockBepaalGeplandeActie.mockReset().mockResolvedValue({
+      geplandeActieTekst: "Mail sturen voor afspraak",
+      gekoppeldAanDatum: "2026-08-24",
+      sourceUpdateIds: ["u1"],
+      confidence: "hoog",
+    });
+  });
+
+  it("sluit een bestaand pending volgende_actie-voorstel als superseded zodra Monday al een geldige vervolgdatum heeft (vangt ook bestaande achterstand van vóór deze fix, punt 9)", async () => {
+    mockFind.mockImplementation(({ collection }: { collection: string }) => {
+      if (collection === "sales-schools")
+        return Promise.resolve({ docs: [{ id: 7, relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: null, onderwijstype: null, cachedGeplandeActieDatum: null }] });
+      if (collection === "sales-proposals") return Promise.resolve({ docs: [{ id: 900 }] }); // oud, nog pending voorstel
+      return Promise.resolve({ docs: [] });
+    });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSpringplankItem(toekomstigeDatum(10)), resultaat, []);
+
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ collection: "sales-proposals", id: 900, data: { status: "superseded" } }));
+    expect(resultaat.verouderdeVoorstellenGesloten).toBe(1);
+  });
+
+  it("geen pending voorstel aanwezig: geen supersede-aanroep, teller blijft 0", async () => {
+    mockFind.mockImplementation(({ collection }: { collection: string }) => {
+      if (collection === "sales-schools")
+        return Promise.resolve({ docs: [{ id: 7, relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: null, onderwijstype: null, cachedGeplandeActieDatum: null }] });
+      return Promise.resolve({ docs: [] }); // sales-proposals: leeg
+    });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSpringplankItem(toekomstigeDatum(10)), resultaat, []);
+
+    expect(mockUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ collection: "sales-proposals" }));
+    expect(resultaat.verouderdeVoorstellenGesloten).toBe(0);
+  });
+
+  it("ververst de gecachte actie-extractie voor een NIEUWE/gewijzigde Monday-datum — 'Mail sturen voor afspraak' gecached op 2026-08-24", async () => {
+    mockFind.mockImplementation(({ collection }: { collection: string }) => {
+      if (collection === "sales-schools")
+        return Promise.resolve({ docs: [{ id: 7, relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: null, onderwijstype: null, cachedGeplandeActieDatum: null }] });
+      return Promise.resolve({ docs: [] });
+    });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSpringplankItem("2026-08-24"), resultaat, []);
+
+    expect(mockBepaalGeplandeActie).toHaveBeenCalledWith(
+      expect.objectContaining({ schoolName: "Springplank", mondayItemId: "12752900010", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: "2026-08-24" })
+    );
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        collection: "sales-schools",
+        id: 7,
+        data: expect.objectContaining({
+          cachedGeplandeActieTekst: "Mail sturen voor afspraak",
+          cachedGeplandeActieDatum: "2026-08-24",
+          cachedGeplandeActieConfidence: "hoog",
+          cachedGeplandeActieBronUpdateIds: [{ updateId: "u1" }],
+        }),
+      })
+    );
+    expect(resultaat.bestaandePlanningenHerkend).toBe(1);
+  });
+
+  it("doet GEEN nieuwe AI-call wanneer de cache al bestaat voor exact dezelfde datum — kostenbewust (punt 4)", async () => {
+    mockFind.mockImplementation(({ collection }: { collection: string }) => {
+      if (collection === "sales-schools")
+        return Promise.resolve({
+          docs: [{ id: 7, relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: "2026-08-24", onderwijstype: null, cachedGeplandeActieDatum: "2026-08-24" }],
+        });
+      return Promise.resolve({ docs: [] });
+    });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSpringplankItem("2026-08-24"), resultaat, []);
+
+    expect(mockBepaalGeplandeActie).not.toHaveBeenCalled();
+  });
+
+  it("een school zonder geldige Monday-datum (leeg) triggert geen supersede-/cache-logica", async () => {
+    mockFind.mockResolvedValue({ docs: [] });
+    const resultaat = leegResultaat();
+
+    await verwerkSchoolItem(maakPayload(), maakSimpelItem("1"), resultaat, []);
+
+    expect(mockBepaalGeplandeActie).not.toHaveBeenCalled();
+    expect(resultaat.bestaandePlanningenHerkend).toBe(0);
+  });
+
+  it("een VERLOPEN Monday-datum triggert geen supersede-/cache-logica — alleen een niet-verlopen datum telt als 'al gepland'", async () => {
+    mockFind.mockResolvedValue({ docs: [] });
+    const resultaat = leegResultaat();
+    const verlopenDatum = toekomstigeDatum(-30);
+
+    await verwerkSchoolItem(maakPayload(), maakSpringplankItem(verlopenDatum), resultaat, []);
+
+    expect(mockBepaalGeplandeActie).not.toHaveBeenCalled();
+    expect(resultaat.bestaandePlanningenHerkend).toBe(0);
+  });
+});
+
+// End-to-end door de volledige synchroniseerScholenBoard-pijplijn — bevestigt
+// dat de veiligheidsgate ZELF (de if-check in synchroniseerScholenBoard)
+// correct bedraad is, niet alleen dat synchroniseerScholen() los het juiste
+// signaal teruggeeft. Dekt letterlijk de 4 door Michel genoemde testscenario's.
+describe("synchroniseerScholenBoard — veiligheidsgate end-to-end (expliciete testscenario's, punt 1/12)", () => {
+  function maakRouter(reconciliatieDocs: unknown[]) {
+    return ({ collection, where }: { collection: string; where?: Record<string, unknown> }) => {
+      if (collection === "sales-schools") {
+        if (where?.mondayItemId) return Promise.resolve({ docs: [] }); // verwerkSchoolItem-upsert-lookup: telt in deze tests als "nieuw"
+        if (where?.nogOpMondayBoard) return Promise.resolve({ docs: reconciliatieDocs });
+        return Promise.resolve({ docs: [] }); // synchroniseerUpdates se board-brede find
+      }
+      return Promise.resolve({ docs: [] });
+    };
+  }
+
+  beforeEach(() => {
+    mockCreate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdate.mockReset().mockResolvedValue({ id: 1 });
+    mockUpdateGlobal.mockReset().mockResolvedValue({});
+    mockHaalScholenPagina.mockReset();
+    mockHaalRecenteUpdates.mockReset().mockResolvedValue([]);
+    mockBepaalGeplandeActie.mockReset();
+  });
+
+  it("volledige, geslaagde sync: een school die niet meer op het board staat wordt gedeactiveerd", async () => {
+    mockHaalScholenPagina.mockResolvedValueOnce({ items: [maakSimpelItem("11111")], cursor: null });
+    mockFind.mockImplementation(maakRouter([{ id: 42, schoolName: "schoolbestuur Tjongerwerven", mondayItemId: "12752900049" }]));
+
+    const resultaat = await synchroniseerScholenBoard(maakPayload());
+
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ id: 42, data: expect.objectContaining({ nogOpMondayBoard: false, actief: false }) }));
+    expect(resultaat.scholenVanBoardGehaald).toBe(1);
+  });
+
+  it("API faalt halverwege de paginering: GEEN enkele bestaande school wordt gedeactiveerd", async () => {
+    mockHaalScholenPagina.mockResolvedValueOnce({ items: [maakSimpelItem("11111")], cursor: "verder" }).mockRejectedValueOnce(new Error("Netwerkfout"));
+    mockFind.mockImplementation(maakRouter([{ id: 42, schoolName: "schoolbestuur Tjongerwerven", mondayItemId: "12752900049" }]));
+
+    const resultaat = await synchroniseerScholenBoard(maakPayload());
+
+    const deactiverendeUpdates = mockUpdate.mock.calls.filter(([call]) => (call as { data?: { nogOpMondayBoard?: boolean } }).data?.nogOpMondayBoard === false);
+    expect(deactiverendeUpdates).toHaveLength(0);
+    expect(resultaat.scholenVanBoardGehaald).toBe(0);
+    expect(resultaat.fouten.some((f) => f.includes("Scholen-pagina ophalen mislukt"))).toBe(true);
+  });
+
+  it("lege foutresponse/0 items ondanks een technisch geslaagde paginering: niet geïnterpreteerd als leeg board, geen school gedeactiveerd", async () => {
+    mockHaalScholenPagina.mockResolvedValueOnce({ items: [], cursor: null });
+    mockFind.mockImplementation(maakRouter([{ id: 42, schoolName: "schoolbestuur Tjongerwerven", mondayItemId: "12752900049" }]));
+
+    const resultaat = await synchroniseerScholenBoard(maakPayload());
+
+    const deactiverendeUpdates = mockUpdate.mock.calls.filter(([call]) => (call as { data?: { nogOpMondayBoard?: boolean } }).data?.nogOpMondayBoard === false);
+    expect(deactiverendeUpdates).toHaveLength(0);
+    expect(resultaat.scholenVanBoardGehaald).toBe(0);
+    expect(resultaat.fouten.some((f) => f.includes("0 scholen terug"))).toBe(true);
+  });
+
+  it("een item dat weer terugkeert op het board wordt weer actief — self-healing reactivatie", async () => {
+    mockHaalScholenPagina.mockResolvedValueOnce({ items: [maakSimpelItem("12752900049")], cursor: null });
+    mockFind.mockImplementation(({ collection, where }: { collection: string; where?: Record<string, unknown> }) => {
+      if (collection === "sales-schools") {
+        if (where?.mondayItemId) {
+          return Promise.resolve({
+            docs: [{ id: 42, relatiestatus: "Lead", salesfase: null, mondayVolgendeActieDatum: null, onderwijstype: null, nogOpMondayBoard: false, verwijderdVanBoardOp: "2026-08-10T00:00:00.000Z" }],
+          });
+        }
+        return Promise.resolve({ docs: [] });
+      }
+      return Promise.resolve({ docs: [] });
+    });
+
+    await synchroniseerScholenBoard(maakPayload());
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 42, data: expect.objectContaining({ nogOpMondayBoard: true, verwijderdVanBoardOp: null, actief: true }) })
+    );
   });
 });

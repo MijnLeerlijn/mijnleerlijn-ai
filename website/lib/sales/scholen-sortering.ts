@@ -10,7 +10,7 @@
 // widget-prioritering.ts: een school zonder laatste-contactdatum is voor
 // "oudste eerst"-sortering per definitie de langst-stille (of nooit
 // gecontacteerde) school, en hoort dus vooraan.
-export type SorteerKolom = "schoolName" | "relatiestatus" | "salesfase" | "onderwijstype" | "plaats" | "laatsteContact" | "volgendeActie";
+export type SorteerKolom = "schoolName" | "relatiestatus" | "salesfase" | "onderwijstype" | "plaats" | "laatsteContact" | "volgendeActie" | "planningStatus";
 export type SorteerRichting = "oplopend" | "aflopend";
 
 export interface SorteerbareSchool {
@@ -22,6 +22,8 @@ export interface SorteerbareSchool {
   plaats: string | null;
   lastMondayActivityAt: string | null;
   volgendeActieDatum: string | null;
+  /** Productiecorrectie 2026-08-16 (punt 7) — vooraf berekende urgentie-rang (lib/sales/planning-status.ts se planningStatusSorteerRang), geen herberekening hier. */
+  planningStatusRang: number;
 }
 
 function vergelijkTekst(a: string | null, b: string | null): number {
@@ -55,6 +57,9 @@ export function vergelijkScholen(a: SorteerbareSchool, b: SorteerbareSchool, kol
       break;
     case "volgendeActie":
       resultaat = vergelijkDatum(a.volgendeActieDatum, b.volgendeActieDatum);
+      break;
+    case "planningStatus":
+      resultaat = a.planningStatusRang - b.planningStatusRang;
       break;
   }
   return richting === "oplopend" ? resultaat : -resultaat;

@@ -1430,6 +1430,33 @@ export interface SalesSchool {
    */
   cachedSummary?: string | null;
   cachedSummaryGeneratedAt?: string | null;
+  /**
+   * False = niet meer aangetroffen bij de laatste volledige board-sync. Zet ook actief op false. Zie lib/sales/sync.ts se reconcilieerVerwijderdeScholen.
+   */
+  nogOpMondayBoard?: boolean | null;
+  /**
+   * Gezet zodra nogOpMondayBoard false wordt — automatisch weer leeg zodra de school terugkeert op het board.
+   */
+  verwijderdVanBoardOp?: string | null;
+  /**
+   * Wat er waarschijnlijk gepland staat op cachedGeplandeActieDatum, geëxtraheerd uit de laatste betrouwbare Updates. Zie lib/sales/actie-extractie.ts.
+   */
+  cachedGeplandeActieTekst?: string | null;
+  /**
+   * De datum waaraan cachedGeplandeActieTekst gekoppeld is — normaliter gelijk aan mondayVolgendeActieDatum.
+   */
+  cachedGeplandeActieDatum?: string | null;
+  cachedGeplandeActieConfidence?: ('hoog' | 'middel' | 'laag') | null;
+  /**
+   * Monday Update-ID's waarop cachedGeplandeActieTekst is gebaseerd.
+   */
+  cachedGeplandeActieBronUpdateIds?:
+    | {
+        updateId: string;
+        id?: string | null;
+      }[]
+    | null;
+  cachedGeplandeActieGegenereerdOp?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2555,6 +2582,18 @@ export interface SalesSchoolsSelect<T extends boolean = true> {
   actief?: T;
   cachedSummary?: T;
   cachedSummaryGeneratedAt?: T;
+  nogOpMondayBoard?: T;
+  verwijderdVanBoardOp?: T;
+  cachedGeplandeActieTekst?: T;
+  cachedGeplandeActieDatum?: T;
+  cachedGeplandeActieConfidence?: T;
+  cachedGeplandeActieBronUpdateIds?:
+    | T
+    | {
+        updateId?: T;
+        id?: T;
+      };
+  cachedGeplandeActieGegenereerdOp?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2821,6 +2860,18 @@ export interface SalesInstellingen {
    */
   laatsteSyncWijzigingen?: number | null;
   laatsteSyncFouten?: number | null;
+  /**
+   * Scholen met een geldige (niet-verlopen) Monday-vervolgdatum die deze sync-run als 'al gepland' zijn herkend.
+   */
+  laatsteSyncBestaandePlanningenHerkend?: number | null;
+  /**
+   * Lokale scholen die deze sync-run niet meer voorkwamen op '1: Scholen (Master Data)' en daarom gedeactiveerd zijn.
+   */
+  laatsteSyncScholenVanBoardGehaald?: number | null;
+  /**
+   * Pending 'volgende actie'-voorstellen die deze sync-run superseded zijn omdat Monday inmiddels al een geldige vervolgdatum had.
+   */
+  laatsteSyncVerouderdeVoorstellenGesloten?: number | null;
   updatedAt?: string | null;
   createdAt?: string | null;
 }
@@ -2891,6 +2942,9 @@ export interface SalesInstellingenSelect<T extends boolean = true> {
   laatsteSyncScholenVerwerkt?: T;
   laatsteSyncWijzigingen?: T;
   laatsteSyncFouten?: T;
+  laatsteSyncBestaandePlanningenHerkend?: T;
+  laatsteSyncScholenVanBoardGehaald?: T;
+  laatsteSyncVerouderdeVoorstellenGesloten?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

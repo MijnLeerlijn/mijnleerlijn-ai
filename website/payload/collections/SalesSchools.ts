@@ -94,5 +94,79 @@ export const SalesSchools: CollectionConfig = {
       label: "Samenvatting gegenereerd op",
       admin: { readOnly: true },
     },
+    // Sales-logica productiecorrectie 2026-08-16 (punt 1/12) — board-
+    // reconciliation: false zodra deze school bij de laatste volledige,
+    // succesvol afgeronde sync van "1: Scholen (Master Data)" niet meer op
+    // dat board voorkwam (bv. verplaatst naar een ander board, zie de
+    // Tjongerwerven-productiecasus). Zet BEWUST ook `actief` op false — geen
+    // enkele bestaande `where: { actief: { equals: true } }`-query elders in
+    // Sales hoeft hierdoor aangepast te worden. Reconciliation draait
+    // uitsluitend op een complete, foutloze board-snapshot (lib/sales/
+    // sync.ts se reconcilieerVerwijderdeScholen) — bij een mislukte of
+    // onvolledige sync-paginering blijft dit veld ongewijzigd, nooit een
+    // school op basis van een onvolledige lijst deactiveren. Terugkeer op
+    // het board is self-healing: elke sync die het item weer tegenkomt zet
+    // dit onvoorwaardelijk terug op true (zie verwerkSchoolItem).
+    {
+      name: "nogOpMondayBoard",
+      type: "checkbox",
+      defaultValue: true,
+      label: "Nog op Monday-board",
+      admin: {
+        readOnly: true,
+        description: "False = niet meer aangetroffen bij de laatste volledige board-sync. Zet ook actief op false. Zie lib/sales/sync.ts se reconcilieerVerwijderdeScholen.",
+      },
+    },
+    {
+      name: "verwijderdVanBoardOp",
+      type: "date",
+      label: "Verwijderd van board op",
+      admin: { readOnly: true, description: "Gezet zodra nogOpMondayBoard false wordt — automatisch weer leeg zodra de school terugkeert op het board." },
+    },
+    // Productiecorrectie 2026-08-16 (punt 4/5) — gecachte, deterministisch/
+    // AI-geëxtraheerde omschrijving van wat er op mondayVolgendeActieDatum
+    // gepland staat (lib/sales/actie-extractie.ts), afgeleid uit de laatste
+    // betrouwbare (niet-gemigreerde) Updates — nooit verzonnen: bij
+    // onvoldoende zekerheid een neutrale tekst i.p.v. een gok. Zelfde
+    // cache-op-de-school-patroon als cachedSummary hierboven: door sync
+    // vernieuwd zodra de school een geldige Monday-vervolgdatum heeft,
+    // nooit live berekend bij een paginaweergave.
+    {
+      name: "cachedGeplandeActieTekst",
+      type: "text",
+      label: "Geplande actie (gecached)",
+      admin: { readOnly: true, description: "Wat er waarschijnlijk gepland staat op cachedGeplandeActieDatum, geëxtraheerd uit de laatste betrouwbare Updates. Zie lib/sales/actie-extractie.ts." },
+    },
+    {
+      name: "cachedGeplandeActieDatum",
+      type: "date",
+      label: "Geplande actie datum (gecached)",
+      admin: { readOnly: true, description: "De datum waaraan cachedGeplandeActieTekst gekoppeld is — normaliter gelijk aan mondayVolgendeActieDatum." },
+    },
+    {
+      name: "cachedGeplandeActieConfidence",
+      type: "select",
+      label: "Geplande actie zekerheid (gecached)",
+      options: [
+        { label: "Hoog", value: "hoog" },
+        { label: "Middel", value: "middel" },
+        { label: "Laag", value: "laag" },
+      ],
+      admin: { readOnly: true },
+    },
+    {
+      name: "cachedGeplandeActieBronUpdateIds",
+      type: "array",
+      label: "Geplande actie bron-updates (gecached)",
+      labels: { singular: "Update", plural: "Updates" },
+      admin: { readOnly: true, description: "Monday Update-ID's waarop cachedGeplandeActieTekst is gebaseerd." },
+      fields: [{ name: "updateId", type: "text", required: true }],
+    },
+    {
+      name: "cachedGeplandeActieGegenereerdOp",
+      type: "date",
+      label: "Geplande actie gegenereerd op",
+      admin: { readOnly: true },
+    },
   ],
 };

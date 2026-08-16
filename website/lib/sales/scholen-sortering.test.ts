@@ -10,6 +10,7 @@ function school(overrides: Partial<SorteerbareSchool> = {}): SorteerbareSchool {
     plaats: null,
     lastMondayActivityAt: null,
     volgendeActieDatum: null,
+    planningStatusRang: 5,
     ...overrides,
   };
 }
@@ -58,6 +59,13 @@ describe("vergelijkScholen", () => {
     const zonderFase = school({ schoolName: "X", salesfase: null });
     const metFase = school({ schoolName: "Y", salesfase: "Eerste contact" });
     expect(vergelijkScholen(zonderFase, metFase, "salesfase", "oplopend")).toBeLessThan(0);
+  });
+
+  it("sorteert op planningStatus — vergelijkt de vooraf berekende rang, laagste (meest urgent) eerst bij oplopend (productiecorrectie 2026-08-16, punt 7)", () => {
+    const achterstallig = school({ schoolName: "X", planningStatusRang: 0 });
+    const gepland = school({ schoolName: "Y", planningStatusRang: 4 });
+    expect(vergelijkScholen(achterstallig, gepland, "planningStatus", "oplopend")).toBeLessThan(0);
+    expect(vergelijkScholen(achterstallig, gepland, "planningStatus", "aflopend")).toBeGreaterThan(0);
   });
 });
 

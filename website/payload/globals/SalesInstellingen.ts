@@ -66,5 +66,28 @@ export const SalesInstellingen: GlobalConfig = {
       label: "Fouten (laatste sync)",
       admin: { readOnly: true },
     },
+    // Sales-logica productiecorrectie 2026-08-16 (punt 1/11) — board-
+    // reconciliation + planningsherkenning zichtbaar maken in de
+    // sync-samenvatting (SalesDashboardPaneel.tsx/SalesVandaagView.tsx),
+    // zelfde "door sync bijgewerkt, nooit handmatig"-patroon als de 3
+    // bestaande laatsteSync*-velden hierboven.
+    {
+      name: "laatsteSyncBestaandePlanningenHerkend",
+      type: "number",
+      label: "Bestaande planningen herkend (laatste sync)",
+      admin: { readOnly: true, description: "Scholen met een geldige (niet-verlopen) Monday-vervolgdatum die deze sync-run als 'al gepland' zijn herkend." },
+    },
+    {
+      name: "laatsteSyncScholenVanBoardGehaald",
+      type: "number",
+      label: "Scholen niet meer op Master Data-board (laatste sync)",
+      admin: { readOnly: true, description: "Lokale scholen die deze sync-run niet meer voorkwamen op '1: Scholen (Master Data)' en daarom gedeactiveerd zijn." },
+    },
+    {
+      name: "laatsteSyncVerouderdeVoorstellenGesloten",
+      type: "number",
+      label: "Verouderde AI-voorstellen gesloten (laatste sync)",
+      admin: { readOnly: true, description: "Pending 'volgende actie'-voorstellen die deze sync-run superseded zijn omdat Monday inmiddels al een geldige vervolgdatum had." },
+    },
   ],
 };

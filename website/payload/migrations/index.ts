@@ -28,6 +28,7 @@ import * as migration_20260814_102738_sales_v2_ux_velden from './20260814_102738
 import * as migration_20260815_090000_sales_relatie_analyse_veld from './20260815_090000_sales_relatie_analyse_veld';
 import * as migration_20260815_120000_sales_proposal_superseded from './20260815_120000_sales_proposal_superseded';
 import * as migration_20260816_090000_sales_sync_status from './20260816_090000_sales_sync_status';
+import * as migration_20260816_150000_sales_board_reconciliation from './20260816_150000_sales_board_reconciliation';
 
 export const migrations = [
   {
@@ -179,5 +180,10 @@ export const migrations = [
     up: migration_20260816_090000_sales_sync_status.up,
     down: migration_20260816_090000_sales_sync_status.down,
     name: '20260816_090000_sales_sync_status',
+  },
+  {
+    up: migration_20260816_150000_sales_board_reconciliation.up,
+    down: migration_20260816_150000_sales_board_reconciliation.down,
+    name: '20260816_150000_sales_board_reconciliation',
   },
 ];

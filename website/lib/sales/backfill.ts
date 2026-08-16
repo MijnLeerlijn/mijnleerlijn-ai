@@ -23,7 +23,8 @@ export type BackfillUitkomst =
   | "vervolgactie_bestaat"
   | "ai_voorstel_klaar"
   | "onvoldoende_context"
-  | "mogelijk_afgesloten";
+  | "mogelijk_afgesloten"
+  | "bestaande_planning_bevestigd";
 
 export interface BackfillSchoolResultaat {
   schoolId: number;
@@ -106,6 +107,22 @@ async function genereerVolgendeActieVoorstel(
   }
 
   const { analyse, brontekstUpdateIds } = uitkomst;
+
+  // Sales-logica productiecorrectie 2026-08-16 (punt 3/5) — productievoorbeeld
+  // "Springplank": Monday heeft al Datum volgende actie = 24 augustus, en de
+  // analyse (lib/sales/relationship-analysis.ts) respecteert die datum
+  // (datumHerkomst "bestaande_monday_datum" — regel 2 van de hiërarchie, GEEN
+  // nieuwere expliciete afspraak in de logs die 'm zou overschrijven). Een
+  // school waarvoor Monday al een geldige planning heeft die simpelweg
+  // gerespecteerd wordt, hoeft GEEN nieuw pending voorstel — dat zou een
+  // beslissing suggereren die er niet is (Monday's datum staat al vast).
+  // Alleen bij "nieuwe_afspraak_uit_logs" (een aantoonbaar nieuwere,
+  // expliciete afspraak overschrijft Monday's datum) of
+  // "generieke_inschatting" (geen bestaande Monday-datum om te respecteren)
+  // ontstaat hieronder nog een echt voorstel.
+  if (analyse.datumHerkomst === "bestaande_monday_datum") {
+    return { schoolId: school.id, schoolName: school.schoolName, uitkomst: "bestaande_planning_bevestigd" };
+  }
 
   const nieuwVoorstel = await payload.create({
     collection: "sales-proposals",
@@ -196,7 +213,7 @@ export async function voerBackfillUit(payload: Payload): Promise<BackfillResulta
 
   const resultaat: BackfillResultaat = {
     scholenBeoordeeld: 0,
-    perUitkomst: { vervolgactie_bestaat: 0, ai_voorstel_klaar: 0, onvoldoende_context: 0, mogelijk_afgesloten: 0 },
+    perUitkomst: { vervolgactie_bestaat: 0, ai_voorstel_klaar: 0, onvoldoende_context: 0, mogelijk_afgesloten: 0, bestaande_planning_bevestigd: 0 },
     resultaten: [],
     fouten: [],
   };

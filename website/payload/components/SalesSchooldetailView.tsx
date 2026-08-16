@@ -6,11 +6,13 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Compass, Sparkles } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
+import { PlanningStatusBadge } from "./PlanningStatusBadge";
 import { SalesProposalActies } from "./SalesProposalActies";
 import { SalesOnderwijstypeInstellen } from "./SalesOnderwijstypeInstellen";
 import { formatKorteDatum, formatKorteDatumTijd, typeLabel } from "@/lib/sales/format-datum";
 import { LOGBOEK_SAMENVATTING_MAX_LENGTE } from "@/lib/sales/monday-columns";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
+import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
 
 // Sales-assistent V1 (2026-08-14) — schooldetail: het centrale Sales-object.
 // Query-param-gebaseerd (?id=<schoolId>), zelfde patroon als CreatorView.tsx
@@ -29,10 +31,12 @@ interface SalesSchoolDoc {
   onderwijstype?: VariantRef | number | null;
   mondayItemId: string;
   mondayBoardId: string;
+  actief: boolean;
   lastMondayActivityAt?: string | null;
   mondayVolgendeActieDatum?: string | null;
   cachedSummary?: string | null;
   cachedSummaryGeneratedAt?: string | null;
+  cachedGeplandeActieTekst?: string | null;
 }
 interface SalesActionDoc {
   id: number;
@@ -237,6 +241,34 @@ function SchooldetailInner() {
   const mondayUrl = `https://mijnleerlijn.monday.com/boards/${school.mondayBoardId}/pulses/${school.mondayItemId}`;
   const onderwijstypeNaam = school.onderwijstype ? (typeof school.onderwijstype === "number" ? `#${school.onderwijstype}` : school.onderwijstype.name) : null;
 
+  // Productiecorrectie 2026-08-16 (punt 8) — zelfde bepaalPlanningStatus()
+  // als Dashboard/Vandaag/Scholenoverzicht, hier met de al-opgehaalde
+  // schooldetaildata als invoer. Bij een open lokale actie neemt die
+  // (bron "sales") altijd voorrang boven Monday's datum — precies daarom
+  // wordt hieronder apart gecontroleerd of de twee daadwerkelijk uiteenlopen
+  // (planningVerschilt), zodat zo'n verschil nooit stilzwijgend verdwijnt.
+  const heeftPendingVoorstel = voorstellen.some((v) => v.proposalType === "volgende_actie" || v.proposalType === "bestaande_vervolgdatum");
+  const planningStatus = bepaalPlanningStatus({
+    actief: school.actief,
+    openActieDatum: openActie?.dueDate ?? null,
+    mondayVolgendeActieDatum: school.mondayVolgendeActieDatum ?? null,
+    heeftPendingVoorstel,
+  });
+  const planningVerschilt =
+    openActie && school.mondayVolgendeActieDatum && openActie.dueDate.slice(0, 10) !== school.mondayVolgendeActieDatum.slice(0, 10)
+      ? { salesDatum: openActie.dueDate, mondayDatum: school.mondayVolgendeActieDatum }
+      : null;
+  // "Volgende actie": lokale actie-omschrijving heeft voorrang; anders, bij
+  // een Monday-gedragen planning, de gecachte actie-extractie (lib/sales/
+  // actie-extractie.ts) — met dezelfde "nooit gokken"-nette fallback als
+  // punt 4 voorschrijft wanneer die cache (nog) leeg is.
+  const volgendeActieTekst = openActie
+    ? openActie.description
+    : planningStatus.bron === "monday"
+      ? school.cachedGeplandeActieTekst || `Actie gepland op ${formatKorteDatum(school.mondayVolgendeActieDatum)} — omschrijving niet duidelijk`
+      : null;
+  const bronLabel: Record<string, string> = { sales: "Sales", monday: "Monday", ai: "AI" };
+
   return (
     <div className="ml-sales">
       <div className="ml-sales__schooldetail-header">
@@ -285,14 +317,25 @@ function SchooldetailInner() {
         <div className="ml-sales__schooldetail-blok ml-sales__schooldetail-blok--planning">
           <p className="ml-sales__schooldetail-blok-label">Planning</p>
           <p className="ml-sales__kaart-tekst">Laatste echte contact: {formatKorteDatum(school.lastMondayActivityAt)}</p>
-          <p className="ml-sales__kaart-tekst">
-            Volgende actie in Monday: {school.mondayVolgendeActieDatum ? formatKorteDatum(school.mondayVolgendeActieDatum) : "geen"}
-          </p>
-          <p className="ml-sales__kaart-tekst">
-            Lokale Sales-actie:{" "}
-            {openActie ? `${openActie.type} op ${formatKorteDatum(openActie.dueDate)}${openActie.channel ? ` · ${openActie.channel}` : ""}` : "nog niet aangemaakt"}
-          </p>
-          {openActie && <p className="ml-sales__kaart-tekst">{openActie.description}</p>}
+
+          {planningVerschilt ? (
+            <div className="ml-sales__datumconflict">
+              <p className="ml-sales__datumconflict-titel">Planning verschilt</p>
+              <p className="ml-sales-widget__meta">Monday: {formatKorteDatum(planningVerschilt.mondayDatum)}</p>
+              <p className="ml-sales-widget__meta">Sales: {formatKorteDatum(planningVerschilt.salesDatum)}</p>
+            </div>
+          ) : planningStatus.status ? (
+            <>
+              <p className="ml-sales__kaart-tekst" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                Planningstatus: <PlanningStatusBadge status={planningStatus.status} datum={planningStatus.datum} />
+              </p>
+              <p className="ml-sales__kaart-tekst">Volgende actie: {volgendeActieTekst ?? "geen"}</p>
+              <p className="ml-sales__kaart-tekst">Datum: {planningStatus.datum ? formatKorteDatum(planningStatus.datum) : "geen"}</p>
+              {planningStatus.bron && <p className="ml-sales__kaart-tekst">Bron: {bronLabel[planningStatus.bron]}</p>}
+            </>
+          ) : (
+            <p className="ml-sales__kaart-tekst">Niet actief in Sales — geen planningstatus van toepassing.</p>
+          )}
         </div>
       </div>
 

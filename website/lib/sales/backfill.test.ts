@@ -164,7 +164,7 @@ describe("voerBackfillUit — idempotentie", () => {
     });
     mockAnalyse.mockResolvedValue({
       status: "klaar",
-      analyse: { ...VOLLEDIGE_ANALYSE_UITKOMST.analyse, aanbevolenDatum: "2026-09-01", datumHerkomst: "bestaande_monday_datum" as const },
+      analyse: { ...VOLLEDIGE_ANALYSE_UITKOMST.analyse, aanbevolenDatum: "2026-09-01", datumHerkomst: "nieuwe_afspraak_uit_logs" as const },
       brontekstUpdateIds: ["u1"],
     });
 
@@ -175,6 +175,41 @@ describe("voerBackfillUit — idempotentie", () => {
     const voorstelCall = mockCreate.mock.calls.find((c) => c[0].collection === "sales-proposals")![0];
     expect(voorstelCall.data.proposalType).toBe("volgende_actie"); // niet meer het uitgefaseerde 'bestaande_vervolgdatum'
     expect(voorstelCall.data.proposedDate).toBe("2026-09-01");
+  });
+
+  // Sales-logica productiecorrectie 2026-08-16 (punt 3/5, "Springplank") —
+  // BEHEERT DEZELFDE datumHerkomst-waarde als de vorige test hierboven
+  // gebruikte tot deze correctieronde ("bestaande_monday_datum"), maar het
+  // verwachte gedrag is nu bewust omgekeerd: Monday's datum wordt simpelweg
+  // GERESPECTEERD (geen aantoonbaar nieuwere afspraak in de logs) — dat
+  // verdient geen nieuw pending voorstel meer (zou een beslissing suggereren
+  // die er niet is), alleen de uitkomst 'bestaande_planning_bevestigd'. De
+  // volledige analyse blijft wel altijd draaien (regel 1/prioriteit-1 —
+  // "nieuwe_afspraak_uit_logs" hierboven — blijft daardoor ongewijzigd
+  // mogelijk).
+  it("Springplank-scenario — Monday's datum wordt gerespecteerd (datumHerkomst 'bestaande_monday_datum'): GEEN nieuw pending voorstel, uitkomst 'bestaande_planning_bevestigd'", async () => {
+    mockFind.mockImplementation(({ collection }: { collection: string }) => {
+      if (collection === "sales-schools") return Promise.resolve({ docs: [{ ...SCHOOL_A, schoolName: "Springplank", mondayVolgendeActieDatum: "2026-08-24" }] });
+      if (collection === "sales-log-events") return Promise.resolve({ docs: [{ payload: { gemigreerd: false } }] });
+      return Promise.resolve({ docs: [] }); // sales-actions, sales-proposals: geen bestaand record
+    });
+    mockAnalyse.mockResolvedValue({
+      status: "klaar",
+      analyse: {
+        ...VOLLEDIGE_ANALYSE_UITKOMST.analyse,
+        aanbevolenVolgendeStap: "Mail sturen voor afspraak",
+        aanbevolenDatum: "2026-08-24",
+        datumHerkomst: "bestaande_monday_datum" as const,
+      },
+      brontekstUpdateIds: ["u1"],
+    });
+
+    const resultaat = await voerBackfillUit(maakPayload());
+
+    expect(mockAnalyse).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mondayVolgendeActieDatum: "2026-08-24" })); // analyse draait nog steeds altijd
+    expect(resultaat.perUitkomst.bestaande_planning_bevestigd).toBe(1);
+    expect(resultaat.perUitkomst.ai_voorstel_klaar).toBe(0);
+    expect(mockCreate).not.toHaveBeenCalledWith(expect.objectContaining({ collection: "sales-proposals" }));
   });
 
   it("slaat een school met al een pending 'bestaande_vervolgdatum'-voorstel over — idempotentie voor oude, nog niet afgehandelde voorstelrijen van dit uitgefaseerde type", async () => {
