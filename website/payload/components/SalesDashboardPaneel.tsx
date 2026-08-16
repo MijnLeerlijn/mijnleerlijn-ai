@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePreferences } from "@payloadcms/ui";
 import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCircle } from "lucide-react";
@@ -13,7 +13,7 @@ import { formatKorteDatum, lokaleDatumIso, vandaagIso, voegDagenToe } from "@/li
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 import type { TodoResultaat } from "@/lib/sales/dashboard-todo";
 import type { LaatsteSyncStatus } from "@/lib/sales/sync";
-import { bepaalVandaagWeergave, VANDAAG_SNELKEUZES } from "@/lib/sales/vandaag";
+import { bepaalGecombineerdeAgenda, VANDAAG_SNELKEUZES, type AgendaActieInvoer, type AgendaItem, type AgendaSalesActie, type SchoolMetMondayPlanning } from "@/lib/sales/vandaag";
 import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
 
 // Sales UX-ronde 3 (2026-08-14) — vervangt SalesWidgetVandaag.tsx (het oude
@@ -26,13 +26,21 @@ import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
 // SalesVandaagView.tsx/SalesScholenView.tsx — geen nieuw visueel systeem.
 //
 // Drie tabs, strikt gescheiden datasets (expliciete opdrachtseis):
-// - "Vandaag": UITSLUITEND open sales-acties, datumgestuurd (productiecorrectie
-//   2026-08-16, punt 2) — de gebruiker kiest via ←/Vandaag/Morgen/Overmorgen/
-//   Kies datum/→ welke dag getoond wordt (lib/sales/vandaag.ts se
-//   bepaalVandaagWeergave); achterstallige acties verschijnen uitsluitend als
-//   aparte subgroep wanneer de gekozen datum vandaag zelf is, nooit vermengd
-//   met een andere datum. Geen AI-voorstellen, geen "scholen zonder actie" —
-//   letterlijk "wat moet ik op die dag doen".
+// - "Vandaag": datumgestuurde, GECOMBINEERDE agenda (productiecorrectie
+//   2026-08-16, punt 2, en de daaropvolgende functionele-inconsistentiefix):
+//   de gebruiker kiest via ←/Vandaag/Morgen/Overmorgen/Kies datum/→ welke dag
+//   getoond wordt (lib/sales/vandaag.ts se bepaalGecombineerdeAgenda), die
+//   voor die dag zowel open lokale sales-acties ALS scholen met uitsluitend
+//   een geldige Monday-vervolgdatum toont (root cause van de eerdere bug:
+//   een school met alleen een Monday-datum verscheen nooit op haar eigen
+//   geplande dag, ook al gold ze elders — To-do se "Gepland in Monday" — al
+//   als gepland). Gededupliceerd op (school, datum): een school met al een
+//   lokale actie op die dag krijgt nooit ook nog een Monday-kaart. Maakt/wist
+//   nooit een sales-actions-record — puur een afgeleide weergave.
+//   Achterstallige acties verschijnen uitsluitend als aparte subgroep wanneer
+//   de gekozen datum vandaag zelf is, en zijn altijd uitsluitend lokale
+//   acties (nooit Monday-kaarten). Geen AI-voorstellen, geen "scholen zonder
+//   actie" — letterlijk "wat staat er op die dag gepland".
 // - "To do": sales-proposals (pending/conflict) + het "mogelijk afgesloten/
 //   inactief"-signaal — via lib/sales/dashboard-todo.ts, dat op zijn beurt
 //   uitsluitend bestaande statusvelden/functies hergebruikt (geen nieuw
@@ -61,10 +69,20 @@ interface SalesActionDoc {
   school: SchoolRef | number;
 }
 
+// Productiecorrectie (functionele inconsistentie, vervolg op punt 2) —
+// hergebruikt voor zowel de "Vraag over"-schoolselector als de
+// gecombineerde agenda (scholenVoorAgenda hieronder): dezelfde, al bestaande
+// fetch van alle scholen bevat deze velden al (Payload's REST-API levert
+// standaard alle collectievelden), dus geen extra netwerk-aanroep nodig —
+// alleen het TS-type verbreed om ze door te geven.
 interface SchoolOptie {
   id: number;
   schoolName: string;
   relatiestatus?: string | null;
+  plaats?: string | null;
+  actief?: boolean;
+  mondayVolgendeActieDatum?: string | null;
+  cachedGeplandeActieTekst?: string | null;
 }
 
 function schoolRef(school: SchoolRef | number): SchoolRef {
@@ -72,8 +90,11 @@ function schoolRef(school: SchoolRef | number): SchoolRef {
 }
 
 // Visuele polish (2026-08-14) — urgentie is puur een afgeleide weergave van
-// het al aanwezige dueDate, geen nieuw veld/model.
-function urgentieVanActie(actie: SalesActionDoc): "achterstallig" | "vandaag" | null {
+// het al aanwezige dueDate, geen nieuw veld/model. Uitsluitend voor lokale
+// Sales-acties — een Monday-kaart heeft geen eigen urgentiekleur (nooit
+// "achterstallig": die classificatie hoort bij een concrete, lokaal
+// vastgelegde actie, niet bij een afgeleide Monday-planning).
+function urgentieVanActie(actie: { dueDate: string }): "achterstallig" | "vandaag" | null {
   const datum = actie.dueDate.slice(0, 10);
   const vandaag = vandaagIso();
   if (datum < vandaag) return "achterstallig";
@@ -93,11 +114,13 @@ function formatSyncTijd(iso: string | null): string | null {
   return lokaleDatumIso(datum) === vandaagIso() ? tijd : `${formatKorteDatum(iso)}, ${tijd}`;
 }
 
-// Productiecorrectie 2026-08-16 (punt 2) — geëxtraheerd uit de "vandaag"-tab
-// JSX zodat zowel de achterstallig-subgroep als de lijst-op-de-gekozen-datum
-// hetzelfde kaartje renderen, zonder duplicatie.
-function ActieKaart({ actie }: { actie: SalesActionDoc }) {
-  const school = schoolRef(actie.school);
+// Productiecorrectie 2026-08-16 (punt 2, uitgebreid met de gecombineerde
+// agenda) — geëxtraheerd uit de "vandaag"-tab JSX zodat zowel de
+// achterstallig-subgroep als de lijst-op-de-gekozen-datum hetzelfde kaartje
+// renderen, zonder duplicatie. Werkt nu op de al-vlakke AgendaSalesActie
+// (schoolId/schoolName/relatiestatus/plaats i.p.v. genest school-object) —
+// dezelfde vorm die bepaalGecombineerdeAgenda() teruggeeft.
+function ActieKaart({ actie }: { actie: AgendaSalesActie }) {
   const urgentie = urgentieVanActie(actie);
   // Productiecorrectie 2026-08-16 (punt 6) — ÉÉN badge voor vandaag/
   // achterstallig/gepland, hergebruikt bepaalPlanningStatus() i.p.v. een
@@ -108,28 +131,71 @@ function ActieKaart({ actie }: { actie: SalesActionDoc }) {
   return (
     <div className={`ml-sales-widget__item${urgentie ? ` ml-sales-widget__item--${urgentie}` : ""}`}>
       <div className="ml-sales-widget__item-header">
-        <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
-          {school.schoolName}
+        <Link href={`/admin/sales/school?id=${actie.schoolId}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
+          {actie.schoolName}
         </Link>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <PlanningStatusBadge status={planningStatus.status} datum={planningStatus.datum} />
-          <RelatiestatusBadge relatiestatus={school.relatiestatus} />
+          <RelatiestatusBadge relatiestatus={actie.relatiestatus} />
         </div>
       </div>
+      <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+        Sales-actie
+      </p>
       <p className="ml-sales-widget__meta">
         {actie.type} · {formatKorteDatum(actie.dueDate)}
       </p>
       <p className="ml-sales-widget__context">{actie.description}</p>
       <div className="ml-sales__actie-knoppen">
-        <Link href={`/admin/sales/school?id=${school.id}`} className="ml-sales__knop" prefetch={false}>
+        <Link href={`/admin/sales/school?id=${actie.schoolId}`} className="ml-sales__knop" prefetch={false}>
           Bekijk
         </Link>
-        <Link href={`/admin/creator?mail=nieuw&school=${school.id}`} className="ml-sales__knop" prefetch={false}>
+        <Link href={`/admin/creator?mail=nieuw&school=${actie.schoolId}`} className="ml-sales__knop" prefetch={false}>
           Schrijf mail
         </Link>
       </div>
     </div>
   );
+}
+
+// Functionele-inconsistentiefix (vervolg op punt 2/3) — de tegenhanger van
+// ActieKaart voor een school die uitsluitend via een geldige Monday
+// "Datum volgende actie" op de gekozen dag verschijnt (nog geen lokale
+// actie). Toont, waar beschikbaar, de gecachete actie-extractie
+// (lib/sales/actie-extractie.ts se cachedGeplandeActieTekst) — bij een lege
+// cache expliciet "omschrijving niet bekend" i.p.v. iets te verzinnen.
+function MondayPlanningKaart({ item }: { item: Extract<AgendaItem, { bron: "monday" }> }) {
+  const planningStatus = bepaalPlanningStatus({ actief: true, mondayVolgendeActieDatum: item.datum });
+  return (
+    <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
+      <div className="ml-sales-widget__item-header">
+        <Link href={`/admin/sales/school?id=${item.schoolId}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
+          {item.schoolName}
+        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <PlanningStatusBadge status={planningStatus.status} datum={planningStatus.datum} />
+          <RelatiestatusBadge relatiestatus={item.relatiestatus} />
+        </div>
+      </div>
+      <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+        Gepland in Monday
+      </p>
+      <p className="ml-sales-widget__context">{item.geplandeActieTekst || "Actie gepland in Monday — omschrijving niet bekend"}</p>
+      <p className="ml-sales-widget__meta">{formatKorteDatum(item.datum)}</p>
+      <div className="ml-sales__actie-knoppen">
+        <Link href={`/admin/sales/school?id=${item.schoolId}`} className="ml-sales__knop" prefetch={false}>
+          Bekijk
+        </Link>
+        <Link href={`/admin/creator?mail=nieuw&school=${item.schoolId}`} className="ml-sales__knop" prefetch={false}>
+          Schrijf mail
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function AgendaKaart({ item }: { item: AgendaItem }) {
+  return item.bron === "monday" ? <MondayPlanningKaart item={item} /> : <ActieKaart actie={item} />;
 }
 
 function voorstelAccentKlasse(proposalType: string, status: string): string {
@@ -230,6 +296,42 @@ export function SalesDashboardPaneel() {
     laadData();
   }, [laadData]);
 
+  // Functionele-inconsistentiefix (vervolg op punt 2) — normaliseert de ruwe
+  // API-vormen (school: SchoolRef|number, optionele scholenvelden) naar de
+  // vlakke invoervormen die bepaalGecombineerdeAgenda() (lib/sales/vandaag.ts)
+  // verwacht. Puur afgeleid van al opgehaalde state — geen extra fetch.
+  const actiesVoorAgenda = useMemo<AgendaActieInvoer[]>(
+    () =>
+      alleOpenActies.map((a) => {
+        const school = schoolRef(a.school);
+        return {
+          id: a.id,
+          description: a.description,
+          dueDate: a.dueDate,
+          type: a.type,
+          channel: a.channel,
+          schoolId: school.id,
+          schoolName: school.schoolName,
+          relatiestatus: school.relatiestatus ?? null,
+          plaats: school.plaats ?? null,
+        };
+      }),
+    [alleOpenActies]
+  );
+  const scholenVoorAgenda = useMemo<SchoolMetMondayPlanning[]>(
+    () =>
+      scholenVoorSelector.map((s) => ({
+        id: s.id,
+        schoolName: s.schoolName,
+        relatiestatus: s.relatiestatus ?? null,
+        plaats: s.plaats ?? null,
+        actief: s.actief ?? false,
+        mondayVolgendeActieDatum: s.mondayVolgendeActieDatum ?? null,
+        cachedGeplandeActieTekst: s.cachedGeplandeActieTekst ?? null,
+      })),
+    [scholenVoorSelector]
+  );
+
   // Sales-logica productiecorrectie 2026-08-16 (punt 1) — EXACT dezelfde
   // sync-route/logica als de "Sync nu"-knop op Sales Overzicht
   // (SalesVandaagView.tsx): geen tweede sync-implementatie, alleen een
@@ -265,13 +367,16 @@ export function SalesDashboardPaneel() {
   // zonderVervolgactie (het vroegere "mogelijk afgesloten"-veiligheidsnet).
   const todoAantal = todo ? todo.proposals.length + todo.zonderVervolgactie.length : 0;
 
-  // Productiecorrectie 2026-08-16 (punt 2) — vandaagWeergave stuurt de
-  // tab-INHOUD (reageert op gekozenDatum); het tabbadge zelf blijft altijd
-  // "wat moet er vandaag/achterstallig gebeuren" tonen, ongeacht welke datum
-  // net binnen de tab bekeken wordt (anders zou het badge van betekenis
+  // Productiecorrectie 2026-08-16 (punt 2, functionele-inconsistentiefix) —
+  // vandaagWeergave stuurt de tab-INHOUD (reageert op gekozenDatum) en is nu
+  // de GECOMBINEERDE agenda (lokale acties + Monday-planningen, gededupliceerd)
+  // — vandaag/morgen/overmorgen/een aangepaste datum lopen allemaal door
+  // dezelfde functie (opdrachtseis). Het tabbadge zelf blijft altijd "wat
+  // moet er vandaag/achterstallig gebeuren" tonen, ongeacht welke datum net
+  // binnen de tab bekeken wordt (anders zou het badge van betekenis
   // veranderen zodra iemand op "Morgen" klikt, terwijl een ANDERE tab actief is).
-  const vandaagWeergave = bepaalVandaagWeergave(alleOpenActies, gekozenDatum);
-  const badgeWeergave = bepaalVandaagWeergave(alleOpenActies, vandaagIso());
+  const vandaagWeergave = bepaalGecombineerdeAgenda(actiesVoorAgenda, scholenVoorAgenda, gekozenDatum);
+  const badgeWeergave = bepaalGecombineerdeAgenda(actiesVoorAgenda, scholenVoorAgenda, vandaagIso());
   const vandaagBadgeAantal = badgeWeergave.achterstallig.length + badgeWeergave.opGekozenDatum.length;
 
   // Sales-logica productiecorrectie 2026-08-16 (punt 1/11) — "159 scholen
@@ -402,10 +507,10 @@ export function SalesDashboardPaneel() {
 
           {vandaagWeergave.opGekozenDatum.length === 0 ? (
             <div className="ml-sales__leeg">
-              {vandaagWeergave.isVandaag ? "Niets openstaand voor vandaag." : `Niets openstaand op ${formatKorteDatum(gekozenDatum)}.`}
+              {vandaagWeergave.isVandaag ? "Niets gepland voor vandaag." : `Niets gepland op ${formatKorteDatum(gekozenDatum)}.`}
             </div>
           ) : (
-            vandaagWeergave.opGekozenDatum.map((actie) => <ActieKaart actie={actie} key={actie.id} />)
+            vandaagWeergave.opGekozenDatum.map((item) => <AgendaKaart item={item} key={item.bron === "sales" ? `sales-${item.id}` : `monday-${item.schoolId}`} />)
           )}
         </div>
       )}
