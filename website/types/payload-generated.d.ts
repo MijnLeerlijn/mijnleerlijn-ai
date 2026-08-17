@@ -93,6 +93,7 @@ export interface Config {
     'sales-log-events': SalesLogEvent;
     'sales-actions': SalesAction;
     'sales-proposals': SalesProposal;
+    'personal-tasks': PersonalTask;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
     'payload-locked-documents': PayloadLockedDocument;
@@ -127,6 +128,7 @@ export interface Config {
     'sales-log-events': SalesLogEventsSelect<false> | SalesLogEventsSelect<true>;
     'sales-actions': SalesActionsSelect<false> | SalesActionsSelect<true>;
     'sales-proposals': SalesProposalsSelect<false> | SalesProposalsSelect<true>;
+    'personal-tasks': PersonalTasksSelect<false> | PersonalTasksSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -1630,6 +1632,33 @@ export interface SalesProposal {
   createdAt: string;
 }
 /**
+ * Persoonlijke taken — uitsluitend zichtbaar voor de eigenaar. Beheer via het Mijn Werk-dashboard (Mijn dag), niet deze lijst.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "personal-tasks".
+ */
+export interface PersonalTask {
+  id: number;
+  titel: string;
+  beschrijving?: string | null;
+  /**
+   * Optioneel — een taak zonder datum blijft een ongeplande taak (zichtbaar in de Vandaag-tab onder 'Ongepland').
+   */
+  datum?: string | null;
+  /**
+   * Vrije tekst, bv. '14:30' — uitsluitend weergave, telt niet mee in datumvergelijkingen.
+   */
+  tijd?: string | null;
+  status: 'open' | 'afgerond' | 'vervallen';
+  /**
+   * Uitsluitend ter context — veroorzaakt nooit een Sales-actie of Monday-write-back.
+   */
+  school?: (number | null) | SalesSchool;
+  eigenaar: number | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -1848,6 +1877,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'sales-proposals';
         value: number | SalesProposal;
+      } | null)
+    | ({
+        relationTo: 'personal-tasks';
+        value: number | PersonalTask;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -2665,6 +2698,21 @@ export interface SalesProposalsSelect<T extends boolean = true> {
   resultingAction?: T;
   supersedes?: T;
   overlegGeschiedenis?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "personal-tasks_select".
+ */
+export interface PersonalTasksSelect<T extends boolean = true> {
+  titel?: T;
+  beschrijving?: T;
+  datum?: T;
+  tijd?: T;
+  status?: T;
+  school?: T;
+  eigenaar?: T;
   updatedAt?: T;
   createdAt?: T;
 }

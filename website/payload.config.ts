@@ -34,6 +34,7 @@ import { SalesSchools } from "./payload/collections/SalesSchools";
 import { SalesLogEvents } from "./payload/collections/SalesLogEvents";
 import { SalesActions } from "./payload/collections/SalesActions";
 import { SalesProposals } from "./payload/collections/SalesProposals";
+import { PersonalTasks } from "./payload/collections/PersonalTasks";
 import { GmailConnection } from "./payload/globals/GmailConnection";
 import { KnowledgeSearch } from "./payload/globals/KnowledgeSearch";
 import { AssistantEval } from "./payload/globals/AssistantEval";
@@ -254,6 +255,7 @@ export default buildConfig({
     SalesLogEvents,
     SalesActions,
     SalesProposals,
+    PersonalTasks,
   ],
   globals: [GmailConnection, KnowledgeSearch, AssistantEval, KennisbasisMijnleerlijn, HelpdeskInstellingen, SalesInstellingen],
   editor: lexicalEditor(),

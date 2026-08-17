@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePreferences } from "@payloadcms/ui";
-import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCircle } from "lucide-react";
+import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCircle, Clock, Plus } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { PlanningStatusBadge } from "./PlanningStatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
@@ -13,8 +13,11 @@ import { formatKorteDatum, lokaleDatumIso, vandaagIso, voegDagenToe } from "@/li
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 import type { TodoResultaat } from "@/lib/sales/dashboard-todo";
 import type { LaatsteSyncStatus } from "@/lib/sales/sync";
-import { bepaalGecombineerdeAgenda, VANDAAG_SNELKEUZES, type AgendaActieInvoer, type AgendaItem, type AgendaSalesActie, type SchoolMetMondayPlanning } from "@/lib/sales/vandaag";
+import { VANDAAG_SNELKEUZES, type AgendaActieInvoer, type AgendaSalesActie, type SchoolMetMondayPlanning } from "@/lib/sales/vandaag";
 import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
+import { bepaalWerkAgenda, type TaakInvoer, type WerkItem, type WerkTaakItem } from "@/lib/werk/agenda";
+import { parseQuickAdd, type QuickAddSchoolOptie, type QuickAddVoorstel } from "@/lib/werk/quick-add-parser";
+import type { WachtenOpItem } from "@/lib/werk/wachten-op";
 
 // Sales UX-ronde 3 (2026-08-14) — vervangt SalesWidgetVandaag.tsx (het oude
 // server-gerenderde "Sales vandaag"-widget, gebaseerd op
@@ -25,7 +28,7 @@ import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
 // kaart-/knop-/chat-CSS-klassen en apiGet/apiPost-patronen als
 // SalesVandaagView.tsx/SalesScholenView.tsx — geen nieuw visueel systeem.
 //
-// Drie tabs, strikt gescheiden datasets (expliciete opdrachtseis):
+// Vier tabs, strikt gescheiden datasets (expliciete opdrachtseis):
 // - "Vandaag": datumgestuurde, GECOMBINEERDE agenda (productiecorrectie
 //   2026-08-16, punt 2, en de daaropvolgende functionele-inconsistentiefix):
 //   de gebruiker kiest via ←/Vandaag/Morgen/Overmorgen/Kies datum/→ welke dag
@@ -45,12 +48,19 @@ import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
 //   inactief"-signaal — via lib/sales/dashboard-todo.ts, dat op zijn beurt
 //   uitsluitend bestaande statusvelden/functies hergebruikt (geen nieuw
 //   takenmodel).
+// - "Wachten op" (Mijn Werk V1): school is aan zet, uitsluitend afgeleid uit
+//   bestaande Sales-data (lib/werk/wachten-op.ts) — geen nieuwe opslag.
 // - "Vraag": schoolselector (Alle scholen / een specifieke school) boven een
 //   simpel chatgesprek — "Alle scholen" praat met app/api/sales/chat
 //   (lib/sales/aggregate-chat.ts, gestructureerde lokale selectie, nooit
 //   volledige logboeken), een specifieke school praat met de AL BESTAANDE
 //   app/api/sales/school/[id]/chat (ongewijzigd, eigen isolatie).
-type Tab = "vandaag" | "todo" | "vraag";
+// Mijn Werk V1 (2026-08-17) — vierde tab "Wachten op" toegevoegd aan de
+// bestaande drie. TAB_PREFERENCE_KEY blijft bewust ongewijzigd: dit is een
+// natuurlijke uitbreiding van "welke tab was actief" met een nieuwe geldige
+// waarde, geen hergebruik/hernoeming van de betekenis — een bestaande
+// opgeslagen voorkeur ("vandaag"/"todo"/"vraag") blijft exact zo werken.
+type Tab = "vandaag" | "todo" | "wachtenop" | "vraag";
 const TAB_PREFERENCE_KEY = "ml-sales-dashboard-tab";
 
 interface SchoolRef {
@@ -67,6 +77,23 @@ interface SalesActionDoc {
   type: string;
   channel?: string;
   school: SchoolRef | number;
+}
+
+// Mijn Werk V1 (2026-08-17) — ruwe vorm zoals Payload's REST-API
+// personal-tasks teruggeeft (depth:0, dus school ongepopuleerd of SchoolRef
+// bij depth:1 — hier bewust depth:0 zoals sales-schools se bulkfetch
+// hieronder, de kaart heeft alleen id+naam nodig). Toegang is al
+// eigenaar-gescoped op collectieniveau (ownRecordAccess, payload/access/
+// roles.ts) — deze component hoeft zelf geen extra where[eigenaar]-filter
+// mee te sturen.
+interface PersonalTaskDoc {
+  id: number;
+  titel: string;
+  beschrijving?: string | null;
+  datum?: string | null;
+  tijd?: string | null;
+  status: "open" | "afgerond" | "vervallen";
+  school?: SchoolRef | number | null;
 }
 
 // Productiecorrectie (functionele inconsistentie, vervolg op punt 2) —
@@ -94,12 +121,20 @@ function schoolRef(school: SchoolRef | number): SchoolRef {
 // Sales-acties — een Monday-kaart heeft geen eigen urgentiekleur (nooit
 // "achterstallig": die classificatie hoort bij een concrete, lokaal
 // vastgelegde actie, niet bij een afgeleide Monday-planning).
-function urgentieVanActie(actie: { dueDate: string }): "achterstallig" | "vandaag" | null {
-  const datum = actie.dueDate.slice(0, 10);
+// Mijn Werk V1 (2026-08-17) — kern geëxtraheerd zodat TaakKaart (personal-
+// tasks, datum optioneel) dezelfde urgentiekleuring krijgt als ActieKaart,
+// zonder de bestaande functiesignatuur/het bestaande gedrag daarvan te
+// wijzigen.
+function urgentieVanDatum(datum: string | null): "achterstallig" | "vandaag" | null {
+  if (!datum) return null;
   const vandaag = vandaagIso();
   if (datum < vandaag) return "achterstallig";
   if (datum === vandaag) return "vandaag";
   return null;
+}
+
+function urgentieVanActie(actie: { dueDate: string }): "achterstallig" | "vandaag" | null {
+  return urgentieVanDatum(actie.dueDate.slice(0, 10));
 }
 
 // Sales-logica productiecorrectie 2026-08-16 (punt 1) — "Laatste sync:
@@ -164,7 +199,7 @@ function ActieKaart({ actie }: { actie: AgendaSalesActie }) {
 // actie). Toont, waar beschikbaar, de gecachete actie-extractie
 // (lib/sales/actie-extractie.ts se cachedGeplandeActieTekst) — bij een lege
 // cache expliciet "omschrijving niet bekend" i.p.v. iets te verzinnen.
-function MondayPlanningKaart({ item }: { item: Extract<AgendaItem, { bron: "monday" }> }) {
+function MondayPlanningKaart({ item }: { item: Extract<WerkItem, { bron: "monday" }> }) {
   const planningStatus = bepaalPlanningStatus({ actief: true, mondayVolgendeActieDatum: item.datum });
   return (
     <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
@@ -194,8 +229,140 @@ function MondayPlanningKaart({ item }: { item: Extract<AgendaItem, { bron: "mond
   );
 }
 
-function AgendaKaart({ item }: { item: AgendaItem }) {
-  return item.bron === "monday" ? <MondayPlanningKaart item={item} /> : <ActieKaart actie={item} />;
+// Mijn Werk V1 (2026-08-17) — derde kaarttype naast ActieKaart/
+// MondayPlanningKaart, zelfde visuele familie (hergebruikt
+// .ml-sales-widget__item/.ml-sales__actie-knoppen/.ml-sales__plan-actie-form
+// — geen nieuw kaartsysteem). Bron staat, net als bij de andere twee, als
+// rustige meta-regel ("Taak") — opdrachtseis: bron subtiel zichtbaar, de
+// titel/wat-en-wanneer blijft de hoofdzaak. Drie acties (afronden/datum
+// wijzigen/bewerken/verwijderen) posten rechtstreeks naar Payload's eigen
+// personal-tasks-REST-API, zelfde patroon als PlanActieKnop.tsx — geen
+// aparte custom route nodig, toegang is al eigenaar-gescoped op
+// collectieniveau. "Verwijderen" zet bewust status → "vervallen" (zachte,
+// omkeerbare verwijdering) i.p.v. een echte DELETE — zelfde filosofie als
+// sales-actions se cancellationReason, nooit stilzwijgend data kwijtraken.
+// Een taak met schoolcontext triggert hier NERGENS een sales-actions-record
+// of Monday-write-back — deze kaart doet uitsluitend PATCH-aanroepen naar
+// personal-tasks zelf.
+function TaakKaart({ taak, onGewijzigd }: { taak: WerkTaakItem; onGewijzigd: () => void }) {
+  const urgentie = urgentieVanDatum(taak.datum);
+  const [modus, setModus] = useState<"weergave" | "datum" | "bewerken">("weergave");
+  const [bezig, setBezig] = useState(false);
+  const [nieuweDatum, setNieuweDatum] = useState(taak.datum ?? vandaagIso());
+  const [bewerkTitel, setBewerkTitel] = useState(taak.titel);
+  const [bewerkBeschrijving, setBewerkBeschrijving] = useState(taak.beschrijving ?? "");
+  const [bewerkDatum, setBewerkDatum] = useState(taak.datum ?? "");
+  const [bewerkTijd, setBewerkTijd] = useState(taak.tijd ?? "");
+
+  async function patch(body: Record<string, unknown>) {
+    setBezig(true);
+    try {
+      const res = await fetch(`/api/personal-tasks/${taak.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setModus("weergave");
+        onGewijzigd();
+      }
+    } finally {
+      setBezig(false);
+    }
+  }
+
+  return (
+    <div className={`ml-sales-widget__item${urgentie ? ` ml-sales-widget__item--${urgentie}` : ""}`}>
+      <div className="ml-sales-widget__item-header">
+        <span className="ml-sales-widget__schoolnaam">{taak.titel}</span>
+      </div>
+      <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+        Taak
+        {taak.schoolName && (
+          <>
+            {" · "}
+            <Link href={`/admin/sales/school?id=${taak.schoolId}`} prefetch={false}>
+              {taak.schoolName}
+            </Link>
+          </>
+        )}
+      </p>
+      {(taak.datum || taak.tijd) && (
+        <p className="ml-sales-widget__meta">
+          {taak.datum ? formatKorteDatum(taak.datum) : "Geen datum"}
+          {taak.tijd ? ` · ${taak.tijd}` : ""}
+        </p>
+      )}
+      {taak.beschrijving && <p className="ml-sales-widget__context">{taak.beschrijving}</p>}
+
+      {modus === "weergave" && (
+        <div className="ml-sales__actie-knoppen">
+          <button type="button" className="ml-sales__knop" disabled={bezig} onClick={() => patch({ status: "afgerond" })}>
+            Afronden
+          </button>
+          <button type="button" className="ml-sales__knop" disabled={bezig} onClick={() => setModus("datum")}>
+            Datum wijzigen
+          </button>
+          <button type="button" className="ml-sales__knop" disabled={bezig} onClick={() => setModus("bewerken")}>
+            Bewerken
+          </button>
+          <button type="button" className="ml-sales__knop" disabled={bezig} onClick={() => patch({ status: "vervallen" })}>
+            Verwijderen
+          </button>
+        </div>
+      )}
+
+      {modus === "datum" && (
+        <div className="ml-sales__plan-actie-form" onClick={(e) => e.stopPropagation()}>
+          <input type="date" value={nieuweDatum} onChange={(e) => setNieuweDatum(e.target.value)} />
+          <div className="ml-sales__actie-knoppen">
+            <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig} onClick={() => patch({ datum: nieuweDatum || null })}>
+              Opslaan
+            </button>
+            <button type="button" className="ml-sales__knop" disabled={bezig} onClick={() => setModus("weergave")}>
+              Annuleren
+            </button>
+          </div>
+        </div>
+      )}
+
+      {modus === "bewerken" && (
+        <div className="ml-sales__plan-actie-form" onClick={(e) => e.stopPropagation()}>
+          <input type="text" value={bewerkTitel} onChange={(e) => setBewerkTitel(e.target.value)} placeholder="Titel" />
+          <input type="text" value={bewerkBeschrijving} onChange={(e) => setBewerkBeschrijving(e.target.value)} placeholder="Beschrijving" />
+          <input type="date" value={bewerkDatum} onChange={(e) => setBewerkDatum(e.target.value)} />
+          <input type="text" value={bewerkTijd} onChange={(e) => setBewerkTijd(e.target.value)} placeholder="Tijd (bv. 14:30)" />
+          <div className="ml-sales__actie-knoppen">
+            <button
+              type="button"
+              className="ml-sales__knop ml-sales__knop--primair"
+              disabled={bezig || !bewerkTitel.trim()}
+              onClick={() =>
+                patch({
+                  titel: bewerkTitel.trim(),
+                  beschrijving: bewerkBeschrijving.trim() || null,
+                  datum: bewerkDatum || null,
+                  tijd: bewerkTijd.trim() || null,
+                })
+              }
+            >
+              Opslaan
+            </button>
+            <button type="button" className="ml-sales__knop" disabled={bezig} onClick={() => setModus("weergave")}>
+              Annuleren
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgendaKaart({ item, onGewijzigd }: { item: WerkItem; onGewijzigd: () => void }) {
+  if (item.bron === "monday") return <MondayPlanningKaart item={item} />;
+  if (item.bron === "taak") return <TaakKaart taak={item} onGewijzigd={onGewijzigd} />;
+  return <ActieKaart actie={item} />;
 }
 
 function voorstelAccentKlasse(proposalType: string, status: string): string {
@@ -252,6 +419,18 @@ export function SalesDashboardPaneel() {
   const [vraagBezig, setVraagBezig] = useState(false);
   const [vraagFout, setVraagFout] = useState<string | null>(null);
 
+  // Mijn Werk V1 (2026-08-17) — eigen taken + Wachten op + de quick-add-
+  // bevestigingsstap ("+ Wat wil je doen?"). quickAddVoorstel is null zolang
+  // er niets geparsed is (invoerveld getoond); niet-null toont de
+  // bevestigingskaart (voorstel/aanpassen/annuleren) — nooit automatisch
+  // opslaan (opdrachtseis).
+  const [taken, setTaken] = useState<PersonalTaskDoc[]>([]);
+  const [wachtenOp, setWachtenOp] = useState<WachtenOpItem[]>([]);
+  const [quickAddTekst, setQuickAddTekst] = useState("");
+  const [quickAddVoorstel, setQuickAddVoorstel] = useState<QuickAddVoorstel | null>(null);
+  const [quickAddBewerkVeld, setQuickAddBewerkVeld] = useState(false);
+  const [quickAddBezig, setQuickAddBezig] = useState(false);
+
   useEffect(() => {
     let actief = true;
     (async () => {
@@ -271,7 +450,7 @@ export function SalesDashboardPaneel() {
 
   const laadData = useCallback(async () => {
     setLaden(true);
-    const [openActies, todoData, scholenLijst, syncStatusData] = await Promise.all([
+    const [openActies, todoData, scholenLijst, syncStatusData, takenData, wachtenOpData] = await Promise.all([
       apiGet<SalesActionDoc>(`/api/sales-actions?where[status][equals]=open&depth=1&sort=dueDate&limit=200`),
       fetch("/api/sales/dashboard/todo", { credentials: "include" })
         .then((r) => (r.ok ? (r.json() as Promise<TodoResultaat>) : null))
@@ -279,6 +458,12 @@ export function SalesDashboardPaneel() {
       apiGet<SchoolOptie>(`/api/sales-schools?depth=0&sort=schoolName&limit=1000`),
       fetch("/api/sales/sync/status", { credentials: "include" })
         .then((r) => (r.ok ? (r.json() as Promise<LaatsteSyncStatus>) : null))
+        .catch(() => null),
+      // Mijn Werk V1 — Payload's eigen REST-API is al eigenaar-gescoped
+      // (ownRecordAccess), dus geen where[eigenaar]-filter nodig hier.
+      apiGet<PersonalTaskDoc>(`/api/personal-tasks?depth=0&limit=500`),
+      fetch("/api/werk/wachten-op", { credentials: "include" })
+        .then((r) => (r.ok ? (r.json() as Promise<{ items: WachtenOpItem[] }>) : null))
         .catch(() => null),
     ]);
     setAlleOpenActies(openActies);
@@ -289,6 +474,8 @@ export function SalesDashboardPaneel() {
     setTodo(todoData);
     setScholenVoorSelector(scholenLijst);
     setSyncStatus(syncStatusData);
+    setTaken(takenData);
+    setWachtenOp(wachtenOpData?.items ?? []);
     setLaden(false);
   }, []);
 
@@ -332,6 +519,35 @@ export function SalesDashboardPaneel() {
     [scholenVoorSelector]
   );
 
+  // Mijn Werk V1 (2026-08-17) — normaliseert de ruwe personal-tasks-API-vorm
+  // naar TaakInvoer (lib/werk/agenda.ts), zelfde "puur afgeleid van al
+  // opgehaalde state"-patroon als actiesVoorAgenda/scholenVoorAgenda hierboven.
+  const takenVoorAgenda = useMemo<TaakInvoer[]>(
+    () =>
+      taken.map((t) => {
+        const school = t.school ? schoolRef(t.school) : null;
+        return {
+          id: t.id,
+          titel: t.titel,
+          beschrijving: t.beschrijving ?? null,
+          datum: t.datum ? t.datum.slice(0, 10) : null,
+          tijd: t.tijd ?? null,
+          status: t.status,
+          schoolId: school?.id ?? null,
+          schoolName: school?.schoolName ?? null,
+        };
+      }),
+    [taken]
+  );
+
+  // Mijn Werk V1 — schoolopties voor de quick-add-parser (deterministische
+  // schoolherkenning, lib/werk/quick-add-parser.ts) — puur afgeleid, geen
+  // extra fetch.
+  const scholenVoorQuickAdd = useMemo<QuickAddSchoolOptie[]>(
+    () => scholenVoorSelector.map((s) => ({ id: s.id, schoolName: s.schoolName })),
+    [scholenVoorSelector]
+  );
+
   // Sales-logica productiecorrectie 2026-08-16 (punt 1) — EXACT dezelfde
   // sync-route/logica als de "Sync nu"-knop op Sales Overzicht
   // (SalesVandaagView.tsx): geen tweede sync-implementatie, alleen een
@@ -343,6 +559,43 @@ export function SalesDashboardPaneel() {
     if (!ok) setSyncFout("Sync mislukt — probeer het opnieuw.");
     setSyncBezig(false);
     laadData();
+  }
+
+  // Mijn Werk V1 (2026-08-17) — quick-add-flow: parseren is puur client-side
+  // (parseQuickAdd, geen netwerk-/AI-aanroep, zie lib/werk/quick-add-parser.ts),
+  // opslaan gaat pas na expliciete bevestiging ("Taak toevoegen") rechtstreeks
+  // naar Payload's eigen personal-tasks-REST-API — nooit automatisch opslaan.
+  function maakQuickAddVoorstel() {
+    const tekst = quickAddTekst.trim();
+    if (!tekst) return;
+    setQuickAddVoorstel(parseQuickAdd(tekst, vandaagIso(), scholenVoorQuickAdd));
+    setQuickAddBewerkVeld(false);
+  }
+
+  function annuleerQuickAdd() {
+    setQuickAddTekst("");
+    setQuickAddVoorstel(null);
+    setQuickAddBewerkVeld(false);
+  }
+
+  async function bevestigQuickAdd() {
+    if (!quickAddVoorstel || !quickAddVoorstel.titel.trim()) return;
+    setQuickAddBezig(true);
+    try {
+      const { ok } = await apiPost("/api/personal-tasks", {
+        titel: quickAddVoorstel.titel.trim(),
+        datum: quickAddVoorstel.datum,
+        tijd: quickAddVoorstel.tijd,
+        school: quickAddVoorstel.schoolId,
+        status: "open",
+      });
+      if (ok) {
+        annuleerQuickAdd();
+        laadData();
+      }
+    } finally {
+      setQuickAddBezig(false);
+    }
   }
 
   async function stelVraag() {
@@ -375,8 +628,8 @@ export function SalesDashboardPaneel() {
   // moet er vandaag/achterstallig gebeuren" tonen, ongeacht welke datum net
   // binnen de tab bekeken wordt (anders zou het badge van betekenis
   // veranderen zodra iemand op "Morgen" klikt, terwijl een ANDERE tab actief is).
-  const vandaagWeergave = bepaalGecombineerdeAgenda(actiesVoorAgenda, scholenVoorAgenda, gekozenDatum);
-  const badgeWeergave = bepaalGecombineerdeAgenda(actiesVoorAgenda, scholenVoorAgenda, vandaagIso());
+  const vandaagWeergave = bepaalWerkAgenda(takenVoorAgenda, actiesVoorAgenda, scholenVoorAgenda, gekozenDatum);
+  const badgeWeergave = bepaalWerkAgenda(takenVoorAgenda, actiesVoorAgenda, scholenVoorAgenda, vandaagIso());
   const vandaagBadgeAantal = badgeWeergave.achterstallig.length + badgeWeergave.opGekozenDatum.length;
 
   // Sales-logica productiecorrectie 2026-08-16 (punt 1/11) — "159 scholen
@@ -438,6 +691,118 @@ export function SalesDashboardPaneel() {
         </div>
       </div>
 
+      {/* Mijn Werk V1 (2026-08-17) — "prominent in Mijn dag" (opdrachtseis):
+         boven de tabs, dus altijd zichtbaar ongeacht welke tab actief is.
+         Nooit automatisch opslaan — quickAddVoorstel toont pas een
+         bevestigingskaart (voorstel/aanpassen/annuleren) na parseren. */}
+      <div className="ml-werk-quickadd">
+        {!quickAddVoorstel ? (
+          <form
+            className="ml-werk-quickadd__invoer"
+            onSubmit={(e) => {
+              e.preventDefault();
+              maakQuickAddVoorstel();
+            }}
+          >
+            <Plus size={16} aria-hidden="true" style={{ color: "var(--ml-admin-accent)", flexShrink: 0 }} />
+            <input
+              type="text"
+              value={quickAddTekst}
+              onChange={(e) => setQuickAddTekst(e.target.value)}
+              placeholder="Wat wil je doen? Bijv. 'Vrijdag presentatie Montessori afmaken'"
+              aria-label="Wat wil je doen?"
+            />
+            <button type="submit" className="ml-sales__knop ml-sales__knop--primair" disabled={!quickAddTekst.trim()}>
+              Toevoegen
+            </button>
+          </form>
+        ) : (
+          <div className="ml-werk-quickadd__voorstel">
+            {!quickAddBewerkVeld ? (
+              <>
+                <dl className="ml-werk-quickadd__preview">
+                  <dt>Titel</dt>
+                  <dd>{quickAddVoorstel.titel}</dd>
+                  <dt>Datum</dt>
+                  <dd>{quickAddVoorstel.datum ? formatKorteDatum(quickAddVoorstel.datum) : "—"}</dd>
+                  <dt>Tijd</dt>
+                  <dd>{quickAddVoorstel.tijd ?? "—"}</dd>
+                  {quickAddVoorstel.schoolName && (
+                    <>
+                      <dt>School</dt>
+                      <dd>{quickAddVoorstel.schoolName}</dd>
+                    </>
+                  )}
+                </dl>
+                <div className="ml-sales__actie-knoppen">
+                  <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={quickAddBezig} onClick={bevestigQuickAdd}>
+                    {quickAddBezig ? "Bezig…" : "Taak toevoegen"}
+                  </button>
+                  <button type="button" className="ml-sales__knop" disabled={quickAddBezig} onClick={() => setQuickAddBewerkVeld(true)}>
+                    Aanpassen
+                  </button>
+                  <button type="button" className="ml-sales__knop" disabled={quickAddBezig} onClick={annuleerQuickAdd}>
+                    Annuleren
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={quickAddVoorstel.titel}
+                  onChange={(e) => setQuickAddVoorstel({ ...quickAddVoorstel, titel: e.target.value })}
+                  placeholder="Titel"
+                  aria-label="Titel"
+                />
+                <input
+                  type="date"
+                  value={quickAddVoorstel.datum ?? ""}
+                  onChange={(e) => setQuickAddVoorstel({ ...quickAddVoorstel, datum: e.target.value || null })}
+                  aria-label="Datum"
+                />
+                <input
+                  type="text"
+                  value={quickAddVoorstel.tijd ?? ""}
+                  onChange={(e) => setQuickAddVoorstel({ ...quickAddVoorstel, tijd: e.target.value || null })}
+                  placeholder="Tijd (bv. 14:30)"
+                  aria-label="Tijd"
+                />
+                <select
+                  value={quickAddVoorstel.schoolId ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value ? Number(e.target.value) : null;
+                    const school = scholenVoorQuickAdd.find((s) => s.id === id);
+                    setQuickAddVoorstel({ ...quickAddVoorstel, schoolId: id, schoolName: school?.schoolName ?? null });
+                  }}
+                  aria-label="School"
+                >
+                  <option value="">Geen school</option>
+                  {scholenVoorQuickAdd.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.schoolName}
+                    </option>
+                  ))}
+                </select>
+                <div className="ml-sales__actie-knoppen">
+                  <button
+                    type="button"
+                    className="ml-sales__knop ml-sales__knop--primair"
+                    disabled={quickAddBezig || !quickAddVoorstel.titel.trim()}
+                    onClick={bevestigQuickAdd}
+                  >
+                    {quickAddBezig ? "Bezig…" : "Taak toevoegen"}
+                  </button>
+                  <button type="button" className="ml-sales__knop" disabled={quickAddBezig} onClick={annuleerQuickAdd}>
+                    Annuleren
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="ml-sales-widget__tabs">
         <button type="button" className={`ml-sales-widget__tab${tab === "vandaag" ? " ml-sales-widget__tab--actief" : ""}`} onClick={() => kiesTab("vandaag")}>
           <Calendar size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.blue.fg }} />
@@ -448,6 +813,11 @@ export function SalesDashboardPaneel() {
           <ClipboardList size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.orange.fg }} />
           To do
           {todoAantal > 0 && <span className="ml-sales-widget__tab-badge">{todoAantal}</span>}
+        </button>
+        <button type="button" className={`ml-sales-widget__tab${tab === "wachtenop" ? " ml-sales-widget__tab--actief" : ""}`} onClick={() => kiesTab("wachtenop")}>
+          <Clock size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.teal.fg }} />
+          Wachten op
+          {wachtenOp.length > 0 && <span className="ml-sales-widget__tab-badge">{wachtenOp.length}</span>}
         </button>
         <button type="button" className={`ml-sales-widget__tab${tab === "vraag" ? " ml-sales-widget__tab--actief" : ""}`} onClick={() => kiesTab("vraag")}>
           <Sparkles size={15} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.purple.fg }} />
@@ -499,9 +869,13 @@ export function SalesDashboardPaneel() {
               <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
                 Achterstallig ({vandaagWeergave.achterstallig.length})
               </p>
-              {vandaagWeergave.achterstallig.map((actie) => (
-                <ActieKaart actie={actie} key={actie.id} />
-              ))}
+              {vandaagWeergave.achterstallig.map((item) =>
+                item.bron === "taak" ? (
+                  <TaakKaart taak={item} onGewijzigd={laadData} key={`taak-${item.id}`} />
+                ) : (
+                  <ActieKaart actie={item} key={`sales-${item.id}`} />
+                )
+              )}
             </>
           )}
 
@@ -510,7 +884,28 @@ export function SalesDashboardPaneel() {
               {vandaagWeergave.isVandaag ? "Niets gepland voor vandaag." : `Niets gepland op ${formatKorteDatum(gekozenDatum)}.`}
             </div>
           ) : (
-            vandaagWeergave.opGekozenDatum.map((item) => <AgendaKaart item={item} key={item.bron === "sales" ? `sales-${item.id}` : `monday-${item.schoolId}`} />)
+            vandaagWeergave.opGekozenDatum.map((item) => (
+              <AgendaKaart
+                item={item}
+                onGewijzigd={laadData}
+                key={item.bron === "taak" ? `taak-${item.id}` : item.bron === "sales" ? `sales-${item.id}` : `monday-${item.schoolId}`}
+              />
+            ))
+          )}
+
+          {/* Mijn Werk V1 — ongeplande taken (amendement 1: een volwaardige,
+             verwachte uitkomst, geen tussenstap), onafhankelijk van de
+             gekozen datum. Zelfde rustige subsectie-stijl als "Gepland in
+             Monday" in de To-do-tab hieronder — bestaande CSS-klasse. */}
+          {vandaagWeergave.ongepland.length > 0 && (
+            <div className="ml-sales-widget__gepland-monday">
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+                Ongepland ({vandaagWeergave.ongepland.length})
+              </p>
+              {vandaagWeergave.ongepland.map((taak) => (
+                <TaakKaart taak={taak} onGewijzigd={laadData} key={`taak-${taak.id}`} />
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -593,6 +988,36 @@ export function SalesDashboardPaneel() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Mijn Werk V1 (2026-08-17) — "Wachten op": school is aan zet, uitsluitend
+         afgeleid uit bestaande Sales-data (lib/werk/wachten-op.ts), geen
+         nieuwe opslag. Rustige weergave (--rustig, zelfde als "Gepland in
+         Monday") — geen beslissing nodig, alleen ter info. */}
+      {tab === "wachtenop" && (
+        <div className="ml-sales-widget__lijst">
+          {wachtenOp.length === 0 ? (
+            <div className="ml-sales__leeg">Je wacht nergens op.</div>
+          ) : (
+            wachtenOp.map((item) => (
+              <div className="ml-sales-widget__item ml-sales-widget__item--rustig" key={item.actionId}>
+                <div className="ml-sales-widget__item-header">
+                  <Link href={`/admin/sales/school?id=${item.schoolId}`} className="ml-sales-widget__schoolnaam" prefetch={false}>
+                    {item.schoolName}
+                  </Link>
+                  <RelatiestatusBadge relatiestatus={item.relatiestatus} />
+                </div>
+                <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+                  Wachten op
+                </p>
+                <p className="ml-sales-widget__context">{item.waaropWachten}</p>
+                <p className="ml-sales-widget__meta">
+                  {item.sindsWanneer ? `Sinds ${formatKorteDatum(item.sindsWanneer)}` : "Sinds onbekend"} · Opvolgen op {formatKorteDatum(item.vervolgdatum)}
+                </p>
+              </div>
+            ))
           )}
         </div>
       )}

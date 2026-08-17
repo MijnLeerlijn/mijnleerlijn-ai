@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAdmin, isCentralEditor, isEditor, isVariantEditorFor, type AuthUser } from "./roles";
+import { isAdmin, isCentralEditor, isEditor, isVariantEditorFor, ownRecordAccess, type AuthUser } from "./roles";
 
 const admin: AuthUser = { id: 1, role: "admin" };
 const centraleRedacteur: AuthUser = { id: 2, role: "editor" };
@@ -57,5 +57,16 @@ describe("isVariantEditorFor", () => {
   it("is altijd waar voor een beheerder, ongeacht variant", () => {
     expect(isVariantEditorFor(admin, 101)).toBe(true);
     expect(isVariantEditorFor(admin, 202)).toBe(true);
+  });
+});
+
+describe("ownRecordAccess — Mijn Werk V1 (personal-tasks)", () => {
+  it("geeft een Where-clause terug die filtert op de eigen gebruiker — ook voor een admin, geen rol-uitzondering", () => {
+    expect(ownRecordAccess({ req: { user: admin } } as never)).toEqual({ eigenaar: { equals: 1 } });
+    expect(ownRecordAccess({ req: { user: centraleRedacteur } } as never)).toEqual({ eigenaar: { equals: 2 } });
+  });
+
+  it("is onwaar (geen toegang) zonder ingelogde gebruiker", () => {
+    expect(ownRecordAccess({ req: { user: null } } as never)).toBe(false);
   });
 });

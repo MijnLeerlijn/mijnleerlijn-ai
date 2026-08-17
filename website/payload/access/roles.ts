@@ -63,6 +63,22 @@ export const anyEditor: Access = ({ req }) => isEditor(req.user as AuthUser | nu
 export const adminFieldOnly: FieldAccess = ({ req }) => isAdmin(req.user as AuthUser | null);
 
 /**
+ * Mijn Werk V1 (2026-08-17) — eigenaar-gescoped toegang: een gebruiker ziet/
+ * wijzigt/verwijdert uitsluitend records waarvan `eigenaar` gelijk is aan
+ * zichzelf, zonder rol-uitzondering (ook een admin ziet hier alleen de eigen
+ * records). Voor persoonlijke data (personal-tasks) die bewust NIET
+ * teambreed is zoals Sales dat is (anyEditor) — zie het Mijn Werk-voorstel
+ * §K: "zelfgekozen task-ID van een andere gebruiker levert geen informatie
+ * op" — een Where-clause i.p.v. een boolean laat Payload dit afdwingen als
+ * een 404 op andermans record, nooit een 403 die het bestaan verklapt.
+ */
+export const ownRecordAccess: Access = ({ req }) => {
+  const user = req.user as AuthUser | null;
+  if (!user) return false;
+  return { eigenaar: { equals: user.id } };
+};
+
+/**
  * Publiek leesbaar voor gepubliceerde content, alleen CMS-gebruikers zien
  * concepten — zie Fase 4 Stap 5: "drafts niet publiek zichtbaar; alleen
  * gepubliceerde content publiek wordt opgehaald."
