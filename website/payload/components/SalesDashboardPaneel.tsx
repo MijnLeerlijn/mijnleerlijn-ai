@@ -1180,21 +1180,31 @@ export function SalesDashboardPaneel() {
     }
   }, [heeftGmailScope]);
 
-  // Handmatige "Mail opnieuw controleren" — herclassificeert ook al eerder
-  // beoordeelde kandidaten (fout-negatieven herstellen), begrensd tot het
-  // huidige lookbackvenster/aantal (zie lib/werk/mail-signalen.ts). Toont
-  // altijd een compacte samenvatting, ook wanneer er niets nieuws bleek.
+  // Handmatige "Mail opnieuw controleren" — productiecorrectie 2026-08-19:
+  // controleert nu ook de actuele threadstatus van elk actief signaal (is
+  // Michel nog aan zet, of heeft hij zelf al geantwoord — rechtstreeks in
+  // Gmail of via MijnLeerlijn) en herclassificeert daarnaast eerder als
+  // "niet_relevant" gecachete kandidaten (fout-negatieven herstellen),
+  // begrensd tot het huidige lookbackvenster/aantal (zie
+  // lib/werk/mail-signalen.ts). Toont altijd een compacte samenvatting, ook
+  // wanneer er niets nieuws bleek.
   async function controleerMailOpnieuw() {
     setMailControlerenBezig(true);
     setMailFout(null);
     setMailControlerenStatus(null);
-    const { ok, data } = await apiPost<{ signalen: MailSignaalDoc[]; bekeken: number; actieNodig: number; genegeerd: number; algVerwerkt: number }>(
-      "/api/werk/mail/opnieuw-controleren"
-    );
+    const { ok, data } = await apiPost<{
+      signalen: MailSignaalDoc[];
+      bekeken: number;
+      actieNodig: number;
+      genegeerd: number;
+      algVerwerkt: number;
+      automatischBeantwoord: number;
+      ongewijzigd: number;
+    }>("/api/werk/mail/opnieuw-controleren");
     if (ok && data) {
       setMailSignalen(data.signalen);
       setMailControlerenStatus(
-        `${data.bekeken} recente mail${data.bekeken === 1 ? "" : "s"} bekeken · ${data.actieNodig} vraag${data.actieNodig === 1 ? "t" : "en"} actie · ${data.genegeerd} genegeerd · ${data.algVerwerkt} al verwerkt`
+        `${data.bekeken} mail${data.bekeken === 1 ? "" : "s"} bekeken · ${data.actieNodig} nieuwe actie${data.actieNodig === 1 ? "" : "s"} · ${data.automatischBeantwoord} inmiddels beantwoord · ${data.genegeerd} genegeerd · ${data.ongewijzigd} ongewijzigd`
       );
     } else {
       setMailFout("Opnieuw controleren mislukt — probeer het later opnieuw.");

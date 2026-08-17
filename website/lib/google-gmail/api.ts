@@ -230,6 +230,62 @@ export async function haalThreadVoorAntwoord(accessToken: string, threadId: stri
   return berichten.slice(-maxBerichten);
 }
 
+export interface ThreadBerichtSamenvatting {
+  gmailMessageId: string;
+  van: string;
+  onderwerp: string;
+  snippet: string;
+  /**
+   * Gmail's eigen SENT-label — de echte, accountgebonden waarheid over of
+   * de gekoppelde gebruiker dit bericht verstuurde (werkt ook correct bij
+   * een alias/ander verzendadres of een ander mailprogramma). Bewust GEEN
+   * vergelijking op een "Naam <adres>"-headerwaarde: dat is precies de
+   * kwetsbare weg die de opdracht expliciet uitsluit ("ga niet alleen op
+   * displaynaam af").
+   */
+  vanEigenAccount: boolean;
+  ontvangenOp: string;
+}
+
+/**
+ * Haalt van een hele thread ALLEEN de lichte metadata op (format=metadata,
+ * geen body/MIME-boom) — voor de deterministische "wie stuurde het laatste
+ * bericht in deze thread"-controle (lib/werk/mail-signalen.ts se
+ * threadstatus-synchronisatie, productiecorrectie 2026-08-19: "een
+ * Gmail-signaal mag alleen actief blijven als Michel nu nog aan zet is in
+ * de actuele thread"). Geen AI, geen volledige MIME-boom zoals
+ * haalThreadVoorAntwoord hierboven — dit draait per actief signaal bij
+ * vrijwel elke dashboardlezing, dus bewust zo licht mogelijk.
+ */
+export async function haalThreadBerichtenSamenvatting(accessToken: string, threadId: string): Promise<ThreadBerichtSamenvatting[]> {
+  const params = new URLSearchParams({ format: "metadata" });
+  params.append("metadataHeaders", "From");
+  params.append("metadataHeaders", "Subject");
+  const thread = (await gmailFetch(accessToken, `/threads/${threadId}?${params.toString()}`)) as {
+    messages?: (GmailMessageResource & { labelIds?: string[] })[];
+  };
+  return (thread.messages ?? []).map((bericht) => ({
+    gmailMessageId: bericht.id,
+    van: getHeader(bericht.payload?.headers, "From"),
+    onderwerp: getHeader(bericht.payload?.headers, "Subject") || "(geen onderwerp)",
+    snippet: bericht.snippet ?? "",
+    vanEigenAccount: (bericht.labelIds ?? []).includes("SENT"),
+    ontvangenOp: internalDateNaarIso(bericht.internalDate),
+  }));
+}
+
+/**
+ * Puur: het chronologisch laatste bericht uit een thread-samenvatting —
+ * expliciet berekend (niet blind op de volgorde van de Gmail-API vertrouwd,
+ * opdrachtseis: "bepaal chronologisch het laatste relevante bericht").
+ * `ontvangenOp` is een ISO-string (internalDateNaarIso) — die sorteert
+ * lexicografisch al chronologisch correct.
+ */
+export function laatsteThreadBericht(berichten: ThreadBerichtSamenvatting[]): ThreadBerichtSamenvatting | null {
+  if (berichten.length === 0) return null;
+  return berichten.reduce((laatste, huidig) => (huidig.ontvangenOp > laatste.ontvangenOp ? huidig : laatste));
+}
+
 /** Alleen het e-mailadres uit een "Naam <adres>"-headerwaarde, of de waarde zelf als er geen `<...>` in zit. Geëxporteerd — lib/werk/mail-reply.ts toont het herleide adres al vóór het versturen. */
 export function bareAddress(adres: string): string {
   const match = adres.match(/<([^>]+)>/);

@@ -34,7 +34,7 @@ function maakRequest(cookie = "geldig") {
 beforeEach(() => {
   mockVerify.mockReset();
   mockToegang.mockReset();
-  mockSignalen.mockReset().mockResolvedValue({ signalen: [], bekeken: 0, actieNodig: 0, genegeerd: 0, algVerwerkt: 0 });
+  mockSignalen.mockReset().mockResolvedValue({ signalen: [], bekeken: 0, actieNodig: 0, genegeerd: 0, algVerwerkt: 0, automatischBeantwoord: 0, ongewijzigd: 0 });
 });
 
 describe("POST /api/werk/mail/opnieuw-controleren", () => {
@@ -53,17 +53,17 @@ describe("POST /api/werk/mail/opnieuw-controleren", () => {
     expect(mockSignalen).not.toHaveBeenCalled();
   });
 
-  it("roept haalMailSignalen aan met forceerHerclassificatie: true", async () => {
+  it("roept haalMailSignalen aan met forceerHerclassificatie: true EN scanNieuweKandidaten: true (negeert de begrensde periodieke sync — een handmatige klik ververst altijd echt)", async () => {
     mockVerify.mockResolvedValue({ user: { id: 7, role: "editor" }, cookieAanwezig: true });
     mockToegang.mockResolvedValue({ accessToken: "token-abc", connectionId: 1, scopes: GMAIL_SCOPES });
-    mockSignalen.mockResolvedValue({ signalen: [], bekeken: 24, actieNodig: 4, genegeerd: 16, algVerwerkt: 4 });
+    mockSignalen.mockResolvedValue({ signalen: [], bekeken: 24, actieNodig: 3, genegeerd: 15, algVerwerkt: 4, automatischBeantwoord: 2, ongewijzigd: 0 });
 
     const response = await POST(maakRequest());
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data).toEqual({ signalen: [], bekeken: 24, actieNodig: 4, genegeerd: 16, algVerwerkt: 4 });
-    expect(mockSignalen).toHaveBeenCalledWith(expect.anything(), 7, "token-abc", expect.anything(), { forceerHerclassificatie: true });
+    expect(data).toEqual({ signalen: [], bekeken: 24, actieNodig: 3, genegeerd: 15, algVerwerkt: 4, automatischBeantwoord: 2, ongewijzigd: 0 });
+    expect(mockSignalen).toHaveBeenCalledWith(expect.anything(), 7, "token-abc", expect.anything(), { forceerHerclassificatie: true, scanNieuweKandidaten: true });
   });
 
   it("beperkt tot 5 aanvragen per minuut per gebruiker (429 daarna)", async () => {

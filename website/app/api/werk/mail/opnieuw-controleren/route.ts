@@ -23,6 +23,14 @@ const beperkAanvragen = maakRateLimiter(60_000, 5);
 // fix, of na een eerdere classificatiestoring). Laat berichten met een
 // bewuste gebruikersstatus (gedempt/taak_aangemaakt/beantwoord) met rust.
 // Geeft een compacte samenvatting terug voor directe terugkoppeling in de UI.
+//
+// Productiecorrectie (2026-08-19) — draait ALTIJD ook de deterministische
+// threadstatus-sync (fase 1) en scant ALTIJD de inbox op nieuwe kandidaten
+// (fase 2, scanNieuweKandidaten: true), ongeacht de begrensde periodieke
+// sync die de gewone dashboardlezing wél toepast (zie app/api/werk/mail se
+// eigen toelichting) — een handmatige klik moet altijd meteen echt
+// verversen. Actieve ("gesignaleerd") signalen worden hier NOOIT herclassi-
+// ficeerd (dat was de bug); die sluiten uitsluitend via de threadstatus.
 export async function POST(request: NextRequest) {
   const payload = await getPayload({ config });
   const sessieControle = await verifyAdminSessionCookie(payload, request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
@@ -53,7 +61,7 @@ export async function POST(request: NextRequest) {
       schoolName: s.schoolName,
     }));
 
-    const resultaat = await haalMailSignalen(payload, user.id, toegang.accessToken, scholen, { forceerHerclassificatie: true });
+    const resultaat = await haalMailSignalen(payload, user.id, toegang.accessToken, scholen, { forceerHerclassificatie: true, scanNieuweKandidaten: true });
     return NextResponse.json(resultaat);
   } catch (error) {
     console.error("[api/werk/mail/opnieuw-controleren] mislukt:", error);

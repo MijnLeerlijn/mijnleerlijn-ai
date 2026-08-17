@@ -5,7 +5,7 @@ import { isEditor, type AuthUser } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { verkrijgGeldigeToegang } from "@/lib/google-calendar/connection";
 import { heeftGmailScopes } from "@/lib/google-gmail/oauth";
-import { haalMailSignalen } from "@/lib/werk/mail-signalen";
+import { haalMailSignalen, bepaalOfKandidatenScanNodigIs } from "@/lib/werk/mail-signalen";
 import type { SchoolOptie } from "@/lib/werk/school-matching";
 
 // Mijn Werk Fase 3 (2026-08-17) — compacte lijst mail die aandacht vraagt,
@@ -15,6 +15,14 @@ import type { SchoolOptie } from "@/lib/werk/school-matching";
 // beide gevallen toont de UI dezelfde "Koppel Gmail"-CTA, geen aparte
 // foutstatus nodig. Foutmeldingen naar de client blijven generiek, zelfde
 // conventie als app/api/werk/agenda en .../voorbereiding.
+//
+// Productiecorrectie (2026-08-19, punt 6) — een gewone dashboardlezing
+// draait ALTIJD de goedkope, deterministische threadstatus-sync (fase 1 in
+// haalMailSignalen), maar scant de inbox alleen opnieuw op nieuwe
+// kandidaten (fase 2, Gmail-lijstquery + eventuele AI) als de vorige scan
+// langer dan NIEUWE_KANDIDATEN_SCAN_MINUTEN geleden is — een begrensde
+// periodieke sync i.p.v. bij elke pageview de hele inbox te doorzoeken.
+// "Mail opnieuw controleren" (de aparte route) negeert dit altijd.
 export async function GET(request: NextRequest) {
   const payload = await getPayload({ config });
   const sessieControle = await verifyAdminSessionCookie(payload, request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
@@ -41,7 +49,18 @@ export async function GET(request: NextRequest) {
       schoolName: s.schoolName,
     }));
 
-    const resultaat = await haalMailSignalen(payload, user.id, toegang.accessToken, scholen);
+    const laatsteScan = await payload.find({
+      collection: "mail-signalen",
+      where: { eigenaar: { equals: user.id } },
+      sort: "-geclassificeerdOp",
+      limit: 1,
+      depth: 0,
+      overrideAccess: true,
+    });
+    const laatsteScanOp = (laatsteScan.docs[0] as { geclassificeerdOp?: string | null } | undefined)?.geclassificeerdOp ?? null;
+    const scanNieuweKandidaten = bepaalOfKandidatenScanNodigIs(laatsteScanOp);
+
+    const resultaat = await haalMailSignalen(payload, user.id, toegang.accessToken, scholen, { scanNieuweKandidaten });
     return NextResponse.json({ connected: true, ...resultaat });
   } catch (error) {
     console.error("[api/werk/mail] mislukt:", error);

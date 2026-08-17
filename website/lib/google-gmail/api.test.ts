@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { bareAddress, replyOnderwerp, bouwKandidaatQuery, verstuurAntwoord } from "./api";
+import {
+  bareAddress,
+  replyOnderwerp,
+  bouwKandidaatQuery,
+  verstuurAntwoord,
+  haalThreadBerichtenSamenvatting,
+  laatsteThreadBericht,
+  type ThreadBerichtSamenvatting,
+} from "./api";
 
 describe("bouwKandidaatQuery — deterministisch Gmail-voorfilter (productiecorrectie 2026-08-18)", () => {
   it("gebruikt NIET category:primary — dat sluit accounts zonder Gmail-tabbladen/categorieën volledig uit (root cause van 'geen mailsignalen')", () => {
@@ -27,6 +35,74 @@ describe("bouwKandidaatQuery — deterministisch Gmail-voorfilter (productiecorr
 
   it("neemt het meegegeven aantal lookbackdagen over", () => {
     expect(bouwKandidaatQuery(5)).toContain("newer_than:5d");
+  });
+});
+
+function threadBericht(overrides: Partial<ThreadBerichtSamenvatting> & { gmailMessageId: string }): ThreadBerichtSamenvatting {
+  return { van: "iemand@school.nl", onderwerp: "Onderwerp", snippet: "Fragment", vanEigenAccount: false, ontvangenOp: "2026-08-19T09:00:00.000Z", ...overrides };
+}
+
+describe("laatsteThreadBericht — chronologisch laatste bericht (productiecorrectie 2026-08-19, punt 1)", () => {
+  it("geeft null terug voor een lege thread", () => {
+    expect(laatsteThreadBericht([])).toBeNull();
+  });
+
+  it("bepaalt het laatste bericht op basis van ontvangenOp, niet op basis van array-volgorde", () => {
+    const berichten = [
+      threadBericht({ gmailMessageId: "later", ontvangenOp: "2026-08-19T12:00:00.000Z" }),
+      threadBericht({ gmailMessageId: "vroeger", ontvangenOp: "2026-08-18T09:00:00.000Z" }),
+    ];
+    // "later" staat als EERSTE in de array, maar is wel degelijk het laatste bericht — bewust niet op API-volgorde vertrouwd.
+    expect(laatsteThreadBericht(berichten)?.gmailMessageId).toBe("later");
+  });
+});
+
+describe("haalThreadBerichtenSamenvatting — deterministische 'wie stuurde het laatste bericht'-controle", () => {
+  const oorspronkelijkeFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = oorspronkelijkeFetch;
+  });
+
+  it("herkent een eigen verzonden bericht aan het SENT-label, niet aan de From-header", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        messages: [
+          {
+            id: "msg-1",
+            threadId: "thread-1",
+            internalDate: "1755600000000",
+            labelIds: ["INBOX"],
+            payload: { headers: [{ name: "From", value: "Ouder <ouder@school.nl>" }, { name: "Subject", value: "Vraag" }] },
+          },
+          {
+            id: "msg-2",
+            threadId: "thread-1",
+            internalDate: "1755686400000",
+            labelIds: ["SENT"],
+            // Bewust een From-header die NIET op "Michel" lijkt (bv. verzonden via een alias) — SENT-label moet toch leidend zijn, ga niet op de displaynaam af.
+            payload: { headers: [{ name: "From", value: "Info Alias <info@andere-alias.nl>" }, { name: "Subject", value: "Re: Vraag" }] },
+          },
+        ],
+      }),
+    });
+
+    const berichten = await haalThreadBerichtenSamenvatting("token", "thread-1");
+
+    expect(berichten).toHaveLength(2);
+    expect(berichten.find((b) => b.gmailMessageId === "msg-1")?.vanEigenAccount).toBe(false);
+    expect(berichten.find((b) => b.gmailMessageId === "msg-2")?.vanEigenAccount).toBe(true);
+  });
+
+  it("gebruikt format=metadata (geen volledige MIME-boom) — licht genoeg om per actief signaal te draaien", async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ messages: [] }) });
+
+    await haalThreadBerichtenSamenvatting("token", "thread-1");
+
+    const url = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+    expect(url).toContain("format=metadata");
+    expect(url).not.toContain("format=full");
   });
 });
 

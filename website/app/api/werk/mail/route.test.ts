@@ -5,10 +5,10 @@ import { verifyAdminSessionCookie } from "@/lib/auth/verify-session";
 import { verkrijgGeldigeToegang } from "@/lib/google-calendar/connection";
 import { haalMailSignalen } from "@/lib/werk/mail-signalen";
 
+const { mockPayloadFind } = vi.hoisted(() => ({ mockPayloadFind: vi.fn() }));
+
 vi.mock("payload", () => ({
-  getPayload: vi.fn().mockResolvedValue({
-    find: vi.fn().mockResolvedValue({ docs: [] }),
-  }),
+  getPayload: vi.fn().mockResolvedValue({ find: mockPayloadFind }),
 }));
 vi.mock("@/payload.config", () => ({ default: {} }));
 vi.mock("@/lib/auth/verify-session", async (importOriginal) => {
@@ -16,7 +16,13 @@ vi.mock("@/lib/auth/verify-session", async (importOriginal) => {
   return { ...echt, verifyAdminSessionCookie: vi.fn() };
 });
 vi.mock("@/lib/google-calendar/connection", () => ({ verkrijgGeldigeToegang: vi.fn() }));
-vi.mock("@/lib/werk/mail-signalen", () => ({ haalMailSignalen: vi.fn() }));
+// bepaalOfKandidatenScanNodigIs blijft de ECHTE implementatie — deze tests
+// verifiëren de daadwerkelijke throttle-uitkomst (punt 6), niet alleen dat
+// er íets aangeroepen is.
+vi.mock("@/lib/werk/mail-signalen", async (importOriginal) => {
+  const echt = await importOriginal<typeof import("@/lib/werk/mail-signalen")>();
+  return { ...echt, haalMailSignalen: vi.fn() };
+});
 
 const mockVerify = vi.mocked(verifyAdminSessionCookie);
 const mockToegang = vi.mocked(verkrijgGeldigeToegang);
@@ -28,12 +34,16 @@ function maakRequest(cookie = "geldig") {
   return new NextRequest("http://localhost:3000/api/werk/mail", { headers: { Cookie: `payload-token=${cookie}` } });
 }
 
-const LEEG_RESULTAAT = { signalen: [], bekeken: 0, actieNodig: 0, genegeerd: 0, algVerwerkt: 0 };
+const LEEG_RESULTAAT = { signalen: [], bekeken: 0, actieNodig: 0, genegeerd: 0, algVerwerkt: 0, automatischBeantwoord: 0, ongewijzigd: 0 };
 
 beforeEach(() => {
   mockVerify.mockReset();
   mockToegang.mockReset();
   mockSignalen.mockReset().mockResolvedValue(LEEG_RESULTAAT);
+  // Standaard: elke find() levert een lege docs-lijst — dekt zowel de
+  // scholen-lookup als de "laatste scan"-lookup (dus: nog nooit gescand,
+  // bepaalOfKandidatenScanNodigIs geeft dan true).
+  mockPayloadFind.mockReset().mockResolvedValue({ docs: [] });
 });
 
 describe("GET /api/werk/mail", () => {
@@ -88,6 +98,8 @@ describe("GET /api/werk/mail", () => {
       actieNodig: 1,
       genegeerd: 2,
       algVerwerkt: 0,
+      automatischBeantwoord: 0,
+      ongewijzigd: 0,
     });
 
     const response = await GET(maakRequest());
@@ -97,7 +109,6 @@ describe("GET /api/werk/mail", () => {
     expect(data.connected).toBe(true);
     expect(data.signalen).toHaveLength(1);
     expect(data.bekeken).toBe(3);
-    expect(mockSignalen).toHaveBeenCalledWith(expect.anything(), 42, "token-abc", expect.anything());
   });
 
   it("geeft een generieke 500-foutmelding terug wanneer het ophalen mislukt", async () => {
@@ -110,5 +121,47 @@ describe("GET /api/werk/mail", () => {
 
     expect(response.status).toBe(500);
     expect(data.error).not.toContain("geheim-xyz");
+  });
+
+  // Productiecorrectie 2026-08-19 (punt 6) — begrensde periodieke sync:
+  // een gewone dashboardlezing scant de inbox alleen opnieuw op nieuwe
+  // kandidaten als de vorige scan langer dan NIEUWE_KANDIDATEN_SCAN_MINUTEN
+  // geleden is; anders draait uitsluitend de (in haalMailSignalen zelf
+  // altijd draaiende) threadstatus-sync.
+  describe("begrensde periodieke sync (punt 6)", () => {
+    beforeEach(() => {
+      mockVerify.mockResolvedValue({ user: { id: 42, role: "editor" }, cookieAanwezig: true });
+      mockToegang.mockResolvedValue({ accessToken: "token-abc", connectionId: 1, scopes: GMAIL_SCOPES });
+    });
+
+    it("vraagt een kandidatenscan aan wanneer er nog nooit eerder gescand is", async () => {
+      mockPayloadFind.mockImplementation(async ({ collection }: { collection: string }) =>
+        collection === "mail-signalen" ? { docs: [] } : { docs: [] }
+      );
+
+      await GET(maakRequest());
+
+      expect(mockSignalen).toHaveBeenCalledWith(expect.anything(), 42, "token-abc", expect.anything(), { scanNieuweKandidaten: true });
+    });
+
+    it("slaat de kandidatenscan over wanneer de vorige scan minder dan 15 minuten geleden is", async () => {
+      mockPayloadFind.mockImplementation(async ({ collection }: { collection: string }) =>
+        collection === "mail-signalen" ? { docs: [{ geclassificeerdOp: new Date(Date.now() - 5 * 60_000).toISOString() }] } : { docs: [] }
+      );
+
+      await GET(maakRequest());
+
+      expect(mockSignalen).toHaveBeenCalledWith(expect.anything(), 42, "token-abc", expect.anything(), { scanNieuweKandidaten: false });
+    });
+
+    it("vraagt weer een kandidatenscan aan wanneer de vorige scan langer dan 15 minuten geleden is", async () => {
+      mockPayloadFind.mockImplementation(async ({ collection }: { collection: string }) =>
+        collection === "mail-signalen" ? { docs: [{ geclassificeerdOp: new Date(Date.now() - 20 * 60_000).toISOString() }] } : { docs: [] }
+      );
+
+      await GET(maakRequest());
+
+      expect(mockSignalen).toHaveBeenCalledWith(expect.anything(), 42, "token-abc", expect.anything(), { scanNieuweKandidaten: true });
+    });
   });
 });
