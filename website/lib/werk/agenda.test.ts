@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { bepaalWerkAgenda, type TaakInvoer } from "./agenda";
 import type { AgendaActieInvoer, SchoolMetMondayPlanning } from "@/lib/sales/vandaag";
+import type { GoogleCalendarEvent } from "@/lib/google-calendar/api";
 import { vandaagIso, voegDagenToe } from "@/lib/sales/format-datum";
 
 const VANDAAG = vandaagIso();
@@ -39,6 +40,16 @@ function schoolMetPlanning(overrides: Partial<SchoolMetMondayPlanning> & { id: n
     actief: true,
     mondayVolgendeActieDatum: null,
     cachedGeplandeActieTekst: null,
+    ...overrides,
+  };
+}
+
+function agendaEvent(overrides: Partial<GoogleCalendarEvent> & { id: string; datum: string }): GoogleCalendarEvent {
+  return {
+    titel: `Event ${overrides.id}`,
+    volledigeDag: false,
+    tijd: null,
+    eindTijd: null,
     ...overrides,
   };
 }
@@ -132,5 +143,66 @@ describe("bepaalWerkAgenda — Mijn Werk V1: personal-tasks als derde, onafhanke
     const zonderSchool = weergave.opGekozenDatum.find((i) => i.bron === "taak" && i.id === 2);
     expect(metSchool).toMatchObject({ schoolId: 5, schoolName: "Springplank" });
     expect(zonderSchool).toMatchObject({ schoolId: null, schoolName: null });
+  });
+});
+
+describe("bepaalWerkAgenda — Mijn Werk Fase 2: agenda-events als vierde, onafhankelijke bron", () => {
+  it("een agenda-event verschijnt op opGekozenDatum met bron: 'agenda', ongeacht dat het niet in taken/acties/scholen zit", () => {
+    const datum = voegDagenToe(VANDAAG, 2);
+    const weergave = bepaalWerkAgenda([], [], [], datum, [agendaEvent({ id: "evt1", datum, titel: "Training", tijd: "09:00" })]);
+
+    expect(weergave.opGekozenDatum).toHaveLength(1);
+    expect(weergave.opGekozenDatum[0]).toMatchObject({ bron: "agenda", id: "evt1", titel: "Training", tijd: "09:00" });
+  });
+
+  it("agenda-events hebben geen achterstallig-concept — worden nooit in achterstallig getoond", () => {
+    const weergave = bepaalWerkAgenda([], [], [], VANDAAG, [agendaEvent({ id: "evt1", datum: VANDAAG })]);
+    expect(weergave.achterstallig).toEqual([]);
+  });
+
+  it("bestaande aanroepers zonder agendaEvents-argument blijven ongewijzigd werken (optioneel, default [])", () => {
+    const datum = voegDagenToe(VANDAAG, 1);
+    const weergave = bepaalWerkAgenda([taak({ id: 1, datum })], [], [], datum);
+    expect(weergave.opGekozenDatum).toHaveLength(1);
+  });
+
+  it("taak, sales, monday én agenda kunnen alle vier op dezelfde dag verschijnen — geen dedup met de nieuwe bron", () => {
+    const datum = voegDagenToe(VANDAAG, 4);
+    const taken = [taak({ id: 1, datum, schoolId: 7, schoolName: "School 7" })];
+    const acties = [salesActie({ schoolId: 7, dueDate: `${datum}T09:00:00.000Z` })];
+    const scholen = [schoolMetPlanning({ id: 9, mondayVolgendeActieDatum: datum })];
+    const events = [agendaEvent({ id: "evt1", datum })];
+
+    const weergave = bepaalWerkAgenda(taken, acties, scholen, datum, events);
+
+    expect(weergave.opGekozenDatum).toHaveLength(4);
+    expect(weergave.opGekozenDatum.map((i) => i.bron).sort()).toEqual(["agenda", "monday", "sales", "taak"]);
+  });
+
+  it("sorteert: hele-dag-events eerst, dan getimede items chronologisch, dan de rest", () => {
+    const datum = voegDagenToe(VANDAAG, 3);
+    const taken = [taak({ id: 1, datum, titel: "Taak om 11", tijd: "11:00" })];
+    const acties = [salesActie({ schoolId: 5, dueDate: `${datum}T00:00:00.000Z`, description: "Ongetimede sales-actie" })];
+    const events = [
+      agendaEvent({ id: "vroeg", datum, titel: "Vroege afspraak", tijd: "09:00" }),
+      agendaEvent({ id: "heledag", datum, titel: "Studiedag", volledigeDag: true }),
+    ];
+
+    const weergave = bepaalWerkAgenda(taken, acties, [], datum, events);
+
+    expect(weergave.opGekozenDatum.map((i) => (i.bron === "agenda" ? i.id : i.bron))).toEqual([
+      "heledag", // hele-dag-event eerst
+      "vroeg", // dan getimed, chronologisch (09:00 vóór 11:00)
+      "taak", // taak om 11:00
+      "sales", // rest (geen tijdstip-concept) in bestaande volgorde
+    ]);
+  });
+
+  it("volledigeDag/tijd/eindTijd komen ongewijzigd door op het WerkAgendaEventItem", () => {
+    const datum = voegDagenToe(VANDAAG, 1);
+    const weergave = bepaalWerkAgenda([], [], [], datum, [
+      agendaEvent({ id: "evt1", datum, volledigeDag: true, tijd: null, eindTijd: null }),
+    ]);
+    expect(weergave.opGekozenDatum[0]).toMatchObject({ bron: "agenda", volledigeDag: true, tijd: null, eindTijd: null });
   });
 });

@@ -1,4 +1,5 @@
 import { voegDagenToe } from "@/lib/sales/format-datum";
+import { vindBesteSchoolMatch, type SchoolOptie } from "./school-matching";
 
 // Mijn Werk V1 (2026-08-17) — deterministische parser voor de taak-quick-add
 // ("+ Wat wil je doen?", SalesDashboardPaneel.tsx). Puur, geen Payload-/
@@ -17,10 +18,8 @@ import { voegDagenToe } from "@/lib/sales/format-datum";
 const WEEKDAGEN = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
 const MAANDEN = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"];
 
-export interface QuickAddSchoolOptie {
-  id: number;
-  schoolName: string;
-}
+/** Mijn Werk Fase 2: alias van SchoolOptie (lib/werk/school-matching.ts) — behoudt de bestaande naam voor bestaande imports (SalesDashboardPaneel.tsx). */
+export type QuickAddSchoolOptie = SchoolOptie;
 
 export interface QuickAddVoorstel {
   titel: string;
@@ -121,19 +120,6 @@ function verwijderMatch(tekst: string, matchTekst: string): string {
   return (tekst.slice(0, idx) + tekst.slice(idx + matchTekst.length)).replace(/\s{2,}/g, " ").trim();
 }
 
-/** Langste matchende schoolnaam als substring — voorkomt dat een korte, toevallige naam (bv. "IJ") onterecht matcht. */
-function vindSchool(tekst: string, scholen: QuickAddSchoolOptie[]): QuickAddSchoolOptie | null {
-  const lower = tekst.toLowerCase();
-  let beste: QuickAddSchoolOptie | null = null;
-  for (const school of scholen) {
-    const naam = school.schoolName.toLowerCase();
-    if (naam.length >= 3 && lower.includes(naam) && (!beste || school.schoolName.length > beste.schoolName.length)) {
-      beste = school;
-    }
-  }
-  return beste;
-}
-
 function kapitaliseer(tekst: string): string {
   return tekst.length === 0 ? tekst : tekst.charAt(0).toUpperCase() + tekst.slice(1);
 }
@@ -156,7 +142,7 @@ export function parseQuickAdd(ruweTekst: string, vandaag: string, scholen: Quick
   if (tijdMatch) restTekst = verwijderMatch(restTekst, tijdMatch.matchTekst);
   restTekst = restTekst.trim();
 
-  const school = vindSchool(invoer, scholen);
+  const school = vindBesteSchoolMatch(invoer, scholen);
 
   return {
     titel: kapitaliseer(restTekst.length > 0 ? restTekst : invoer),

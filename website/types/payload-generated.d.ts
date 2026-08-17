@@ -94,6 +94,8 @@ export interface Config {
     'sales-actions': SalesAction;
     'sales-proposals': SalesProposal;
     'personal-tasks': PersonalTask;
+    'google-connections': GoogleConnection;
+    'voorbereiding-signalen': VoorbereidingSignalen;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
     'payload-locked-documents': PayloadLockedDocument;
@@ -129,6 +131,8 @@ export interface Config {
     'sales-actions': SalesActionsSelect<false> | SalesActionsSelect<true>;
     'sales-proposals': SalesProposalsSelect<false> | SalesProposalsSelect<true>;
     'personal-tasks': PersonalTasksSelect<false> | PersonalTasksSelect<true>;
+    'google-connections': GoogleConnectionsSelect<false> | GoogleConnectionsSelect<true>;
+    'voorbereiding-signalen': VoorbereidingSignalenSelect<false> | VoorbereidingSignalenSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -1659,6 +1663,70 @@ export interface PersonalTask {
   createdAt: string;
 }
 /**
+ * Persoonlijke Google Agenda-koppelingen (alleen-lezen) — uitsluitend zichtbaar voor de eigenaar. Koppelen/ontkoppelen via het Mijn Werk-dashboard, niet deze lijst.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "google-connections".
+ */
+export interface GoogleConnection {
+  id: number;
+  eigenaar: number | User;
+  /**
+   * Alleen-lezen weergave — nooit meer dan het e-mailadres.
+   */
+  emailAddress?: string | null;
+  /**
+   * Wordt op 'verlopen' gezet zodra een vernieuwingspoging mislukt (ingetrokken toestemming e.d.).
+   */
+  status: 'actief' | 'verlopen';
+  /**
+   * AES-256-GCM-ciphertext — nooit de platte token.
+   */
+  encryptedAccessToken?: string | null;
+  /**
+   * AES-256-GCM-ciphertext — nooit de platte token.
+   */
+  encryptedRefreshToken?: string | null;
+  tokenExpiresAt?: string | null;
+  scopes?: string[] | null;
+  connectedAt?: string | null;
+  /**
+   * Wordt gezet bij elke geslaagde live agenda-lezing.
+   */
+  lastUsedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Status per agenda-voorbereidingssignaal (weggeklikt/uitgesteld/taak aangemaakt) — uitsluitend zichtbaar voor de eigenaar. Beheer via het Mijn Werk-dashboard, niet deze lijst.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "voorbereiding-signalen".
+ */
+export interface VoorbereidingSignalen {
+  id: number;
+  /**
+   * Google Calendar event-ID — geen andere eventgegevens worden hier bewaard.
+   */
+  eventId: string;
+  /**
+   * Uitsluitend voor weergave/diagnose — geen plannings- of matchlogica leest dit veld.
+   */
+  eventStart: string;
+  /**
+   * Alleen gezet bij een betrouwbare match — zie lib/werk/school-matching.ts.
+   */
+  school?: (number | null) | SalesSchool;
+  status: 'gesignaleerd' | 'gedempt' | 'uitgesteld' | 'taak_aangemaakt';
+  /**
+   * Gezet zodra 'Maak voorbereidingstaak', 'Herinner morgen' of een geaccepteerd AI-voorstel een taak aanmaakte.
+   */
+  gekoppeldeTaak?: (number | null) | PersonalTask;
+  eigenaar: number | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -1881,6 +1949,14 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'personal-tasks';
         value: number | PersonalTask;
+      } | null)
+    | ({
+        relationTo: 'google-connections';
+        value: number | GoogleConnection;
+      } | null)
+    | ({
+        relationTo: 'voorbereiding-signalen';
+        value: number | VoorbereidingSignalen;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -2712,6 +2788,37 @@ export interface PersonalTasksSelect<T extends boolean = true> {
   tijd?: T;
   status?: T;
   school?: T;
+  eigenaar?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "google-connections_select".
+ */
+export interface GoogleConnectionsSelect<T extends boolean = true> {
+  eigenaar?: T;
+  emailAddress?: T;
+  status?: T;
+  encryptedAccessToken?: T;
+  encryptedRefreshToken?: T;
+  tokenExpiresAt?: T;
+  scopes?: T;
+  connectedAt?: T;
+  lastUsedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "voorbereiding-signalen_select".
+ */
+export interface VoorbereidingSignalenSelect<T extends boolean = true> {
+  eventId?: T;
+  eventStart?: T;
+  school?: T;
+  status?: T;
+  gekoppeldeTaak?: T;
   eigenaar?: T;
   updatedAt?: T;
   createdAt?: T;

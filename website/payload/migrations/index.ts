@@ -30,6 +30,8 @@ import * as migration_20260815_120000_sales_proposal_superseded from './20260815
 import * as migration_20260816_090000_sales_sync_status from './20260816_090000_sales_sync_status';
 import * as migration_20260816_150000_sales_board_reconciliation from './20260816_150000_sales_board_reconciliation';
 import * as migration_20260817_090000_personal_tasks from './20260817_090000_personal_tasks';
+import * as migration_20260817_130000_google_connections from './20260817_130000_google_connections';
+import * as migration_20260817_150000_voorbereiding_signalen from './20260817_150000_voorbereiding_signalen';
 
 export const migrations = [
   {
@@ -191,5 +193,15 @@ export const migrations = [
     up: migration_20260817_090000_personal_tasks.up,
     down: migration_20260817_090000_personal_tasks.down,
     name: '20260817_090000_personal_tasks',
+  },
+  {
+    up: migration_20260817_130000_google_connections.up,
+    down: migration_20260817_130000_google_connections.down,
+    name: '20260817_130000_google_connections',
+  },
+  {
+    up: migration_20260817_150000_voorbereiding_signalen.up,
+    down: migration_20260817_150000_voorbereiding_signalen.down,
+    name: '20260817_150000_voorbereiding_signalen',
   },
 ];

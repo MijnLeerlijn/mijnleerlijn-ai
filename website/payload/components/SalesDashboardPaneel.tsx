@@ -15,9 +15,10 @@ import type { TodoResultaat } from "@/lib/sales/dashboard-todo";
 import type { LaatsteSyncStatus } from "@/lib/sales/sync";
 import { VANDAAG_SNELKEUZES, type AgendaActieInvoer, type AgendaSalesActie, type SchoolMetMondayPlanning } from "@/lib/sales/vandaag";
 import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
-import { bepaalWerkAgenda, type TaakInvoer, type WerkItem, type WerkTaakItem } from "@/lib/werk/agenda";
+import { bepaalWerkAgenda, type TaakInvoer, type WerkItem, type WerkTaakItem, type WerkAgendaEventItem } from "@/lib/werk/agenda";
 import { parseQuickAdd, type QuickAddSchoolOptie, type QuickAddVoorstel } from "@/lib/werk/quick-add-parser";
 import type { WachtenOpItem } from "@/lib/werk/wachten-op";
+import type { GoogleCalendarEvent } from "@/lib/google-calendar/api";
 
 // Sales UX-ronde 3 (2026-08-14) — vervangt SalesWidgetVandaag.tsx (het oude
 // server-gerenderde "Sales vandaag"-widget, gebaseerd op
@@ -50,11 +51,15 @@ import type { WachtenOpItem } from "@/lib/werk/wachten-op";
 //   takenmodel).
 // - "Wachten op" (Mijn Werk V1): school is aan zet, uitsluitend afgeleid uit
 //   bestaande Sales-data (lib/werk/wachten-op.ts) — geen nieuwe opslag.
-// - "Vraag": schoolselector (Alle scholen / een specifieke school) boven een
-//   simpel chatgesprek — "Alle scholen" praat met app/api/sales/chat
-//   (lib/sales/aggregate-chat.ts, gestructureerde lokale selectie, nooit
-//   volledige logboeken), een specifieke school praat met de AL BESTAANDE
-//   app/api/sales/school/[id]/chat (ongewijzigd, eigen isolatie).
+// - "Vraag": schoolselector (Mijn Werk / Alle scholen / een specifieke
+//   school) boven een simpel chatgesprek — "Alle scholen" praat met
+//   app/api/sales/chat (lib/sales/aggregate-chat.ts, gestructureerde lokale
+//   selectie, nooit volledige logboeken), een specifieke school praat met de
+//   AL BESTAANDE app/api/sales/school/[id]/chat (ongewijzigd, eigen isolatie).
+//   Mijn Werk Fase 2 (2026-08-17): "Mijn Werk" is een DERDE, NIEUWE optie
+//   (praat met app/api/werk/chat, intentie-routing over agenda/taken/sales/
+//   school — lib/werk/context-router.ts) — de twee bestaande opties/hun
+//   routes zijn hierboven niet aangeraakt.
 // Mijn Werk V1 (2026-08-17) — vierde tab "Wachten op" toegevoegd aan de
 // bestaande drie. TAB_PREFERENCE_KEY blijft bewust ongewijzigd: dit is een
 // natuurlijke uitbreiding van "welke tab was actief" met een nieuwe geldige
@@ -114,6 +119,36 @@ interface SchoolOptie {
 
 function schoolRef(school: SchoolRef | number): SchoolRef {
   return typeof school === "number" ? { id: school, schoolName: `School #${school}` } : school;
+}
+
+// Mijn Werk Fase 2 (2026-08-17) — ruwe vorm van GET /api/google-connections
+// (Payload's eigen native REST, ownRecordAccess-gescoped op collectieniveau —
+// deze component ziet dus per definitie nooit andermans koppeling, geen
+// extra filter nodig). Uitsluitend wat de UI nodig heeft, geen tokenvelden.
+interface GoogleConnectionDoc {
+  id: number;
+  emailAddress: string | null;
+  status: "actief" | "verlopen";
+}
+
+// Voorbereidingsvoorstel — zelfde vorm als lib/werk/voorbereiding-ai.ts se
+// Voorbereidingsvoorstel (lokaal gedupliceerd i.p.v. geïmporteerd, zelfde
+// bestaande conventie in dit bestand als PersonalTaskDoc/SchoolOptie
+// hierboven: dit is de ruwe JSON-vorm zoals de API 'm teruggeeft).
+interface Voorbereidingsvoorstel {
+  doelVanDeSessie: string;
+  relevanteOnderwerpen: string[];
+  watVoorafKlaarzetten: string[];
+  mogelijkeVragen: string[];
+  concreteVoorbereidingstaak: string;
+}
+
+interface VoorbereidingSignaalDoc {
+  event: GoogleCalendarEvent;
+  school: { id: number; schoolName: string } | null;
+  schoolTwijfel: boolean;
+  dagenTotEvent: number;
+  status: "gesignaleerd" | "gedempt" | "uitgesteld" | "taak_aangemaakt";
 }
 
 // Visuele polish (2026-08-14) — urgentie is puur een afgeleide weergave van
@@ -359,10 +394,201 @@ function TaakKaart({ taak, onGewijzigd }: { taak: WerkTaakItem; onGewijzigd: () 
   );
 }
 
+// Mijn Werk Fase 2 (2026-08-17) — vierde kaarttype: een live Google Calendar-
+// event. Bewust ALTIJD --rustig (geen urgentiekleur — een agenda-afspraak is
+// geen "actie die moet gebeuren" zoals een taak/sales-actie) en zonder
+// actieknoppen: dit is alleen-lezen weergave van iemands eigen agenda, geen
+// beheerbaar MijnLeerlijn-object. Bron staat, net als bij de andere drie,
+// als rustige meta-regel — opdrachtseis: bron subtiel zichtbaar, tijd/titel
+// blijft de hoofdzaak (zie het voorbeeldkaartje uit de opdracht: "09:00 ·
+// Agenda / Training Montessorischool X").
+function GoogleAgendaKaart({ item }: { item: WerkAgendaEventItem }) {
+  return (
+    <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
+      <div className="ml-sales-widget__item-header">
+        <span className="ml-sales-widget__schoolnaam">{item.titel}</span>
+      </div>
+      <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+        Agenda
+      </p>
+      <p className="ml-sales-widget__meta">
+        {item.volledigeDag ? "Hele dag" : item.tijd}
+        {!item.volledigeDag && item.eindTijd ? ` – ${item.eindTijd}` : ""}
+      </p>
+    </div>
+  );
+}
+
 function AgendaKaart({ item, onGewijzigd }: { item: WerkItem; onGewijzigd: () => void }) {
   if (item.bron === "monday") return <MondayPlanningKaart item={item} />;
   if (item.bron === "taak") return <TaakKaart taak={item} onGewijzigd={onGewijzigd} />;
+  if (item.bron === "agenda") return <GoogleAgendaKaart item={item} />;
   return <ActieKaart actie={item} />;
+}
+
+// Mijn Werk Fase 2 (2026-08-17) — voorbereidingssignaal-kaart, vier acties
+// (opdrachtseis, exact deze vier): "Maak voorbereidingstaak" (deterministisch,
+// direct), "Maak voorbereidingsvoorstel" (AI, uitsluitend na deze expliciete
+// klik — zie app/api/werk/voorbereiding/ai-voorstel), "Ik ben al voorbereid"
+// (dempt het signaal) en "Herinner morgen" (maakt een taak gedateerd op
+// morgen). Het AI-voorstel toont zich pas na de klik, met "Taak toevoegen"/
+// "Aanpassen" (bewerkbare titel/beschrijving vóór opslaan)/"Niet nodig" —
+// GEEN automatische taak zonder een van deze expliciete bevestigingen.
+function VoorbereidingsKaart({ signaal, vandaag, onGewijzigd }: { signaal: VoorbereidingSignaalDoc; vandaag: string; onGewijzigd: () => void }) {
+  const [bezig, setBezig] = useState<string | null>(null);
+  const [aiVoorstel, setAiVoorstel] = useState<Voorbereidingsvoorstel | null>(null);
+  const [aiSchoolId, setAiSchoolId] = useState<number | null>(null);
+  const [aiBewerken, setAiBewerken] = useState(false);
+  const [aiTaakTitel, setAiTaakTitel] = useState("");
+  const [aiTaakBeschrijving, setAiTaakBeschrijving] = useState("");
+  const [fout, setFout] = useState<string | null>(null);
+
+  const eventStart = `${signaal.event.datum}T${signaal.event.tijd ?? "00:00"}:00`;
+
+  async function voerActieUit(actie: "dempen" | "taak" | "herinner_morgen", extra?: { taakTitel?: string; taakBeschrijving?: string }) {
+    setBezig(actie);
+    setFout(null);
+    try {
+      const datum = actie === "herinner_morgen" ? voegDagenToe(vandaag, 1) : vandaag;
+      const { ok } = await apiPost("/api/werk/voorbereiding/actie", {
+        actie,
+        eventId: signaal.event.id,
+        eventStart,
+        eventTitel: signaal.event.titel,
+        schoolId: (extra ? aiSchoolId : signaal.school?.id) ?? null,
+        datum,
+        taakTitel: extra?.taakTitel,
+        taakBeschrijving: extra?.taakBeschrijving,
+      });
+      if (ok) onGewijzigd();
+      else setFout("Actie mislukt — probeer het opnieuw.");
+    } finally {
+      setBezig(null);
+    }
+  }
+
+  async function maakAiVoorstel() {
+    setBezig("ai");
+    setFout(null);
+    const { ok, data } = await apiPost<{ voorstel: Voorbereidingsvoorstel; schoolId: number | null }>("/api/werk/voorbereiding/ai-voorstel", {
+      eventId: signaal.event.id,
+      schoolId: signaal.school?.id ?? null,
+    });
+    if (ok && data) {
+      setAiVoorstel(data.voorstel);
+      setAiSchoolId(data.schoolId);
+      setAiTaakTitel(`Voorbereiden: ${signaal.event.titel}`);
+      setAiTaakBeschrijving(data.voorstel.concreteVoorbereidingstaak);
+    } else {
+      setFout("Voorstel maken mislukt — probeer het opnieuw.");
+    }
+    setBezig(null);
+  }
+
+  return (
+    <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
+      <div className="ml-sales-widget__item-header">
+        <span className="ml-sales-widget__schoolnaam">{signaal.event.titel}</span>
+      </div>
+      <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+        {signaal.dagenTotEvent <= 0 ? "Vandaag" : signaal.dagenTotEvent === 1 ? "Morgen" : `Over ${signaal.dagenTotEvent} dagen`}
+        {signaal.school && (
+          <>
+            {" · "}
+            <Link href={`/admin/sales/school?id=${signaal.school.id}`} prefetch={false}>
+              {signaal.school.schoolName}
+            </Link>
+          </>
+        )}
+      </p>
+      {!signaal.school && signaal.schoolTwijfel && (
+        <p className="ml-sales-widget__context">
+          Meerdere scholen komen in aanmerking — <Link href="/admin/sales/scholen" prefetch={false}>School koppelen</Link>.
+        </p>
+      )}
+      {!signaal.school && !signaal.schoolTwijfel && (
+        <p className="ml-sales-widget__context">Er staat nog geen voorbereidingstaak klaar.</p>
+      )}
+
+      {!aiVoorstel && (
+        <div className="ml-sales__actie-knoppen">
+          <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig !== null} onClick={() => voerActieUit("taak")}>
+            {bezig === "taak" ? "Bezig…" : "Maak voorbereidingstaak"}
+          </button>
+          <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={maakAiVoorstel}>
+            {bezig === "ai" ? "Bezig…" : "Maak voorbereidingsvoorstel"}
+          </button>
+          <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => voerActieUit("dempen")}>
+            Ik ben al voorbereid
+          </button>
+          <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => voerActieUit("herinner_morgen")}>
+            Herinner morgen
+          </button>
+        </div>
+      )}
+
+      {aiVoorstel && !aiBewerken && (
+        <div className="ml-werk-quickadd__voorstel">
+          <dl className="ml-werk-quickadd__preview">
+            <dt>Doel van de sessie</dt>
+            <dd>{aiVoorstel.doelVanDeSessie}</dd>
+            <dt>Relevante onderwerpen</dt>
+            <dd>{aiVoorstel.relevanteOnderwerpen.join(", ") || "—"}</dd>
+            <dt>Wat vooraf klaarzetten</dt>
+            <dd>{aiVoorstel.watVoorafKlaarzetten.join(", ") || "—"}</dd>
+            <dt>Mogelijke vragen</dt>
+            <dd>{aiVoorstel.mogelijkeVragen.join(", ") || "—"}</dd>
+            <dt>Voorbereidingstaak</dt>
+            <dd>{aiVoorstel.concreteVoorbereidingstaak}</dd>
+          </dl>
+          <div className="ml-sales__actie-knoppen">
+            <button
+              type="button"
+              className="ml-sales__knop ml-sales__knop--primair"
+              disabled={bezig !== null}
+              onClick={() => voerActieUit("taak", { taakTitel: aiTaakTitel, taakBeschrijving: aiTaakBeschrijving })}
+            >
+              {bezig === "taak" ? "Bezig…" : "Taak toevoegen"}
+            </button>
+            <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => setAiBewerken(true)}>
+              Aanpassen
+            </button>
+            <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => voerActieUit("dempen")}>
+              Niet nodig
+            </button>
+          </div>
+        </div>
+      )}
+
+      {aiVoorstel && aiBewerken && (
+        <div className="ml-sales__plan-actie-form" onClick={(e) => e.stopPropagation()}>
+          <input type="text" value={aiTaakTitel} onChange={(e) => setAiTaakTitel(e.target.value)} placeholder="Titel" aria-label="Titel" />
+          <input
+            type="text"
+            value={aiTaakBeschrijving}
+            onChange={(e) => setAiTaakBeschrijving(e.target.value)}
+            placeholder="Beschrijving"
+            aria-label="Beschrijving"
+          />
+          <div className="ml-sales__actie-knoppen">
+            <button
+              type="button"
+              className="ml-sales__knop ml-sales__knop--primair"
+              disabled={bezig !== null || !aiTaakTitel.trim()}
+              onClick={() => voerActieUit("taak", { taakTitel: aiTaakTitel.trim(), taakBeschrijving: aiTaakBeschrijving.trim() })}
+            >
+              {bezig === "taak" ? "Bezig…" : "Taak toevoegen"}
+            </button>
+            <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => setAiBewerken(false)}>
+              Terug
+            </button>
+          </div>
+        </div>
+      )}
+
+      {fout && <p className="ml-sales-widget__meta">{fout}</p>}
+    </div>
+  );
 }
 
 function voorstelAccentKlasse(proposalType: string, status: string): string {
@@ -431,6 +657,16 @@ export function SalesDashboardPaneel() {
   const [quickAddBewerkVeld, setQuickAddBewerkVeld] = useState(false);
   const [quickAddBezig, setQuickAddBezig] = useState(false);
 
+  // Mijn Werk Fase 2 (2026-08-17) — Google Agenda-koppeling (per gebruiker,
+  // zie payload/collections/GoogleConnections.ts) + live agenda-events voor
+  // de gekozen dag + voorbereidingssignalen. googleConnectionGeladen
+  // voorkomt dat de koppel-CTA even flitst vóór de eerste fetch klaar is.
+  const [googleConnection, setGoogleConnection] = useState<GoogleConnectionDoc | null>(null);
+  const [googleConnectionGeladen, setGoogleConnectionGeladen] = useState(false);
+  const [googleOntkoppelBezig, setGoogleOntkoppelBezig] = useState(false);
+  const [agendaEvents, setAgendaEvents] = useState<GoogleCalendarEvent[]>([]);
+  const [voorbereidingSignalen, setVoorbereidingSignalen] = useState<VoorbereidingSignaalDoc[]>([]);
+
   useEffect(() => {
     let actief = true;
     (async () => {
@@ -482,6 +718,83 @@ export function SalesDashboardPaneel() {
   useEffect(() => {
     laadData();
   }, [laadData]);
+
+  // Mijn Werk Fase 2 (2026-08-17) — koppelingsstatus via Payload's eigen
+  // native REST (GET /api/google-connections), ownRecordAccess-gescoped: dit
+  // levert per definitie uitsluitend de EIGEN koppeling van de ingelogde
+  // gebruiker, of een lege lijst. Los van laadData() (dat blijft ongewijzigd
+  // Sales-georiënteerd) — deze koppeling bepaalt op zijn beurt of de
+  // agenda-/voorbereidingsfetches hieronder überhaupt zin hebben.
+  const laadGoogleConnection = useCallback(async () => {
+    const res = await fetch("/api/google-connections?limit=1&depth=0", { credentials: "include" });
+    if (res.ok) {
+      const data = (await res.json()) as { docs?: GoogleConnectionDoc[] };
+      setGoogleConnection(data.docs?.[0] ?? null);
+    }
+    setGoogleConnectionGeladen(true);
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    laadGoogleConnection();
+  }, [laadGoogleConnection]);
+
+  // Live per gekozen dag opgehaald (geen bulkopslag, zie app/api/werk/agenda)
+  // — herlaadt zodra de datumnavigatie wisselt. Uitsluitend aangeroepen met
+  // een actieve koppeling; anders blijft agendaEvents leeg zonder onnodige
+  // aanvraag.
+  useEffect(() => {
+    if (googleConnection?.status !== "actief") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAgendaEvents([]);
+      return;
+    }
+    let actief = true;
+    fetch(`/api/werk/agenda?datum=${gekozenDatum}`, { credentials: "include" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ connected: boolean; events: GoogleCalendarEvent[] }>) : null))
+      .then((data) => {
+        if (actief && data) setAgendaEvents(data.events);
+      })
+      .catch(() => {});
+    return () => {
+      actief = false;
+    };
+  }, [gekozenDatum, googleConnection?.status]);
+
+  // Voorbereidingssignalen zijn altijd relatief aan "vandaag" (niet aan
+  // gekozenDatum, zie lib/werk/voorbereiding.ts) — herladen na elke actie op
+  // een signaalkaart via onGewijzigd, net als laadData().
+  const laadVoorbereidingSignalen = useCallback(async () => {
+    if (googleConnection?.status !== "actief") {
+      setVoorbereidingSignalen([]);
+      return;
+    }
+    const res = await fetch(`/api/werk/voorbereiding?vandaag=${vandaagIso()}`, { credentials: "include" });
+    if (res.ok) {
+      const data = (await res.json()) as { connected: boolean; signalen: VoorbereidingSignaalDoc[] };
+      setVoorbereidingSignalen(data.signalen);
+    }
+  }, [googleConnection?.status]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    laadVoorbereidingSignalen();
+  }, [laadVoorbereidingSignalen]);
+
+  async function ontkoppelGoogleAgenda() {
+    if (!googleConnection) return;
+    setGoogleOntkoppelBezig(true);
+    try {
+      const res = await fetch(`/api/google-connections/${googleConnection.id}`, { method: "DELETE", credentials: "include" });
+      if (res.ok) {
+        setGoogleConnection(null);
+        setAgendaEvents([]);
+        setVoorbereidingSignalen([]);
+      }
+    } finally {
+      setGoogleOntkoppelBezig(false);
+    }
+  }
 
   // Functionele-inconsistentiefix (vervolg op punt 2) — normaliseert de ruwe
   // API-vormen (school: SchoolRef|number, optionele scholenvelden) naar de
@@ -604,8 +917,16 @@ export function SalesDashboardPaneel() {
     setVraagInvoer("");
     setVraagBezig(true);
     setVraagFout(null);
-    const url = schoolKeuze === "alle" ? "/api/sales/chat" : `/api/sales/school/${schoolKeuze}/chat`;
-    const { ok, data } = await apiPost<{ antwoord: string }>(url, { vraag });
+    // Mijn Werk Fase 2 (2026-08-17) — derde, NIEUWE optie naast de twee
+    // bestaande (Alle scholen/specifieke school, allebei ongewijzigd): praat
+    // met app/api/werk/chat (intentie-routing over agenda/taken/sales/school,
+    // zie lib/werk/context-router.ts). vandaagIso() (client-lokaal, zelfde
+    // bron als de rest van dit bestand) bepaalt het look-ahead-anker voor
+    // voorbereidingsvragen — niet gekozenDatum, dat is ongerelateerd aan wat
+    // de gebruiker hier typt.
+    const url = schoolKeuze === "mijnwerk" ? "/api/werk/chat" : schoolKeuze === "alle" ? "/api/sales/chat" : `/api/sales/school/${schoolKeuze}/chat`;
+    const body = schoolKeuze === "mijnwerk" ? { vraag, vandaag: vandaagIso() } : { vraag };
+    const { ok, data } = await apiPost<{ antwoord: string }>(url, body);
     if (ok && data) {
       setVraagBerichten((berichten) => [...berichten, { vraag, antwoord: data.antwoord }]);
     } else {
@@ -628,7 +949,12 @@ export function SalesDashboardPaneel() {
   // moet er vandaag/achterstallig gebeuren" tonen, ongeacht welke datum net
   // binnen de tab bekeken wordt (anders zou het badge van betekenis
   // veranderen zodra iemand op "Morgen" klikt, terwijl een ANDERE tab actief is).
-  const vandaagWeergave = bepaalWerkAgenda(takenVoorAgenda, actiesVoorAgenda, scholenVoorAgenda, gekozenDatum);
+  // Mijn Werk Fase 2 — agendaEvents is al live opgehaald vóór gekozenDatum
+  // (zie het useEffect hierboven), dus uitsluitend hier meegegeven, niet aan
+  // badgeWeergave: het tabbadge blijft "wat moet er gebeuren" (acties/taken),
+  // een agenda-afspraak heeft geen actieknop/afronding, dus telt daar bewust
+  // niet in mee — ongewijzigde badge-semantiek.
+  const vandaagWeergave = bepaalWerkAgenda(takenVoorAgenda, actiesVoorAgenda, scholenVoorAgenda, gekozenDatum, agendaEvents);
   const badgeWeergave = bepaalWerkAgenda(takenVoorAgenda, actiesVoorAgenda, scholenVoorAgenda, vandaagIso());
   const vandaagBadgeAantal = badgeWeergave.achterstallig.length + badgeWeergave.opGekozenDatum.length;
 
@@ -864,6 +1190,78 @@ export function SalesDashboardPaneel() {
             />
           )}
 
+          {/* Mijn Werk Fase 2 (2026-08-17) — koppel-CTA. Kalm, geen technische
+             OAuth-details in de UI (opdrachtseis): "Koppelen"/"Opnieuw
+             verbinden" zijn gewone links naar app/api/google/oauth/start (een
+             GET-redirect naar Google, geen fetch-aanroep) — dezelfde route
+             stuurt na afloop terug. Zichtbaar ongeacht gekozenDatum (niet
+             alleen op "vandaag"), zodat koppelen ook lukt terwijl je een
+             andere dag bekijkt. */}
+          {googleConnectionGeladen && !googleConnection && (
+            <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+                Koppel Google Agenda
+              </p>
+              <p className="ml-sales-widget__context">Toon je afspraken samen met taken en Sales.</p>
+              <div className="ml-sales__actie-knoppen">
+                {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- /api/google/oauth/start is een API-route (OAuth-redirect naar Google), geen Next.js-pagina; <Link> zou hier verkeerd zijn (onderschept geen echte navigatie). */}
+                <a href="/api/google/oauth/start" className="ml-sales__knop ml-sales__knop--primair">
+                  Agenda koppelen
+                </a>
+              </div>
+            </div>
+          )}
+          {googleConnection?.status === "verlopen" && (
+            <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+                Google Agenda-koppeling verlopen
+              </p>
+              <p className="ml-sales-widget__context">De toestemming is verlopen of ingetrokken — verbind opnieuw om je agenda weer te zien.</p>
+              <div className="ml-sales__actie-knoppen">
+                {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- /api/google/oauth/start is een API-route (OAuth-redirect naar Google), geen Next.js-pagina; <Link> zou hier verkeerd zijn (onderschept geen echte navigatie). */}
+                <a href="/api/google/oauth/start" className="ml-sales__knop ml-sales__knop--primair">
+                  Opnieuw verbinden
+                </a>
+              </div>
+            </div>
+          )}
+          {googleConnection?.status === "actief" && (
+            <p className="ml-sales-widget__meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span>Google Agenda gekoppeld{googleConnection.emailAddress ? `: ${googleConnection.emailAddress}` : ""}</span>
+              <button type="button" className="ml-sales__knop" disabled={googleOntkoppelBezig} onClick={ontkoppelGoogleAgenda}>
+                {googleOntkoppelBezig ? "Bezig…" : "Ontkoppelen"}
+              </button>
+            </p>
+          )}
+
+          {/* Mijn Werk Fase 2 — voorbereidingskaarten, uitsluitend bij het
+             bekijken van vandaag zelf (een signaal is nooit gebonden aan
+             gekozenDatum — het gaat altijd over de komende PREP_LOOKAHEAD_
+             DAGEN vanaf de echte huidige dag). Alleen status "gesignaleerd":
+             eenmaal gedempt/uitgesteld/taak-aangemaakt verdwijnt de kaart —
+             het resultaat (indien een taak) blijft gewoon zichtbaar in de
+             normale taken-/ongepland-lijst hieronder. */}
+          {vandaagWeergave.isVandaag && voorbereidingSignalen.filter((s) => s.status === "gesignaleerd").length > 0 && (
+            <>
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+                Voorbereiding nodig ({voorbereidingSignalen.filter((s) => s.status === "gesignaleerd").length})
+              </p>
+              {voorbereidingSignalen
+                .filter((s) => s.status === "gesignaleerd")
+                .map((signaal) => (
+                  <VoorbereidingsKaart
+                    key={signaal.event.id}
+                    signaal={signaal}
+                    vandaag={vandaagIso()}
+                    onGewijzigd={() => {
+                      laadVoorbereidingSignalen();
+                      laadData();
+                    }}
+                  />
+                ))}
+            </>
+          )}
+
           {vandaagWeergave.achterstallig.length > 0 && (
             <>
               <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
@@ -888,7 +1286,15 @@ export function SalesDashboardPaneel() {
               <AgendaKaart
                 item={item}
                 onGewijzigd={laadData}
-                key={item.bron === "taak" ? `taak-${item.id}` : item.bron === "sales" ? `sales-${item.id}` : `monday-${item.schoolId}`}
+                key={
+                  item.bron === "taak"
+                    ? `taak-${item.id}`
+                    : item.bron === "sales"
+                      ? `sales-${item.id}`
+                      : item.bron === "agenda"
+                        ? `agenda-${item.id}`
+                        : `monday-${item.schoolId}`
+                }
               />
             ))
           )}
@@ -1035,6 +1441,7 @@ export function SalesDashboardPaneel() {
               onChange={(e) => setSchoolKeuze(e.target.value)}
               aria-label="Kies scope voor de vraag"
             >
+              <option value="mijnwerk">Mijn Werk (agenda, taken, sales)</option>
               <option value="alle">Alle scholen</option>
               {scholenVoorSelector.map((s) => (
                 <option key={s.id} value={String(s.id)}>
@@ -1060,7 +1467,13 @@ export function SalesDashboardPaneel() {
             <textarea
               value={vraagInvoer}
               onChange={(e) => setVraagInvoer(e.target.value)}
-              placeholder={schoolKeuze === "alle" ? "Bijv. welke scholen hebben geen vervolgactie?" : "Bijv. wat is de belangrijkste behoefte van deze school?"}
+              placeholder={
+                schoolKeuze === "mijnwerk"
+                  ? "Bijv. wat heb ik morgen? Waar moet ik me deze week op voorbereiden?"
+                  : schoolKeuze === "alle"
+                    ? "Bijv. welke scholen hebben geen vervolgactie?"
+                    : "Bijv. wat is de belangrijkste behoefte van deze school?"
+              }
             />
             <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={vraagBezig || !vraagInvoer.trim()} onClick={stelVraag}>
               {vraagBezig ? "Bezig…" : "Vraag"}
