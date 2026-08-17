@@ -44,11 +44,13 @@
   --ml-admin-accent-hover: #0f6b9e; /* iets donkerder, zelfde verhouding als de vorige paarse hover-stap */
   --ml-admin-accent-soft: #e6f2fa; /* lichte tint van het blauw, voor zachte achtergronden */
   --ml-admin-accent-contrast: #ffffff;
-  --ml-admin-purple: #7c3aed; /* secundaire accentkleur — zelfde waarde als de bestaande "Paars"-categoriekleur; niet langer de primaire kleur */
+  --ml-admin-purple: #7c3aed; /* secundaire accentkleur — zelfde waarde als de bestaande "Paars"-categoriekleur; niet langer de primaire kleur. Mijn Dag-productiecorrectie (2026-08-18): ook de Gmail-bronaccent (was per abuis groen, zie lib/werk/bron-stijl.ts). */
   --ml-admin-purple-soft: #ede9fe;
   --ml-admin-purple-hover: #6d28d9;
-  --ml-admin-green: #53ac32; /* Mijn Werk Fase 3 (2026-08-17) — Gmail-accent, zelfde waarde als NAV_COLOR_STYLES.green (lib/admin-nav/nav-colors.ts) — enige kleur uit het bestaande 9-kleurenpalet die nog niet elders in het Sales/Mijn Werk-dashboard gebruikt werd. */
+  --ml-admin-green: #53ac32; /* Mijn Dag-bronaccent voor Agenda (Mijn Werk Fase 3 gaf dit per abuis aan Gmail — productiecorrectie 2026-08-18 corrigeert dat, zie lib/werk/bron-stijl.ts), zelfde waarde als NAV_COLOR_STYLES.green (lib/admin-nav/nav-colors.ts). */
   --ml-admin-green-soft: #eaf5e5;
+  --ml-admin-orange: #ec6608; /* Mijn Dag-bronaccent voor eigen taken (productiecorrectie 2026-08-18), zelfde waarde als NAV_COLOR_STYLES.orange. */
+  --ml-admin-orange-soft: #fdeee1;
   --ml-admin-brand-donkerblauw: #002641; /* officieel, brandbook */
   --ml-admin-brand-gradient: linear-gradient(45deg, #1588c9, #53ac32, #fec905, #ec6608, #e10919); /* officieel brandbook-verloop, dunne accentbalk, geen vlakvulling */
   --ml-admin-radius: 16px; /* Sales UX visuele polish (2026-08-14): groter afgeronde kaarten, minder "Payload admin"-gevoel */
@@ -2039,6 +2041,7 @@ a.ml-dashboard__card:hover {
 .ml-sales-widget__sync-rij {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -2223,6 +2226,31 @@ a.ml-dashboard__card:hover {
   background: var(--theme-elevation-0);
 }
 
+/* Mijn Dag-productiecorrectie (2026-08-18, punt 4) — één centrale set
+ * brongekleurde linkerrand-accenten (zie lib/werk/bron-stijl.ts voor de
+ * kleurmapping + werkBronItemKlasse()), toegepast op ALLE kaarttypen
+ * (Agenda/Gmail/Sales/Taak) i.p.v. alleen Gmail zoals voorheen. Bewust VÓÓR
+ * de achterstallig/vandaag-urgentieregels hieronder in dit stylesheet: bij
+ * gelijke specificiteit wint de latere regel, dus een achterstallige actie
+ * blijft altijd rood/amber ongeacht bron — urgentie is belangrijker dan
+ * herkomst. Vervangt de losse .ml-sales-widget__item--mail (stond per abuis
+ * op groen, zie het gecorrigeerde --ml-admin-green-token hierboven). */
+.ml-sales-widget__item--bron-agenda {
+  border-left-color: var(--ml-admin-green);
+}
+
+.ml-sales-widget__item--bron-mail {
+  border-left-color: var(--ml-admin-purple);
+}
+
+.ml-sales-widget__item--bron-sales {
+  border-left-color: var(--ml-admin-accent);
+}
+
+.ml-sales-widget__item--bron-taak {
+  border-left-color: var(--ml-admin-orange);
+}
+
 .ml-sales-widget__item--achterstallig {
   background: #fef2f2;
   border-left-color: #ef4444;
@@ -2267,15 +2295,13 @@ a.ml-dashboard__card:hover {
   opacity: 0.85;
 }
 
-/* Mijn Werk Fase 3 (2026-08-17) — Gmail-mailkaarten: eigen, subtiele groene
- * accent (--ml-admin-green) op de linkerrand, zelfde mechanisme als de
- * overige --item--*-varianten hierboven (border-left-color, geen
- * vlakvulling) — zo blijft Gmail visueel onderscheidbaar van Agenda/Sales/
- * Taken zonder het dashboard drukker te maken. Bewust vol contrast (geen
- * --rustig, in tegenstelling tot de puur-informatieve GoogleAgendaKaart):
- * een mailsignaal heeft, net als een voorbereidingskaart, echte acties nodig. */
-.ml-sales-widget__item--mail {
-  border-left-color: var(--ml-admin-green);
+/* Bron-icoon + label-regel (BronMeta-component) — vervangt de losse, per
+ * kaart hardgecodeerde `style={{ fontWeight: 600 }}`-varianten. */
+.ml-sales-widget__meta--bron {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
 }
 
 .ml-mail-antwoord__tekstveld {
@@ -2295,8 +2321,164 @@ a.ml-dashboard__card:hover {
 
 .ml-mail-antwoord__tekstveld:focus {
   outline: none;
-  border-color: var(--ml-admin-green);
-  box-shadow: 0 0 0 3px var(--ml-admin-green-soft);
+  border-color: var(--ml-admin-purple);
+  box-shadow: 0 0 0 3px var(--ml-admin-purple-soft);
+}
+
+/* Mijn Dag-productiecorrectie (2026-08-18, punt 2/3) — "Mail die aandacht
+ * vraagt"-sectie: koptekst + "Mail opnieuw controleren"-knop op één rij. */
+.ml-sales-widget__mail-sectie {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.ml-sales-widget__mail-sectie-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Koppelstatus-chip (GoogleKoppelingChip, punt 5) — vervangt de vroegere
+ * grote "... gekoppeld ... Ontkoppelen"-rijen. Rustige pil met chevron,
+ * rechtsboven in de sync-rij (margin-left: auto duwt 'm naar rechts zonder
+ * de bestaande flex-layout van .ml-sales-widget__sync-rij te hoeven
+ * herstructureren). Verandert bij een verlopen koppeling in een amber
+ * waarschuwing — een écht probleem moet zichtbaar blijven (opdrachtseis). */
+.ml-google-chip {
+  position: relative;
+  margin-left: auto;
+}
+
+.ml-google-chip__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--theme-elevation-150);
+  background: var(--theme-elevation-50);
+  color: var(--theme-elevation-600);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ml-google-chip__toggle:hover {
+  border-color: var(--ml-admin-accent);
+}
+
+.ml-google-chip--verlopen .ml-google-chip__toggle {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.ml-google-chip__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  padding: 8px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  background: var(--theme-elevation-0);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.ml-google-chip__email {
+  margin: 2px 6px 6px;
+  font-size: 11px;
+  color: var(--theme-elevation-500);
+}
+
+.ml-google-chip__menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  border-radius: var(--ml-admin-radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ml-google-chip__menu-item:hover:not(:disabled) {
+  background: var(--theme-elevation-50);
+}
+
+.ml-google-chip__menu-item--gevaar {
+  color: #dc2626;
+}
+
+/* ···-menu (minder gebruikte acties, punt 3) — vooralsnog uitsluitend op
+ * MailKaart toegepast, generiek genoemd zodat een volgend kaarttype 'm
+ * zonder nieuwe CSS kan hergebruiken. */
+.ml-werk-overflow {
+  position: relative;
+}
+
+.ml-werk-overflow__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-200);
+  background: var(--theme-input-bg);
+  color: var(--theme-elevation-500);
+  cursor: pointer;
+}
+
+.ml-werk-overflow__toggle:hover:not(:disabled) {
+  border-color: var(--ml-admin-accent);
+  color: var(--ml-admin-accent);
+}
+
+.ml-werk-overflow__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-150);
+  background: var(--theme-elevation-0);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.ml-werk-overflow__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  border-radius: var(--ml-admin-radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-text);
+  cursor: pointer;
+}
+
+.ml-werk-overflow__item:hover:not(:disabled) {
+  background: var(--theme-elevation-50);
 }
 
 .ml-sales-widget__item--conflict {

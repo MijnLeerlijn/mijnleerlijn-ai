@@ -75,6 +75,18 @@ export const MailSignalen: CollectionConfig = {
       admin: { description: "Korte, door AI gegenereerde reden waarom actie nodig is (of niet) — zie lib/werk/mail-classificatie.ts. Wordt maximaal één keer per bericht gegenereerd." },
     },
     {
+      name: "categorie",
+      type: "select",
+      label: "Categorie (gecachet)",
+      options: [
+        { label: "Antwoord nodig", value: "antwoord_nodig" },
+        { label: "Afspraak", value: "afspraak" },
+        { label: "Toezegging", value: "toezegging" },
+        { label: "Ter beoordeling", value: "ter_beoordeling" },
+      ],
+      admin: { description: "Voor de statusbadge op de mailkaart — alleen gezet bij status 'gesignaleerd'. Productiecorrectie 2026-08-18, zie lib/werk/mail-classificatie.ts." },
+    },
+    {
       name: "geclassificeerdOp",
       type: "date",
       label: "Geclassificeerd op",

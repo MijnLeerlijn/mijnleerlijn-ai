@@ -1,9 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { bareAddress, replyOnderwerp, bouwKandidaatQuery, verstuurAntwoord } from "./api";
 
-describe("bouwKandidaatQuery — deterministisch Gmail-voorfilter", () => {
-  it("gebruikt category:primary (sluit nieuwsbrieven/social/promoties/updates uit via Gmail's eigen classificatie)", () => {
-    expect(bouwKandidaatQuery(3)).toContain("category:primary");
+describe("bouwKandidaatQuery — deterministisch Gmail-voorfilter (productiecorrectie 2026-08-18)", () => {
+  it("gebruikt NIET category:primary — dat sluit accounts zonder Gmail-tabbladen/categorieën volledig uit (root cause van 'geen mailsignalen')", () => {
+    expect(bouwKandidaatQuery(3)).not.toContain("category:primary");
+  });
+
+  it("sluit uitsluitend de near-zeker-ruis-categorieën deterministisch uit (promotions/social) — Updates/Forums blijven kandidaat, de AI-classificatie beslist daar", () => {
+    const query = bouwKandidaatQuery(3);
+    expect(query).toContain("-category:promotions");
+    expect(query).toContain("-category:social");
+    expect(query).not.toContain("-category:updates");
+    expect(query).not.toContain("-category:forums");
+  });
+
+  it("sluit voor de hand liggende no-reply/automatische afzenders uit", () => {
+    const query = bouwKandidaatQuery(3);
+    expect(query).toContain("-from:noreply");
+    expect(query).toContain("-from:no-reply");
+    expect(query).toContain("-from:donotreply");
   });
 
   it("beperkt tot de inbox", () => {

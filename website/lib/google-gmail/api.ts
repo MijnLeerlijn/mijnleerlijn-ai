@@ -15,13 +15,39 @@
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 /**
- * Deterministisch voorfilter, hergebruikt Gmail's eigen inbox-categorisatie
- * i.p.v. zelfbedachte trefwoorden: category:primary sluit nieuwsbrieven/
- * social/promoties/updates al uit (dezelfde indeling als de Gmail-inbox-
- * tabs). in:inbox sluit verzonden/gearchiveerde berichten uit.
+ * Deterministisch voorfilter — productiecorrectie (2026-08-18): NIET meer
+ * afhankelijk van `category:primary` als enige poort. Gmail's tab-
+ * classificatie is niet gegarandeerd voor elk account (uitgeschakelde
+ * tabbladen, sommige Workspace-instellingen) en legitieme 1-op-1-mail
+ * belandt bij Gmail's eigen ML regelmatig in "Updates" — met alleen
+ * category:primary viel de kandidatenlijst dan stil terug naar nul, geen
+ * fout, gewoon lege uitkomst (root cause van "geen enkele mail
+ * verschijnt"). In plaats daarvan uitsluitend de twee categorieën
+ * uitsluiten die vrijwel nooit actie vereisen (promoties/social) — Updates
+ * en Forums blijven WEL kandidaat, de AI-classificatie beoordeelt die
+ * nuance, niet een categorie-gok. Werkt ook correct (degradeert
+ * geruisloos naar "geen categorie-uitsluiting") op accounts zonder
+ * tabbladen: category:X matcht daar simpelweg niets, dus -category:X
+ * sluit dan ook niets uit.
+ *
+ * Losse no-reply-achtige afzenders worden WEL al op queryniveau
+ * uitgesloten (goedkoop, vrijwel nooit fout-positief) — vermindert de
+ * kandidatenlijst vóórdat er metadata/AI-kosten gemaakt worden.
+ *
+ * in:inbox sluit verzonden/gearchiveerde berichten uit — bewust GEEN
+ * is:unread/is:read-filter: gelezen betekent niet afgehandeld, een
+ * gelezen mail waar nog een antwoord op moet komen moet gevonden blijven.
  */
+const NOREPLY_AFZENDER_UITSLUITINGEN = ["-from:noreply", "-from:no-reply", "-from:donotreply", '-from:"no.reply"'];
+
 export function bouwKandidaatQuery(lookbackDagen: number): string {
-  return `in:inbox category:primary newer_than:${lookbackDagen}d`;
+  return [
+    "in:inbox",
+    "-category:promotions",
+    "-category:social",
+    ...NOREPLY_AFZENDER_UITSLUITINGEN,
+    `newer_than:${lookbackDagen}d`,
+  ].join(" ");
 }
 
 async function gmailFetch(accessToken: string, path: string): Promise<unknown> {

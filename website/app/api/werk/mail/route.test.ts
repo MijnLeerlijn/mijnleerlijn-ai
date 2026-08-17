@@ -28,10 +28,12 @@ function maakRequest(cookie = "geldig") {
   return new NextRequest("http://localhost:3000/api/werk/mail", { headers: { Cookie: `payload-token=${cookie}` } });
 }
 
+const LEEG_RESULTAAT = { signalen: [], bekeken: 0, actieNodig: 0, genegeerd: 0, algVerwerkt: 0 };
+
 beforeEach(() => {
   mockVerify.mockReset();
   mockToegang.mockReset();
-  mockSignalen.mockReset().mockResolvedValue([]);
+  mockSignalen.mockReset().mockResolvedValue(LEEG_RESULTAAT);
 });
 
 describe("GET /api/werk/mail", () => {
@@ -68,9 +70,25 @@ describe("GET /api/werk/mail", () => {
   it("haalt signalen op wanneer de Gmail-scope aanwezig is, gescoped op de eigen gebruiker", async () => {
     mockVerify.mockResolvedValue({ user: { id: 42, role: "editor" }, cookieAanwezig: true });
     mockToegang.mockResolvedValue({ accessToken: "token-abc", connectionId: 1, scopes: GMAIL_SCOPES });
-    mockSignalen.mockResolvedValue([
-      { gmailMessageId: "msg-1", gmailThreadId: "thread-1", van: "jan@school.nl", onderwerp: "Vraag", ontvangenOp: "2026-08-17T09:00:00.000Z", reden: "Stelt een vraag.", school: null, signaalId: 5 },
-    ]);
+    mockSignalen.mockResolvedValue({
+      signalen: [
+        {
+          gmailMessageId: "msg-1",
+          gmailThreadId: "thread-1",
+          van: "jan@school.nl",
+          onderwerp: "Vraag",
+          ontvangenOp: "2026-08-17T09:00:00.000Z",
+          reden: "Stelt een vraag.",
+          categorie: "antwoord_nodig",
+          school: null,
+          signaalId: 5,
+        },
+      ],
+      bekeken: 3,
+      actieNodig: 1,
+      genegeerd: 2,
+      algVerwerkt: 0,
+    });
 
     const response = await GET(maakRequest());
     const data = await response.json();
@@ -78,6 +96,7 @@ describe("GET /api/werk/mail", () => {
     expect(response.status).toBe(200);
     expect(data.connected).toBe(true);
     expect(data.signalen).toHaveLength(1);
+    expect(data.bekeken).toBe(3);
     expect(mockSignalen).toHaveBeenCalledWith(expect.anything(), 42, "token-abc", expect.anything());
   });
 

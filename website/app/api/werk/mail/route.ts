@@ -41,8 +41,8 @@ export async function GET(request: NextRequest) {
       schoolName: s.schoolName,
     }));
 
-    const signalen = await haalMailSignalen(payload, user.id, toegang.accessToken, scholen);
-    return NextResponse.json({ connected: true, signalen });
+    const resultaat = await haalMailSignalen(payload, user.id, toegang.accessToken, scholen);
+    return NextResponse.json({ connected: true, ...resultaat });
   } catch (error) {
     console.error("[api/werk/mail] mislukt:", error);
     return NextResponse.json({ error: "Mailsignalen konden niet worden opgehaald." }, { status: 500 });

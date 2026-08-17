@@ -1,24 +1,38 @@
 import type { Payload } from "payload";
 import { haalKandidaatBerichten, bouwKandidaatQuery, type GmailKandidaatBericht } from "@/lib/google-gmail/api";
-import { classificeerKandidaatBerichten, type MailClassificatie } from "./mail-classificatie";
+import { classificeerKandidaatBerichten, type MailClassificatie, type MailCategorie } from "./mail-classificatie";
 import { matchSchoolBetrouwbaar, type SchoolOptie } from "./school-matching";
 
-// Mijn Werk Fase 3 (2026-08-17) — orchestreert het "welke mail vraagt
-// aandacht"-signaal: vindKandidaten (Gmail, deterministisch voorfilter) →
-// kruis met bestaande mail-signalen-rijen (nooit dubbel classificeren) →
-// classificeer UITSLUITEND de écht nieuwe kandidaten in één batch (zie
-// mail-classificatie.ts) → sla het resultaat op (ook "niet_relevant" — zie
-// payload/collections/MailSignalen.ts se toelichting) → geef alleen de
-// status "gesignaleerd"-rijen terug voor weergave.
+// Mijn Werk Fase 3 (2026-08-17, productiecorrectie 2026-08-18) —
+// orchestreert het "welke mail vraagt aandacht"-signaal: vind kandidaten
+// (Gmail, deterministisch voorfilter, zie lib/google-gmail/api.ts se
+// bouwKandidaatQuery) → kruis met bestaande mail-signalen-rijen (nooit
+// zinloos dubbel classificeren) → classificeer de kandidaten die dat nodig
+// hebben in één batch (mail-classificatie.ts) → sla het resultaat op (ook
+// "niet_relevant" — zie payload/collections/MailSignalen.ts se toelichting,
+// MAAR uitsluitend bij een ECHTE AI-beoordeling, nooit bij een mislukte
+// aanroep) → geef de status "gesignaleerd"-rijen + een compacte samenvatting
+// terug.
 //
 // Anders dan lib/werk/voorbereiding.ts (100% deterministisch, dus daar mag
 // detectie bij elke lezing gratis opnieuw) kost classificatie hier een
 // AI-aanroep — de mail-signalen-rij wordt daarom AL bij classificatietijd
 // aangemaakt (niet pas lazy bij de eerste gebruikersactie), anders zou een
 // nooit-aangeklikte kaart elke dag opnieuw geclassificeerd worden.
+//
+// Productiecorrectie (2026-08-18): twee bevestigde robuustheidsbugs
+// gefixed. (1) Een mislukte classificatie-aanroep (provider-storing,
+// netwerk) sloeg voorheen ELK betrokken bericht permanent op als
+// "niet_relevant" — ononderscheidbaar van een echte AI-beoordeling. Nu
+// blijft zo'n kandidaat gewoon ongeclassificeerd (geen rij, of de bestaande
+// rij blijft ongewijzigd) en wordt hij bij de eerstvolgende lezing/actie
+// gewoon opnieuw geprobeerd. (2) category:primary als enige voorfilter is
+// vervangen (zie bouwKandidaatQuery) — brede/robuustere kandidaatquery,
+// los van of dit Gmail-account tabbladen gebruikt.
 
-export const MAIL_LOOKBACK_DAGEN = 3;
-const MAX_KANDIDATEN = 25;
+/** Ruimer dan de oorspronkelijke 3 dagen — een week "nog relevant om op te vangen" zonder een volledige mailboxscan te worden. */
+export const MAIL_LOOKBACK_DAGEN = 7;
+const MAX_KANDIDATEN = 40;
 
 interface MailSignaalRij {
   id: number;
@@ -26,8 +40,12 @@ interface MailSignaalRij {
   gmailThreadId: string;
   status: "niet_relevant" | "gesignaleerd" | "gedempt" | "taak_aangemaakt" | "beantwoord";
   reden: string | null;
+  categorie: MailCategorie | null;
   school: number | null;
 }
+
+/** Statussen die het resultaat zijn van een BEWUSTE gebruikersactie (niet van classificatie) — die overschrijft een herclassificatie nooit. */
+const AL_VERWERKT_STATUSSEN = new Set<MailSignaalRij["status"]>(["gedempt", "taak_aangemaakt", "beantwoord"]);
 
 /** Puur: welke kandidaten hebben nog GEEN mail-signalen-rij (mogen dus geclassificeerd worden). */
 export function bepaalNieuweKandidaten(kandidaten: GmailKandidaatBericht[], bestaandeIds: Set<string>): GmailKandidaatBericht[] {
@@ -37,17 +55,17 @@ export function bepaalNieuweKandidaten(kandidaten: GmailKandidaatBericht[], best
 export interface NieuwSignaalData {
   status: "gesignaleerd" | "niet_relevant";
   reden: string | null;
+  categorie: MailCategorie | null;
   schoolId: number | null;
 }
 
-/** Puur: bepaalt de op te slaan status/reden/school voor één zojuist geclassificeerd bericht — school-matching draait uitsluitend als actie nodig is (geen zinloze matchpoging op mail die toch niet getoond wordt). */
-export function bepaalNieuwSignaalData(kandidaat: GmailKandidaatBericht, classificatie: MailClassificatie | undefined, scholen: SchoolOptie[]): NieuwSignaalData {
-  const actieNodig = classificatie?.actieNodig ?? false;
-  if (!actieNodig) {
-    return { status: "niet_relevant", reden: classificatie?.reden ?? null, schoolId: null };
+/** Puur: bepaalt de op te slaan status/reden/categorie/school voor één ECHT geclassificeerd bericht (nooit aangeroepen zonder een geslaagde classificatie, zie haalMailSignalen) — school-matching draait uitsluitend als actie nodig is. Ontbreekt classificatie.categorie (model liet het weg), dan valt dit terug op de meest generieke badge "antwoord_nodig" — nooit een lege badge. */
+export function bepaalNieuwSignaalData(kandidaat: GmailKandidaatBericht, classificatie: MailClassificatie, scholen: SchoolOptie[]): NieuwSignaalData {
+  if (!classificatie.actieNodig) {
+    return { status: "niet_relevant", reden: classificatie.reden, categorie: null, schoolId: null };
   }
   const match = matchSchoolBetrouwbaar(`${kandidaat.van} ${kandidaat.onderwerp} ${kandidaat.snippet}`, scholen);
-  return { status: "gesignaleerd", reden: classificatie?.reden ?? null, schoolId: match.school?.id ?? null };
+  return { status: "gesignaleerd", reden: classificatie.reden, categorie: classificatie.categorie ?? "antwoord_nodig", schoolId: match.school?.id ?? null };
 }
 
 export interface MailSignaalWeergave {
@@ -57,8 +75,44 @@ export interface MailSignaalWeergave {
   onderwerp: string;
   ontvangenOp: string;
   reden: string;
+  /** Altijd een geldige waarde bij weergave (status is dan altijd "gesignaleerd") — rijen van vóór dit veld bestond vallen terug op "antwoord_nodig", zie haalMailSignalen. */
+  categorie: MailCategorie;
   school: SchoolOptie | null;
   signaalId: number;
+}
+
+export interface HaalMailSignalenOpties {
+  /**
+   * "Mail opnieuw controleren" — herclassificeert ALLE kandidaten in het
+   * venster die niet al-verwerkt zijn (dus ook een eerder "niet_relevant"
+   * of een al "gesignaleerd" bericht), niet uitsluitend nieuwe. Bedoeld om
+   * fout-negatieven te herstellen. Standaard false (het normale, goedkope
+   * pad bij een gewone dashboardlezing: uitsluitend nieuwe kandidaten).
+   */
+  forceerHerclassificatie?: boolean;
+}
+
+export interface HaalMailSignalenResultaat {
+  signalen: MailSignaalWeergave[];
+  /** Totaal aantal kandidaten dat de deterministische query opleverde. */
+  bekeken: number;
+  /** Hiervan: nieuw als "gesignaleerd" beoordeeld (deze lezing). */
+  actieNodig: number;
+  /** Hiervan: nieuw als "niet_relevant" beoordeeld (deze lezing). */
+  genegeerd: number;
+  /** Hiervan: had al een bewuste gebruikersstatus (gedempt/taak_aangemaakt/beantwoord) — met rust gelaten. */
+  algVerwerkt: number;
+}
+
+/** Nooit door laten gooien naar de aanroeper — een classificatiefout mag de rest van Mijn Dag nooit blokkeren, en mag nooit als "niet_relevant" gecachet worden (zie moduletoelichting). */
+async function classificeerVeilig(kandidaten: GmailKandidaatBericht[]): Promise<MailClassificatie[]> {
+  if (kandidaten.length === 0) return [];
+  try {
+    return await classificeerKandidaatBerichten(kandidaten);
+  } catch (error) {
+    console.error("[mail-signalen] classificatie mislukt — kandidaten blijven ongeclassificeerd, worden bij een volgende poging opnieuw geprobeerd:", error);
+    return [];
+  }
 }
 
 /**
@@ -67,10 +121,16 @@ export interface MailSignaalWeergave {
  * elders in Mijn Werk, bv. lib/werk/mijn-werk-chat.ts se haalActieveScholen)
  * — geen extra query hier.
  */
-export async function haalMailSignalen(payload: Payload, eigenaarId: number, accessToken: string, scholen: SchoolOptie[]): Promise<MailSignaalWeergave[]> {
+export async function haalMailSignalen(
+  payload: Payload,
+  eigenaarId: number,
+  accessToken: string,
+  scholen: SchoolOptie[],
+  opties: HaalMailSignalenOpties = {}
+): Promise<HaalMailSignalenResultaat> {
   const query = bouwKandidaatQuery(MAIL_LOOKBACK_DAGEN);
   const kandidaten = await haalKandidaatBerichten(accessToken, query, MAX_KANDIDATEN);
-  if (kandidaten.length === 0) return [];
+  if (kandidaten.length === 0) return { signalen: [], bekeken: 0, actieNodig: 0, genegeerd: 0, algVerwerkt: 0 };
 
   const bestaande = await payload.find({
     collection: "mail-signalen",
@@ -81,51 +141,75 @@ export async function haalMailSignalen(payload: Payload, eigenaarId: number, acc
   });
   const bestaandePerId = new Map((bestaande.docs as unknown as MailSignaalRij[]).map((rij) => [rij.gmailMessageId, rij]));
 
-  const nieuw = bepaalNieuweKandidaten(kandidaten, new Set(bestaandePerId.keys()));
-  // Expliciete guard (niet alleen classificeerKandidaatBerichten se eigen
-  // lege-array-kortsluiting): maakt hier al zichtbaar dat een dag zonder
-  // nieuwe kandidaten helemaal geen AI-aanroep doet, geen enkele.
-  const classificaties = nieuw.length > 0 ? await classificeerKandidaatBerichten(nieuw) : [];
+  const algVerwerkt = kandidaten.filter((k) => {
+    const rij = bestaandePerId.get(k.gmailMessageId);
+    return rij ? AL_VERWERKT_STATUSSEN.has(rij.status) : false;
+  }).length;
+
+  // Passief pad: uitsluitend kandidaten zonder rij (nooit méér AI-kosten dan
+  // nodig). Geforceerd pad ("Mail opnieuw controleren"): ook kandidaten met
+  // een bestaande, niet-al-verwerkte rij (dus ook een eerder "niet_relevant"
+  // of "gesignaleerd") — dat verschil IS het hele punt van die actie.
+  const teClassificeren = kandidaten.filter((k) => {
+    const rij = bestaandePerId.get(k.gmailMessageId);
+    if (!rij) return true;
+    if (!opties.forceerHerclassificatie) return false;
+    return !AL_VERWERKT_STATUSSEN.has(rij.status);
+  });
+
+  const classificaties = await classificeerVeilig(teClassificeren);
   const classificatiePerId = new Map(classificaties.map((c) => [c.gmailMessageId, c]));
 
-  const nieuweRijen = await Promise.all(
-    nieuw.map(async (kandidaat) => {
-      const data = bepaalNieuwSignaalData(kandidaat, classificatiePerId.get(kandidaat.gmailMessageId), scholen);
+  let actieNodig = 0;
+  let genegeerd = 0;
+  for (const kandidaat of teClassificeren) {
+    const classificatie = classificatiePerId.get(kandidaat.gmailMessageId);
+    // Geen classificatie voor dit bericht (mislukte aanroep, of het model
+    // sloeg dit item over binnen een verder geslaagde batch) — NOOIT als
+    // niet_relevant opslaan. Bestaat er al een rij (herclassificatie-pad),
+    // dan blijft die simpelweg ongewijzigd; bestaat er nog geen rij, dan
+    // ontstaat er ook geen — dit bericht geldt de volgende keer weer als
+    // "nieuw" en wordt dan opnieuw geprobeerd.
+    if (!classificatie) continue;
+
+    const data = bepaalNieuwSignaalData(kandidaat, classificatie, scholen);
+    if (data.status === "gesignaleerd") actieNodig++;
+    else genegeerd++;
+
+    const velden = { status: data.status, reden: data.reden, categorie: data.categorie, geclassificeerdOp: new Date().toISOString(), school: data.schoolId };
+    const bestaandeRij = bestaandePerId.get(kandidaat.gmailMessageId);
+    if (bestaandeRij) {
+      await payload.update({ collection: "mail-signalen", id: bestaandeRij.id, overrideAccess: true, data: velden });
+      bestaandePerId.set(kandidaat.gmailMessageId, { ...bestaandeRij, ...velden });
+    } else {
       const rij = await payload.create({
         collection: "mail-signalen",
         overrideAccess: true,
-        data: {
-          eigenaar: eigenaarId,
-          gmailMessageId: kandidaat.gmailMessageId,
-          gmailThreadId: kandidaat.gmailThreadId,
-          status: data.status,
-          reden: data.reden,
-          geclassificeerdOp: new Date().toISOString(),
-          school: data.schoolId,
-        },
+        data: { eigenaar: eigenaarId, gmailMessageId: kandidaat.gmailMessageId, gmailThreadId: kandidaat.gmailThreadId, ...velden },
       });
-      return rij as unknown as MailSignaalRij;
-    })
-  );
-  for (const rij of nieuweRijen) bestaandePerId.set(rij.gmailMessageId, rij);
+      bestaandePerId.set(kandidaat.gmailMessageId, rij as unknown as MailSignaalRij);
+    }
+  }
 
   const schoolPerId = new Map(scholen.map((s) => [s.id, s]));
-  const weergave: MailSignaalWeergave[] = [];
+  const signalen: MailSignaalWeergave[] = [];
   for (const kandidaat of kandidaten) {
     const rij = bestaandePerId.get(kandidaat.gmailMessageId);
     if (!rij || rij.status !== "gesignaleerd") continue;
-    weergave.push({
+    signalen.push({
       gmailMessageId: kandidaat.gmailMessageId,
       gmailThreadId: kandidaat.gmailThreadId,
       van: kandidaat.van,
       onderwerp: kandidaat.onderwerp,
       ontvangenOp: kandidaat.ontvangenOp,
       reden: rij.reden ?? "",
+      categorie: rij.categorie ?? "antwoord_nodig",
       school: rij.school ? (schoolPerId.get(rij.school) ?? null) : null,
       signaalId: rij.id,
     });
   }
-  return weergave;
+
+  return { signalen, bekeken: kandidaten.length, actieNodig, genegeerd, algVerwerkt };
 }
 
 /** Owner-scoped lookup — nooit een client-aangeleverd signaalId blind vertrouwen, zelfde voorzorg als overal elders in lib/werk. */

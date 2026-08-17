@@ -45,12 +45,26 @@ describe("classificeerKandidaatBerichten", () => {
     expect(resultaat[1]).toEqual({ gmailMessageId: "msg-b", actieNodig: false, reden: "Kon niet betrouwbaar geclassificeerd worden." });
   });
 
-  it("faalt de hele batch nooit hard — bij een AI-fout krijgt elk bericht actieNodig: false", async () => {
+  it("geeft een AI-fout door aan de aanroeper (productiecorrectie) — géén fabricage van actieNodig: false hier, dat zou lib/werk/mail-signalen.ts een mislukte aanroep laten verwarren met een echte 'niet relevant'-beoordeling en permanent cachen", async () => {
     mockGenerate.mockRejectedValue(new Error("providerfout"));
 
-    const resultaat = await classificeerKandidaatBerichten([bericht({ gmailMessageId: "msg-a" }), bericht({ gmailMessageId: "msg-b" })]);
+    await expect(classificeerKandidaatBerichten([bericht({ gmailMessageId: "msg-a" })])).rejects.toThrow("providerfout");
+  });
 
-    expect(resultaat.every((r) => r.actieNodig === false)).toBe(true);
+  it("geeft de categorie door wanneer het model die meestuurt (voor de statusbadge)", async () => {
+    mockGenerate.mockResolvedValue({ berichten: [{ index: 0, actieNodig: true, reden: "Vraagt om een afspraak.", categorie: "afspraak" }] });
+
+    const resultaat = await classificeerKandidaatBerichten([bericht({ gmailMessageId: "msg-a" })]);
+
+    expect(resultaat[0]?.categorie).toBe("afspraak");
+  });
+
+  it("laat categorie leeg wanneer het model null teruggeeft (bv. actieNodig: false) — geen fabricage", async () => {
+    mockGenerate.mockResolvedValue({ berichten: [{ index: 0, actieNodig: false, reden: "Nieuwsbrief.", categorie: null }] });
+
+    const resultaat = await classificeerKandidaatBerichten([bericht({ gmailMessageId: "msg-a" })]);
+
+    expect(resultaat[0]?.categorie).toBeUndefined();
   });
 
   it("labelt de mailinhoud als ONVERTROUWD in het prompt-bericht (prompt-injectiebescherming)", async () => {

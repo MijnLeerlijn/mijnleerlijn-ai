@@ -1749,6 +1749,10 @@ export interface MailSignalen {
    * Korte, door AI gegenereerde reden waarom actie nodig is (of niet) — zie lib/werk/mail-classificatie.ts. Wordt maximaal één keer per bericht gegenereerd.
    */
   reden?: string | null;
+  /**
+   * Voor de statusbadge op de mailkaart — alleen gezet bij status 'gesignaleerd'. Productiecorrectie 2026-08-18, zie lib/werk/mail-classificatie.ts.
+   */
+  categorie?: ('antwoord_nodig' | 'afspraak' | 'toezegging' | 'ter_beoordeling') | null;
   geclassificeerdOp?: string | null;
   /**
    * Alleen gezet bij een betrouwbare match — zie lib/werk/school-matching.ts.
@@ -2876,6 +2880,7 @@ export interface MailSignalenSelect<T extends boolean = true> {
   gmailThreadId?: T;
   status?: T;
   reden?: T;
+  categorie?: T;
   geclassificeerdOp?: T;
   school?: T;
   gekoppeldeTaak?: T;
