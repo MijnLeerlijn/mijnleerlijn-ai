@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePreferences } from "@payloadcms/ui";
-import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCircle, Clock, Plus } from "lucide-react";
+import { Calendar, ClipboardList, Sparkles, School, UserPlus, ListTodo, AlertCircle, Clock, Plus, Mail } from "lucide-react";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
 import { PlanningStatusBadge } from "./PlanningStatusBadge";
 import { PlanActieKnop } from "./PlanActieKnop";
@@ -19,6 +19,7 @@ import { bepaalWerkAgenda, type TaakInvoer, type WerkItem, type WerkTaakItem, ty
 import { parseQuickAdd, type QuickAddSchoolOptie, type QuickAddVoorstel } from "@/lib/werk/quick-add-parser";
 import type { WachtenOpItem } from "@/lib/werk/wachten-op";
 import type { GoogleCalendarEvent } from "@/lib/google-calendar/api";
+import { heeftGmailScopes } from "@/lib/google-gmail/oauth";
 
 // Sales UX-ronde 3 (2026-08-14) — vervangt SalesWidgetVandaag.tsx (het oude
 // server-gerenderde "Sales vandaag"-widget, gebaseerd op
@@ -125,10 +126,54 @@ function schoolRef(school: SchoolRef | number): SchoolRef {
 // (Payload's eigen native REST, ownRecordAccess-gescoped op collectieniveau —
 // deze component ziet dus per definitie nooit andermans koppeling, geen
 // extra filter nodig). Uitsluitend wat de UI nodig heeft, geen tokenvelden.
+//
+// Mijn Werk Fase 3 (2026-08-17) — `scopes` toegevoegd: Agenda en Gmail delen
+// vanaf nu dezelfde koppelingsrij (incrementele autorisatie), dus "is er een
+// koppeling" is niet meer hetzelfde als "is Agenda/Gmail specifiek
+// toegekend" — zie heeftAgendaScope/heeftGmailScope hieronder.
 interface GoogleConnectionDoc {
   id: number;
   emailAddress: string | null;
   status: "actief" | "verlopen";
+  scopes: string[];
+}
+
+// Zelfde waarde als GOOGLE_CALENDAR_READONLY_SCOPE (lib/google-calendar/oauth.ts)
+// — hier bewust een losse letterlijke waarde i.p.v. geïmporteerd: dat
+// bestand importeert server-only env-config (requireEnv) en hoort niet in de
+// clientbundel van dit "use client"-component. lib/google-gmail/oauth.ts se
+// heeftGmailScopes hierboven IS wel veilig te importeren — dat bestand heeft
+// bewust geen server-only imports.
+const GOOGLE_CALENDAR_SCOPE_LITERAL = "https://www.googleapis.com/auth/calendar.readonly";
+
+// Mijn Werk Fase 3 (2026-08-17) — ruwe vorm zoals GET /api/werk/mail
+// teruggeeft (lib/werk/mail-signalen.ts se MailSignaalWeergave — lokaal
+// gedupliceerd, zelfde bestaande conventie in dit bestand als
+// Voorbereidingsvoorstel/VoorbereidingSignaalDoc hierboven).
+interface MailSignaalDoc {
+  gmailMessageId: string;
+  gmailThreadId: string;
+  van: string;
+  onderwerp: string;
+  ontvangenOp: string;
+  reden: string;
+  school: { id: number; schoolName: string } | null;
+  signaalId: number;
+}
+
+interface MailAntwoordvoorstel {
+  conceptTekst: string;
+  aan: string;
+  onderwerp: string;
+}
+
+/** Alleen de weergavenaam uit een "Naam <adres>"-headerwaarde — valt terug op de volledige headerwaarde als er geen naam vóór de `<...>` staat. */
+function weergaveNaamAfzender(van: string): string {
+  const zonderAdres = van
+    .replace(/<[^>]*>/, "")
+    .trim()
+    .replace(/^"|"$/g, "");
+  return zonderAdres || van;
 }
 
 // Voorbereidingsvoorstel — zelfde vorm als lib/werk/voorbereiding-ai.ts se
@@ -591,6 +636,188 @@ function VoorbereidingsKaart({ signaal, vandaag, onGewijzigd }: { signaal: Voorb
   );
 }
 
+// Mijn Werk Fase 3 (2026-08-17) — mailkaart, vierde bronkleur naast Agenda/
+// Sales/Taken (groen, NAV_COLOR_STYLES.green — CSS-modifier
+// ml-sales-widget__item--mail). Drie acties (opdrachtseis, exact deze drie):
+// "Maak antwoordvoorstel" (AI, uitsluitend na deze klik — leest pas dan de
+// volledige mail, zie app/api/werk/mail/antwoordvoorstel), "Maak taak"
+// (deterministisch, altijd een bewerkbare bevestigingsstap, nooit direct
+// opslaan) en "Niet relevant" (dempt het signaal). Het antwoordvoorstel is
+// altijd bewerkbaar vóór versturen, en "Verstuur" vereist een aparte,
+// expliciete bevestigingsstap (opdrachtseis) — geen enkele van deze acties
+// verstuurt/plant/maakt ooit iets zonder een user-klik ertussen.
+function MailKaart({ signaal, vandaag, onGewijzigd }: { signaal: MailSignaalDoc; vandaag: string; onGewijzigd: () => void }) {
+  const [bezig, setBezig] = useState<string | null>(null);
+  const [fout, setFout] = useState<string | null>(null);
+
+  const [voorstel, setVoorstel] = useState<MailAntwoordvoorstel | null>(null);
+  const [conceptTekst, setConceptTekst] = useState("");
+  const [bevestigVersturen, setBevestigVersturen] = useState(false);
+
+  const [taakModus, setTaakModus] = useState(false);
+  const [taakTitel, setTaakTitel] = useState(`Beantwoorden: ${signaal.onderwerp}`);
+  const [taakBeschrijving, setTaakBeschrijving] = useState(signaal.reden);
+  const [taakDatum, setTaakDatum] = useState(vandaag);
+
+  async function maakAntwoordvoorstel() {
+    setBezig("voorstel");
+    setFout(null);
+    const { ok, data } = await apiPost<{ voorstel: MailAntwoordvoorstel }>("/api/werk/mail/antwoordvoorstel", {
+      signaalId: signaal.signaalId,
+      vandaag,
+    });
+    if (ok && data) {
+      setVoorstel(data.voorstel);
+      setConceptTekst(data.voorstel.conceptTekst);
+    } else {
+      setFout("Antwoordvoorstel maken mislukt — probeer het opnieuw.");
+    }
+    setBezig(null);
+  }
+
+  async function verstuur() {
+    setBezig("versturen");
+    setFout(null);
+    const { ok } = await apiPost("/api/werk/mail/versturen", { signaalId: signaal.signaalId, bodyText: conceptTekst });
+    if (ok) {
+      onGewijzigd();
+    } else {
+      setFout("Versturen mislukt — probeer het opnieuw.");
+      setBevestigVersturen(false);
+    }
+    setBezig(null);
+  }
+
+  async function dempen() {
+    setBezig("dempen");
+    setFout(null);
+    const { ok } = await apiPost("/api/werk/mail/actie", { actie: "dempen", signaalId: signaal.signaalId });
+    if (ok) onGewijzigd();
+    else setFout("Actie mislukt — probeer het opnieuw.");
+    setBezig(null);
+  }
+
+  async function bevestigTaak() {
+    if (!taakTitel.trim()) return;
+    setBezig("taak");
+    setFout(null);
+    const { ok } = await apiPost("/api/werk/mail/actie", {
+      actie: "taak",
+      signaalId: signaal.signaalId,
+      taakTitel: taakTitel.trim(),
+      taakBeschrijving: taakBeschrijving.trim(),
+      datum: taakDatum,
+    });
+    if (ok) onGewijzigd();
+    else setFout("Taak aanmaken mislukt — probeer het opnieuw.");
+    setBezig(null);
+  }
+
+  return (
+    <div className="ml-sales-widget__item ml-sales-widget__item--mail">
+      <div className="ml-sales-widget__item-header">
+        <span className="ml-sales-widget__schoolnaam">{weergaveNaamAfzender(signaal.van)}</span>
+      </div>
+      <p className="ml-sales-widget__meta" style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+        <Mail size={13} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.green.fg }} />
+        Mail · {formatSyncTijd(signaal.ontvangenOp)}
+        {signaal.school && (
+          <>
+            {" · "}
+            <Link href={`/admin/sales/school?id=${signaal.school.id}`} prefetch={false}>
+              {signaal.school.schoolName}
+            </Link>
+          </>
+        )}
+      </p>
+      <p className="ml-sales-widget__meta">{signaal.onderwerp}</p>
+      <p className="ml-sales-widget__context">{signaal.reden}</p>
+
+      {!voorstel && !taakModus && (
+        <div className="ml-sales__actie-knoppen">
+          <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig !== null} onClick={maakAntwoordvoorstel}>
+            {bezig === "voorstel" ? "Bezig…" : "Maak antwoordvoorstel"}
+          </button>
+          <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => setTaakModus(true)}>
+            Maak taak
+          </button>
+          <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={dempen}>
+            {bezig === "dempen" ? "Bezig…" : "Niet relevant"}
+          </button>
+        </div>
+      )}
+
+      {taakModus && (
+        <div className="ml-sales__plan-actie-form" onClick={(e) => e.stopPropagation()}>
+          <input type="text" value={taakTitel} onChange={(e) => setTaakTitel(e.target.value)} placeholder="Titel" aria-label="Titel" />
+          <input
+            type="text"
+            value={taakBeschrijving}
+            onChange={(e) => setTaakBeschrijving(e.target.value)}
+            placeholder="Beschrijving"
+            aria-label="Beschrijving"
+          />
+          <input type="date" value={taakDatum} onChange={(e) => setTaakDatum(e.target.value)} aria-label="Datum" />
+          <div className="ml-sales__actie-knoppen">
+            <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig !== null || !taakTitel.trim()} onClick={bevestigTaak}>
+              {bezig === "taak" ? "Bezig…" : "Taak toevoegen"}
+            </button>
+            <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => setTaakModus(false)}>
+              Annuleren
+            </button>
+          </div>
+        </div>
+      )}
+
+      {voorstel && (
+        <div className="ml-werk-quickadd__voorstel">
+          <p className="ml-sales-widget__meta">
+            Aan: {voorstel.aan} · Onderwerp: {voorstel.onderwerp}
+          </p>
+          <textarea
+            className="ml-mail-antwoord__tekstveld"
+            value={conceptTekst}
+            onChange={(e) => setConceptTekst(e.target.value)}
+            rows={8}
+            aria-label="Conceptantwoord"
+          />
+          {!bevestigVersturen ? (
+            <div className="ml-sales__actie-knoppen">
+              <button
+                type="button"
+                className="ml-sales__knop ml-sales__knop--primair"
+                disabled={bezig !== null || !conceptTekst.trim()}
+                onClick={() => setBevestigVersturen(true)}
+              >
+                Verstuur
+              </button>
+              <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => setVoorstel(null)}>
+                Annuleren
+              </button>
+            </div>
+          ) : (
+            <div className="ml-sales__plan-actie-form">
+              <p className="ml-sales-widget__context">
+                Dit verstuurt de mail naar <strong>{voorstel.aan}</strong>. Dit kan niet ongedaan worden gemaakt.
+              </p>
+              <div className="ml-sales__actie-knoppen">
+                <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig !== null} onClick={verstuur}>
+                  {bezig === "versturen" ? "Bezig…" : "Ja, versturen"}
+                </button>
+                <button type="button" className="ml-sales__knop" disabled={bezig !== null} onClick={() => setBevestigVersturen(false)}>
+                  Annuleren
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {fout && <p className="ml-sales-widget__meta">{fout}</p>}
+    </div>
+  );
+}
+
 function voorstelAccentKlasse(proposalType: string, status: string): string {
   if (status === "conflict") return "ml-sales-widget__item--conflict";
   if (proposalType === "veld_correctie") return "ml-sales-widget__item--verrijking";
@@ -667,6 +894,11 @@ export function SalesDashboardPaneel() {
   const [agendaEvents, setAgendaEvents] = useState<GoogleCalendarEvent[]>([]);
   const [voorbereidingSignalen, setVoorbereidingSignalen] = useState<VoorbereidingSignaalDoc[]>([]);
 
+  // Mijn Werk Fase 3 (2026-08-17) — mail die aandacht vraagt, zie
+  // lib/werk/mail-signalen.ts. Gedreven door dezelfde googleConnection-state
+  // hierboven (gedeelde koppeling) — geen los "gmailConnection"-fetch nodig.
+  const [mailSignalen, setMailSignalen] = useState<MailSignaalDoc[]>([]);
+
   useEffect(() => {
     let actief = true;
     (async () => {
@@ -716,6 +948,7 @@ export function SalesDashboardPaneel() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     laadData();
   }, [laadData]);
 
@@ -739,12 +972,21 @@ export function SalesDashboardPaneel() {
     laadGoogleConnection();
   }, [laadGoogleConnection]);
 
+  // Mijn Werk Fase 3 (2026-08-17) — Agenda en Gmail delen vanaf nu dezelfde
+  // koppelingsrij (incrementele autorisatie, zie lib/google-calendar/oauth.ts
+  // se buildGoogleAuthUrl), dus "is er een koppeling" (googleConnection) is
+  // niet meer hetzelfde als "is déze capability toegekend" — een gebruiker
+  // kan bv. uitsluitend Gmail gekoppeld hebben, nooit Agenda. Puur afgeleid,
+  // geen state.
+  const heeftAgendaScope = googleConnection?.status === "actief" && googleConnection.scopes.includes(GOOGLE_CALENDAR_SCOPE_LITERAL);
+  const heeftGmailScope = googleConnection?.status === "actief" && heeftGmailScopes(googleConnection.scopes);
+
   // Live per gekozen dag opgehaald (geen bulkopslag, zie app/api/werk/agenda)
   // — herlaadt zodra de datumnavigatie wisselt. Uitsluitend aangeroepen met
   // een actieve koppeling; anders blijft agendaEvents leeg zonder onnodige
   // aanvraag.
   useEffect(() => {
-    if (googleConnection?.status !== "actief") {
+    if (!heeftAgendaScope) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setAgendaEvents([]);
       return;
@@ -759,13 +1001,13 @@ export function SalesDashboardPaneel() {
     return () => {
       actief = false;
     };
-  }, [gekozenDatum, googleConnection?.status]);
+  }, [gekozenDatum, heeftAgendaScope]);
 
   // Voorbereidingssignalen zijn altijd relatief aan "vandaag" (niet aan
   // gekozenDatum, zie lib/werk/voorbereiding.ts) — herladen na elke actie op
   // een signaalkaart via onGewijzigd, net als laadData().
   const laadVoorbereidingSignalen = useCallback(async () => {
-    if (googleConnection?.status !== "actief") {
+    if (!heeftAgendaScope) {
       setVoorbereidingSignalen([]);
       return;
     }
@@ -774,12 +1016,32 @@ export function SalesDashboardPaneel() {
       const data = (await res.json()) as { connected: boolean; signalen: VoorbereidingSignaalDoc[] };
       setVoorbereidingSignalen(data.signalen);
     }
-  }, [googleConnection?.status]);
+  }, [heeftAgendaScope]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     laadVoorbereidingSignalen();
   }, [laadVoorbereidingSignalen]);
+
+  // Mijn Werk Fase 3 (2026-08-17) — mail die aandacht vraagt, zelfde
+  // "afgeleid van de koppelstatus, herladen via onGewijzigd"-patroon als
+  // voorbereidingssignalen hierboven.
+  const laadMailSignalen = useCallback(async () => {
+    if (!heeftGmailScope) {
+      setMailSignalen([]);
+      return;
+    }
+    const res = await fetch("/api/werk/mail", { credentials: "include" });
+    if (res.ok) {
+      const data = (await res.json()) as { connected: boolean; signalen: MailSignaalDoc[] };
+      setMailSignalen(data.signalen);
+    }
+  }, [heeftGmailScope]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    laadMailSignalen();
+  }, [laadMailSignalen]);
 
   async function ontkoppelGoogleAgenda() {
     if (!googleConnection) return;
@@ -790,6 +1052,7 @@ export function SalesDashboardPaneel() {
         setGoogleConnection(null);
         setAgendaEvents([]);
         setVoorbereidingSignalen([]);
+        setMailSignalen([]);
       }
     } finally {
       setGoogleOntkoppelBezig(false);
@@ -1197,7 +1460,13 @@ export function SalesDashboardPaneel() {
              stuurt na afloop terug. Zichtbaar ongeacht gekozenDatum (niet
              alleen op "vandaag"), zodat koppelen ook lukt terwijl je een
              andere dag bekijkt. */}
-          {googleConnectionGeladen && !googleConnection && (
+          {/* Mijn Werk Fase 3 (2026-08-17) — nu ook zichtbaar als er WEL een
+             koppeling is maar zonder de calendar-scope specifiek (bv. een
+             gebruiker die uitsluitend Gmail koppelde) — "is er een
+             koppeling" is sinds incrementele autorisatie niet meer hetzelfde
+             als "is Agenda toegekend". De verlopen-staat blijft een apart,
+             gedeeld blok (zie hieronder): die betreft de hele koppeling. */}
+          {googleConnectionGeladen && googleConnection?.status !== "verlopen" && !heeftAgendaScope && (
             <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
               <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
                 Koppel Google Agenda
@@ -1205,29 +1474,71 @@ export function SalesDashboardPaneel() {
               <p className="ml-sales-widget__context">Toon je afspraken samen met taken en Sales.</p>
               <div className="ml-sales__actie-knoppen">
                 {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- /api/google/oauth/start is een API-route (OAuth-redirect naar Google), geen Next.js-pagina; <Link> zou hier verkeerd zijn (onderschept geen echte navigatie). */}
-                <a href="/api/google/oauth/start" className="ml-sales__knop ml-sales__knop--primair">
+                <a href="/api/google/oauth/start?capability=agenda" className="ml-sales__knop ml-sales__knop--primair">
                   Agenda koppelen
                 </a>
               </div>
             </div>
           )}
-          {googleConnection?.status === "verlopen" && (
+
+          {/* Mijn Werk Fase 3 (2026-08-17) — Gmail-koppelstatus, zelfde
+             3-staten-patroon als Agenda hierboven (niet gekoppeld/verlopen/
+             gekoppeld) — eigen groene accent (NAV_COLOR_STYLES.green) zodat
+             Gmail-items visueel te onderscheiden zijn van Agenda/Sales/Taken. */}
+          {googleConnectionGeladen && googleConnection?.status !== "verlopen" && !heeftGmailScope && (
             <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
-              <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
-                Google Agenda-koppeling verlopen
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                <Mail size={14} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.green.fg }} />
+                Koppel Gmail
               </p>
-              <p className="ml-sales-widget__context">De toestemming is verlopen of ingetrokken — verbind opnieuw om je agenda weer te zien.</p>
+              <p className="ml-sales-widget__context">Zie mail die om een reactie vraagt, met een AI-antwoordvoorstel dat je zelf bekijkt en verstuurt.</p>
               <div className="ml-sales__actie-knoppen">
                 {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- /api/google/oauth/start is een API-route (OAuth-redirect naar Google), geen Next.js-pagina; <Link> zou hier verkeerd zijn (onderschept geen echte navigatie). */}
-                <a href="/api/google/oauth/start" className="ml-sales__knop ml-sales__knop--primair">
-                  Opnieuw verbinden
+                <a href="/api/google/oauth/start?capability=gmail" className="ml-sales__knop ml-sales__knop--primair">
+                  Gmail koppelen
                 </a>
               </div>
             </div>
           )}
-          {googleConnection?.status === "actief" && (
+
+          {/* "Verlopen" geldt voor de hele koppeling (Agenda én Gmail, welke
+             ooit gekoppeld waren) — één gedeeld herstelblok i.p.v. dat per
+             capability te dupliceren, met een link per capability zodat je
+             uitsluitend hoeft te herverbinden wat je ook daadwerkelijk gebruikt. */}
+          {googleConnection?.status === "verlopen" && (
+            <div className="ml-sales-widget__item ml-sales-widget__item--rustig">
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600 }}>
+                Google-koppeling verlopen
+              </p>
+              <p className="ml-sales-widget__context">De toestemming is verlopen of ingetrokken — verbind opnieuw om Agenda en/of Gmail weer te gebruiken.</p>
+              <div className="ml-sales__actie-knoppen">
+                {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- /api/google/oauth/start is een API-route (OAuth-redirect naar Google), geen Next.js-pagina; <Link> zou hier verkeerd zijn (onderschept geen echte navigatie). */}
+                <a href="/api/google/oauth/start?capability=agenda" className="ml-sales__knop ml-sales__knop--primair">
+                  Agenda opnieuw verbinden
+                </a>
+                {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- zelfde reden als hierboven. */}
+                <a href="/api/google/oauth/start?capability=gmail" className="ml-sales__knop">
+                  Gmail opnieuw verbinden
+                </a>
+              </div>
+            </div>
+          )}
+
+          {heeftAgendaScope && (
             <p className="ml-sales-widget__meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              <span>Google Agenda gekoppeld{googleConnection.emailAddress ? `: ${googleConnection.emailAddress}` : ""}</span>
+              <span>Google Agenda gekoppeld{googleConnection?.emailAddress ? `: ${googleConnection.emailAddress}` : ""}</span>
+              <button type="button" className="ml-sales__knop" disabled={googleOntkoppelBezig} onClick={ontkoppelGoogleAgenda}>
+                {googleOntkoppelBezig ? "Bezig…" : "Ontkoppelen"}
+              </button>
+            </p>
+          )}
+          {heeftGmailScope && (
+            <p className="ml-sales-widget__meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Mail size={13} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.green.fg }} />
+                Gmail gekoppeld{googleConnection?.emailAddress ? `: ${googleConnection.emailAddress}` : ""}
+              </span>
+              {/* Zelfde Ontkoppelen-actie als Agenda — het is één gedeelde koppeling (zie de toelichting hierboven). */}
               <button type="button" className="ml-sales__knop" disabled={googleOntkoppelBezig} onClick={ontkoppelGoogleAgenda}>
                 {googleOntkoppelBezig ? "Bezig…" : "Ontkoppelen"}
               </button>
@@ -1259,6 +1570,32 @@ export function SalesDashboardPaneel() {
                     }}
                   />
                 ))}
+            </>
+          )}
+
+          {/* Mijn Werk Fase 3 (2026-08-17) — mail die aandacht vraagt.
+             Zelfde "uitsluitend op vandaag zelf"-regel als voorbereiding
+             hierboven: een mailsignaal gaat over de laatste MAIL_LOOKBACK_
+             DAGEN, niet over gekozenDatum, dus tonen op een andere bekeken
+             dag zou verwarrend zijn. Alleen status "gesignaleerd" — eenmaal
+             gedempt/beantwoord/taak-aangemaakt verdwijnt de kaart. */}
+          {vandaagWeergave.isVandaag && mailSignalen.length > 0 && (
+            <>
+              <p className="ml-sales-widget__meta" style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                <Mail size={14} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.green.fg }} />
+                Mail die aandacht vraagt ({mailSignalen.length})
+              </p>
+              {mailSignalen.map((signaal) => (
+                <MailKaart
+                  key={signaal.gmailMessageId}
+                  signaal={signaal}
+                  vandaag={vandaagIso()}
+                  onGewijzigd={() => {
+                    laadMailSignalen();
+                    laadData();
+                  }}
+                />
+              ))}
             </>
           )}
 

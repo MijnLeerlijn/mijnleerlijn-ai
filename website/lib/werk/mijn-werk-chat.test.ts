@@ -100,7 +100,7 @@ describe("stelMijnWerkVraag — routering naar minimale context per categorie", 
 
   it("'voorbereiding' koppelt schoolcontext van de eerste kandidaat mét herkende school", async () => {
     mockRouteer.mockResolvedValue({ categorie: "voorbereiding", genoemdeSchoolNaam: null });
-    mockToegang.mockResolvedValue({ accessToken: "token", connectionId: 1 });
+    mockToegang.mockResolvedValue({ accessToken: "token", connectionId: 1, scopes: ["https://www.googleapis.com/auth/calendar.readonly"] });
     mockPrimary.mockResolvedValue({ emailAddress: "x@y.nl", timeZone: "UTC" });
     mockEvents.mockResolvedValue({
       timeZone: "UTC",

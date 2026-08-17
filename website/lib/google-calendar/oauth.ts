@@ -1,17 +1,18 @@
 import { requireEnv } from "@/config/env";
 
-// Google OAuth 2.0 "web server application"-flow voor de persoonlijke
-// Google Calendar-koppeling — zie app/api/google/oauth/start en .../callback.
-// Zelfde stijl als lib/gmail/oauth.ts: rechtstreekse fetch-aanroepen naar
-// Google's endpoints, geen googleapis-SDK.
+// Google OAuth 2.0 "web server application"-flow voor persoonlijke Google-
+// koppelingen — zie app/api/google/oauth/start en .../callback. Zelfde stijl
+// als lib/gmail/oauth.ts: rechtstreekse fetch-aanroepen naar Google's
+// endpoints, geen googleapis-SDK.
 //
-// Scope is bewust minimaal: uitsluitend calendar.readonly. Geen aparte
-// profiel/userinfo-scope nodig om het gekoppelde adres te tonen — de
-// primary-agenda se `id`-veld IS voor zo goed als elk Google-account het
-// e-mailadres (bekend, gedocumenteerd gedrag van de Calendar API), zie
-// fetchPrimaryCalendar hieronder. Dat endpoint levert meteen ook de
-// tijdzone van de agenda, nodig voor correcte interpretatie van
-// hele-dag-events.
+// Dit bestand heet naar zijn EERSTE gebruiker (Calendar), maar
+// exchangeCodeForTokens/refreshAccessToken/buildGoogleAuthUrl hieronder zijn
+// generieke OAuth-clientplumbing voor dit ene GOOGLE_CLIENT_ID/SECRET-paar,
+// niet Calendar-specifiek — Mijn Werk Fase 3 (2026-08-17, Gmail) hergebruikt
+// ze ongewijzigd (zie lib/google-gmail/oauth.ts voor de Gmail-scope-
+// constante + Gmail-specifieke profiel-fetch). Bewust geen bestandsverplaatsing
+// naar bv. lib/google-account/: dat zou de import-paden van alle al-werkende
+// Fase 2-bestanden aanraken zonder functionele winst.
 
 export const GOOGLE_CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 
@@ -27,6 +28,25 @@ export const GOOGLE_OAUTH_STATE_COOKIE = "google_oauth_state";
  */
 export const GOOGLE_OAUTH_UID_COOKIE = "google_oauth_uid";
 
+/**
+ * Mijn Werk Fase 3 (2026-08-17) — welke capability ("agenda" of "gmail") deze
+ * koppelpoging aanvraagt. Nodig zodra er meer dan één scope-bundel bestaat:
+ * de callback moet weten welke profiel-fetch-functie hij mag gebruiken om
+ * het gekoppelde adres te tonen (fetchPrimaryCalendar vereist
+ * calendar.readonly, fetchGmailProfileAddress vereist een gmail-scope — een
+ * gebruiker kan de een zonder de ander gekoppeld hebben). Bewust een derde,
+ * even kortlevende/httpOnly/eenmalige cookie i.p.v. in `state` coderen —
+ * zelfde reden als GOOGLE_OAUTH_UID_COOKIE hierboven: state blijft een pure,
+ * opake CSRF-nonce.
+ */
+export const GOOGLE_OAUTH_CAPABILITY_COOKIE = "google_oauth_capability";
+export type GoogleOAuthCapability = "agenda" | "gmail";
+
+/** Onbekende/ontbrekende waarde valt terug op "agenda" — bestaande links (vóór Fase 3) zonder ?capability=... blijven zo exact hetzelfde gedrag houden. */
+export function naarGoogleOAuthCapability(waarde: string | null | undefined): GoogleOAuthCapability {
+  return waarde === "gmail" ? "gmail" : "agenda";
+}
+
 const GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GOOGLE_CALENDAR_PRIMARY_ENDPOINT = "https://www.googleapis.com/calendar/v3/calendars/primary";
@@ -39,16 +59,30 @@ function googleEnv() {
   };
 }
 
-/** Bouwt de Google-consentscherm-URL. `access_type=offline` + `prompt=consent` garanderen een refresh_token, ook bij een herkoppeling. */
-export function buildGoogleAuthUrl(state: string): string {
+/**
+ * Bouwt de Google-consentscherm-URL. `access_type=offline` + `prompt=consent`
+ * garanderen een refresh_token, ook bij een herkoppeling. `scope` is
+ * verplicht (Fase 3: Agenda en Gmail vragen elk hun eigen, minimale
+ * scope-bundel aan — nooit een impliciete standaardwaarde die de aanroeper
+ * per ongeluk de verkeerde/bredere scope laat aanvragen).
+ * `include_granted_scopes=true` is essentieel voor incrementele autorisatie:
+ * zonder deze vlag zou een latere, aparte koppelactie (bv. Gmail na Agenda)
+ * de eerder toegekende scope uit het teruggegeven `scope`-veld laten
+ * verdwijnen — met deze vlag bevat elke volgende tokenwisseling altijd de
+ * VOLLEDIGE, opgetelde scope-set die deze gebruiker ooit aan dit
+ * GOOGLE_CLIENT_ID heeft toegekend (zie upsertGoogleConnection, dat dit veld
+ * ongewijzigd overneemt).
+ */
+export function buildGoogleAuthUrl(state: string, scope: string): string {
   const { clientId, redirectUri } = googleEnv();
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: GOOGLE_CALENDAR_READONLY_SCOPE,
+    scope,
     access_type: "offline",
     prompt: "consent",
+    include_granted_scopes: "true",
     state,
   });
   return `${GOOGLE_AUTH_ENDPOINT}?${params.toString()}`;

@@ -32,6 +32,7 @@ import * as migration_20260816_150000_sales_board_reconciliation from './2026081
 import * as migration_20260817_090000_personal_tasks from './20260817_090000_personal_tasks';
 import * as migration_20260817_130000_google_connections from './20260817_130000_google_connections';
 import * as migration_20260817_150000_voorbereiding_signalen from './20260817_150000_voorbereiding_signalen';
+import * as migration_20260817_170000_mail_signalen from './20260817_170000_mail_signalen';
 
 export const migrations = [
   {
@@ -203,5 +204,10 @@ export const migrations = [
     up: migration_20260817_150000_voorbereiding_signalen.up,
     down: migration_20260817_150000_voorbereiding_signalen.down,
     name: '20260817_150000_voorbereiding_signalen',
+  },
+  {
+    up: migration_20260817_170000_mail_signalen.up,
+    down: migration_20260817_170000_mail_signalen.down,
+    name: '20260817_170000_mail_signalen',
   },
 ];

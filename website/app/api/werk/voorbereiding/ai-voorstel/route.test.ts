@@ -72,7 +72,7 @@ describe("POST /api/werk/voorbereiding/ai-voorstel", () => {
 
   it("levert 404 wanneer het event niet meer bestaat", async () => {
     mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
-    mockToegang.mockResolvedValue({ accessToken: "token", connectionId: 1 });
+    mockToegang.mockResolvedValue({ accessToken: "token", connectionId: 1, scopes: ["https://www.googleapis.com/auth/calendar.readonly"] });
     mockEvent.mockResolvedValue(null);
     const response = await POST(maakRequest({ eventId: "evt1" }));
     expect(response.status).toBe(404);
@@ -80,7 +80,7 @@ describe("POST /api/werk/voorbereiding/ai-voorstel", () => {
 
   it("genereert een voorstel en geeft het automatisch herkende schoolId terug", async () => {
     mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
-    mockToegang.mockResolvedValue({ accessToken: "token", connectionId: 1 });
+    mockToegang.mockResolvedValue({ accessToken: "token", connectionId: 1, scopes: ["https://www.googleapis.com/auth/calendar.readonly"] });
     mockEvent.mockResolvedValue({
       id: "evt1",
       titel: "Training bij Springplank",
@@ -117,7 +117,7 @@ describe("POST /api/werk/voorbereiding/ai-voorstel", () => {
 
   it("geeft een generieke 500-fout terug, nooit ruwe details", async () => {
     mockVerify.mockResolvedValue({ user: { id: 2, role: "editor" }, cookieAanwezig: true });
-    mockToegang.mockResolvedValue({ accessToken: "geheim-abc", connectionId: 1 });
+    mockToegang.mockResolvedValue({ accessToken: "geheim-abc", connectionId: 1, scopes: ["https://www.googleapis.com/auth/calendar.readonly"] });
     mockEvent.mockRejectedValue(new Error("geheim-abc mag hier niet in staan"));
 
     const response = await POST(maakRequest({ eventId: "evt1" }));

@@ -74,7 +74,7 @@ describe("GET /api/werk/voorbereiding", () => {
 
   it("haalt het look-ahead-venster op (vandaag t/m +PREP_LOOKAHEAD_DAGEN) en geeft de signalen door", async () => {
     mockVerify.mockResolvedValue({ user: { id: 5, role: "editor" }, cookieAanwezig: true });
-    mockToegang.mockResolvedValue({ accessToken: "token", connectionId: 1 });
+    mockToegang.mockResolvedValue({ accessToken: "token", connectionId: 1, scopes: ["https://www.googleapis.com/auth/calendar.readonly"] });
     mockPrimary.mockResolvedValue({ emailAddress: "x@y.nl", timeZone: "UTC" });
     mockEvents.mockResolvedValue({ timeZone: "UTC", events: [] });
     mockSignalen.mockResolvedValue([]);
@@ -90,7 +90,7 @@ describe("GET /api/werk/voorbereiding", () => {
 
   it("geeft een generieke 500-fout terug, nooit ruwe details", async () => {
     mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
-    mockToegang.mockResolvedValue({ accessToken: "geheim-xyz", connectionId: 1 });
+    mockToegang.mockResolvedValue({ accessToken: "geheim-xyz", connectionId: 1, scopes: ["https://www.googleapis.com/auth/calendar.readonly"] });
     mockPrimary.mockRejectedValue(new Error("geheim-xyz lekt hier bijna"));
 
     const response = await GET(maakRequest("2026-08-17"));

@@ -6,19 +6,24 @@ import {
   fetchPrimaryCalendar,
   GOOGLE_OAUTH_STATE_COOKIE,
   GOOGLE_OAUTH_UID_COOKIE,
+  GOOGLE_OAUTH_CAPABILITY_COOKIE,
+  naarGoogleOAuthCapability,
 } from "@/lib/google-calendar/oauth";
+import { fetchGmailProfileAddress } from "@/lib/google-gmail/oauth";
 import { upsertGoogleConnection } from "@/lib/google-calendar/connection";
 
-// Callbackroute van de Google Calendar-OAuth-koppeling. Zelfde architectuur
-// als app/api/gmail/oauth/callback/route.ts — zie dat bestand voor de volle
-// toelichting waarom hier BEWUST GEEN payload.auth()-hercontrole gebeurt:
-// Google's redirect terug is voor de browser een cross-site top-level
-// navigatie, en Payload's eigen cookie-auth-extractie verwerpt de
-// sessiecookie daar altijd (Sec-Fetch-Site "cross-site"), ook voor een echt
-// ingelogde gebruiker. De autorisatie loopt hier via TWEE httpOnly-cookies
-// i.p.v. Gmail's één: de state-cookie (CSRF, identiek aan Gmail) plus de
-// uid-cookie (WELKE gebruiker — nodig omdat dit een Collection is met één
-// rij PER GEBRUIKER, geen Global met precies één rij). Beide alleen ooit
+// Callbackroute van de persoonlijke Google-OAuth-koppeling (Agenda én,
+// sinds Mijn Werk Fase 3, Gmail). Zelfde architectuur als app/api/gmail/
+// oauth/callback/route.ts — zie dat bestand voor de volle toelichting waarom
+// hier BEWUST GEEN payload.auth()-hercontrole gebeurt: Google's redirect
+// terug is voor de browser een cross-site top-level navigatie, en Payload's
+// eigen cookie-auth-extractie verwerpt de sessiecookie daar altijd
+// (Sec-Fetch-Site "cross-site"), ook voor een echt ingelogde gebruiker. De
+// autorisatie loopt hier via DRIE httpOnly-cookies i.p.v. Gmail-Helpdesk se
+// ene: de state-cookie (CSRF, identiek aan Gmail) plus de uid-cookie (WELKE
+// gebruiker — nodig omdat dit een Collection is met één rij PER GEBRUIKER,
+// geen Global met precies één rij) plus de capability-cookie (welke
+// scope-bundel net is aangevraagd, zie hieronder). Alle drie alleen ooit
 // gezet door /start ná een geslaagde isEditor-controle (gewone same-origin
 // aanvraag, geen probleem daar), httpOnly, willekeurig/kortlevend/eenmalig —
 // dat is hier zowel de CSRF- als de autorisatiewaarborg.
@@ -51,9 +56,10 @@ function htmlResponse(status: number, title: string, message: string): NextRespo
     status,
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
-  // Beide eenmalige cookies altijd opruimen, ongeacht de uitkomst.
+  // Alle drie eenmalige cookies altijd opruimen, ongeacht de uitkomst.
   response.cookies.set(GOOGLE_OAUTH_STATE_COOKIE, "", { maxAge: 0, path: "/api/google/oauth" });
   response.cookies.set(GOOGLE_OAUTH_UID_COOKIE, "", { maxAge: 0, path: "/api/google/oauth" });
+  response.cookies.set(GOOGLE_OAUTH_CAPABILITY_COOKIE, "", { maxAge: 0, path: "/api/google/oauth" });
   return response;
 }
 
@@ -73,6 +79,7 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get("state");
   const cookieState = request.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)?.value;
   const cookieUid = request.cookies.get(GOOGLE_OAUTH_UID_COOKIE)?.value;
+  const capability = naarGoogleOAuthCapability(request.cookies.get(GOOGLE_OAUTH_CAPABILITY_COOKIE)?.value);
   const userId = cookieUid ? Number(cookieUid) : NaN;
   if (!state || !cookieState || state !== cookieState || !Number.isInteger(userId)) {
     return htmlResponse(
@@ -89,7 +96,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const tokens = await exchangeCodeForTokens(code);
-    const { emailAddress } = await fetchPrimaryCalendar(tokens.access_token);
+    // Welke profiel-endpoint we mogen aanroepen hangt af van WELKE scope
+    // deze specifieke koppelpoging aanvroeg (capability-cookie) — niet van
+    // wat er eventueel al eerder gekoppeld was. Een gebruiker die uitsluitend
+    // Gmail koppelt (nooit Agenda) heeft geen calendar.readonly-scope, dus
+    // zou fetchPrimaryCalendar altijd laten falen; omgekeerd voor agenda.
+    const emailAddress =
+      capability === "gmail"
+        ? await fetchGmailProfileAddress(tokens.access_token)
+        : (await fetchPrimaryCalendar(tokens.access_token)).emailAddress;
 
     await upsertGoogleConnection(payload, userId, {
       emailAddress,
@@ -99,11 +114,8 @@ export async function GET(request: NextRequest) {
       scope: tokens.scope,
     });
 
-    return htmlResponse(
-      200,
-      "Google Agenda gekoppeld",
-      `Succesvol gekoppeld: <strong>${escapeHtml(emailAddress)}</strong>. Je kunt dit tabblad sluiten.`
-    );
+    const titel = capability === "gmail" ? "Gmail gekoppeld" : "Google Agenda gekoppeld";
+    return htmlResponse(200, titel, `Succesvol gekoppeld: <strong>${escapeHtml(emailAddress)}</strong>. Je kunt dit tabblad sluiten.`);
   } catch (error) {
     console.error("[api/google/oauth/callback] Koppelen mislukt:", error);
     return htmlResponse(500, "Koppelen mislukt", "Er ging iets mis bij het koppelen. Probeer het opnieuw.");

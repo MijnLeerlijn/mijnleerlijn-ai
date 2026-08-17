@@ -96,6 +96,7 @@ export interface Config {
     'personal-tasks': PersonalTask;
     'google-connections': GoogleConnection;
     'voorbereiding-signalen': VoorbereidingSignalen;
+    'mail-signalen': MailSignalen;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
     'payload-locked-documents': PayloadLockedDocument;
@@ -133,6 +134,7 @@ export interface Config {
     'personal-tasks': PersonalTasksSelect<false> | PersonalTasksSelect<true>;
     'google-connections': GoogleConnectionsSelect<false> | GoogleConnectionsSelect<true>;
     'voorbereiding-signalen': VoorbereidingSignalenSelect<false> | VoorbereidingSignalenSelect<true>;
+    'mail-signalen': MailSignalenSelect<false> | MailSignalenSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -1727,6 +1729,44 @@ export interface VoorbereidingSignalen {
   createdAt: string;
 }
 /**
+ * Gecachete classificatie + status per Gmail-bericht (actie nodig/gedempt/taak aangemaakt) — uitsluitend zichtbaar voor de eigenaar. Beheer via het Mijn Werk-dashboard, niet deze lijst.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mail-signalen".
+ */
+export interface MailSignalen {
+  id: number;
+  /**
+   * Geen andere berichtgegevens worden hier bewaard — afzender/onderwerp/tijd worden live opgehaald.
+   */
+  gmailMessageId: string;
+  /**
+   * Nodig om een antwoord correct in dezelfde conversatie te laten verschijnen.
+   */
+  gmailThreadId: string;
+  status: 'niet_relevant' | 'gesignaleerd' | 'gedempt' | 'taak_aangemaakt' | 'beantwoord';
+  /**
+   * Korte, door AI gegenereerde reden waarom actie nodig is (of niet) — zie lib/werk/mail-classificatie.ts. Wordt maximaal één keer per bericht gegenereerd.
+   */
+  reden?: string | null;
+  geclassificeerdOp?: string | null;
+  /**
+   * Alleen gezet bij een betrouwbare match — zie lib/werk/school-matching.ts.
+   */
+  school?: (number | null) | SalesSchool;
+  /**
+   * Gezet zodra 'Maak taak' een personal-task aanmaakte vanuit dit mailsignaal.
+   */
+  gekoppeldeTaak?: (number | null) | PersonalTask;
+  /**
+   * Gezet zodra een antwoord daadwerkelijk verstuurd is — nooit de verzonden tekst zelf.
+   */
+  beantwoordOp?: string | null;
+  eigenaar: number | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -1957,6 +1997,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'voorbereiding-signalen';
         value: number | VoorbereidingSignalen;
+      } | null)
+    | ({
+        relationTo: 'mail-signalen';
+        value: number | MailSignalen;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -2819,6 +2863,23 @@ export interface VoorbereidingSignalenSelect<T extends boolean = true> {
   school?: T;
   status?: T;
   gekoppeldeTaak?: T;
+  eigenaar?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mail-signalen_select".
+ */
+export interface MailSignalenSelect<T extends boolean = true> {
+  gmailMessageId?: T;
+  gmailThreadId?: T;
+  status?: T;
+  reden?: T;
+  geclassificeerdOp?: T;
+  school?: T;
+  gekoppeldeTaak?: T;
+  beantwoordOp?: T;
   eigenaar?: T;
   updatedAt?: T;
   createdAt?: T;

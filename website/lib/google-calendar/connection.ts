@@ -32,6 +32,8 @@ export interface GoogleConnectionDoc {
   encryptedRefreshToken: string | null;
   tokenExpiresAt: string | null;
   connectedAt: string | null;
+  /** Mijn Werk Fase 3 (2026-08-17) — toegevoegd zodat aanroepers (bv. lib/werk/mail-reply.ts) kunnen controleren of een specifieke scope (Agenda/Gmail) daadwerkelijk is toegekend, i.p.v. aan te nemen dat elk geldig token elke scope dekt. */
+  scopes: string[] | null;
 }
 
 /** Haalt de eigen Google-koppeling op, of null wanneer niet (meer) gekoppeld. */
@@ -94,12 +96,17 @@ export async function upsertGoogleConnection(
 export interface GeldigeToegang {
   accessToken: string;
   connectionId: number;
+  /** Mijn Werk Fase 3 (2026-08-17) — de daadwerkelijk toegekende scopes op deze koppeling (ongewijzigd door een refresh — Google geeft bij een refresh dezelfde grant terug). Zie lib/google-gmail/oauth.ts se heeftGmailScopes voor de bijbehorende controle. */
+  scopes: string[];
 }
 
 /**
  * Geeft een geldig access token terug voor deze gebruiker, of null wanneer er
  * geen (bruikbare) koppeling is — null betekent voor de aanroeper altijd
- * "toon de koppel-CTA / Opnieuw verbinden", nooit een crash.
+ * "toon de koppel-CTA / Opnieuw verbinden", nooit een crash. Geeft een geldig
+ * token terug ONGEACHT welke scopes zijn toegekend — de aanroeper controleert
+ * zelf (via het scopes-veld) of de gewenste scope er daadwerkelijk bij zit
+ * vóórdat een scope-specifieke API wordt aangeroepen (zie lib/werk/mail-reply.ts).
  */
 export async function verkrijgGeldigeToegang(payload: Payload, userId: number): Promise<GeldigeToegang | null> {
   const connection = await haalGoogleConnection(payload, userId);
@@ -109,10 +116,11 @@ export async function verkrijgGeldigeToegang(payload: Payload, userId: number): 
   if (connection.status === "verlopen") {
     return null;
   }
+  const scopes = connection.scopes ?? [];
 
   const verlooptOp = connection.tokenExpiresAt ? new Date(connection.tokenExpiresAt).getTime() : 0;
   if (Date.now() < verlooptOp - TOKEN_REFRESH_BUFFER_MS) {
-    return { accessToken: decryptMetSleutel(connection.encryptedAccessToken, sleutel()), connectionId: connection.id };
+    return { accessToken: decryptMetSleutel(connection.encryptedAccessToken, sleutel()), connectionId: connection.id, scopes };
   }
 
   try {
@@ -127,7 +135,7 @@ export async function verkrijgGeldigeToegang(payload: Payload, userId: number): 
         tokenExpiresAt: new Date(Date.now() + vernieuwd.expires_in * 1000).toISOString(),
       },
     });
-    return { accessToken: vernieuwd.access_token, connectionId: connection.id };
+    return { accessToken: vernieuwd.access_token, connectionId: connection.id, scopes };
   } catch {
     await payload
       .update({ collection: "google-connections", id: connection.id, overrideAccess: true, data: { status: "verlopen" } })

@@ -84,7 +84,7 @@ describe("GET /api/werk/agenda", () => {
 
   it("haalt events op voor exact het opgegeven venster (tijdzone-correct) en markeert de koppeling als gebruikt", async () => {
     mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
-    mockToegang.mockResolvedValue({ accessToken: "token-123", connectionId: 7 });
+    mockToegang.mockResolvedValue({ accessToken: "token-123", connectionId: 7, scopes: ["https://www.googleapis.com/auth/calendar.readonly"] });
     mockPrimary.mockResolvedValue({ emailAddress: "test@voorbeeld.nl", timeZone: "Europe/Amsterdam" });
     mockEvents.mockResolvedValue({
       timeZone: "Europe/Amsterdam",
@@ -103,7 +103,7 @@ describe("GET /api/werk/agenda", () => {
 
   it("geeft een generieke 500-foutmelding terug wanneer het ophalen mislukt — nooit de ruwe Google-foutdetails", async () => {
     mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
-    mockToegang.mockResolvedValue({ accessToken: "geheim-token-xyz", connectionId: 7 });
+    mockToegang.mockResolvedValue({ accessToken: "geheim-token-xyz", connectionId: 7, scopes: ["https://www.googleapis.com/auth/calendar.readonly"] });
     mockPrimary.mockRejectedValue(new Error("Ophalen Google-agendaprofiel mislukt (401): geheim-token-xyz ongeldig"));
 
     const response = await GET(maakRequest("2026-08-20"));
