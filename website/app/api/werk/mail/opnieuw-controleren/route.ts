@@ -5,6 +5,7 @@ import { isEditor, type AuthUser } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { verkrijgGeldigeToegang } from "@/lib/google-calendar/connection";
 import { heeftGmailScopes } from "@/lib/google-gmail/oauth";
+import { haalOngelezenAantal } from "@/lib/google-gmail/api";
 import { haalMailSignalen } from "@/lib/werk/mail-signalen";
 import type { SchoolOptie } from "@/lib/werk/school-matching";
 import { maakRateLimiter } from "@/lib/contact/validate";
@@ -61,8 +62,13 @@ export async function POST(request: NextRequest) {
       schoolName: s.schoolName,
     }));
 
+    // Transparantieregel — zie app/api/werk/mail se toelichting. Ook hier
+    // ververst: de compacte "X ongelezen"-teller moet na een handmatige
+    // controle meteen kloppen, niet pas bij de volgende paginalezing.
+    const ongelezenAantal = await haalOngelezenAantal(toegang.accessToken).catch(() => null);
+
     const resultaat = await haalMailSignalen(payload, user.id, toegang.accessToken, scholen, { forceerHerclassificatie: true, scanNieuweKandidaten: true });
-    return NextResponse.json(resultaat);
+    return NextResponse.json({ ongelezenAantal, ...resultaat });
   } catch (error) {
     console.error("[api/werk/mail/opnieuw-controleren] mislukt:", error);
     return NextResponse.json({ error: "Opnieuw controleren mislukt. Probeer het later opnieuw." }, { status: 500 });

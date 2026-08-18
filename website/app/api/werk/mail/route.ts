@@ -5,6 +5,7 @@ import { isEditor, type AuthUser } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { verkrijgGeldigeToegang } from "@/lib/google-calendar/connection";
 import { heeftGmailScopes } from "@/lib/google-gmail/oauth";
+import { haalOngelezenAantal } from "@/lib/google-gmail/api";
 import { haalMailSignalen, bepaalOfKandidatenScanNodigIs } from "@/lib/werk/mail-signalen";
 import type { SchoolOptie } from "@/lib/werk/school-matching";
 
@@ -60,8 +61,17 @@ export async function GET(request: NextRequest) {
     const laatsteScanOp = (laatsteScan.docs[0] as { geclassificeerdOp?: string | null } | undefined)?.geclassificeerdOp ?? null;
     const scanNieuweKandidaten = bepaalOfKandidatenScanNodigIs(laatsteScanOp);
 
+    // Transparantieregel (2026-08-19, productiecorrectie) — "3 ongelezen · 1
+    // vraagt aandacht": het ongelezen-aantal komt LIVE en ONAFHANKELIJK van
+    // Gmail's eigen INBOX-label (geen classificatie, geen candidate-query),
+    // zodat Michel kan zien of het aantal signalen ("vraagt aandacht") de
+    // hele ongelezen inbox dekt of niet. Eigen try/catch: een falende
+    // labels-aanroep mag de rest van het dashboard nooit blokkeren — null
+    // betekent voor de UI "even niet beschikbaar", nooit een foutpagina.
+    const ongelezenAantal = await haalOngelezenAantal(toegang.accessToken).catch(() => null);
+
     const resultaat = await haalMailSignalen(payload, user.id, toegang.accessToken, scholen, { scanNieuweKandidaten });
-    return NextResponse.json({ connected: true, ...resultaat });
+    return NextResponse.json({ connected: true, ongelezenAantal, ...resultaat });
   } catch (error) {
     console.error("[api/werk/mail] mislukt:", error);
     return NextResponse.json({ error: "Mailsignalen konden niet worden opgehaald." }, { status: 500 });

@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { verifyAdminSessionCookie } from "@/lib/auth/verify-session";
 import { verkrijgGeldigeToegang } from "@/lib/google-calendar/connection";
+import { haalOngelezenAantal } from "@/lib/google-gmail/api";
 import { haalMailSignalen } from "@/lib/werk/mail-signalen";
 
 vi.mock("payload", () => ({
@@ -16,11 +17,16 @@ vi.mock("@/lib/auth/verify-session", async (importOriginal) => {
   return { ...echt, verifyAdminSessionCookie: vi.fn() };
 });
 vi.mock("@/lib/google-calendar/connection", () => ({ verkrijgGeldigeToegang: vi.fn() }));
+vi.mock("@/lib/google-gmail/api", async (importOriginal) => {
+  const echt = await importOriginal<typeof import("@/lib/google-gmail/api")>();
+  return { ...echt, haalOngelezenAantal: vi.fn() };
+});
 vi.mock("@/lib/werk/mail-signalen", () => ({ haalMailSignalen: vi.fn() }));
 
 const mockVerify = vi.mocked(verifyAdminSessionCookie);
 const mockToegang = vi.mocked(verkrijgGeldigeToegang);
 const mockSignalen = vi.mocked(haalMailSignalen);
+const mockOngelezen = vi.mocked(haalOngelezenAantal);
 
 const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"];
 
@@ -35,6 +41,7 @@ beforeEach(() => {
   mockVerify.mockReset();
   mockToegang.mockReset();
   mockSignalen.mockReset().mockResolvedValue({ signalen: [], bekeken: 0, actieNodig: 0, genegeerd: 0, algVerwerkt: 0, automatischBeantwoord: 0, ongewijzigd: 0 });
+  mockOngelezen.mockReset().mockResolvedValue(3);
 });
 
 describe("POST /api/werk/mail/opnieuw-controleren", () => {
@@ -56,14 +63,27 @@ describe("POST /api/werk/mail/opnieuw-controleren", () => {
   it("roept haalMailSignalen aan met forceerHerclassificatie: true EN scanNieuweKandidaten: true (negeert de begrensde periodieke sync — een handmatige klik ververst altijd echt)", async () => {
     mockVerify.mockResolvedValue({ user: { id: 7, role: "editor" }, cookieAanwezig: true });
     mockToegang.mockResolvedValue({ accessToken: "token-abc", connectionId: 1, scopes: GMAIL_SCOPES });
+    mockOngelezen.mockResolvedValue(3);
     mockSignalen.mockResolvedValue({ signalen: [], bekeken: 24, actieNodig: 3, genegeerd: 15, algVerwerkt: 4, automatischBeantwoord: 2, ongewijzigd: 0 });
 
     const response = await POST(maakRequest());
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data).toEqual({ signalen: [], bekeken: 24, actieNodig: 3, genegeerd: 15, algVerwerkt: 4, automatischBeantwoord: 2, ongewijzigd: 0 });
+    expect(data).toEqual({ ongelezenAantal: 3, signalen: [], bekeken: 24, actieNodig: 3, genegeerd: 15, algVerwerkt: 4, automatischBeantwoord: 2, ongewijzigd: 0 });
     expect(mockSignalen).toHaveBeenCalledWith(expect.anything(), 7, "token-abc", expect.anything(), { forceerHerclassificatie: true, scanNieuweKandidaten: true });
+  });
+
+  it("laat ongelezenAantal op null vallen wanneer de live Gmail-labelaanroep mislukt, zonder de rest van de controle te blokkeren", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 7, role: "editor" }, cookieAanwezig: true });
+    mockToegang.mockResolvedValue({ accessToken: "token-abc", connectionId: 1, scopes: GMAIL_SCOPES });
+    mockOngelezen.mockRejectedValue(new Error("Gmail tijdelijk onbereikbaar"));
+
+    const response = await POST(maakRequest());
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.ongelezenAantal).toBeNull();
   });
 
   it("beperkt tot 5 aanvragen per minuut per gebruiker (429 daarna)", async () => {

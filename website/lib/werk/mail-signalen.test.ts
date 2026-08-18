@@ -10,6 +10,8 @@ import {
   maakMailTaak,
   markeerBeantwoord,
   haalSignaalVoorAntwoord,
+  haalGenegeerdeMails,
+  toonSignaalToch,
 } from "./mail-signalen";
 import { haalKandidaatBerichten, haalThreadBerichtenSamenvatting } from "@/lib/google-gmail/api";
 import { classificeerKandidaatBerichten } from "./mail-classificatie";
@@ -555,5 +557,147 @@ describe("dempSignaal / maakMailTaak / markeerBeantwoord — eigenaar-gescoped a
 
     const andermans = await haalSignaalVoorAntwoord(payload as never, 2, signaal!.signaalId);
     expect(andermans).toBeNull();
+  });
+});
+
+/** Zet, via de echte classificatie-flow (nooit rechtstreeks in mailDocs schrijven), één "niet_relevant"-rij neer en levert het aangemaakte id. */
+async function seedGenegeerdeMail(
+  payload: ReturnType<typeof maakFakePayload>,
+  overrides: Partial<GmailKandidaatBericht> & { gmailMessageId: string } = { gmailMessageId: "genegeerd-1" }
+): Promise<number> {
+  mockKandidaten.mockResolvedValue([kandidaat({ gmailThreadId: `thread-${overrides.gmailMessageId}`, van: "nieuwsbrief@school.nl", onderwerp: "Nieuwsbrief", ...overrides })]);
+  mockClassificeer.mockResolvedValue([{ gmailMessageId: overrides.gmailMessageId, actieNodig: false, reden: "Nieuwsbrief, geen actie nodig." }]);
+  await haalMailSignalen(payload as never, 1, "token", []);
+  mockKandidaten.mockClear();
+  mockClassificeer.mockClear();
+  const rij = Object.values(payload.mailDocs).find((d) => d.gmailMessageId === overrides.gmailMessageId)!;
+  return rij.id as number;
+}
+
+describe("haalGenegeerdeMails — transparantiediagnose (opdrachtseis: 'Bekijk genegeerde mails')", () => {
+  it("toont een niet_relevant-signaal met live afzender/onderwerp en de gecachete reden", async () => {
+    const payload = maakFakePayload();
+    const signaalId = await seedGenegeerdeMail(payload, { gmailMessageId: "genegeerd-1", van: "Nieuwsbrief School <nieuws@school.nl>", onderwerp: "Deze week op school" });
+    mockThreadSamenvatting.mockResolvedValue([threadBericht({ gmailMessageId: "genegeerd-1", van: "Nieuwsbrief School <nieuws@school.nl>", onderwerp: "Deze week op school", vanEigenAccount: false })]);
+
+    const lijst = await haalGenegeerdeMails(payload as never, 1, "token");
+
+    expect(lijst).toEqual([
+      {
+        signaalId,
+        gmailMessageId: "genegeerd-1",
+        gmailThreadId: "thread-genegeerd-1",
+        van: "Nieuwsbrief School <nieuws@school.nl>",
+        onderwerp: "Deze week op school",
+        reden: "Nieuwsbrief, geen actie nodig.",
+      },
+    ]);
+  });
+
+  it("laat gesignaleerde/gedempte/etc. signalen buiten beschouwing — uitsluitend status niet_relevant", async () => {
+    const payload = maakFakePayload();
+    await seedGenegeerdeMail(payload, { gmailMessageId: "genegeerd-1" });
+    mockKandidaten.mockResolvedValue([kandidaat({ gmailMessageId: "actief-1", gmailThreadId: "thread-actief-1" })]);
+    mockClassificeer.mockResolvedValue([{ gmailMessageId: "actief-1", actieNodig: true, reden: "Stelt een vraag." }]);
+    await haalMailSignalen(payload as never, 1, "token", []);
+    mockThreadSamenvatting.mockResolvedValue([threadBericht({ gmailMessageId: "genegeerd-1", vanEigenAccount: false })]);
+
+    const lijst = await haalGenegeerdeMails(payload as never, 1, "token");
+
+    expect(lijst).toHaveLength(1);
+    expect(lijst[0]!.gmailMessageId).toBe("genegeerd-1");
+  });
+
+  it("hergebruikt één live-threadaanroep wanneer meerdere genegeerde berichten in dezelfde thread zitten (geen N+1)", async () => {
+    const payload = maakFakePayload();
+    // Twee AFZONDERLIJKE scans (niet dezelfde) — binnen één scan dedupt fase 2
+    // nieuwe kandidaten al per thread (laatsteKandidaatPerThread), dus twee
+    // niet_relevant-berichten in dezelfde thread ontstaan in de praktijk
+    // altijd over meerdere scans heen (bv. een tweede nieuwsbrief in
+    // dezelfde thread, weken later), nooit in één enkele.
+    await seedGenegeerdeMail(payload, { gmailMessageId: "genegeerd-a", gmailThreadId: "thread-samen" });
+    await seedGenegeerdeMail(payload, { gmailMessageId: "genegeerd-b", gmailThreadId: "thread-samen" });
+    mockThreadSamenvatting.mockResolvedValue([
+      threadBericht({ gmailMessageId: "genegeerd-a", vanEigenAccount: false }),
+      threadBericht({ gmailMessageId: "genegeerd-b", vanEigenAccount: false }),
+    ]);
+
+    const lijst = await haalGenegeerdeMails(payload as never, 1, "token");
+
+    expect(lijst).toHaveLength(2);
+    expect(mockThreadSamenvatting).toHaveBeenCalledTimes(1);
+  });
+
+  it("laat een bericht weg (geen crash) wanneer de live-threadaanroep voor die ene thread mislukt — Gmail tijdelijk onbereikbaar", async () => {
+    const payload = maakFakePayload();
+    await seedGenegeerdeMail(payload, { gmailMessageId: "genegeerd-1" });
+    mockThreadSamenvatting.mockRejectedValue(new Error("Gmail tijdelijk onbereikbaar"));
+
+    const lijst = await haalGenegeerdeMails(payload as never, 1, "token");
+
+    expect(lijst).toEqual([]);
+  });
+});
+
+describe("toonSignaalToch — corrigeert een fout-negatieve AI-classificatie (opdrachtseis: 'Toch tonen')", () => {
+  it("promoveert niet_relevant naar gesignaleerd met categorie ter_beoordeling, en behoudt de oorspronkelijke inschatting in de nieuwe reden", async () => {
+    const payload = maakFakePayload();
+    const signaalId = await seedGenegeerdeMail(payload, { gmailMessageId: "genegeerd-1" });
+
+    const ok = await toonSignaalToch(payload as never, 1, signaalId);
+
+    expect(ok).toBe(true);
+    expect(payload.mailDocs[signaalId]).toEqual(
+      expect.objectContaining({
+        status: "gesignaleerd",
+        categorie: "ter_beoordeling",
+        reden: expect.stringContaining("Nieuwsbrief, geen actie nodig."),
+      })
+    );
+  });
+
+  it("weigert (false) voor andermans signaalId — geen mutatie", async () => {
+    const payload = maakFakePayload();
+    const signaalId = await seedGenegeerdeMail(payload, { gmailMessageId: "genegeerd-1" });
+
+    const ok = await toonSignaalToch(payload as never, 2, signaalId);
+
+    expect(ok).toBe(false);
+    expect(payload.mailDocs[signaalId]!.status).toBe("niet_relevant");
+  });
+
+  it("weigert (false) op een signaal dat niet niet_relevant is — geen no-op-succes op een willekeurige status", async () => {
+    mockKandidaten.mockResolvedValue([kandidaat({ gmailMessageId: "actief-1" })]);
+    mockClassificeer.mockResolvedValue([{ gmailMessageId: "actief-1", actieNodig: true, reden: "Stelt een vraag." }]);
+    const payload = maakFakePayload();
+    const {
+      signalen: [signaal],
+    } = await haalMailSignalen(payload as never, 1, "token", []);
+
+    const ok = await toonSignaalToch(payload as never, 1, signaal!.signaalId);
+
+    expect(ok).toBe(false);
+    expect(payload.mailDocs[signaal!.signaalId]!.status).toBe("gesignaleerd");
+  });
+
+  it("de menselijke keuze blijft behouden bij een volgende scan — dezelfde thread wordt niet opnieuw automatisch weggefilterd (opdrachtseis)", async () => {
+    const payload = maakFakePayload();
+    const signaalId = await seedGenegeerdeMail(payload, { gmailMessageId: "genegeerd-1", gmailThreadId: "thread-genegeerd-1" });
+    await toonSignaalToch(payload as never, 1, signaalId);
+
+    // Volgende scan: hetzelfde bericht duikt weer op als kandidaat (nog
+    // steeds in het lookbackvenster) — de classifier mag hier NIET opnieuw
+    // over oordelen, exact de bestaande "gesignaleerd wordt nooit
+    // herclassificeerd"-bescherming (fase 2), nu toegepast op een
+    // handmatige correctie i.p.v. een AI-classificatie.
+    mockKandidaten.mockResolvedValue([kandidaat({ gmailMessageId: "genegeerd-1", gmailThreadId: "thread-genegeerd-1" })]);
+    mockThreadSamenvatting.mockResolvedValue([threadBericht({ gmailMessageId: "genegeerd-1", vanEigenAccount: false })]);
+
+    const resultaat = await haalMailSignalen(payload as never, 1, "token", [], { scanNieuweKandidaten: true });
+
+    expect(mockClassificeer).not.toHaveBeenCalled();
+    expect(payload.mailDocs[signaalId]!.status).toBe("gesignaleerd");
+    expect(payload.mailDocs[signaalId]!.categorie).toBe("ter_beoordeling");
+    expect(resultaat.signalen.some((s) => s.gmailMessageId === "genegeerd-1")).toBe(true);
   });
 });

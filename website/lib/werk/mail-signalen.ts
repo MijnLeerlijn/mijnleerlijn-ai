@@ -436,6 +436,92 @@ export async function dempSignaal(payload: Payload, eigenaarId: number, signaalI
   return true;
 }
 
+export interface GenegeerdeMailWeergave {
+  signaalId: number;
+  gmailMessageId: string;
+  gmailThreadId: string;
+  van: string;
+  onderwerp: string;
+  /** Gecachete AI-reden waarom geen actie nodig leek — nooit de mailinhoud zelf. */
+  reden: string;
+}
+
+/**
+ * Transparantiediagnose (2026-08-19) — "waarom zie ik deze mail niet, terwijl
+ * Gmail 'm wel als ongelezen toont?": alle door de AI als "niet_relevant"
+ * beoordeelde berichten, met dezelfde live-opgehaalde afzender/onderwerp als
+ * bouwSignalenWeergave hierboven (nooit lokaal bewaard). Uitsluitend
+ * aangeroepen na een expliciete "Bekijk genegeerde mails"-klik (niet bij elke
+ * dashboardlezing) — vandaar geen eigen plek in haalMailSignalen()/geen
+ * eigen throttle nodig. Per Gmail-thread hoogstens één live-aanroep, ook als
+ * er meerdere genegeerde berichten in dezelfde thread zitten. Faalt de
+ * live-aanroep voor een thread (Gmail tijdelijk onbereikbaar), dan ontbreekt
+ * dat ene bericht in de lijst — zelfde fail-safe-omissie als
+ * synchroniseerThreadstatus, nooit een crash van de hele diagnose.
+ */
+export async function haalGenegeerdeMails(payload: Payload, eigenaarId: number, accessToken: string): Promise<GenegeerdeMailWeergave[]> {
+  const resultaat = await payload.find({
+    collection: "mail-signalen",
+    where: { and: [{ eigenaar: { equals: eigenaarId } }, { status: { equals: "niet_relevant" } }] },
+    sort: "-geclassificeerdOp",
+    limit: 100,
+    depth: 0,
+    overrideAccess: true,
+  });
+
+  const threadCache = new Map<string, ThreadBerichtSamenvatting[] | null>();
+  const weergaven: GenegeerdeMailWeergave[] = [];
+  for (const rij of resultaat.docs as unknown as MailSignaalRij[]) {
+    let berichten = threadCache.get(rij.gmailThreadId);
+    if (berichten === undefined) {
+      berichten = await haalThreadBerichtenSamenvatting(accessToken, rij.gmailThreadId).catch(() => null);
+      threadCache.set(rij.gmailThreadId, berichten);
+    }
+    const eigenBericht = berichten?.find((b) => b.gmailMessageId === rij.gmailMessageId);
+    if (!eigenBericht) continue;
+    weergaven.push({
+      signaalId: rij.id,
+      gmailMessageId: rij.gmailMessageId,
+      gmailThreadId: rij.gmailThreadId,
+      van: eigenBericht.van,
+      onderwerp: eigenBericht.onderwerp,
+      reden: rij.reden ?? "",
+    });
+  }
+  return weergaven;
+}
+
+/**
+ * "Toch tonen" — corrigeert een fout-negatieve AI-classificatie: promoveert
+ * een "niet_relevant"-signaal terug naar "gesignaleerd" (categorie
+ * "ter_beoordeling" — eerlijk over de herkomst: een menselijke correctie,
+ * geen nieuwe AI-uitkomst). Werkt alleen op een signaal dat daadwerkelijk
+ * "niet_relevant" is (geen no-op-succes op een willekeurige status).
+ *
+ * Bewaart de menselijke keuze zonder een nieuw veld/migratie: zodra de
+ * status "gesignaleerd" is, slaat fase 2 van haalMailSignalen() dit signaal
+ * bij een volgende scan altijd over (zie de "rij.status === 'gesignaleerd'"-
+ * tak hierboven, dezelfde bescherming als elk ander actief signaal) — de
+ * thread wordt dus nooit automatisch opnieuw weggefilterd, exact de
+ * opdrachtseis.
+ */
+export async function toonSignaalToch(payload: Payload, eigenaarId: number, signaalId: number): Promise<boolean> {
+  const rij = await vindEigenSignaal(payload, eigenaarId, signaalId);
+  if (!rij || rij.status !== "niet_relevant") return false;
+  await payload.update({
+    collection: "mail-signalen",
+    id: rij.id,
+    overrideAccess: true,
+    data: {
+      status: "gesignaleerd",
+      categorie: "ter_beoordeling",
+      reden: `Handmatig teruggezet als 'vraagt aandacht'. Eerdere inschatting: ${rij.reden || "onbekend"}`,
+      geclassificeerdOp: new Date().toISOString(),
+    },
+  });
+  return true;
+}
+
 export interface MaakMailTaakOpties {
   titel: string;
   beschrijving?: string;

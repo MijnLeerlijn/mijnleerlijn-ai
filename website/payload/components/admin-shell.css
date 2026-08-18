@@ -2342,6 +2342,68 @@ a.ml-dashboard__card:hover {
   flex-wrap: wrap;
 }
 
+/* Transparantieproductiecorrectie (2026-08-19) — "Bekijk genegeerde mails":
+ * een rustige, tekstuele toggle (geen knopvlak) onder de kaartenlijst, en
+ * een compacte lijst met minimale metadata eronder wanneer uitgeklapt —
+ * bewust geen kaartstijl zoals MailKaart: dit is een diagnose, geen tweede
+ * actiegerichte lijst. */
+.ml-mail-genegeerd__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--theme-elevation-500);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ml-mail-genegeerd__toggle:hover {
+  color: var(--ml-admin-purple);
+}
+
+.ml-mail-genegeerd__toggle svg {
+  transition: transform 0.15s ease;
+}
+
+.ml-mail-genegeerd__lijst {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--ml-admin-radius-sm);
+  background: var(--theme-elevation-50);
+}
+
+.ml-mail-genegeerd__item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--theme-elevation-100);
+}
+
+.ml-mail-genegeerd__item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.ml-mail-genegeerd__van {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-text);
+}
+
+.ml-mail-genegeerd__classificatie {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--theme-elevation-500);
+}
+
 /* Koppelstatus-chip (GoogleKoppelingChip, punt 5) — vervangt de vroegere
  * grote "... gekoppeld ... Ontkoppelen"-rijen. Rustige pil met chevron,
  * rechtsboven in de sync-rij (margin-left: auto duwt 'm naar rechts zonder

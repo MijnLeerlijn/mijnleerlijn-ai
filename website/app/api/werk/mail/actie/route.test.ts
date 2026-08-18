@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { verifyAdminSessionCookie } from "@/lib/auth/verify-session";
-import { dempSignaal, maakMailTaak } from "@/lib/werk/mail-signalen";
+import { dempSignaal, maakMailTaak, toonSignaalToch } from "@/lib/werk/mail-signalen";
 
 vi.mock("payload", () => ({ getPayload: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/payload.config", () => ({ default: {} }));
@@ -10,11 +10,12 @@ vi.mock("@/lib/auth/verify-session", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/auth/verify-session")>();
   return { ...echt, verifyAdminSessionCookie: vi.fn() };
 });
-vi.mock("@/lib/werk/mail-signalen", () => ({ dempSignaal: vi.fn(), maakMailTaak: vi.fn() }));
+vi.mock("@/lib/werk/mail-signalen", () => ({ dempSignaal: vi.fn(), maakMailTaak: vi.fn(), toonSignaalToch: vi.fn() }));
 
 const mockVerify = vi.mocked(verifyAdminSessionCookie);
 const mockDemp = vi.mocked(dempSignaal);
 const mockTaak = vi.mocked(maakMailTaak);
+const mockTochTonen = vi.mocked(toonSignaalToch);
 
 function maakRequest(body: unknown) {
   return new NextRequest("http://localhost:3000/api/werk/mail/actie", {
@@ -28,6 +29,7 @@ beforeEach(() => {
   mockVerify.mockReset();
   mockDemp.mockReset().mockResolvedValue(true);
   mockTaak.mockReset().mockResolvedValue({ taakId: 42 });
+  mockTochTonen.mockReset().mockResolvedValue(true);
 });
 
 describe("POST /api/werk/mail/actie", () => {
@@ -63,6 +65,22 @@ describe("POST /api/werk/mail/actie", () => {
     mockDemp.mockResolvedValue(false);
 
     const response = await POST(maakRequest({ actie: "dempen", signaalId: 999 }));
+    expect(response.status).toBe(404);
+  });
+
+  it("'toch_tonen' roept toonSignaalToch aan, gescoped op de ingelogde gebruiker (opdrachtseis: fout-negatief corrigeren)", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 7, role: "editor" }, cookieAanwezig: true });
+    const response = await POST(maakRequest({ actie: "toch_tonen", signaalId: 5 }));
+
+    expect(response.status).toBe(200);
+    expect(mockTochTonen).toHaveBeenCalledWith(expect.anything(), 7, 5);
+  });
+
+  it("'toch_tonen' geeft 404 terug wanneer het signaal niet (meer) niet_relevant of niet van deze gebruiker is", async () => {
+    mockVerify.mockResolvedValue({ user: { id: 7, role: "editor" }, cookieAanwezig: true });
+    mockTochTonen.mockResolvedValue(false);
+
+    const response = await POST(maakRequest({ actie: "toch_tonen", signaalId: 999 }));
     expect(response.status).toBe(404);
   });
 

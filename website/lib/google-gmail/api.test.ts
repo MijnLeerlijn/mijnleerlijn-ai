@@ -6,6 +6,7 @@ import {
   verstuurAntwoord,
   haalThreadBerichtenSamenvatting,
   laatsteThreadBericht,
+  haalOngelezenAantal,
   type ThreadBerichtSamenvatting,
 } from "./api";
 
@@ -103,6 +104,29 @@ describe("haalThreadBerichtenSamenvatting — deterministische 'wie stuurde het 
     const url = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
     expect(url).toContain("format=metadata");
     expect(url).not.toContain("format=full");
+  });
+});
+
+describe("haalOngelezenAantal — transparantieregel, live/deterministisch, geen classificatie (productiecorrectie 2026-08-19)", () => {
+  const oorspronkelijkeFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = oorspronkelijkeFetch;
+  });
+
+  it("leest messagesUnread van het INBOX-label, niet een zelf-opgetelde lijst", async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "INBOX", messagesUnread: 3, messagesTotal: 120 }) });
+
+    const aantal = await haalOngelezenAantal("token");
+
+    expect(aantal).toBe(3);
+    const url = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+    expect(url).toContain("/labels/INBOX");
+  });
+
+  it("valt terug op 0 wanneer messagesUnread ontbreekt in de respons", async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "INBOX" }) });
+    expect(await haalOngelezenAantal("token")).toBe(0);
   });
 });
 

@@ -165,6 +165,19 @@ interface MailSignaalDoc {
   signaalId: number;
 }
 
+// Transparantieproductiecorrectie (2026-08-19) — ruwe vorm zoals
+// GET /api/werk/mail/genegeerd teruggeeft (lib/werk/mail-signalen.ts se
+// GenegeerdeMailWeergave). Alleen minimale metadata (opdrachtseis) — geen
+// mailbody, geen thread-context, dit is een diagnose, geen mini-inbox.
+interface MailGenegeerdDoc {
+  signaalId: number;
+  gmailMessageId: string;
+  gmailThreadId: string;
+  van: string;
+  onderwerp: string;
+  reden: string;
+}
+
 interface MailAntwoordvoorstel {
   conceptTekst: string;
   aan: string;
@@ -1028,6 +1041,19 @@ export function SalesDashboardPaneel() {
   // lib/werk/mail-signalen.ts. Gedreven door dezelfde googleConnection-state
   // hierboven (gedeelde koppeling) — geen los "gmailConnection"-fetch nodig.
   const [mailSignalen, setMailSignalen] = useState<MailSignaalDoc[]>([]);
+  // Transparantieproductiecorrectie (2026-08-19) — "3 ongelezen · 1 vraagt
+  // aandacht": live/onafhankelijk Gmail-getal, null zolang niet (nog) bekend
+  // of de laatste ophaalpoging mislukte (zie GET /api/werk/mail se eigen
+  // try/catch) — de UI laat de tellerregel dan gewoon weg i.p.v. "?" tonen.
+  const [ongelezenAantal, setOngelezenAantal] = useState<number | null>(null);
+  // "Bekijk genegeerde mails" — uitsluitend lui geladen na een expliciete
+  // klik (opdrachtseis: geen volledige inbox in Mijn Dag), vandaar een eigen
+  // geladen/bezig/fout-state los van mailSignalen hierboven.
+  const [genegeerdeMails, setGenegeerdeMails] = useState<MailGenegeerdDoc[]>([]);
+  const [genegeerdeMailsOpen, setGenegeerdeMailsOpen] = useState(false);
+  const [genegeerdeMailsGeladen, setGenegeerdeMailsGeladen] = useState(false);
+  const [genegeerdeMailsBezig, setGenegeerdeMailsBezig] = useState(false);
+  const [genegeerdeMailsFout, setGenegeerdeMailsFout] = useState<string | null>(null);
 
   useEffect(() => {
     let actief = true;
@@ -1167,13 +1193,15 @@ export function SalesDashboardPaneel() {
   const laadMailSignalen = useCallback(async () => {
     if (!heeftGmailScope) {
       setMailSignalen([]);
+      setOngelezenAantal(null);
       setMailFout(null);
       return;
     }
     const res = await fetch("/api/werk/mail", { credentials: "include" });
     if (res.ok) {
-      const data = (await res.json()) as { connected: boolean; signalen: MailSignaalDoc[] };
+      const data = (await res.json()) as { connected: boolean; signalen: MailSignaalDoc[]; ongelezenAantal: number | null };
       setMailSignalen(data.signalen);
+      setOngelezenAantal(data.ongelezenAantal);
       setMailFout(null);
     } else {
       setMailFout("Mail kon niet worden opgehaald — probeer het later opnieuw.");
@@ -1188,12 +1216,22 @@ export function SalesDashboardPaneel() {
   // begrensd tot het huidige lookbackvenster/aantal (zie
   // lib/werk/mail-signalen.ts). Toont altijd een compacte samenvatting, ook
   // wanneer er niets nieuws bleek.
+  //
+  // Transparantieproductiecorrectie (2026-08-19) — samenvatting uitgebreid
+  // naar exact de opgevraagde vijf categorieën (bekeken/aandacht nodig/geen
+  // actie/inmiddels beantwoord/al bekend). "Al bekend" is bewust de som van
+  // algVerwerkt (had al een bewuste gebruikersstatus) en ongewijzigd (nog
+  // actief, of een duplicaat binnen dezelfde thread) — beide betekenen voor
+  // Michel hetzelfde: "niets nieuws, al gezien". De losse velden blijven
+  // ongewijzigd in de API-respons (zie lib/werk/mail-signalen.ts) — alleen
+  // de weergave hier combineert ze.
   async function controleerMailOpnieuw() {
     setMailControlerenBezig(true);
     setMailFout(null);
     setMailControlerenStatus(null);
     const { ok, data } = await apiPost<{
       signalen: MailSignaalDoc[];
+      ongelezenAantal: number | null;
       bekeken: number;
       actieNodig: number;
       genegeerd: number;
@@ -1203,13 +1241,55 @@ export function SalesDashboardPaneel() {
     }>("/api/werk/mail/opnieuw-controleren");
     if (ok && data) {
       setMailSignalen(data.signalen);
+      setOngelezenAantal(data.ongelezenAantal);
       setMailControlerenStatus(
-        `${data.bekeken} mail${data.bekeken === 1 ? "" : "s"} bekeken · ${data.actieNodig} nieuwe actie${data.actieNodig === 1 ? "" : "s"} · ${data.automatischBeantwoord} inmiddels beantwoord · ${data.genegeerd} genegeerd · ${data.ongewijzigd} ongewijzigd`
+        `${data.bekeken} bekeken · ${data.actieNodig} aandacht nodig · ${data.genegeerd} geen actie · ${data.automatischBeantwoord} inmiddels beantwoord · ${data.algVerwerkt + data.ongewijzigd} al bekend`
       );
+      // Genegeerde-mails-diagnose kan nu verouderd zijn (nieuwe niet_relevant-
+      // uitkomsten, of een eerder genegeerd bericht is net "toch getoond") —
+      // uitsluitend herladen als de gebruiker 'm al open had staan.
+      if (genegeerdeMailsOpen) laadGenegeerdeMails();
     } else {
       setMailFout("Opnieuw controleren mislukt — probeer het later opnieuw.");
     }
     setMailControlerenBezig(false);
+  }
+
+  // Transparantieproductiecorrectie (2026-08-19) — "Bekijk genegeerde
+  // mails": lui geladen, uitsluitend na de eerste keer uitklappen (niet bij
+  // elke dashboardlezing, opdrachtseis: geen volledige inbox in Mijn Dag).
+  const laadGenegeerdeMails = useCallback(async () => {
+    setGenegeerdeMailsBezig(true);
+    setGenegeerdeMailsFout(null);
+    const res = await fetch("/api/werk/mail/genegeerd", { credentials: "include" });
+    if (res.ok) {
+      const data = (await res.json()) as { genegeerdeMails: MailGenegeerdDoc[] };
+      setGenegeerdeMails(data.genegeerdeMails);
+      setGenegeerdeMailsGeladen(true);
+    } else {
+      setGenegeerdeMailsFout("Genegeerde mails konden niet worden opgehaald — probeer het later opnieuw.");
+    }
+    setGenegeerdeMailsBezig(false);
+  }, []);
+
+  function schakelGenegeerdeMails() {
+    const nieuweStaat = !genegeerdeMailsOpen;
+    setGenegeerdeMailsOpen(nieuweStaat);
+    if (nieuweStaat && !genegeerdeMailsGeladen) laadGenegeerdeMails();
+  }
+
+  // "Toch tonen" — corrigeert een fout-negatieve AI-classificatie: het
+  // signaal verschijnt meteen in de gewone kaartenlijst (onGewijzigd herlaadt
+  // mailSignalen) en verdwijnt uit de genegeerde-lijst hier lokaal, zonder
+  // een volledige herlaadronde van die lijst nodig te hebben.
+  async function toonMailToch(signaalId: number) {
+    const { ok } = await apiPost("/api/werk/mail/actie", { actie: "toch_tonen", signaalId });
+    if (ok) {
+      setGenegeerdeMails((huidig) => huidig.filter((m) => m.signaalId !== signaalId));
+      laadMailSignalen();
+    } else {
+      setGenegeerdeMailsFout("Actie mislukt — probeer het opnieuw.");
+    }
   }
 
   useEffect(() => {
@@ -1227,6 +1307,10 @@ export function SalesDashboardPaneel() {
         setAgendaEvents([]);
         setVoorbereidingSignalen([]);
         setMailSignalen([]);
+        setOngelezenAantal(null);
+        setGenegeerdeMails([]);
+        setGenegeerdeMailsOpen(false);
+        setGenegeerdeMailsGeladen(false);
       }
     } finally {
       setGoogleOntkoppelBezig(false);
@@ -1731,12 +1815,21 @@ export function SalesDashboardPaneel() {
               <div className="ml-sales-widget__mail-sectie-header">
                 <p className="ml-sales-widget__meta ml-sales-widget__meta--bron" style={{ margin: 0 }}>
                   <Mail size={14} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.purple.fg }} />
-                  Mail die aandacht vraagt{mailSignalen.length > 0 ? ` (${mailSignalen.length})` : ""}
+                  Mail die aandacht vraagt
                 </p>
                 <button type="button" className="ml-sales__knop" disabled={mailControlerenBezig} onClick={controleerMailOpnieuw}>
                   {mailControlerenBezig ? "Bezig…" : "Mail opnieuw controleren"}
                 </button>
               </div>
+              {/* Transparantieproductiecorrectie (2026-08-19) — "waarom zie ik
+                 hier maar 1 mail terwijl Gmail er 3 als ongelezen toont?":
+                 ongelezenAantal komt live/onafhankelijk van Gmail, los van de
+                 classificatie — het verschil tussen de twee getallen is
+                 precies waarom "Bekijk genegeerde mails" hieronder bestaat. */}
+              <p className="ml-sales-widget__meta">
+                {ongelezenAantal !== null ? `${ongelezenAantal} ongelezen · ` : ""}
+                {mailSignalen.length} {mailSignalen.length === 1 ? "vraagt" : "vragen"} aandacht
+              </p>
               {mailControlerenStatus && <p className="ml-sales-widget__meta">{mailControlerenStatus}</p>}
               {mailFout && <p className="ml-sales-widget__meta">{mailFout}</p>}
               {mailSignalen.map((signaal) => (
@@ -1751,6 +1844,33 @@ export function SalesDashboardPaneel() {
                 />
               ))}
               {mailSignalen.length === 0 && !mailFout && <p className="ml-sales-widget__context">Geen mail die nu aandacht vraagt.</p>}
+
+              <button type="button" className="ml-mail-genegeerd__toggle" aria-expanded={genegeerdeMailsOpen} onClick={schakelGenegeerdeMails}>
+                <ChevronDown size={13} aria-hidden="true" style={{ transform: genegeerdeMailsOpen ? "rotate(180deg)" : undefined }} />
+                {genegeerdeMailsOpen ? "Verberg genegeerde mails" : "Bekijk genegeerde mails"}
+              </button>
+              {genegeerdeMailsOpen && (
+                <div className="ml-mail-genegeerd__lijst">
+                  {genegeerdeMailsBezig && <p className="ml-sales-widget__meta">Laden…</p>}
+                  {genegeerdeMailsFout && <p className="ml-sales-widget__meta">{genegeerdeMailsFout}</p>}
+                  {!genegeerdeMailsBezig && !genegeerdeMailsFout && genegeerdeMails.length === 0 && (
+                    <p className="ml-sales-widget__context">Geen genegeerde mails in het huidige venster.</p>
+                  )}
+                  {genegeerdeMails.map((mail) => (
+                    <div key={mail.gmailMessageId} className="ml-mail-genegeerd__item">
+                      <p className="ml-mail-genegeerd__van">{weergaveNaamAfzender(mail.van)}</p>
+                      <p className="ml-sales-widget__meta">{mail.onderwerp}</p>
+                      <p className="ml-mail-genegeerd__classificatie">Geen actie nodig</p>
+                      <p className="ml-sales-widget__context">{mail.reden}</p>
+                      <div className="ml-sales__actie-knoppen">
+                        <button type="button" className="ml-sales__knop" onClick={() => toonMailToch(mail.signaalId)}>
+                          Toch tonen
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

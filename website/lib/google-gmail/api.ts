@@ -50,6 +50,21 @@ export function bouwKandidaatQuery(lookbackDagen: number): string {
   ].join(" ");
 }
 
+/**
+ * Productiecorrectie (2026-08-19, transparantie) — het ONGEFILTERDE aantal
+ * ongelezen berichten in de inbox, rechtstreeks van Gmail's eigen
+ * label-resource (INBOX se messagesUnread) — dezelfde telling die Gmail zelf
+ * toont. Bewust GEEN kandidatenquery/classificatie: dit is uitsluitend een
+ * onafhankelijk, live referentiegetal voor de transparantieregel op het
+ * dashboard ("3 ongelezen · 1 vraagt aandacht"), nooit een invoer voor
+ * bepaalNieuweKandidaten/classificeerKandidaatBerichten — gelezen/ongelezen
+ * mag nooit meewegen in "actie nodig" (opdrachtseis).
+ */
+export async function haalOngelezenAantal(accessToken: string): Promise<number> {
+  const label = (await gmailFetch(accessToken, "/labels/INBOX")) as { messagesUnread?: number };
+  return label.messagesUnread ?? 0;
+}
+
 async function gmailFetch(accessToken: string, path: string): Promise<unknown> {
   const response = await fetch(`${GMAIL_API_BASE}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
