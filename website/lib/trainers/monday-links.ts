@@ -337,7 +337,13 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
   }
 
   const trainingenPerSchool = new Map<string, TrainingSamenvatting[]>();
-  const uitvoeringById = new Map<string, { schoolIds: string[] }>();
+  // samenvatting hier bewaard (niet alleen schoolIds) — de tier-2-lus
+  // hieronder heeft de VOLLEDIGE TrainingSamenvatting nodig om diezelfde
+  // training alsnog aan een legacy-unique-bevestigde school te kunnen
+  // toewijzen (zie de toelichting daar): zonder dit zou elke training met
+  // een lege School-kolom zelf nergens herbruikbaar zijn, ook niet via de
+  // Master-ID-keten die 'm daar wél uniek aan toewijst.
+  const uitvoeringById = new Map<string, { schoolIds: string[]; samenvatting: TrainingSamenvatting }>();
   for (const item of uitvoeringPagina.items) {
     const kolommen = naarKolomMap(item.column_values);
     const schoolIds = parseLinkedPulseIds(kolommen.get(UV_SCHOOL_KOLOM)?.value);
@@ -351,7 +357,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
       datum,
       logboekIngevuld: parseCheckboxIngevuld(kolommen.get(UV_LOGBOEK_KOLOM)?.value),
     };
-    uitvoeringById.set(item.id, { schoolIds });
+    uitvoeringById.set(item.id, { schoolIds, samenvatting });
     for (const schoolId of schoolIds) {
       const lijst = trainingenPerSchool.get(schoolId) ?? [];
       lijst.push(samenvatting);
@@ -378,6 +384,11 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
   // Tier 1 (harde relatie, vervolg) / Tier 2 (unieke legacy-schoolmatch):
   // via het eigen trainerboard — Master ID → centrale training → School.
   const suggesties: TrainerSchoolSuggestie[] = [];
+  // Dedup op centrale-training-ID (niet op trainerboard-item-ID): voorkomt
+  // dubbeltelling als twee trainerboard-rijen toevallig dezelfde Master ID
+  // hebben — geen ander doel dan dat, want elke ECHTE training heeft hier
+  // hoe dan ook precies één centrale-training-ID.
+  const legacyGekoppeldeTrainingIds = new Set<string>();
   for (const tbItem of trainerboardStructuur.items) {
     if (!tbItem.masterId) continue;
     const training = uitvoeringById.get(tbItem.masterId);
@@ -420,16 +431,44 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
     const kandidaten = Array.from(masterDataById.values()).filter((school) => normaliseerSchoolnaamVoorMatch(school.naam) === groepNaamGenormaliseerd);
     if (kandidaten.length !== 1) continue;
     const kandidaat = kandidaten[0]!;
-    if (scholen.has(kandidaat.id)) continue; // al bevestigd via tier 1 (bv. door een ander trainerboard-item) — nooit overschrijven met een zwakkere bron.
-    scholen.set(kandidaat.id, {
-      id: kandidaat.id,
-      naam: kandidaat.naam,
-      onderwijstype: kandidaat.onderwijstype,
-      locatie: kandidaat.locatie,
-      implementatiefase: kandidaat.implementatiefase,
-      contactpersoonNaam: kandidaat.contactpersoonNaam,
-      bron: "legacy-unique",
-    });
+
+    // Nooit een reeds bevestigde school overschrijven met de zwakkere
+    // legacy-bron (bv. al bevestigd via tier 1 door een ander trainerboard-
+    // item) — maar dat mag de trainingstoewijzing hieronder niet blokkeren:
+    // meerdere trainerboard-items binnen dezelfde groep (Montessori
+    // Gorinchem heeft er meerdere "Training"/"Online uur"-items van, live
+    // bevestigd) moeten ALLEMAAL hun eigen centrale training aan deze school
+    // toevoegen, ongeacht welke tier de school uiteindelijk bevestigde. Vóór
+    // deze fix stond hier `if (scholen.has(kandidaat.id)) continue;` — dat
+    // sloeg zowel de (overbodige) herbevestiging als de (wél noodzakelijke)
+    // trainingstoewijzing structureel over voor elk item ná het eerste in
+    // dezelfde groep — precies het gerapporteerde "0 open/0 gepland/0
+    // gedaan"-symptoon voor Montessori Gorinchem.
+    if (!scholen.has(kandidaat.id)) {
+      scholen.set(kandidaat.id, {
+        id: kandidaat.id,
+        naam: kandidaat.naam,
+        onderwijstype: kandidaat.onderwijstype,
+        locatie: kandidaat.locatie,
+        implementatiefase: kandidaat.implementatiefase,
+        contactpersoonNaam: kandidaat.contactpersoonNaam,
+        bron: "legacy-unique",
+      });
+    }
+
+    // De training zelf identificeren we via de bestaande Master-ID-keten
+    // (training.samenvatting.id is de centrale-training-ID, nooit het
+    // trainerboard-item-ID of de schoolnaam) — de naamfallback vervangt
+    // uitsluitend de ontbrekende School-relation, niet de trainingsidentiteit
+    // zelf. Zonder de dedup-guard zou een datakwaliteitsuitzondering (twee
+    // trainerboard-rijen met dezelfde Master ID) dezelfde training twee keer
+    // in de tellingen laten meetellen.
+    if (!legacyGekoppeldeTrainingIds.has(training.samenvatting.id)) {
+      legacyGekoppeldeTrainingIds.add(training.samenvatting.id);
+      const lijst = trainingenPerSchool.get(kandidaat.id) ?? [];
+      lijst.push(training.samenvatting);
+      trainingenPerSchool.set(kandidaat.id, lijst);
+    }
   }
 
   return { scholen, trainingenPerSchool, suggesties };
