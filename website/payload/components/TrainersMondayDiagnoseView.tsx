@@ -214,15 +214,24 @@ function BoardStructuurSectie() {
   );
 }
 
-interface MondayItemBoardInfo {
+interface MondayItemDetailColumnValue {
+  id: string;
+  title: string;
+  type: string;
+  text: string | null;
+  value: string | null;
+}
+interface MondayItemDetail {
   id: string;
   name: string;
+  group: { id: string; title: string } | null;
   board: { id: string; name: string } | null;
+  columnValues: MondayItemDetailColumnValue[];
 }
 
 function ItemNaarBoardSectie() {
   const [itemId, setItemId] = useState("");
-  const [resultaat, setResultaat] = useState<MondayItemBoardInfo | null>(null);
+  const [resultaat, setResultaat] = useState<MondayItemDetail | null>(null);
   const [bezig, setBezig] = useState(false);
   const [fout, setFout] = useState<string | null>(null);
 
@@ -230,7 +239,7 @@ function ItemNaarBoardSectie() {
     if (!itemId.trim()) return;
     setBezig(true);
     setFout(null);
-    const { ok, data, fout: f } = await apiPost<{ item: MondayItemBoardInfo }>("/api/trainers-diagnose/monday/item-board", { itemId: itemId.trim() });
+    const { ok, data, fout: f } = await apiPost<{ item: MondayItemDetail }>("/api/trainers-diagnose/monday/item-board", { itemId: itemId.trim() });
     if (ok && data) setResultaat(data.item);
     else setFout(f);
     setBezig(false);
@@ -239,21 +248,50 @@ function ItemNaarBoardSectie() {
   return (
     <div className="ml-sales__section">
       <h2>3. Item → board opzoeken</h2>
-      <p className="ml-sales__kaart-tekst">Plak een item-ID dat je in een board_relation-kolomwaarde hierboven tegenkomt (bijv. in de <code>value</code>-JSON, als <code>linkedPulseIds</code>) — dit herleidt &apos;m naar het échte board. Zo bevestig je of een Master ID-kandidaatkolom naar &quot;1: Scholen (Master Data)&quot; wijst, of ontdek je het board-ID van &quot;8: Contactpersonen&quot;.</p>
+      <p className="ml-sales__kaart-tekst">Plak een item-ID dat je in een board_relation-kolomwaarde hierboven tegenkomt (bijv. in de <code>value</code>-JSON, als <code>linkedPulseIds</code>) — dit haalt het volledige detail op: groep, board én ALLE column_values (nooit ingekort). Zo bevestig je of een Master ID-kandidaatkolom naar &quot;1: Scholen (Master Data)&quot; wijst, of ontdek je het board-ID van &quot;8: Contactpersonen&quot;.</p>
       <div className="ml-sales__filter-balk">
         <input type="text" value={itemId} onChange={(e) => setItemId(e.target.value)} placeholder="Item-ID" aria-label="Item-ID" />
         <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={!itemId.trim() || bezig} onClick={zoek}>
-          {bezig ? "Bezig…" : "Zoek board"}
+          {bezig ? "Bezig…" : "Zoek item"}
         </button>
       </div>
       {fout && <p className="ml-sales__kaart-tekst" style={{ color: "#dc2626" }}>Fout: {fout}</p>}
       {resultaat && (
         <div style={{ marginTop: 12 }}>
-          <p className="ml-sales__kaart-tekst">
-            <strong>{resultaat.name}</strong> ({resultaat.id}) hoort bij board{" "}
-            {resultaat.board ? <strong>{resultaat.board.name} ({resultaat.board.id})</strong> : "onbekend"}.
-          </p>
-          <div className="ml-sales__actie-knoppen"><KopieerKnop data={resultaat} /></div>
+          <table className="ml-sales__tabel">
+            <tbody>
+              <tr><td>Item-ID</td><td><code>{resultaat.id}</code></td></tr>
+              <tr><td>Itemnaam</td><td>{resultaat.name}</td></tr>
+              <tr>
+                <td>Groep</td>
+                <td>{resultaat.group ? <>{resultaat.group.title} (<code>{resultaat.group.id}</code>)</> : "onbekend"}</td>
+              </tr>
+              <tr>
+                <td>Board</td>
+                <td>{resultaat.board ? <>{resultaat.board.name} (<code>{resultaat.board.id}</code>)</> : "onbekend"}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3 style={{ marginTop: 16 }}>Column_values ({resultaat.columnValues.length})</h3>
+          <table className="ml-sales__tabel">
+            <thead>
+              <tr><th>Column-ID</th><th>Titel</th><th>Type</th><th>Text</th><th>Ruwe value</th></tr>
+            </thead>
+            <tbody>
+              {resultaat.columnValues.map((cv) => (
+                <tr key={cv.id}>
+                  <td><code>{cv.id}</code></td>
+                  <td>{cv.title || "—"}</td>
+                  <td>{cv.type || "—"}</td>
+                  <td>{cv.text ?? "—"}</td>
+                  <td style={{ wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>{cv.value ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="ml-sales__actie-knoppen" style={{ marginTop: 12 }}><KopieerKnop data={resultaat} /></div>
         </div>
       )}
     </div>

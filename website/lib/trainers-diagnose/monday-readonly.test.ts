@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mondayQuery } from "@/lib/sales/monday-client";
-import { lijstAlleBoards, haalBoardStructuur, zoekItemMetBoard, MAX_BOARDS, MAX_ITEMS_PER_BOARD, MAX_SUBITEMS_PER_ITEM } from "./monday-readonly";
+import { lijstAlleBoards, haalBoardStructuur, haalItemDetail, MAX_BOARDS, MAX_ITEMS_PER_BOARD, MAX_SUBITEMS_PER_ITEM } from "./monday-readonly";
 
 vi.mock("@/lib/sales/monday-client", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/sales/monday-client")>();
@@ -131,17 +131,62 @@ describe("haalBoardStructuur — read-only boardverkenning (groepen/kolommen/ite
   });
 });
 
-describe("zoekItemMetBoard — herleidt een item-ID naar zijn board (voor board_relation-koppelingen)", () => {
-  it("geeft board-ID en -naam terug voor een bestaand item", async () => {
-    mockQuery.mockResolvedValue({ items: [{ id: "123", name: "Jeroen Bakker", board: { id: "18420999", name: "8: Contactpersonen" } }] });
+describe("haalItemDetail — volledig itemdetail (groep/board/ALLE column_values, board_relation volledig zichtbaar)", () => {
+  it("geeft item, groep, board én alle column_values (met title/type uit de geneste column-relatie) terug", async () => {
+    mockQuery.mockResolvedValue({
+      items: [
+        {
+          id: "12713002919",
+          name: "Praktijktraining — Groepen & Leerdoelen",
+          group: { id: "grp1", title: "IKC Borgmanschool Oosterpark" },
+          board: { id: "999", name: "Trainer Wessel Kok" },
+          column_values: [
+            { id: "board_relation_abc", text: "IKC Borgmanschool Oosterpark", value: '{"linkedPulseIds":[{"linkedPulseId":18420555}]}', column: { title: "Master ID", type: "board_relation" } },
+            { id: "date_xyz", text: "2026-08-20", value: '{"date":"2026-08-20"}', column: { title: "Datum gepland", type: "date" } },
+            { id: "status_qqq", text: "Gepland", value: '{"index":1,"label":"Gepland"}', column: { title: "Status", type: "status" } },
+          ],
+        },
+      ],
+    });
 
-    const resultaat = await zoekItemMetBoard("123");
+    const detail = await haalItemDetail("12713002919");
 
-    expect(resultaat).toEqual({ id: "123", name: "Jeroen Bakker", board: { id: "18420999", name: "8: Contactpersonen" } });
+    expect(detail).toEqual({
+      id: "12713002919",
+      name: "Praktijktraining — Groepen & Leerdoelen",
+      group: { id: "grp1", title: "IKC Borgmanschool Oosterpark" },
+      board: { id: "999", name: "Trainer Wessel Kok" },
+      columnValues: [
+        { id: "board_relation_abc", title: "Master ID", type: "board_relation", text: "IKC Borgmanschool Oosterpark", value: '{"linkedPulseIds":[{"linkedPulseId":18420555}]}' },
+        { id: "date_xyz", title: "Datum gepland", type: "date", text: "2026-08-20", value: '{"date":"2026-08-20"}' },
+        { id: "status_qqq", title: "Status", type: "status", text: "Gepland", value: '{"index":1,"label":"Gepland"}' },
+      ],
+    });
+  });
+
+  it("laat de ruwe board_relation-value volledig en ongewijzigd door — geen inkorting/parsing", async () => {
+    const langeWaarde = JSON.stringify({ linkedPulseIds: [{ linkedPulseId: 18420555 }, { linkedPulseId: 18420556 }], changed_at: "2026-08-19T09:00:00.000Z" });
+    mockQuery.mockResolvedValue({
+      items: [
+        { id: "1", name: "x", group: null, board: null, column_values: [{ id: "board_relation_abc", text: "twee gekoppelde items", value: langeWaarde, column: { title: "Master ID", type: "board_relation" } }] },
+      ],
+    });
+
+    const detail = await haalItemDetail("1");
+
+    expect(detail!.columnValues[0]!.value).toBe(langeWaarde);
+  });
+
+  it("valt terug op lege title/type wanneer de column-relatie ontbreekt — geen crash", async () => {
+    mockQuery.mockResolvedValue({
+      items: [{ id: "1", name: "x", group: null, board: null, column_values: [{ id: "onbekend", text: "iets", value: "{}", column: null }] }],
+    });
+    const detail = await haalItemDetail("1");
+    expect(detail!.columnValues[0]).toEqual({ id: "onbekend", title: "", type: "", text: "iets", value: "{}" });
   });
 
   it("geeft null terug voor een onbestaand item — geen crash", async () => {
     mockQuery.mockResolvedValue({ items: [] });
-    expect(await zoekItemMetBoard("onbestaand")).toBeNull();
+    expect(await haalItemDetail("onbestaand")).toBeNull();
   });
 });

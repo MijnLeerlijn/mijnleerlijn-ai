@@ -159,32 +159,81 @@ export async function haalBoardStructuur(boardId: string, itemsLimit = MAX_ITEMS
   };
 }
 
-export interface MondayItemBoardInfo {
+export interface MondayItemDetailColumnValue {
+  id: string;
+  /** Kolomtitel/-type van de bijbehorende Column — via de column_values.column-relatie, general platform knowledge (Monday's publieke schema), nog niet eerder elders in dit project gebruikt (haalBoardStructuur haalt title/type apart, via boards.columns). Nog niet live tegen een echt board bevestigd. */
+  title: string;
+  type: string;
+  text: string | null;
+  /** Ruwe JSON-waarde, ONGEWIJZIGD doorgegeven — bij een board_relation-kolom bevat dit de gekoppelde item-ID('s) (Monday-conventie: linkedPulseIds), bewust nooit hier al geparsed/ingekort. */
+  value: string | null;
+}
+
+export interface MondayItemDetail {
   id: string;
   name: string;
+  group: { id: string; title: string } | null;
   board: { id: string; name: string } | null;
+  columnValues: MondayItemDetailColumnValue[];
 }
 
 /**
- * Zoekt op één item-ID uit welk board dat item komt — bedoeld om een
- * gekoppeld item-ID dat in een board_relation-kolomwaarde (zie
- * haalBoardStructuur hierboven) wordt aangetroffen direct te herleiden naar
- * het bijbehorende board (bevestigt bijv. of een Master ID-kandidaatkolom
- * daadwerkelijk naar board 18420120365 wijst, of ontdekt het board-ID van
- * "8: Contactpersonen").
+ * Volledig detail van één item-ID — uitgebreid (2026-08-19, opdrachtseis)
+ * van de eerdere, kalere "welk board hoort hierbij"-opzoeking: naast
+ * board/groep nu ook ALLE column_values, elk met title+type (uit de
+ * geneste column-relatie) + text + de VOLLEDIGE ruwe value, nooit ingekort
+ * — een board_relation-waarde (de gekoppelde item-ID('s)) moet volledig
+ * leesbaar blijven, dat is precies het doel van deze opzoeking: een
+ * gekoppeld item-ID dat in een board_relation-kolomwaarde elders (zie
+ * haalBoardStructuur) wordt aangetroffen hier direct verder herleiden
+ * (bevestigt bijv. of een Master ID-kandidaatkolom daadwerkelijk naar board
+ * 18420120365 wijst, of ontdekt het board-ID van "8: Contactpersonen").
  */
-export async function zoekItemMetBoard(itemId: string): Promise<MondayItemBoardInfo | null> {
+export async function haalItemDetail(itemId: string): Promise<MondayItemDetail | null> {
   const query = `
-    query ZoekItemMetBoard($itemId: ID!) {
+    query HaalItemDetail($itemId: ID!) {
       items(ids: [$itemId]) {
         id
         name
+        group { id title }
         board { id name }
+        column_values {
+          id
+          text
+          value
+          column {
+            title
+            type
+          }
+        }
       }
     }
   `;
-  const data = await mondayQuery<{ items: MondayItemBoardInfo[] }>(query, { itemId });
-  return data.items[0] ?? null;
+  const data = await mondayQuery<{
+    items: {
+      id: string;
+      name: string;
+      group: { id: string; title: string } | null;
+      board: { id: string; name: string } | null;
+      column_values: { id: string; text: string | null; value: string | null; column: { title: string; type: string } | null }[];
+    }[];
+  }>(query, { itemId });
+  const item = data.items[0];
+  if (!item) return null;
+
+  return {
+    id: item.id,
+    name: item.name,
+    group: item.group ?? null,
+    board: item.board ?? null,
+    columnValues: item.column_values.map((cv) => ({
+      id: cv.id,
+      title: cv.column?.title ?? "",
+      type: cv.column?.type ?? "",
+      text: cv.text,
+      value: cv.value,
+    })),
+  };
 }
 
 /** Monday-ID's zijn altijd numerieke strings — lichte input-validatie vóór een aanroeper 'm ooit doorstuurt naar Monday. */

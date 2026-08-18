@@ -3,14 +3,15 @@ import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin, type AuthUser } from "@/payload/access/roles";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
-import { zoekItemMetBoard, MONDAY_ID_PATROON } from "@/lib/trainers-diagnose/monday-readonly";
+import { haalItemDetail, MONDAY_ID_PATROON } from "@/lib/trainers-diagnose/monday-readonly";
 import { maakRateLimiter } from "@/lib/contact/validate";
 
-// Traineromgeving — read-only Monday-diagnose (2026-08-19). Zie
-// lib/trainers-diagnose/monday-readonly.ts se moduletoelichting.
-// Beantwoordt C/D: herleidt een item-ID (bijv. gevonden in een
-// board_relation-kolomwaarde op het trainerboard) naar het echte board waar
-// dat item bij hoort — bevestigt of een Master ID-kandidaatkolom
+// Traineromgeving — read-only Monday-diagnose (2026-08-19, uitgebreid
+// 2026-08-19). Zie lib/trainers-diagnose/monday-readonly.ts se
+// moduletoelichting. Beantwoordt C/D: volledig detail van één item-ID
+// (bijv. gevonden in een board_relation-kolomwaarde op het trainerboard) —
+// groep, board, én ALLE column_values (id/title/type/text/volledige ruwe
+// value, nooit ingekort) — bevestigt of een Master ID-kandidaatkolom
 // daadwerkelijk naar "1: Scholen (Master Data)" wijst, en ontdekt zo het
 // board-ID van "8: Contactpersonen".
 const beperkAanvragen = maakRateLimiter(60_000, 10);
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Ongeldig item-ID." }, { status: 400 });
     }
 
-    const item = await zoekItemMetBoard(body.itemId);
+    const item = await haalItemDetail(body.itemId);
     if (!item) {
       return NextResponse.json({ error: "Item niet gevonden of niet bereikbaar met dit token." }, { status: 404 });
     }
