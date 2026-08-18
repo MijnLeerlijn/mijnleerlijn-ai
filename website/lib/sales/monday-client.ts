@@ -39,7 +39,14 @@ interface MondayGraphQlResponse<T> {
   errors?: MondayGraphQlError[];
 }
 
-async function mondayQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+// Geëxporteerd (2026-08-19) — uitsluitend zodat lib/trainers-diagnose/
+// monday-readonly.ts (tijdelijk, read-only Monday-onderzoek voor de
+// Traineromgeving) dezelfde token-/foutafhandeling hergebruikt i.p.v. een
+// eigen kopie te maken — er is hier geen los vertrouwensdomein zoals tussen
+// Helpdesk- en persoonlijke Gmail (zelfde gedeelde workspace-token, dus geen
+// reden om te dupliceren). Blijft verder ongewijzigd: geen enkele bestaande
+// aanroeper hierboven raakt hierdoor iets aan.
+export async function mondayQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   const token = requireEnv("MONDAY_API_TOKEN");
   const apiVersion = optionalEnv("MONDAY_API_VERSION") ?? DEFAULT_API_VERSION;
 

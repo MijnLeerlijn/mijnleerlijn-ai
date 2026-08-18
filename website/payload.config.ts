@@ -228,6 +228,15 @@ export default buildConfig({
           path: "/sales/monday-diagnose",
           exact: true,
         },
+        // Traineromgeving-onderzoek (2026-08-19) — TIJDELIJK, read-only,
+        // geen nav-groups.ts-item (zelfde reden als salesMondayDiagnose
+        // hierboven: alleen bereikbaar via directe URL, verwijderen zodra
+        // A–D van het architectuuronderzoek zijn afgerond).
+        trainersMondayDiagnose: {
+          Component: "@/payload/components/AdminViewShell#TrainersMondayDiagnoseViewShell",
+          path: "/trainers-diagnose/monday",
+          exact: true,
+        },
       },
     },
   },

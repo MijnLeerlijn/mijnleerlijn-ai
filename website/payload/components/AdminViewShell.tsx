@@ -14,6 +14,7 @@ import { SalesScholenView } from "./SalesScholenView";
 import { SalesSchooldetailView } from "./SalesSchooldetailView";
 import { SalesActiesView } from "./SalesActiesView";
 import { SalesMondayDiagnoseView } from "./SalesMondayDiagnoseView";
+import { TrainersMondayDiagnoseView } from "./TrainersMondayDiagnoseView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -160,6 +161,17 @@ export function SalesMondayDiagnoseViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="salesMondayDiagnose">
       <SalesMondayDiagnoseView />
+    </InAdminShell>
+  );
+}
+
+// Traineromgeving-onderzoek (2026-08-19) — TIJDELIJK, zie
+// TrainersMondayDiagnoseView.tsx se moduletoelichting voor de volledige
+// opruimlijst.
+export function TrainersMondayDiagnoseViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersMondayDiagnose">
+      <TrainersMondayDiagnoseView />
     </InAdminShell>
   );
 }
