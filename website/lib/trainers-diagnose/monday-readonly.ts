@@ -32,6 +32,8 @@ const MAX_BOARDS = 100;
 const MAX_ITEMS_PER_BOARD = 30;
 const MAX_SUBITEMS_PER_ITEM = 50;
 const MAX_UPDATES = 30;
+/** Begrenst de gebatchte vervolgopzoeking van doelboarden in analyseerBoardRelaties() — beschermt het gedeelde Monday-ratebudget bij een board met ongewoon veel Connect Boards-kolommen/doelboarden. */
+const MAX_RELATED_BOARDS = 15;
 
 export interface MondayBoardSamenvatting {
   id: string;
@@ -236,7 +238,204 @@ export async function haalItemDetail(itemId: string): Promise<MondayItemDetail |
   };
 }
 
+export interface MondayRelatieDoelboard {
+  id: string;
+  /** null wanneer Monday dit doelboard niet teruggaf bij de gebatchte vervolgopzoeking (bijv. niet bereikbaar met dit token) — geen crash, gewoon een onbekende naam. */
+  name: string | null;
+}
+
+export interface MondayRelatieAfhankelijkeMirror {
+  id: string;
+  title: string;
+}
+
+export interface MondayBoardRelationKolom {
+  id: string;
+  title: string;
+  doelboards: MondayRelatieDoelboard[];
+  /**
+   * Heuristisch afgeleid — GEEN officieel Monday-veld. Voor zover bekend
+   * (general platform knowledge, nog niet live bevestigd) biedt Monday's
+   * publieke API geen expliciete bidirectioneel-vlag op de board_relation-
+   * kolom zelf. Deze waarde is `true` wanneer minstens één doelboard zélf
+   * een board_relation-kolom heeft die met zijn eigen boardIds terugwijst
+   * naar dit bronbord. Twee onafhankelijke, toevallig naar elkaar wijzende
+   * relaties zouden dit ten onrechte als bidirectioneel classificeren —
+   * daarom altijd samen met ruweSettings tonen, nooit als enige bron.
+   */
+  vermoedelijkBidirectioneel: boolean;
+  /** Mirror-kolommen op HETZELFDE board die deze relatiekolom als bron gebruiken (settings_str.relation_column verwijst naar dit kolom-ID). */
+  afhankelijkeMirrorKolommen: MondayRelatieAfhankelijkeMirror[];
+  /** Ongewijzigde, ruwe settings_str — bewaard zodat de geparste velden hierboven handmatig te verifiëren zijn tegen wat Monday werkelijk teruggaf. */
+  ruweSettings: string | null;
+}
+
+export interface MondayMirrorKolom {
+  id: string;
+  title: string;
+  /** De board_relation-kolom (op hetzelfde board) waaraan deze mirror is gekoppeld, herkend uit settings_str.relation_column — null als dat niet lukte (bv. onbekende/kapotte settings, of de bronkolom bestaat niet meer op dit board). */
+  bronRelatieKolom: { id: string; title: string } | null;
+  /** Kolom-ID op het doelboard dat wordt weergegeven (settings_str.displayed_column) — alleen het ID, geen naam: het doelboard wordt hier niet per se opgehaald. */
+  weergegevenKolomId: string | null;
+  ruweSettings: string | null;
+}
+
+export interface MondayBoardRelatieAnalyse {
+  boardId: string;
+  boardName: string;
+  boardRelationKolommen: MondayBoardRelationKolom[];
+  mirrorKolommen: MondayMirrorKolom[];
+}
+
+interface MondayRuweKolomMetSettings {
+  id: string;
+  title: string;
+  type: string;
+  settings_str: string | null;
+}
+
+/**
+ * Monday's board_relation-kolom bewaart de gekoppelde doelboard-ID('s) in
+ * settings_str als JSON, sleutel `boardIds` (general platform knowledge —
+ * stabiel, publiek Monday-schema, nog NIET live tegen een echt trainerboard
+ * bevestigd vanuit dit project — zie de moduletoelichting bovenaan). Geeft
+ * bewust een lege lijst terug i.p.v. te gooien bij ontbrekende/onverwachte/
+ * kapotte JSON — dit bestand doet nooit een schrijfpoging, dus een verkeerde
+ * aanname hier kost hooguit een lege tabelrij, nooit een crash.
+ */
+function parseDoelboardIds(settingsStr: string | null): string[] {
+  if (!settingsStr) return [];
+  try {
+    const settings = JSON.parse(settingsStr) as { boardIds?: (string | number)[] };
+    return (settings.boardIds ?? []).map(String);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Monday's mirror-kolom bewaart in settings_str (general platform knowledge,
+ * zelfde voorbehoud als parseDoelboardIds hierboven) welke board_relation-
+ * kolom en welke kolom op het doelboard ze weergeeft, als objecten met
+ * kolom-ID's als sleutel (bijv. `{"relation_column":{"<id>":true},
+ * "displayed_column":{"<id>":true}}`). Een mirror kan in theorie meerdere
+ * weergegeven kolommen hebben — dit bestand toont uitsluitend de eerste
+ * (voldoende voor de architectuurvraag: WELKE relatie is de bron, niet elk
+ * mogelijk mirror-detail).
+ */
+function parseMirrorBron(settingsStr: string | null): { relationColumnId: string | null; displayedColumnId: string | null } {
+  if (!settingsStr) return { relationColumnId: null, displayedColumnId: null };
+  try {
+    const settings = JSON.parse(settingsStr) as {
+      relation_column?: Record<string, boolean>;
+      displayed_column?: Record<string, boolean>;
+    };
+    return {
+      relationColumnId: Object.keys(settings.relation_column ?? {})[0] ?? null,
+      displayedColumnId: Object.keys(settings.displayed_column ?? {})[0] ?? null,
+    };
+  } catch {
+    return { relationColumnId: null, displayedColumnId: null };
+  }
+}
+
+const BOARD_MET_SETTINGS_QUERY_VELDEN = `
+  id
+  name
+  columns {
+    id
+    title
+    type
+    settings_str
+  }
+`;
+
+/**
+ * Connect Boards (board_relation) en mirror-kolomanalyse voor één board —
+ * beantwoordt specifiek welke boards met elkaar verbonden zijn en via welke
+ * kolommen, t.b.v. de relatiearchitectuur tussen trainerboards/"4: Uitvoering
+ * (Trainingen)"/"1: Scholen (Master Data)"/"8: Contactpersonen"/"5:
+ * Uitvoerder training" (2026-08-19, opdrachtseis). Nooit een schrijfpoging.
+ * Maximaal 2 Monday-aanroepen per analyse: één voor het board zelf, één
+ * (alleen indien nodig, gebatcht, gededupliceerd en begrensd tot
+ * MAX_RELATED_BOARDS) voor de naam + eigen board_relation-kolommen van elk
+ * uniek doelboard — dat laatste is nodig voor zowel boardnaam-weergave als
+ * de vermoedelijkBidirectioneel-heuristiek hierboven.
+ */
+export async function analyseerBoardRelaties(boardId: string): Promise<MondayBoardRelatieAnalyse | null> {
+  const query = `
+    query AnalyseerBoardRelatiesBoard($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        ${BOARD_MET_SETTINGS_QUERY_VELDEN}
+      }
+    }
+  `;
+  const data = await mondayQuery<{ boards: { id: string; name: string; columns: MondayRuweKolomMetSettings[] }[] }>(query, { boardId });
+  const board = data.boards[0];
+  if (!board) return null;
+
+  const relatieKolommenRuw = board.columns.filter((c) => c.type === "board_relation");
+  const mirrorKolommenRuw = board.columns.filter((c) => c.type === "mirror");
+
+  const alleDoelboardIds = Array.from(new Set(relatieKolommenRuw.flatMap((c) => parseDoelboardIds(c.settings_str)))).slice(0, MAX_RELATED_BOARDS);
+
+  const doelboardenById = new Map<string, { name: string; relatieKolommen: MondayRuweKolomMetSettings[] }>();
+  if (alleDoelboardIds.length > 0) {
+    const doelData = await mondayQuery<{ boards: { id: string; name: string; columns: MondayRuweKolomMetSettings[] }[] }>(
+      `
+        query AnalyseerBoardRelatiesDoelboarden($ids: [ID!]) {
+          boards(ids: $ids) {
+            ${BOARD_MET_SETTINGS_QUERY_VELDEN}
+          }
+        }
+      `,
+      { ids: alleDoelboardIds }
+    );
+    for (const doelboard of doelData.boards) {
+      doelboardenById.set(doelboard.id, {
+        name: doelboard.name,
+        relatieKolommen: doelboard.columns.filter((c) => c.type === "board_relation"),
+      });
+    }
+  }
+
+  const mirrorKolommen: MondayMirrorKolom[] = mirrorKolommenRuw.map((c) => {
+    const { relationColumnId, displayedColumnId } = parseMirrorBron(c.settings_str);
+    const bronKolom = relationColumnId ? board.columns.find((rc) => rc.id === relationColumnId) : undefined;
+    return {
+      id: c.id,
+      title: c.title,
+      bronRelatieKolom: bronKolom ? { id: bronKolom.id, title: bronKolom.title } : null,
+      weergegevenKolomId: displayedColumnId,
+      ruweSettings: c.settings_str,
+    };
+  });
+
+  const boardRelationKolommen: MondayBoardRelationKolom[] = relatieKolommenRuw.map((c) => {
+    const doelboardIds = parseDoelboardIds(c.settings_str);
+    const doelboards = doelboardIds.map((id) => ({ id, name: doelboardenById.get(id)?.name ?? null }));
+    const vermoedelijkBidirectioneel = doelboardIds.some((id) =>
+      (doelboardenById.get(id)?.relatieKolommen ?? []).some((rc) => parseDoelboardIds(rc.settings_str).includes(board.id))
+    );
+    return {
+      id: c.id,
+      title: c.title,
+      doelboards,
+      vermoedelijkBidirectioneel,
+      afhankelijkeMirrorKolommen: mirrorKolommen.filter((m) => m.bronRelatieKolom?.id === c.id).map((m) => ({ id: m.id, title: m.title })),
+      ruweSettings: c.settings_str,
+    };
+  });
+
+  return {
+    boardId: board.id,
+    boardName: board.name,
+    boardRelationKolommen,
+    mirrorKolommen,
+  };
+}
+
 /** Monday-ID's zijn altijd numerieke strings — lichte input-validatie vóór een aanroeper 'm ooit doorstuurt naar Monday. */
 export const MONDAY_ID_PATROON = /^\d+$/;
 
-export { MAX_BOARDS, MAX_ITEMS_PER_BOARD, MAX_SUBITEMS_PER_ITEM, MAX_UPDATES };
+export { MAX_BOARDS, MAX_ITEMS_PER_BOARD, MAX_SUBITEMS_PER_ITEM, MAX_UPDATES, MAX_RELATED_BOARDS };

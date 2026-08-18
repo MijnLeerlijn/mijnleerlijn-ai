@@ -371,6 +371,147 @@ function UpdatesSectie() {
   );
 }
 
+interface MondayRelatieDoelboard {
+  id: string;
+  name: string | null;
+}
+interface MondayRelatieAfhankelijkeMirror {
+  id: string;
+  title: string;
+}
+interface MondayBoardRelationKolom {
+  id: string;
+  title: string;
+  doelboards: MondayRelatieDoelboard[];
+  vermoedelijkBidirectioneel: boolean;
+  afhankelijkeMirrorKolommen: MondayRelatieAfhankelijkeMirror[];
+  ruweSettings: string | null;
+}
+interface MondayMirrorKolom {
+  id: string;
+  title: string;
+  bronRelatieKolom: { id: string; title: string } | null;
+  weergegevenKolomId: string | null;
+  ruweSettings: string | null;
+}
+interface MondayBoardRelatieAnalyse {
+  boardId: string;
+  boardName: string;
+  boardRelationKolommen: MondayBoardRelationKolom[];
+  mirrorKolommen: MondayMirrorKolom[];
+}
+
+// De 4 specifiek genoemde boards uit de opdracht — statisch, want dit zijn
+// de exacte ID's die de opdracht zelf aanlevert (geen live opzoeking nodig).
+// Persoonlijke trainerboards hebben bewust geen vaste ID hier: die zijn per
+// trainer verschillend, te vinden via sectie 1 hierboven.
+const BEKENDE_RELATIE_BOARDS = [
+  { id: "18420120466", label: "4: Uitvoering (Trainingen)" },
+  { id: "18420120365", label: "1: Scholen (Master Data)" },
+  { id: "18420120416", label: "8: Contactpersonen" },
+  { id: "18420120602", label: "5: Uitvoerder training" },
+];
+
+function BoardRelatiesSectie() {
+  const [boardId, setBoardId] = useState("");
+  const [analyse, setAnalyse] = useState<MondayBoardRelatieAnalyse | null>(null);
+  const [bezig, setBezig] = useState(false);
+  const [fout, setFout] = useState<string | null>(null);
+
+  async function analyseer() {
+    if (!boardId.trim()) return;
+    setBezig(true);
+    setFout(null);
+    const { ok, data, fout: f } = await apiPost<{ analyse: MondayBoardRelatieAnalyse }>("/api/trainers-diagnose/monday/relations", { boardId: boardId.trim() });
+    if (ok && data) setAnalyse(data.analyse);
+    else setFout(f);
+    setBezig(false);
+  }
+
+  return (
+    <div className="ml-sales__section">
+      <h2>5. Connect Boards- en mirror-relaties</h2>
+      <p className="ml-sales__kaart-tekst">
+        Analyseert per board_relation-kolom (Connect Boards) naar welk(e) doelboard(en) deze wijst en welke mirror-kolommen daarvan afhankelijk zijn —
+        t.b.v. de relatiearchitectuur tussen persoonlijke trainerboards, &quot;4: Uitvoering (Trainingen)&quot;, &quot;1: Scholen (Master Data)&quot;,
+        &quot;8: Contactpersonen&quot; en &quot;5: Uitvoerder training&quot;.
+      </p>
+      <p className="ml-sales__kaart-tekst">
+        <strong>Let op:</strong>{" "}&quot;vermoedelijk bidirectioneel&quot; is een heuristiek (het doelboard heeft zelf een Connect Boards-kolom die
+        terugwijst) — Monday&apos;s API biedt hiervoor geen officiële vlag. Controleer bij twijfel de ruwe settings hieronder.
+      </p>
+      <div className="ml-sales__filter-balk">
+        <select onChange={(e) => e.target.value && setBoardId(e.target.value)} defaultValue="" aria-label="Bekend board kiezen">
+          <option value="">Kies een bekend board…</option>
+          {BEKENDE_RELATIE_BOARDS.map((b) => (
+            <option key={b.id} value={b.id}>{b.label}</option>
+          ))}
+        </select>
+        <input type="text" value={boardId} onChange={(e) => setBoardId(e.target.value)} placeholder="Board-ID" aria-label="Board-ID voor relatieanalyse" />
+        <button type="button" className="ml-sales__knop ml-sales__knop--primair" disabled={!boardId.trim() || bezig} onClick={analyseer}>
+          {bezig ? "Bezig…" : "Analyseer relaties"}
+        </button>
+      </div>
+      {fout && <p className="ml-sales__kaart-tekst" style={{ color: "#dc2626" }}>Fout: {fout}</p>}
+      {analyse && (
+        <div style={{ marginTop: 12 }}>
+          <p className="ml-sales__kaart-tekst">
+            <strong>{analyse.boardName}</strong> (<code>{analyse.boardId}</code>) — {analyse.boardRelationKolommen.length} Connect Boards-kolom(men),{" "}
+            {analyse.mirrorKolommen.length} mirror-kolom(men).
+          </p>
+
+          <h3 style={{ marginTop: 16 }}>Connect Boards-kolommen (board_relation)</h3>
+          {analyse.boardRelationKolommen.length === 0 && <p className="ml-sales__kaart-tekst">Geen board_relation-kolommen op dit board.</p>}
+          {analyse.boardRelationKolommen.map((k) => (
+            <div className="ml-sales__kaart" key={k.id} style={{ marginBottom: 8 }}>
+              <p className="ml-sales__kaart-tekst">
+                <strong>{k.title}</strong> (<code>{k.id}</code>) —{" "}
+                {k.vermoedelijkBidirectioneel ? (
+                  <span>↔ vermoedelijk bidirectioneel <em>(heuristiek — geen officiële Monday-vlag)</em></span>
+                ) : (
+                  <span>→ geen terugwijzing gevonden (of niet vast te stellen)</span>
+                )}
+              </p>
+              <p className="ml-sales__kaart-tekst">
+                Doelboard(en):{" "}
+                {k.doelboards.length === 0
+                  ? "geen (geen boardIds in settings_str herkend)"
+                  : k.doelboards.map((d) => `${d.name ?? "onbekend"} (${d.id})`).join(", ")}
+              </p>
+              <p className="ml-sales__kaart-tekst">
+                Afhankelijke mirror-kolommen:{" "}
+                {k.afhankelijkeMirrorKolommen.length === 0 ? "geen" : k.afhankelijkeMirrorKolommen.map((m) => `${m.title} (${m.id})`).join(", ")}
+              </p>
+              <p className="ml-sales__kaart-tekst" style={{ wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>
+                Ruwe settings: {k.ruweSettings ?? "—"}
+              </p>
+            </div>
+          ))}
+
+          <h3 style={{ marginTop: 16 }}>Mirror-kolommen</h3>
+          {analyse.mirrorKolommen.length === 0 && <p className="ml-sales__kaart-tekst">Geen mirror-kolommen op dit board.</p>}
+          {analyse.mirrorKolommen.map((m) => (
+            <div className="ml-sales__kaart" key={m.id} style={{ marginBottom: 8 }}>
+              <p className="ml-sales__kaart-tekst">
+                <strong>{m.title}</strong> (<code>{m.id}</code>)
+              </p>
+              <p className="ml-sales__kaart-tekst">
+                Bron-relatiekolom: {m.bronRelatieKolom ? `${m.bronRelatieKolom.title} (${m.bronRelatieKolom.id})` : "niet herkend"}
+              </p>
+              <p className="ml-sales__kaart-tekst">Weergegeven kolom-ID op doelboard: {m.weergegevenKolomId ?? "niet herkend"}</p>
+              <p className="ml-sales__kaart-tekst" style={{ wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>
+                Ruwe settings: {m.ruweSettings ?? "—"}
+              </p>
+            </div>
+          ))}
+
+          <div className="ml-sales__actie-knoppen" style={{ marginTop: 12 }}><KopieerKnop data={analyse} /></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DiagnoseInner() {
   return (
     <div className="ml-sales">
@@ -387,6 +528,7 @@ function DiagnoseInner() {
       <BoardStructuurSectie />
       <ItemNaarBoardSectie />
       <UpdatesSectie />
+      <BoardRelatiesSectie />
     </div>
   );
 }

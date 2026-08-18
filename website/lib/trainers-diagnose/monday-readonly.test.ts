@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mondayQuery } from "@/lib/sales/monday-client";
-import { lijstAlleBoards, haalBoardStructuur, haalItemDetail, MAX_BOARDS, MAX_ITEMS_PER_BOARD, MAX_SUBITEMS_PER_ITEM } from "./monday-readonly";
+import { lijstAlleBoards, haalBoardStructuur, haalItemDetail, analyseerBoardRelaties, MAX_BOARDS, MAX_ITEMS_PER_BOARD, MAX_SUBITEMS_PER_ITEM, MAX_RELATED_BOARDS } from "./monday-readonly";
 
 vi.mock("@/lib/sales/monday-client", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/sales/monday-client")>();
@@ -188,5 +188,196 @@ describe("haalItemDetail — volledig itemdetail (groep/board/ALLE column_values
   it("geeft null terug voor een onbestaand item — geen crash", async () => {
     mockQuery.mockResolvedValue({ items: [] });
     expect(await haalItemDetail("onbestaand")).toBeNull();
+  });
+});
+
+describe("analyseerBoardRelaties — Connect Boards- en mirror-kolomanalyse", () => {
+  it("herleidt een board_relation-kolom naar doelboard(en) + een afhankelijke mirror-kolom (unidirectioneel)", async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        boards: [
+          {
+            id: "999",
+            name: "Trainer Wessel Kok",
+            columns: [
+              { id: "rel_master", title: "Master ID", type: "board_relation", settings_str: '{"boardIds":[18420120365],"allowMultipleItems":false}' },
+              { id: "mirror_schoolnaam", title: "Schoolnaam (mirror)", type: "mirror", settings_str: '{"relation_column":{"rel_master":true},"displayed_column":{"schoolnaam_col":true}}' },
+              { id: "status_x", title: "Status", type: "status", settings_str: '{"labels":{"0":"Open"}}' },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        boards: [
+          {
+            id: "18420120365",
+            name: "1: Scholen (Master Data)",
+            columns: [{ id: "schoolnaam_col", title: "Naam", type: "text", settings_str: null }],
+          },
+        ],
+      });
+
+    const analyse = await analyseerBoardRelaties("999");
+
+    expect(analyse).toEqual({
+      boardId: "999",
+      boardName: "Trainer Wessel Kok",
+      boardRelationKolommen: [
+        {
+          id: "rel_master",
+          title: "Master ID",
+          doelboards: [{ id: "18420120365", name: "1: Scholen (Master Data)" }],
+          vermoedelijkBidirectioneel: false,
+          afhankelijkeMirrorKolommen: [{ id: "mirror_schoolnaam", title: "Schoolnaam (mirror)" }],
+          ruweSettings: '{"boardIds":[18420120365],"allowMultipleItems":false}',
+        },
+      ],
+      mirrorKolommen: [
+        {
+          id: "mirror_schoolnaam",
+          title: "Schoolnaam (mirror)",
+          bronRelatieKolom: { id: "rel_master", title: "Master ID" },
+          weergegevenKolomId: "schoolnaam_col",
+          ruweSettings: '{"relation_column":{"rel_master":true},"displayed_column":{"schoolnaam_col":true}}',
+        },
+      ],
+    });
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    expect(mockQuery.mock.calls[1]![1]).toEqual({ ids: ["18420120365"] });
+  });
+
+  it("vermoedelijkBidirectioneel: true wanneer het doelboard zélf een board_relation-kolom heeft die terugwijst", async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        boards: [{ id: "1", name: "Board A", columns: [{ id: "rel_a", title: "Relatie", type: "board_relation", settings_str: '{"boardIds":[2]}' }] }],
+      })
+      .mockResolvedValueOnce({
+        boards: [{ id: "2", name: "Board B", columns: [{ id: "rel_b", title: "Terug-relatie", type: "board_relation", settings_str: '{"boardIds":[1]}' }] }],
+      });
+
+    const analyse = await analyseerBoardRelaties("1");
+    expect(analyse!.boardRelationKolommen[0]!.vermoedelijkBidirectioneel).toBe(true);
+  });
+
+  it("vermoedelijkBidirectioneel: false wanneer het doelboard geen terugwijzende board_relation-kolom heeft", async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        boards: [{ id: "1", name: "Board A", columns: [{ id: "rel_a", title: "Relatie", type: "board_relation", settings_str: '{"boardIds":[2]}' }] }],
+      })
+      .mockResolvedValueOnce({
+        boards: [{ id: "2", name: "Board B", columns: [{ id: "txt", title: "Tekst", type: "text", settings_str: null }] }],
+      });
+
+    const analyse = await analyseerBoardRelaties("1");
+    expect(analyse!.boardRelationKolommen[0]!.vermoedelijkBidirectioneel).toBe(false);
+  });
+
+  it("herleidt meerdere doelboards binnen één board_relation-kolom", async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        boards: [{ id: "1", name: "Board A", columns: [{ id: "rel_a", title: "Relatie", type: "board_relation", settings_str: '{"boardIds":[2,3]}' }] }],
+      })
+      .mockResolvedValueOnce({
+        boards: [
+          { id: "2", name: "Board B", columns: [] },
+          { id: "3", name: "Board C", columns: [] },
+        ],
+      });
+
+    const analyse = await analyseerBoardRelaties("1");
+    expect(analyse!.boardRelationKolommen[0]!.doelboards).toEqual([
+      { id: "2", name: "Board B" },
+      { id: "3", name: "Board C" },
+    ]);
+  });
+
+  it("dedupliceert doelboard-ID's die door meerdere relatiekolommen op hetzelfde board gedeeld worden", async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        boards: [
+          {
+            id: "1",
+            name: "Board A",
+            columns: [
+              { id: "rel_a", title: "Relatie A", type: "board_relation", settings_str: '{"boardIds":[5]}' },
+              { id: "rel_b", title: "Relatie B", type: "board_relation", settings_str: '{"boardIds":[5]}' },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ boards: [{ id: "5", name: "Gedeeld doelboard", columns: [] }] });
+
+    await analyseerBoardRelaties("1");
+    expect(mockQuery.mock.calls[1]![1]).toEqual({ ids: ["5"] });
+  });
+
+  it("begrenst het aantal opgevraagde doelboarden tot MAX_RELATED_BOARDS", async () => {
+    const veelKolommen = Array.from({ length: MAX_RELATED_BOARDS + 10 }, (_, i) => ({
+      id: `rel_${i}`,
+      title: `Relatie ${i}`,
+      type: "board_relation",
+      settings_str: `{"boardIds":[${i}]}`,
+    }));
+    mockQuery
+      .mockResolvedValueOnce({ boards: [{ id: "1", name: "Board A", columns: veelKolommen }] })
+      .mockResolvedValueOnce({ boards: [] });
+
+    await analyseerBoardRelaties("1");
+    const doorgegevenIds = mockQuery.mock.calls[1]![1] as { ids: string[] };
+    expect(doorgegevenIds.ids).toHaveLength(MAX_RELATED_BOARDS);
+  });
+
+  it("valt terug op een lege doelboardlijst bij ontbrekende/kapotte settings_str — geen crash, geen extra Monday-aanroep", async () => {
+    mockQuery.mockResolvedValueOnce({
+      boards: [
+        {
+          id: "1",
+          name: "Board A",
+          columns: [
+            { id: "rel_null", title: "Relatie zonder settings", type: "board_relation", settings_str: null },
+            { id: "rel_kapot", title: "Relatie met kapotte JSON", type: "board_relation", settings_str: "niet-geldige-json{" },
+          ],
+        },
+      ],
+    });
+
+    const analyse = await analyseerBoardRelaties("1");
+
+    expect(analyse!.boardRelationKolommen[0]!.doelboards).toEqual([]);
+    expect(analyse!.boardRelationKolommen[0]!.vermoedelijkBidirectioneel).toBe(false);
+    expect(analyse!.boardRelationKolommen[1]!.ruweSettings).toBe("niet-geldige-json{");
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("doet geen extra Monday-aanroep wanneer het board geen board_relation-kolommen heeft", async () => {
+    mockQuery.mockResolvedValueOnce({
+      boards: [{ id: "1", name: "Board A", columns: [{ id: "txt", title: "Tekst", type: "text", settings_str: null }] }],
+    });
+
+    const analyse = await analyseerBoardRelaties("1");
+
+    expect(analyse!.boardRelationKolommen).toEqual([]);
+    expect(analyse!.mirrorKolommen).toEqual([]);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("mirror-kolom met een relation_column-verwijzing naar een niet-bestaande kolom krijgt bronRelatieKolom: null — geen crash", async () => {
+    mockQuery.mockResolvedValueOnce({
+      boards: [
+        {
+          id: "1",
+          name: "Board A",
+          columns: [{ id: "mirror_zwerf", title: "Zwervende mirror", type: "mirror", settings_str: '{"relation_column":{"bestaat_niet":true},"displayed_column":{"iets":true}}' }],
+        },
+      ],
+    });
+
+    const analyse = await analyseerBoardRelaties("1");
+    expect(analyse!.mirrorKolommen[0]!.bronRelatieKolom).toBeNull();
+  });
+
+  it("geeft null terug voor een onbestaand board — geen crash", async () => {
+    mockQuery.mockResolvedValueOnce({ boards: [] });
+    expect(await analyseerBoardRelaties("onbestaand")).toBeNull();
   });
 });
