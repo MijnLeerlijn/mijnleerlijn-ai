@@ -35,6 +35,7 @@ import * as migration_20260817_150000_voorbereiding_signalen from './20260817_15
 import * as migration_20260817_170000_mail_signalen from './20260817_170000_mail_signalen';
 import * as migration_20260818_090000_mail_signalen_categorie from './20260818_090000_mail_signalen_categorie';
 import * as migration_20260819_100000_trainer_accounts_v1 from './20260819_100000_trainer_accounts_v1';
+import * as migration_20260819_110000_trainer_accounts_system_rels_fix from './20260819_110000_trainer_accounts_system_rels_fix';
 
 export const migrations = [
   {
@@ -221,5 +222,10 @@ export const migrations = [
     up: migration_20260819_100000_trainer_accounts_v1.up,
     down: migration_20260819_100000_trainer_accounts_v1.down,
     name: '20260819_100000_trainer_accounts_v1',
+  },
+  {
+    up: migration_20260819_110000_trainer_accounts_system_rels_fix.up,
+    down: migration_20260819_110000_trainer_accounts_system_rels_fix.down,
+    name: '20260819_110000_trainer_accounts_system_rels_fix',
   },
 ];
