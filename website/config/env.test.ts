@@ -5,7 +5,7 @@ import { getTrainersOrigin } from "./env";
 // payload.config.ts se csrf-allowlist-vermelding voor trainers.{ROOT_DOMAIN}
 // (zie de uitgebreide toelichting in env.ts). Een fout hier faalt stil: geen
 // typefout, geen crash bij opstarten — alleen een afgewezen fetch()-POST pas
-// zichtbaar bij een echte /api/trainers/logout-aanroep. Vandaar expliciete
+// zichtbaar bij een echte /api/trainer-accounts/logout-aanroep. Vandaar expliciete
 // tests voor zowel de productie- als de development-afleiding.
 describe("getTrainersOrigin", () => {
   const oorspronkelijkeEnv = { ...process.env };

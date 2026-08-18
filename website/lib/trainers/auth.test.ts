@@ -55,8 +55,8 @@ describe("verifyTrainerSessionCookie", () => {
     expect(findByID).not.toHaveBeenCalled();
   });
 
-  it("accepteert een geldig 'trainers'-token met actieve sessie en een actief account", async () => {
-    mockJwtVerify.mockResolvedValue({ payload: { id: 5, collection: "trainers", sid: "sessie-1" } });
+  it("accepteert een geldig 'trainer-accounts'-token met actieve sessie en een actief account", async () => {
+    mockJwtVerify.mockResolvedValue({ payload: { id: 5, collection: "trainer-accounts", sid: "sessie-1" } });
     const findByID = vi.fn().mockResolvedValue({
       id: 5,
       name: "Wessel",
@@ -80,11 +80,11 @@ describe("verifyTrainerSessionCookie", () => {
       },
       cookieAanwezig: true,
     });
-    expect(findByID).toHaveBeenCalledWith({ collection: "trainers", id: 5, overrideAccess: true, depth: 0 });
+    expect(findByID).toHaveBeenCalledWith({ collection: "trainer-accounts", id: 5, overrideAccess: true, depth: 0 });
   });
 
   it("wijst af wanneer de sessie niet (meer) in trainer.sessions voorkomt (bv. elders uitgelogd)", async () => {
-    mockJwtVerify.mockResolvedValue({ payload: { id: 5, collection: "trainers", sid: "verlopen-sessie" } });
+    mockJwtVerify.mockResolvedValue({ payload: { id: 5, collection: "trainer-accounts", sid: "verlopen-sessie" } });
     const findByID = vi.fn().mockResolvedValue({ id: 5, actief: true, sessions: [{ id: "andere-sessie" }] });
 
     const result = await verifyTrainerSessionCookie(maakPayloadMock(findByID), "token");
@@ -93,7 +93,7 @@ describe("verifyTrainerSessionCookie", () => {
   });
 
   it("wijst af wanneer het token geen sid draagt, ook al bestaat er wel een sessies-array", async () => {
-    mockJwtVerify.mockResolvedValue({ payload: { id: 5, collection: "trainers" } });
+    mockJwtVerify.mockResolvedValue({ payload: { id: 5, collection: "trainer-accounts" } });
     const findByID = vi.fn().mockResolvedValue({ id: 5, actief: true, sessions: [{ id: "sessie-1" }] });
 
     const result = await verifyTrainerSessionCookie(maakPayloadMock(findByID), "token");
@@ -102,7 +102,7 @@ describe("verifyTrainerSessionCookie", () => {
   });
 
   it("wijst een inactief trainersaccount af, ook met een verder geldige sessie", async () => {
-    mockJwtVerify.mockResolvedValue({ payload: { id: 5, collection: "trainers", sid: "sessie-1" } });
+    mockJwtVerify.mockResolvedValue({ payload: { id: 5, collection: "trainer-accounts", sid: "sessie-1" } });
     const findByID = vi.fn().mockResolvedValue({ id: 5, actief: false, sessions: [{ id: "sessie-1" }] });
 
     const result = await verifyTrainerSessionCookie(maakPayloadMock(findByID), "token");
@@ -111,7 +111,7 @@ describe("verifyTrainerSessionCookie", () => {
   });
 
   it("geeft trainer-niet-gevonden terug wanneer het account niet meer bestaat", async () => {
-    mockJwtVerify.mockResolvedValue({ payload: { id: 999, collection: "trainers", sid: "s1" } });
+    mockJwtVerify.mockResolvedValue({ payload: { id: 999, collection: "trainer-accounts", sid: "s1" } });
     const findByID = vi.fn().mockResolvedValue(null);
 
     const result = await verifyTrainerSessionCookie(maakPayloadMock(findByID), "token");

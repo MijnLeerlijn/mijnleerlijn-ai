@@ -64,12 +64,12 @@ export type SupportedTimezones =
 export interface Config {
   auth: {
     users: UserAuthOperations;
-    trainers: TrainerAuthOperations;
+    'trainer-accounts': TrainerAccountAuthOperations;
   };
   blocks: {};
   collections: {
     users: User;
-    trainers: Trainer;
+    'trainer-accounts': TrainerAccount;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -108,7 +108,7 @@ export interface Config {
   collectionsJoins: {};
   collectionsSelect: {
     users: UsersSelect<false> | UsersSelect<true>;
-    trainers: TrainersSelect<false> | TrainersSelect<true>;
+    'trainer-accounts': TrainerAccountsSelect<false> | TrainerAccountsSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -168,7 +168,7 @@ export interface Config {
   widgets: {
     collections: CollectionsWidget;
   };
-  user: User | Trainer;
+  user: User | TrainerAccount;
   jobs: {
     tasks: {
       schedulePublish: TaskSchedulePublish;
@@ -198,7 +198,7 @@ export interface UserAuthOperations {
     password: string;
   };
 }
-export interface TrainerAuthOperations {
+export interface TrainerAccountAuthOperations {
   forgotPassword: {
     email: string;
     password: string;
@@ -360,9 +360,9 @@ export interface Media {
  * Accounts voor trainers.mijnleerlijn.chat — nooit bruikbaar om in te loggen op de gewone /admin.
  *
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "trainers".
+ * via the `definition` "trainer-accounts".
  */
-export interface Trainer {
+export interface TrainerAccount {
   id: number;
   name: string;
   /**
@@ -394,7 +394,7 @@ export interface Trainer {
       }[]
     | null;
   password?: string | null;
-  collection: 'trainers';
+  collection: 'trainer-accounts';
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1952,8 +1952,8 @@ export interface PayloadLockedDocument {
         value: number | User;
       } | null)
     | ({
-        relationTo: 'trainers';
-        value: number | Trainer;
+        relationTo: 'trainer-accounts';
+        value: number | TrainerAccount;
       } | null)
     | ({
         relationTo: 'variants';
@@ -2078,8 +2078,8 @@ export interface PayloadLockedDocument {
         value: number | User;
       }
     | {
-        relationTo: 'trainers';
-        value: number | Trainer;
+        relationTo: 'trainer-accounts';
+        value: number | TrainerAccount;
       };
   updatedAt: string;
   createdAt: string;
@@ -2096,8 +2096,8 @@ export interface PayloadPreference {
         value: number | User;
       }
     | {
-        relationTo: 'trainers';
-        value: number | Trainer;
+        relationTo: 'trainer-accounts';
+        value: number | TrainerAccount;
       };
   key?: string | null;
   value?:
@@ -2150,9 +2150,9 @@ export interface UsersSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "trainers_select".
+ * via the `definition` "trainer-accounts_select".
  */
-export interface TrainersSelect<T extends boolean = true> {
+export interface TrainerAccountsSelect<T extends boolean = true> {
   name?: T;
   mondayTrainerboardId?: T;
   mondayUitvoerderItemId?: T;

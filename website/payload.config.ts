@@ -9,7 +9,7 @@ import sharp from "sharp";
 import { isProduction, optionalEnv, requireEnv, getTrainersOrigin } from "@/config/env";
 import { privateBlobAdapter } from "@/lib/media/private-blob-adapter";
 import { Users } from "./payload/collections/Users";
-import { Trainers } from "./payload/collections/Trainers";
+import { TrainerAccounts } from "./payload/collections/TrainerAccounts";
 import { Variants } from "./payload/collections/Variants";
 import { Categories } from "./payload/collections/Categories";
 import { Articles } from "./payload/collections/Articles";
@@ -86,7 +86,7 @@ export default buildConfig({
   // uit trainers.{ROOT_DOMAIN}, een ander subdomein. Payload's eigen
   // extractJWT() (node_modules/payload/dist/auth/extractJWT.js) zou dan élke
   // fetch()-POST vanaf de Traineromgeving die op Payload's eigen req.user
-  // leunt (bv. /api/trainers/logout) afwijzen — zie getTrainersOrigin() in
+  // leunt (bv. /api/trainer-accounts/logout) afwijzen — zie getTrainersOrigin() in
   // config/env.ts voor de volledige analyse. `csrf` is puur additief (zie
   // types.d.ts: `csrf?: string[]`) — dit verzwakt de bestaande allowlist
   // voor "users" niet, het voegt uitsluitend één extra, expliciet
@@ -255,7 +255,7 @@ export default buildConfig({
   },
   collections: [
     Users,
-    Trainers,
+    TrainerAccounts,
     Variants,
     Categories,
     Articles,

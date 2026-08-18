@@ -16,11 +16,11 @@ const mockJwtVerify = vi.fn();
 vi.mock("jose", () => ({ jwtVerify: (...args: unknown[]) => mockJwtVerify(...args) }));
 
 describe("verifyAdminSessionCookie — een trainers-sessie is geen adminsessie", () => {
-  it("wijst een geldig ondertekend token met collection:'trainers' af, zonder payload.findByID aan te roepen", async () => {
+  it("wijst een geldig ondertekend token met collection:'trainer-accounts' af, zonder payload.findByID aan te roepen", async () => {
     const { verifyAdminSessionCookie } = await import("./verify-session");
 
     mockJwtVerify.mockResolvedValue({
-      payload: { id: 1, collection: "trainers", sid: "sessie-1", exp: 9999999999 },
+      payload: { id: 1, collection: "trainer-accounts", sid: "sessie-1", exp: 9999999999 },
     });
     const findByID = vi.fn();
     const payload = { secret: "test-secret", findByID } as unknown as Payload;

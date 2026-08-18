@@ -59,10 +59,11 @@ import { defaultVariant } from "@/config/variants";
 // kortsluiting altijd op de default-variant terugvallen).
 //
 // `/api/*` en `/_next/*` blijven ONGEWIJZIGD doorgestuurd — Payload's eigen,
-// host-onafhankelijke REST-API (o.a. /api/trainers/login, /api/trainers/
-// logout) leeft op het exacte pad, niet onder /trainers, en moet dus nooit
-// herschreven worden. Alles overig wordt herschreven naar /trainers{pad},
-// waar app/(trainers)/trainers/... het daadwerkelijk rendert (eigen,
+// host-onafhankelijke REST-API (o.a. /api/trainer-accounts/login,
+// /api/trainer-accounts/logout) leeft op het exacte pad, niet onder
+// /trainers, en moet dus nooit herschreven worden. Alles overig wordt
+// herschreven naar /trainers{pad}, waar app/(trainers)/trainers/... het
+// daadwerkelijk rendert (eigen,
 // onafhankelijke root-layout — zie app/(trainers)/layout.tsx, Next.js se
 // "multiple root layouts", node_modules/next/dist/docs/.../route-groups.md).
 function trainersPortalRewrite(request: NextRequest, hoofddomein: string): NextResponse | null {

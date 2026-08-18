@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 // Client Component met een rechtstreekse fetch() naar Payload's eigen,
-// native /api/trainers/login — bewust GEEN @payloadcms/ui-hergebruik (zoals
+// native /api/trainer-accounts/login — bewust GEEN @payloadcms/ui-hergebruik (zoals
 // BeheerLoginView.tsx dat wél doet): die componenten verwachten Payload's
 // eigen RootLayout/config-providercontext (app/(payload)/layout.tsx), die
 // buiten deze subboom niet bestaat. Deze pagina leeft bewust BUITEN de
@@ -24,7 +24,7 @@ export default function TrainerLoginPage() {
     setFoutmelding(null);
 
     try {
-      const response = await fetch("/api/trainers/login", {
+      const response = await fetch("/api/trainer-accounts/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password: wachtwoord }),

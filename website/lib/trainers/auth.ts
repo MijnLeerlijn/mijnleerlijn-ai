@@ -3,7 +3,7 @@ import type { Payload } from "payload";
 import { PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 
 // Traineromgeving V1, Ronde 1 (2026-08-19) — sessieverificatie voor de
-// "trainers"-auth-collectie, rechtstreekse voortzetting van lib/auth/
+// "trainer-accounts"-auth-collectie, rechtstreekse voortzetting van lib/auth/
 // verify-session.ts se aanpak (zelfde reden: Payload's eigen cookie-
 // extractiestrategie valt terug op een Origin/CSRF-allowlist-check die een
 // fetch()-POST vanaf trainers.mijnleerlijn.chat evengoed kan raken).
@@ -14,15 +14,23 @@ import { PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 // node_modules/payload/dist/auth/cookies.js/login.js): het sessiecookie
 // heet ALTIJD "${cookiePrefix}-token", en cookiePrefix is een GLOBALE
 // payload.config.ts-instelling — niet per auth-collectie. Een geldig
-// "users"-token (admin/editor) en een geldig "trainers"-token delen dus
-// LETTERLIJK dezelfde cookienaam (PAYLOAD_SESSION_COOKIE_NAME,
+// "users"-token (admin/editor) en een geldig "trainer-accounts"-token delen
+// dus LETTERLIJK dezelfde cookienaam (PAYLOAD_SESSION_COOKIE_NAME,
 // hergebruikt — geen eigen kopie van die constante, juist om de gedeelde
 // naam expliciet te houden). Het JWT zelf draagt wél een eigen
-// `collection`-claim ("trainers" vs. "users") — de controle hieronder op
-// die claim is daarom de ENIGE plek waar de twee sessietypes uit elkaar
-// gehouden worden. Cookie-aanwezigheid alleen is nooit voldoende: een
-// geldig, ondertekend users-token moet hier hard geweigerd worden, en
-// vice versa (zie auth.test.ts — expliciet getest in beide richtingen).
+// `collection`-claim ("trainer-accounts" vs. "users") — de controle
+// hieronder op die claim is daarom de ENIGE plek waar de twee sessietypes
+// uit elkaar gehouden worden. Cookie-aanwezigheid alleen is nooit
+// voldoende: een geldig, ondertekend users-token moet hier hard geweigerd
+// worden, en vice versa (zie auth.test.ts — expliciet getest in beide
+// richtingen).
+//
+// Collectie/tabelnaam-incident (2026-08-19): de collectie heette
+// aanvankelijk "trainers", wat botste met een bestaande, ongerelateerde
+// technische tabel in productie — zie payload/collections/TrainerAccounts.ts
+// voor de volledige toelichting. De JWT-claim en collection-parameter
+// hieronder zijn de reden dat deze hele module bij die hernoeming moest
+// meeveranderen.
 
 interface TrainerJwtClaims {
   id: number;
@@ -70,12 +78,12 @@ export async function verifyTrainerSessionCookie(
 
     // KERNCONTROLE — zie moduletoelichting hierboven. Nooit weglaten, ook
     // niet als een aanroeper "vast wel" alleen trainers doorstuurt.
-    if (typedClaims.collection !== "trainers") {
+    if (typedClaims.collection !== "trainer-accounts") {
       return { trainer: null, cookieAanwezig: true, reden: "verkeerde-collectie" };
     }
 
     const trainer = await payload.findByID({
-      collection: "trainers",
+      collection: "trainer-accounts",
       id: typedClaims.id,
       overrideAccess: true,
       depth: 0,

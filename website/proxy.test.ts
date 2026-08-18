@@ -132,8 +132,8 @@ describe("proxy — trainers.mijnleerlijn.chat host-routing", () => {
     expect(getRewrittenUrl(response)).toBe("https://trainers.mijnleerlijn.chat/trainers/login");
   });
 
-  it("laat /api/* ONGEWIJZIGD door — Payload's eigen /api/trainers/login blijft op zijn echte pad", async () => {
-    const request = maakRequest("https://trainers.mijnleerlijn.chat/api/trainers/login", "trainers.mijnleerlijn.chat");
+  it("laat /api/* ONGEWIJZIGD door — Payload's eigen /api/trainer-accounts/login blijft op zijn echte pad", async () => {
+    const request = maakRequest("https://trainers.mijnleerlijn.chat/api/trainer-accounts/login", "trainers.mijnleerlijn.chat");
 
     const response = await proxy(request);
 

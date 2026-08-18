@@ -144,9 +144,31 @@ async function run() {
     // migratie ooit op deze database) — dat is geen dev-mode-marker, gewoon
     // een lege/nieuwe staat, dus geen reden om de build te breken. Elke
     // andere fout (bv. geen databaseverbinding) moet dat wél doen.
-    const boodschap = error instanceof Error ? error.message : String(error);
-    if (!/relation .* does not exist/i.test(boodschap)) {
-      console.error("[migrate-preflight] Onverwachte fout bij het controleren van payload-migrations:", boodschap);
+    //
+    // Bugfix (2026-08-19, ontdekt tijdens het testen van de slug-hernoeming
+    // hierboven tegen een écht lege database): Drizzle's node-postgres-
+    // adapter zet de onderliggende Postgres-foutmelding ("relation
+    // \"payload_migrations\" does not exist") NIET in `error.message` zelf
+    // (dat bevat alleen "Failed query: ..."), maar in `error.cause.message`.
+    // De regex hieronder controleerde tot nu toe alleen `error.message` en
+    // brak daardoor de build onterecht af bij precies het scenario dat dit
+    // blok bedoelt te tolereren — leeg gebleven omdat elke eerder geteste
+    // database hier altijd al een payload_migrations-tabel had (uit een
+    // eerdere migratie-run). `boodschappen` doorloopt daarom nu ook de
+    // `.cause`-keten.
+    const boodschappen: string[] = [];
+    let huidig: unknown = error;
+    while (huidig instanceof Error) {
+      boodschappen.push(huidig.message);
+      huidig = huidig.cause;
+    }
+    if (boodschappen.length === 0) boodschappen.push(String(error));
+
+    if (!boodschappen.some((boodschap) => /relation .* does not exist/i.test(boodschap))) {
+      console.error(
+        "[migrate-preflight] Onverwachte fout bij het controleren van payload-migrations:",
+        boodschappen.join(" | ")
+      );
       process.exit(1);
     }
   }

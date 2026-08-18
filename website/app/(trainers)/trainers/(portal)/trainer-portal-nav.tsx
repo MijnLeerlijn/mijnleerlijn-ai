@@ -31,7 +31,7 @@ export function TrainerPortalNav({ trainerNaam }: { trainerNaam: string }) {
   async function handleUitloggen() {
     setBezigMetUitloggen(true);
     try {
-      await fetch("/api/trainers/logout", { method: "POST" });
+      await fetch("/api/trainer-accounts/logout", { method: "POST" });
     } finally {
       router.push("/login");
       router.refresh();

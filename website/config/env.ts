@@ -91,11 +91,12 @@ export function getRootDomain(): string {
  * deze allowlist-vermelding wijst Payload's eigen extractJWT()
  * (node_modules/payload/dist/auth/extractJWT.js) élke fetch()-POST vanaf
  * trainers.{ROOT_DOMAIN} af die op Payload's eigen req.user leunt (bv.
- * /api/trainers/logout) — zo'n fetch() stuurt altijd een Origin-header, en
- * die kan nooit gelijk zijn aan serverURL zelf (ander subdomein). Exact
- * dezelfde bugklasse als lib/auth/verify-session.ts beschrijft (daar
- * ontdekt via een echt productie-incident), hier vooraf gevonden door de
- * Payload-broncode te lezen vóórdat de loginpagina gebouwd werd.
+ * /api/trainer-accounts/logout) — zo'n fetch() stuurt altijd een
+ * Origin-header, en die kan nooit gelijk zijn aan serverURL zelf (ander
+ * subdomein). Exact dezelfde bugklasse als lib/auth/verify-session.ts
+ * beschrijft (daar ontdekt via een echt productie-incident), hier vooraf
+ * gevonden door de Payload-broncode te lezen vóórdat de loginpagina
+ * gebouwd werd.
  */
 export function getTrainersOrigin(): string {
   const serverUrl = optionalEnv("NEXT_PUBLIC_SERVER_URL") ?? "http://localhost:3000";

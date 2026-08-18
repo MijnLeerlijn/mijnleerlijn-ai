@@ -34,7 +34,7 @@ import * as migration_20260817_130000_google_connections from './20260817_130000
 import * as migration_20260817_150000_voorbereiding_signalen from './20260817_150000_voorbereiding_signalen';
 import * as migration_20260817_170000_mail_signalen from './20260817_170000_mail_signalen';
 import * as migration_20260818_090000_mail_signalen_categorie from './20260818_090000_mail_signalen_categorie';
-import * as migration_20260819_090000_trainers_v1 from './20260819_090000_trainers_v1';
+import * as migration_20260819_100000_trainer_accounts_v1 from './20260819_100000_trainer_accounts_v1';
 
 export const migrations = [
   {
@@ -218,8 +218,8 @@ export const migrations = [
     name: '20260818_090000_mail_signalen_categorie',
   },
   {
-    up: migration_20260819_090000_trainers_v1.up,
-    down: migration_20260819_090000_trainers_v1.down,
-    name: '20260819_090000_trainers_v1',
+    up: migration_20260819_100000_trainer_accounts_v1.up,
+    down: migration_20260819_100000_trainer_accounts_v1.down,
+    name: '20260819_100000_trainer_accounts_v1',
   },
 ];
