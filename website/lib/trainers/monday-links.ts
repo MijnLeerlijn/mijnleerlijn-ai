@@ -106,6 +106,50 @@ export function parseMondayDatum(tekst: string | null | undefined): string | nul
   return match ? match[0] : null;
 }
 
+/**
+ * Root-cause-fix (2026-08-19, Wessel se 12 niet-hard-gekoppelde scholen):
+ * numeric_mm5vceeq ("Master ID" op het trainerboard) is een Monday
+ * "Numbers"-kolom — general platform knowledge: zo'n kolom heeft een
+ * optionele weergave-instelling voor een duizendtal-scheidingsteken
+ * ("1,000"-stijl), die uitsluitend .text beïnvloedt (bv. "12,713,002,919"
+ * i.p.v. "12713002919"), nooit .value. Deze functie werd voorheen uitgelezen
+ * via .text (zie git-historie) en gebruikt vervolgens als EXACTE sleutel om
+ * de centrale training op te zoeken (uitvoeringById.get(...), waar item-ID's
+ * altijd schone cijferstrings zijn, nooit geformatteerd) — bij een
+ * trainerboard waarvan deze kolom die scheidingsteken-instelling aan heeft
+ * staan, faalde die exacte match dus stilzwijgend voor een overigens
+ * volledig geldige Master ID → centrale training-koppeling: uitvoeringById.
+ * get(tbItem.masterId) vond niets, en de code viel terug op de Tier 3
+ * naam-heuristiek (of, als de groepnaam ambigu/onbekend was, op niets) —
+ * exact het gerapporteerde symptoon (scholen wél zichtbaar onder "Mogelijk
+ * ook van jou", nooit onder "Mijn scholen"). .value is Monday's ruwe,
+ * ongeformatteerde JSON-getal (dezelfde conventie als parseLinkedPulseIds/
+ * parseDoelboardIds hierboven, die om identieke reden ook altijd .value
+ * gebruiken voor ID-vergelijkingen, nooit .text) en is dus de correcte bron
+ * voor een exacte match. Valt terug op .text uitsluitend wanneer .value
+ * ontbreekt/onparseerbaar is — dekt zowel oudere Monday-datavarianten die
+ * (nog) geen numerieke value meesturen als de bestaande tests, die vóór deze
+ * fix uitsluitend .text mockten.
+ */
+export function parseNumeriekeKolomAlsId(kolom: { text?: string | null; value?: string | null } | null | undefined): string | null {
+  if (kolom?.value) {
+    try {
+      const parsed = JSON.parse(kolom.value) as number | string | null;
+      if (parsed !== null && parsed !== undefined) {
+        // Monday's Numbers-kolom kan een geheel getal als "12713002919.0"
+        // teruggeven (bv. na een spreadsheet-plakactie) — een Monday-item-ID
+        // is altijd een geheel getal, dus een ".0"-staart is hier ruis.
+        const zonderNulDecimaal = String(parsed).trim().replace(/\.0+$/, "");
+        if (/^\d+$/.test(zonderNulDecimaal)) return zonderNulDecimaal;
+      }
+    } catch {
+      // Onverwachte vorm — val terug op .text hieronder.
+    }
+  }
+  const tekst = kolom?.text?.trim();
+  return tekst || null;
+}
+
 export type TrainingStatus = "open" | "gepland" | "gedaan" | "geannuleerd";
 
 /**
@@ -200,7 +244,7 @@ async function haalTrainerboardStructuur(boardId: string, itemsLimit: number): P
         id: item.id,
         naam: item.name,
         groupTitle: item.group?.title ?? null,
-        masterId: kolommen.get(TB_MASTER_ID_KOLOM)?.text || null,
+        masterId: parseNumeriekeKolomAlsId(kolommen.get(TB_MASTER_ID_KOLOM)),
       };
     }),
   };

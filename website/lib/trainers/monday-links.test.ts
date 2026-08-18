@@ -4,6 +4,7 @@ import {
   parseLinkedPulseIds,
   parseCheckboxIngevuld,
   parseMondayDatum,
+  parseNumeriekeKolomAlsId,
   bepaalTrainingStatus,
   bepaalScholenVoorTrainer,
   haalDashboardData,
@@ -74,7 +75,9 @@ function uitvoeringItem(opts: { id: string; naam: string; schoolIds?: (string | 
   };
 }
 
-function trainerboardBoardsResponse(items: { id: string; name: string; groupTitle?: string | null; masterId?: string | null }[]) {
+function trainerboardBoardsResponse(
+  items: { id: string; name: string; groupTitle?: string | null; masterId?: string | null; masterIdValue?: string | null }[]
+) {
   return {
     boards: [
       {
@@ -83,7 +86,13 @@ function trainerboardBoardsResponse(items: { id: string; name: string; groupTitl
             id: i.id,
             name: i.name,
             group: i.groupTitle !== undefined ? { title: i.groupTitle } : null,
-            column_values: [{ id: "numeric_mm5vceeq", text: i.masterId ?? null, value: null }],
+            // masterIdValue simuleert de RUWE .value van de numeric_mm5vceeq-
+            // kolom (JSON-geëncodeerd getal) — los instelbaar van .text, want
+            // dat is precies waar de duizendtal-scheidingsteken-bug zit (zie
+            // parseNumeriekeKolomAlsId in monday-links.ts). Standaard null,
+            // zodat bestaande tests (die alleen .text zetten) ongewijzigd
+            // via de .text-fallback blijven werken.
+            column_values: [{ id: "numeric_mm5vceeq", text: i.masterId ?? null, value: i.masterIdValue ?? null }],
           })),
         },
       },
@@ -138,6 +147,31 @@ describe("parseMondayDatum", () => {
   });
 });
 
+describe("parseNumeriekeKolomAlsId — Master ID-kolom (numeric_mm5vceeq)", () => {
+  it("geeft voorrang aan .value boven .text — de kern van de fix (Wessel se 12 scholen)", () => {
+    // Simuleert precies het gerapporteerde databug: Monday's Numbers-kolom
+    // toont .text met een duizendtal-scheidingsteken (weergave-instelling),
+    // terwijl .value (JSON) het ruwe, ongeformatteerde getal bevat.
+    expect(parseNumeriekeKolomAlsId({ text: "12.713.002.919", value: "12713002919" })).toBe("12713002919");
+    expect(parseNumeriekeKolomAlsId({ text: "12,713,002,919", value: "12713002919" })).toBe("12713002919");
+  });
+  it("valt terug op .text wanneer .value ontbreekt (bestaande tests/oudere datavarianten)", () => {
+    expect(parseNumeriekeKolomAlsId({ text: "12713002919", value: null })).toBe("12713002919");
+  });
+  it("strip een overbodige '.0'-decimaalstaart uit .value (spreadsheet-plakartefact)", () => {
+    expect(parseNumeriekeKolomAlsId({ text: null, value: "12713002919.0" })).toBe("12713002919");
+  });
+  it("valt terug op .text bij onparseerbare/lege .value — nooit crashen", () => {
+    expect(parseNumeriekeKolomAlsId({ text: "12713002919", value: "" })).toBe("12713002919");
+    expect(parseNumeriekeKolomAlsId({ text: "12713002919", value: "niet-geldige-json{" })).toBe("12713002919");
+  });
+  it("geeft null terug wanneer zowel .value als .text ontbreken", () => {
+    expect(parseNumeriekeKolomAlsId({ text: null, value: null })).toBeNull();
+    expect(parseNumeriekeKolomAlsId(null)).toBeNull();
+    expect(parseNumeriekeKolomAlsId(undefined)).toBeNull();
+  });
+});
+
 describe("bepaalTrainingStatus", () => {
   it("geannuleerd heeft voorrang, ook met een datum", () => {
     expect(bepaalTrainingStatus("Geannuleerd", "2026-08-20")).toBe("geannuleerd");
@@ -183,6 +217,106 @@ describe("bepaalScholenVoorTrainer — resolutieladder", () => {
 
     expect(resultaat.bevestigd).toHaveLength(1);
     expect(resultaat.bevestigd[0]).toMatchObject({ id: "500", bron: "training-koppeling" });
+  });
+
+  it("tier 2 — REGRESSIETEST Wessel se 12 scholen: Master ID.text heeft een duizendtal-scheidingsteken, .value niet — moet nu tóch hard koppelen i.p.v. naar tier 3 wegzakken", async () => {
+    // Reproduceert het exacte gerapporteerde databug-scenario: vóór de fix
+    // gebruikte haalTrainerboardStructuur() .text ("12.713.002.919") als
+    // opzoeksleutel in uitvoeringById (sleutels zijn altijd schone
+    // item-ID's, "12713002919") — die exacte match faalde stilzwijgend,
+    // ondanks dat de centrale training wél degelijk een geldige
+    // School-koppeling had. Zonder de fix zou dit resultaat lege
+    // "bevestigd" + een tier-3-suggestie zijn (zie de test hieronder als
+    // tegenvoorbeeld); mét de fix moet dit hard bevestigd zijn.
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] }) // geen directe trainerLinkedIds (tier 1 faalt bewust)
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "12713002919", naam: "Training", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([
+        { id: "800", name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: "12.713.002.919", masterIdValue: "12713002919" },
+      ])
+    );
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd).toHaveLength(1);
+    expect(resultaat.bevestigd[0]).toMatchObject({ id: "500", naam: "Montessori Gorinchem", bron: "training-koppeling" });
+    expect(resultaat.mogelijkGekoppeld).toEqual([]);
+  });
+
+  it("tier 2 — zonder de fix (ter documentatie): dezelfde situatie met alléén het geformatteerde .text zou wél mislukken", async () => {
+    // Geen masterIdValue meegegeven — dit is exact hoe de OUDE code zich
+    // altijd gedroeg (alleen .text bestond effectief). Bevestigt dat de
+    // hierboven geteste regressie een reëel, reproduceerbaar verschil maakt
+    // en niet toevallig altijd al werkte.
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "12713002919", naam: "Training", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([{ id: "800", name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: "12.713.002.919" }])
+    );
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    // De Master-ID-opzoeking mist ("12.713.002.919" !== "12713002919"),
+    // dus uitvoeringById.get(...) vindt niets en de school blijft onbevestigd.
+    expect(resultaat.bevestigd).toEqual([]);
+  });
+
+  it("tier 2 — bewezen echt voorbeeld: trainerboard-item 12717612402 -> Master ID 12713002919 -> centrale training -> School-koppeling", async () => {
+    // Rechtstreeks de door de opdrachtgever gegeven, bevestigd-werkende
+    // echte Monday-ID-keten (architectuurrapport) — geen gesimuleerde
+    // kleine testgetallen, om te bevestigen dat de resolutieketen ook met
+    // echte, 11-cijferige Monday-ID's correct blijft werken (o.a. geen
+    // precisieverlies bij het JSON.parse()'en van het getal in
+    // parseNumeriekeKolomAlsId — ruim binnen Number.MAX_SAFE_INTEGER).
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "18420120365-school-1", naam: "Bewezen-voorbeeldschool" })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [uitvoeringItem({ id: "12713002919", naam: "Centrale training", schoolIds: ["18420120365-school-1"] })],
+      });
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([{ id: "12717612402", name: "Trainerboard-item", groupTitle: "Bewezen-voorbeeldschool", masterId: "12713002919", masterIdValue: "12713002919" }])
+    );
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd).toHaveLength(1);
+    expect(resultaat.bevestigd[0]).toMatchObject({ id: "18420120365-school-1", bron: "training-koppeling" });
+  });
+
+  it("cross-trainer: de scheidingsteken-fix lekt geen scholen tussen trainers — elke trainer ziet uitsluitend de koppeling via het eigen trainerboard", async () => {
+    // Twee trainers, elk met een eigen trainerboard waarvan de Master-ID-
+    // kolom hetzelfde scheidingsteken-format-probleem heeft, maar die naar
+    // VERSCHILLENDE centrale trainingen/scholen wijzen — bevestigt dat de
+    // fix per-aanroep werkt op de context van de opgegeven trainer, en geen
+    // gedeelde/lekkende state introduceert tussen twee achtereenvolgende
+    // bepaalScholenVoorTrainer()-aanroepen.
+    const TRAINER_B: AuthTrainer = { id: 2, name: "Andere Trainer", email: "andere@mijnleerlijn.nl", mondayTrainerboardId: "18424768099", mondayUitvoerderItemId: "999002", actief: true };
+
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School van Wessel" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "12713002919", naam: "Training A", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([{ id: "800", name: "item", groupTitle: "School van Wessel", masterId: "12.713.002.919", masterIdValue: "12713002919" }])
+    );
+    const resultaatA = await bepaalScholenVoorTrainer(TRAINER);
+    expect(resultaatA.bevestigd.map((s) => s.id)).toEqual(["500"]);
+
+    mockScholenPagina
+      .mockReset()
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "600", naam: "School van Andere Trainer" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "99999999999", naam: "Training B", schoolIds: ["600"] })] });
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([{ id: "801", name: "item", groupTitle: "School van Andere Trainer", masterId: "99.999.999.999", masterIdValue: "99999999999" }])
+    );
+    const resultaatB = await bepaalScholenVoorTrainer(TRAINER_B);
+    expect(resultaatB.bevestigd.map((s) => s.id)).toEqual(["600"]);
+
+    // Geen enkele school van de ander lekt mee.
+    expect(resultaatA.bevestigd.some((s) => s.id === "600")).toBe(false);
+    expect(resultaatB.bevestigd.some((s) => s.id === "500")).toBe(false);
   });
 
   it("tier 3: School-kolom leeg op de centrale training — unieke groepnaam-suggestie, nooit autoritatief", async () => {
