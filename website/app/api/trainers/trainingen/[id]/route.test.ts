@@ -55,6 +55,31 @@ describe("PATCH /api/trainers/trainingen/[id] — sessie", () => {
     expect(response.status).toBe(401);
     expect(mockWerkBij).not.toHaveBeenCalled();
   });
+
+  // Ronde 2, vervolg (2026-08-19) — tijdelijke productiediagnose voor Wessels
+  // "Niet ingelogd."-melding: bewaakt dat de afwijzingsreden server-side
+  // gelogd wordt (greppable op "[trainer-sessie-diagnose]") én dat de rauwe
+  // cookie-waarde daar nooit in belandt, ook niet per ongeluk via een
+  // toekomstige refactor. De client-boodschap zelf blijft ongewijzigd
+  // generiek (test hierboven).
+  it("logt de afwijzingsreden server-side (greppable, secrets-vrij) zonder de client-boodschap te veranderen", async () => {
+    const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockVerify.mockResolvedValue({ trainer: null, cookieAanwezig: true, reden: "verkeerde-collectie" });
+
+    const response = await roep({ status: { nieuweWaarde: "gedaan", verwachteHuidigeRuweTekst: null } }, "700");
+
+    expect(response.status).toBe(401);
+    expect((await response.json()).error).toBe("Niet ingelogd.");
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+    const [label, context] = consoleWarnSpy.mock.calls[0]!;
+    expect(String(label)).toContain("[trainer-sessie-diagnose]");
+    expect(context).toMatchObject({ reden: "verkeerde-collectie", cookieAanwezig: true, trainingId: "700" });
+    // maakRequest() stuurt "Cookie: payload-token=geldig" mee — die rauwe
+    // waarde mag nooit in het gelogde object voorkomen.
+    expect(JSON.stringify(context)).not.toContain("geldig");
+
+    consoleWarnSpy.mockRestore();
+  });
 });
 
 describe("PATCH /api/trainers/trainingen/[id] — validatie", () => {

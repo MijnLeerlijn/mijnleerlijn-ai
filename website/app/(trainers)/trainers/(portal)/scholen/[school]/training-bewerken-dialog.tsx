@@ -118,6 +118,12 @@ export default function TrainingBewerkenDialog({ training }: { training: Trainin
       const response = await fetch(`/api/trainers/trainingen/${training.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        // Expliciet maken van het bestaande browserdefault voor een
+        // root-relatief same-origin fetch()-verzoek — geen gedragswijziging,
+        // dus geen verlaging van enige beveiligingsgrens: er wordt geen
+        // cross-origin credential-verzending mogelijk gemaakt die vandaag
+        // niet al (impliciet) zou gebeuren.
+        credentials: "same-origin",
         body: JSON.stringify(verzoek),
       });
       if (!response.ok) {

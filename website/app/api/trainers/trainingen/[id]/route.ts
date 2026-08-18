@@ -60,6 +60,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const sessieControle = await verifyTrainerSessionCookie(payload, request.cookies.get(TRAINER_SESSION_COOKIE_NAME)?.value);
   if (!sessieControle.trainer) {
+    // TIJDELIJKE PRODUCTIEDIAGNOSE (Ronde 2, vervolg — te verwijderen zodra
+    // de "Niet ingelogd"-meldingen bij trainers verklaard zijn). Logt
+    // uitsluitend de afwijzingsreden en niet-geheime requestcontext — NOOIT
+    // de cookie-waarde/JWT, wachtwoorden of andere secrets. De client blijft
+    // dezelfde generieke 401 zien; alleen dit serverlog is specifieker.
+    // Vindbaar in Vercel door te zoeken op "[trainer-sessie-diagnose]".
+    console.warn("[trainer-sessie-diagnose] sessie geweigerd", {
+      reden: sessieControle.reden,
+      cookieAanwezig: sessieControle.cookieAanwezig,
+      trainingId: id,
+      host: request.headers.get("host"),
+      origin: request.headers.get("origin"),
+      tijdstip: new Date().toISOString(),
+    });
     return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
   }
   const trainer = sessieControle.trainer;
