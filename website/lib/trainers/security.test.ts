@@ -146,26 +146,61 @@ describe("Beveiliging — scholen-isolatie tussen trainers", () => {
 // voor "geen trainer-ID-parameter bestaat" — dat is zichtbaar aan de
 // functiehandtekeningen zelf, geen apart te testen gedrag.
 
-describe("Beveiliging — onbevestigde (tier 3) schoolsuggesties lekken geen data", () => {
-  it("een uitsluitend als tier-3-suggestie herkende school (nooit bevestigd) is NIET opvraagbaar via haalSchoolDetail", async () => {
-    // Zelfde opzet als de "Montessori Gorinchem"-tier-3-test in
-    // monday-links.test.ts: groepnaam op het trainerboard matcht een unieke
-    // Master Data-school, maar de centrale training heeft geen School-relatie
-    // — dus uitsluitend een read-only suggestie, nooit een bevestigde koppeling.
+describe("Beveiliging — een unieke legacy-groepsnaammatch is bevestigde data, een ambigue match blijft ongelekt", () => {
+  it("2026-08-19-gedragswijziging: een unieke groepnaam-match (School-kolom leeg op de centrale training) is nu BEVESTIGD en dus terecht opvraagbaar via haalSchoolDetail", async () => {
+    // Was tot deze ronde uitsluitend een read-only suggestie (nooit
+    // opvraagbaar) — sinds de legacy-schoolmatch-fix (live bevestigd tegen
+    // Wessels "Montessori Gorinchem") is een UNIEKE groepnaam-match een
+    // volwaardig bevestigde koppeling (bron "legacy-unique"), en dus
+    // TERECHT opvraagbaar — dit is de bedoelde, niet de lekkende, kant van
+    // de wijziging. De echte "onbevestigde data lekt niet"-garantie wordt
+    // hieronder apart getest met een genuinely-ambigue match.
     mockScholenPagina
       .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] })
       .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training zonder schoolkoppeling" })] });
     mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: "700" }]));
 
     const scholen = await bepaalScholenVoorTrainer(TRAINER_A);
-    expect(scholen.bevestigd).toEqual([]);
-    expect(scholen.mogelijkGekoppeld[0]?.mogelijkeSchoolId).toBe("500");
+    expect(scholen.bevestigd).toHaveLength(1);
+    expect(scholen.bevestigd[0]).toMatchObject({ id: "500", bron: "legacy-unique" });
+    expect(scholen.mogelijkGekoppeld).toEqual([]);
 
     mockScholenPagina.mockReset();
     mockScholenPagina
       .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] })
       .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training zonder schoolkoppeling" })] });
     mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: "700" }]));
+
+    const detail = await haalSchoolDetail(TRAINER_A, "500");
+    expect(detail).not.toBeNull();
+    expect(detail!.bron).toBe("legacy-unique");
+  });
+
+  it("een ambigue groepnaam-match (2+ Master Data-kandidaten) blijft volledig ongeresolved en is NIET opvraagbaar via haalSchoolDetail", async () => {
+    // Dit is nu het scenario dat de oorspronkelijke "onbevestigde data lekt
+    // niet"-garantie daadwerkelijk test: bij ambiguïteit wordt GEEN Master
+    // Data-ID ooit aan deze trainer toegekend (nooit gokken), dus is er ook
+    // geen enkel school-ID om via haalSchoolDetail te misbruiken.
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [masterDataItem({ id: "500", naam: "De Regenboog" }), masterDataItem({ id: "501", naam: "De Regenboog" })],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training zonder schoolkoppeling" })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "Trainerboard-item", groupTitle: "De Regenboog", masterId: "700" }]));
+
+    const scholen = await bepaalScholenVoorTrainer(TRAINER_A);
+    expect(scholen.bevestigd).toEqual([]);
+    expect(scholen.mogelijkGekoppeld).toEqual([]);
+
+    mockScholenPagina.mockReset();
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [masterDataItem({ id: "500", naam: "De Regenboog" }), masterDataItem({ id: "501", naam: "De Regenboog" })],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training zonder schoolkoppeling" })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "Trainerboard-item", groupTitle: "De Regenboog", masterId: "700" }]));
 
     const detail = await haalSchoolDetail(TRAINER_A, "500");
     expect(detail).toBeNull();

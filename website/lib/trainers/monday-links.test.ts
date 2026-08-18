@@ -5,6 +5,7 @@ import {
   parseCheckboxIngevuld,
   parseMondayDatum,
   parseNumeriekeKolomAlsId,
+  normaliseerSchoolnaamVoorMatch,
   bepaalTrainingStatus,
   bepaalScholenVoorTrainer,
   haalDashboardData,
@@ -172,6 +173,20 @@ describe("parseNumeriekeKolomAlsId — Master ID-kolom (numeric_mm5vceeq)", () =
   });
 });
 
+describe("normaliseerSchoolnaamVoorMatch — legacy-groepsnaammatch", () => {
+  it("trimt en verlaagt hoofdletters", () => {
+    expect(normaliseerSchoolnaamVoorMatch("  Montessori Gorinchem  ")).toBe("montessori gorinchem");
+  });
+  it("vouwt meervoudige interne witruimte samen tot één spatie", () => {
+    expect(normaliseerSchoolnaamVoorMatch("Montessori   Gorinchem")).toBe("montessori gorinchem");
+    expect(normaliseerSchoolnaamVoorMatch("Montessori\tGorinchem")).toBe("montessori gorinchem");
+  });
+  it("is géén fuzzy match — verschillende namen normaliseren naar verschillende strings", () => {
+    expect(normaliseerSchoolnaamVoorMatch("Montessori Gorinchem")).not.toBe(normaliseerSchoolnaamVoorMatch("Montessori Gorinchem School"));
+    expect(normaliseerSchoolnaamVoorMatch("Montessori Gorinchem")).not.toBe(normaliseerSchoolnaamVoorMatch("Montessori Gorkum"));
+  });
+});
+
 describe("bepaalTrainingStatus", () => {
   it("geannuleerd heeft voorrang, ook met een datum", () => {
     expect(bepaalTrainingStatus("Geannuleerd", "2026-08-20")).toBe("geannuleerd");
@@ -319,19 +334,59 @@ describe("bepaalScholenVoorTrainer — resolutieladder", () => {
     expect(resultaatB.bevestigd.some((s) => s.id === "500")).toBe(false);
   });
 
-  it("tier 3: School-kolom leeg op de centrale training — unieke groepnaam-suggestie, nooit autoritatief", async () => {
+  it("tier 2 (test 1, live bevestigd — Wessel/Montessori Gorinchem): School-kolom leeg op de centrale training + exact één Master Data-naammatch -> BEVESTIGD onder Mijn scholen, niet meer als suggestie", async () => {
+    // Exacte, live via /admin/trainers-diagnose/monday bevestigde keten:
+    // trainerboard-item 12717612402 -> Master ID 12713002919 -> centrale
+    // training 12713002919 op "4: Uitvoering" -> School (board_relation_
+    // mm5tyc40) is daar ECHT null (geen parse-/scheidingstekenbug — .text en
+    // .value zijn op Wessels board voor deze Master ID allebei gewoon
+    // "12713002919"). De enige overgebleven schoolidentiteit is groupTitle
+    // "Montessori Gorinchem" op het persoonlijke trainerboard.
     mockScholenPagina
-      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] })
-      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training zonder schoolkoppeling" })] }); // schoolIds leeg
-    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: "700" }]));
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "18420120365-montessori-gorinchem", naam: "Montessori Gorinchem" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "12713002919", naam: "Training zonder schoolkoppeling" })] }); // schoolIds leeg — precies Wessels live staat
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([
+        { id: "12717612402", name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: "12713002919", masterIdValue: "12713002919" },
+      ])
+    );
 
     const resultaat = await bepaalScholenVoorTrainer(TRAINER);
 
-    expect(resultaat.bevestigd).toEqual([]);
-    expect(resultaat.mogelijkGekoppeld).toEqual([{ suggestieNaam: "Montessori Gorinchem", mogelijkeSchoolId: "500", mogelijkeSchoolNaam: "Montessori Gorinchem" }]);
+    expect(resultaat.bevestigd).toHaveLength(1);
+    expect(resultaat.bevestigd[0]).toMatchObject({ id: "18420120365-montessori-gorinchem", naam: "Montessori Gorinchem", bron: "legacy-unique" });
+    // Harde write-back-eis: id is het ECHTE Master Data item-ID, nooit de groepnaam.
+    expect(resultaat.bevestigd[0]!.id).not.toBe("Montessori Gorinchem");
+    expect(resultaat.mogelijkGekoppeld).toEqual([]);
   });
 
-  it("tier 3: bij méér dan één naam-kandidaat wordt NIETS gesuggereerd — nooit gokken bij ambiguïteit", async () => {
+  it("test 2: een harde Connect Boards-relatie (School niet leeg) wint altijd — de legacy-naammatch wordt dan zelfs niet geprobeerd", async () => {
+    // Zelfde groupTitle als hierboven zou OOK een unieke naammatch opleveren
+    // als de code daar was aanbeland — maar schoolIds is hier niet leeg, dus
+    // de training-koppeling-tak hierboven vangt dit af en 'continue't vóór
+    // de naammatch-code ooit bereikt wordt. Bevestigt bron="training-
+    // koppeling" (tier 1), nooit "legacy-unique".
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training met harde koppeling", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "item", groupTitle: "Montessori Gorinchem", masterId: "700" }]));
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd).toHaveLength(1);
+    expect(resultaat.bevestigd[0]).toMatchObject({ id: "500", bron: "training-koppeling" });
+  });
+
+  it("test 3: geen naam-match (0 kandidaten) -> onbevestigd, blijft ook geen suggestie", async () => {
+    mockScholenPagina.mockResolvedValueOnce({ cursor: null, items: [] }).mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training" })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "item", groupTitle: "Onbekende School", masterId: "700" }]));
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+    expect(resultaat.bevestigd).toEqual([]);
+    expect(resultaat.mogelijkGekoppeld).toEqual([]);
+  });
+
+  it("test 4: twee Master Data-scholen met dezelfde genormaliseerde naam -> onbevestigd, nooit gekozen (ambiguïteit)", async () => {
     mockScholenPagina
       .mockResolvedValueOnce({
         cursor: null,
@@ -345,15 +400,32 @@ describe("bepaalScholenVoorTrainer — resolutieladder", () => {
     expect(resultaat.mogelijkGekoppeld).toEqual([]);
   });
 
-  it("tier 3: bij nul naam-kandidaten wordt niets gesuggereerd", async () => {
-    mockScholenPagina.mockResolvedValueOnce({ cursor: null, items: [] }).mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training" })] });
-    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "item", groupTitle: "Onbekende School", masterId: "700" }]));
+  it("test 5: kleine case-/witruimteverschillen tussen groupTitle en Master Data-naam -> unieke match blijft toegestaan", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training" })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "item", groupTitle: "  montessori   GORINCHEM  ", masterId: "700" }]));
 
     const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+    expect(resultaat.bevestigd).toHaveLength(1);
+    expect(resultaat.bevestigd[0]).toMatchObject({ id: "500", bron: "legacy-unique" });
+  });
+
+  it("test 6: vergelijkbare maar niet identieke schoolnamen matchen NOOIT (geen fuzzy match)", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem School" }), masterDataItem({ id: "501", naam: "Montessori Gorkum" })],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training" })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "item", groupTitle: "Montessori Gorinchem", masterId: "700" }]));
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+    expect(resultaat.bevestigd).toEqual([]);
     expect(resultaat.mogelijkGekoppeld).toEqual([]);
   });
 
-  it("een reeds tier-1-bevestigde school wordt niet nogmaals als tier-3-suggestie getoond", async () => {
+  it("een reeds tier-1-bevestigde school (Master Data.Trainer-relatie) wordt niet nogmaals via legacy-groepsnaam herbevestigd/overschreven", async () => {
     mockScholenPagina
       .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem", trainerLinkedIds: [999001] })] })
       .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training" })] }); // geen schoolIds
@@ -361,7 +433,30 @@ describe("bepaalScholenVoorTrainer — resolutieladder", () => {
 
     const resultaat = await bepaalScholenVoorTrainer(TRAINER);
     expect(resultaat.bevestigd).toHaveLength(1);
+    expect(resultaat.bevestigd[0]).toMatchObject({ id: "500", bron: "trainer-relatie" });
     expect(resultaat.mogelijkGekoppeld).toEqual([]);
+  });
+
+  it("test 7 (cross-trainer): de legacy-groepsnaammatch lekt geen scholen tussen trainers", async () => {
+    const TRAINER_B: AuthTrainer = { id: 2, name: "Andere Trainer", email: "andere@mijnleerlijn.nl", mondayTrainerboardId: "18424768099", mondayUitvoerderItemId: "999002", actief: true };
+
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training A" })] }); // schoolIds leeg
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "item", groupTitle: "Montessori Gorinchem", masterId: "700" }]));
+    const resultaatA = await bepaalScholenVoorTrainer(TRAINER);
+    expect(resultaatA.bevestigd.map((s) => ({ id: s.id, bron: s.bron }))).toEqual([{ id: "500", bron: "legacy-unique" }]);
+
+    mockScholenPagina
+      .mockReset()
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "600", naam: "CBS de Wereld" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "701", naam: "Training B" })] }); // schoolIds leeg
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "801", name: "item", groupTitle: "CBS de Wereld", masterId: "701" }]));
+    const resultaatB = await bepaalScholenVoorTrainer(TRAINER_B);
+    expect(resultaatB.bevestigd.map((s) => ({ id: s.id, bron: s.bron }))).toEqual([{ id: "600", bron: "legacy-unique" }]);
+
+    expect(resultaatA.bevestigd.some((s) => s.id === "600")).toBe(false);
+    expect(resultaatB.bevestigd.some((s) => s.id === "500")).toBe(false);
   });
 
   it("een hangende/ongeldige Master ID op het trainerboard (geen bijbehorende centrale training) crasht niet en levert geen suggestie op", async () => {

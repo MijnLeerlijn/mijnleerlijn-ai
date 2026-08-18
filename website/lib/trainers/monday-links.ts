@@ -150,6 +150,31 @@ export function parseNumeriekeKolomAlsId(kolom: { text?: string | null; value?: 
   return tekst || null;
 }
 
+/**
+ * Legacy-groepsnaammatch (2026-08-19, live bevestigd via /admin/trainers-
+ * diagnose/monday tegen Wessels échte data): trainerboard-item 12717612402
+ * → Master ID 12713002919 → centrale training 12713002919 op "4: Uitvoering
+ * (Trainingen)" → School (board_relation_mm5tyc40) is daar daadwerkelijk
+ * null. De eerdere .text/.value-scheidingstekenhypothese (zie
+ * parseNumeriekeKolomAlsId hierboven) was dus NIET de oorzaak bij Wessels
+ * live data — op zijn trainerboard zijn .text en .value voor deze Master ID
+ * allebei gewoon "12713002919". De School-relatie ontbreekt dus écht op de
+ * centrale training zelf (datakwaliteit, geen parsebug) — de enige
+ * overgebleven schoolidentiteit bij dit soort legacy-data is de groupTitle
+ * op het PERSOONLIJKE trainerboard ("Montessori Gorinchem").
+ *
+ * Bewust een losse, direct testbare functie (i.p.v. inline .trim().
+ * toLowerCase()) — "veilig/voorspelbaar" normaliseren, expliciet GEEN fuzzy/
+ * AI-match: alleen witruimte aan de randen wegnemen, meervoudige
+ * witruimte-in-de-naam samenvouwen tot één spatie (voorkomt een gemiste
+ * match door een dubbele spatie in Monday-invoer), en hoofdletterongevoelig
+ * vergelijken. Twee namen die na deze normalisatie nog verschillen, matchen
+ * NOOIT — geen substring/edit-distance/synoniemherkenning.
+ */
+export function normaliseerSchoolnaamVoorMatch(naam: string): string {
+  return naam.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 export type TrainingStatus = "open" | "gepland" | "gedaan" | "geannuleerd";
 
 /**
@@ -186,8 +211,22 @@ export interface TrainerSchoolBron {
   locatie: string | null;
   implementatiefase: string | null;
   contactpersoonNaam: string | null;
-  /** Hoe deze school in de bevestigde lijst terechtkwam — intern/diagnostisch, geen trainer-facing onderscheid vereist. */
-  bron: "trainer-relatie" | "training-koppeling";
+  /**
+   * Hoe deze school in de bevestigde lijst terechtkwam — intern/
+   * diagnostisch, geen trainer-facing onderscheid vereist (de UI toont tier
+   * 1/2 hieronder ongedifferentieerd onder "Mijn scholen"). Betrouwbaarheid,
+   * hoog naar lager: "trainer-relatie"/"training-koppeling" zijn beide de
+   * harde keten (Master Data.Trainer resp. Master ID → centrale training →
+   * School Connect Boards — altijd voorrang, zie verzamelTrainerContext).
+   * "legacy-unique" is de nieuwe, bewust zwakkere tier: uitsluitend bereikt
+   * wanneer de harde keten GEEN bruikbare School-relatie oplevert, en dan
+   * alleen bij een unieke groupTitle-naammatch (normaliseerSchoolnaamVoorMatch)
+   * tegen Master Data — nooit bij 0 of 2+ kandidaten. `id` hierboven is ook
+   * voor deze tier altijd het echte, opgezochte Master Data item-ID, nooit
+   * de groepnaam zelf — toekomstige write-backs mogen dus altijd blind op
+   * `id` vertrouwen, ongeacht welke `bron` de koppeling opleverde.
+   */
+  bron: "trainer-relatie" | "training-koppeling" | "legacy-unique";
 }
 
 export interface TrainerSchoolSuggestie {
@@ -259,10 +298,14 @@ interface TrainerMondayContext {
 /**
  * Verzamelt in maximaal 3 Monday-aanroepen (parallel) alles wat de
  * resolutieladder nodig heeft: Master Data (gefilterd op de Trainer-relatie
- * van déze trainer — tier 1), alle Uitvoering-trainingen gegroepeerd per
- * gekoppeld school-ID, en het eigen trainerboard (Master ID → tier 2/3).
- * Geen lokale cache tussen aanroepen — bewuste architectuurkeuze
- * (architectuurrapport §5/§12): elke paginalaad is een live Monday-read.
+ * van déze trainer — harde relatie, tier 1), alle Uitvoering-trainingen
+ * gegroepeerd per gekoppeld school-ID, en het eigen trainerboard (Master ID
+ * → centrale training → School — óók tier 1 — met tier 2, de unieke legacy-
+ * groepsnaammatch, als gecontroleerde terugval zodra die School-relatie
+ * zelf leeg is; zie normaliseerSchoolnaamVoorMatch hierboven voor de
+ * volledige toelichting + live aanleiding). Geen lokale cache tussen
+ * aanroepen — bewuste architectuurkeuze (architectuurrapport §5/§12): elke
+ * paginalaad is een live Monday-read.
  */
 async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMondayContext> {
   const [masterDataPagina, uitvoeringPagina, trainerboardStructuur] = await Promise.all([
@@ -332,7 +375,8 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
     }
   }
 
-  // Tier 2/3: via het eigen trainerboard — Master ID → centrale training → School.
+  // Tier 1 (harde relatie, vervolg) / Tier 2 (unieke legacy-schoolmatch):
+  // via het eigen trainerboard — Master ID → centrale training → School.
   const suggesties: TrainerSchoolSuggestie[] = [];
   for (const tbItem of trainerboardStructuur.items) {
     if (!tbItem.masterId) continue;
@@ -340,6 +384,11 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
     if (!training) continue; // hangende/ongeldige Master ID — geen crash, gewoon overslaan
 
     if (training.schoolIds.length > 0) {
+      // Tier 1 (harde relatie) — wint altijd: zodra de centrale training
+      // zelf een bruikbare School-koppeling heeft, wordt de legacy-
+      // naammatch hieronder voor dit trainerboard-item nooit meer bereikt
+      // (de `continue` hieronder slaat 'm structureel over) — precies de
+      // opdrachtseis "Tier 1 wint altijd", zonder een aparte prioriteitscheck.
       for (const schoolId of training.schoolIds) {
         if (scholen.has(schoolId)) continue;
         const school = masterDataById.get(schoolId);
@@ -357,16 +406,30 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
       continue;
     }
 
-    // Tier 3: School-kolom leeg op de centrale training (datakwaliteits-
-    // bevinding, architectuurrapport §B) — read-only groepnaam-suggestie,
-    // uitsluitend bij een unieke, exacte (hoofdletterongevoelige) naammatch.
-    // Bij ambiguïteit (0 of 2+ kandidaten): geen suggestie, nooit gokken.
+    // Tier 2 (unieke legacy-schoolmatch, 2026-08-19 — zie
+    // normaliseerSchoolnaamVoorMatch se toelichting hierboven voor de live-
+    // bevestigde aanleiding): School-kolom leeg op de centrale training.
+    // De groupTitle op het PERSOONLIJKE trainerboard is dan de enige
+    // overgebleven schoolidentiteit — bij een unieke, veilig-genormaliseerde
+    // naammatch tegen Master Data is dat betrouwbaar genoeg om als bevestigd
+    // te tonen (nooit fuzzy, nooit bij ambiguïteit). Bij 0 of 2+ kandidaten:
+    // niets — geen suggestie, geen bevestiging, nooit gokken (ongewijzigd
+    // t.o.v. de oorspronkelijke, uitsluitend-suggestie-versie van deze tier).
     if (!tbItem.groupTitle) continue;
-    const groepNaamGenormaliseerd = tbItem.groupTitle.trim().toLowerCase();
-    const kandidaten = Array.from(masterDataById.values()).filter((school) => school.naam.trim().toLowerCase() === groepNaamGenormaliseerd);
-    if (kandidaten.length === 1 && !scholen.has(kandidaten[0]!.id) && !suggesties.some((s) => s.mogelijkeSchoolId === kandidaten[0]!.id)) {
-      suggesties.push({ suggestieNaam: tbItem.groupTitle, mogelijkeSchoolId: kandidaten[0]!.id, mogelijkeSchoolNaam: kandidaten[0]!.naam });
-    }
+    const groepNaamGenormaliseerd = normaliseerSchoolnaamVoorMatch(tbItem.groupTitle);
+    const kandidaten = Array.from(masterDataById.values()).filter((school) => normaliseerSchoolnaamVoorMatch(school.naam) === groepNaamGenormaliseerd);
+    if (kandidaten.length !== 1) continue;
+    const kandidaat = kandidaten[0]!;
+    if (scholen.has(kandidaat.id)) continue; // al bevestigd via tier 1 (bv. door een ander trainerboard-item) — nooit overschrijven met een zwakkere bron.
+    scholen.set(kandidaat.id, {
+      id: kandidaat.id,
+      naam: kandidaat.naam,
+      onderwijstype: kandidaat.onderwijstype,
+      locatie: kandidaat.locatie,
+      implementatiefase: kandidaat.implementatiefase,
+      contactpersoonNaam: kandidaat.contactpersoonNaam,
+      bron: "legacy-unique",
+    });
   }
 
   return { scholen, trainingenPerSchool, suggesties };
@@ -398,7 +461,15 @@ export interface TrainerScholenResultaat {
   mogelijkGekoppeld: TrainerSchoolSuggestie[];
 }
 
-/** Architectuurrapport §5 — "Mijn scholen": bevestigd (tier 1+2) + apart, read-only, niet-klikbaar "mogelijk gekoppeld" (tier 3). */
+/**
+ * Architectuurrapport §5 — "Mijn scholen": bevestigd (tier 1 harde relatie +
+ * tier 2 unieke legacy-schoolmatch, ongedifferentieerd getoond) + apart,
+ * read-only, niet-klikbaar "mogelijk gekoppeld" (2026-08-19: sinds de
+ * legacy-schoolmatch-fix structureel leeg zolang elke unieke groupTitle-
+ * match hierboven al bevestigd wordt — de mogelijkGekoppeld-infrastructuur
+ * blijft bewust bestaan voor een eventuele toekomstige, expliciet-ambigue
+ * suggestie-heuristiek, maar heeft momenteel geen enkele producent meer).
+ */
 export async function bepaalScholenVoorTrainer(trainer: AuthTrainer): Promise<TrainerScholenResultaat> {
   const context = await verzamelTrainerContext(trainer);
   const bevestigd = Array.from(context.scholen.values())
