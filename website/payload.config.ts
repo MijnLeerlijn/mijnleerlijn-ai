@@ -6,9 +6,10 @@ import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { cloudStoragePlugin } from "@payloadcms/plugin-cloud-storage";
 import sharp from "sharp";
 
-import { isProduction, optionalEnv, requireEnv } from "@/config/env";
+import { isProduction, optionalEnv, requireEnv, getTrainersOrigin } from "@/config/env";
 import { privateBlobAdapter } from "@/lib/media/private-blob-adapter";
 import { Users } from "./payload/collections/Users";
+import { Trainers } from "./payload/collections/Trainers";
 import { Variants } from "./payload/collections/Variants";
 import { Categories } from "./payload/collections/Categories";
 import { Articles } from "./payload/collections/Articles";
@@ -79,6 +80,18 @@ if (!optionalEnv("NEXT_PUBLIC_SERVER_URL")) {
 
 export default buildConfig({
   serverURL: optionalEnv("NEXT_PUBLIC_SERVER_URL") ?? "http://localhost:3000",
+  // Traineromgeving V1, Ronde 1 (2026-08-19) — zonder deze expliciete
+  // toevoeging bestaat de csrf-allowlist na sanitize.js (config/sanitize.js:
+  // `config.csrf.push(config.serverURL)`) ALLEEN uit serverURL zelf — nooit
+  // uit trainers.{ROOT_DOMAIN}, een ander subdomein. Payload's eigen
+  // extractJWT() (node_modules/payload/dist/auth/extractJWT.js) zou dan élke
+  // fetch()-POST vanaf de Traineromgeving die op Payload's eigen req.user
+  // leunt (bv. /api/trainers/logout) afwijzen — zie getTrainersOrigin() in
+  // config/env.ts voor de volledige analyse. `csrf` is puur additief (zie
+  // types.d.ts: `csrf?: string[]`) — dit verzwakt de bestaande allowlist
+  // voor "users" niet, het voegt uitsluitend één extra, expliciet
+  // toegestane origin toe.
+  csrf: [getTrainersOrigin()],
   secret: requireEnv("PAYLOAD_SECRET"),
   // Foutafhandeling logo-upload (2026-07-31): Payload vervangt STANDAARD elke
   // niet-publieke serverfout door de generieke "Something went wrong." (zie
@@ -242,6 +255,7 @@ export default buildConfig({
   },
   collections: [
     Users,
+    Trainers,
     Variants,
     Categories,
     Articles,

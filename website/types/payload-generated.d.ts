@@ -64,10 +64,12 @@ export type SupportedTimezones =
 export interface Config {
   auth: {
     users: UserAuthOperations;
+    trainers: TrainerAuthOperations;
   };
   blocks: {};
   collections: {
     users: User;
+    trainers: Trainer;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -106,6 +108,7 @@ export interface Config {
   collectionsJoins: {};
   collectionsSelect: {
     users: UsersSelect<false> | UsersSelect<true>;
+    trainers: TrainersSelect<false> | TrainersSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -165,7 +168,7 @@ export interface Config {
   widgets: {
     collections: CollectionsWidget;
   };
-  user: User;
+  user: User | Trainer;
   jobs: {
     tasks: {
       schedulePublish: TaskSchedulePublish;
@@ -178,6 +181,24 @@ export interface Config {
   };
 }
 export interface UserAuthOperations {
+  forgotPassword: {
+    email: string;
+    password: string;
+  };
+  login: {
+    email: string;
+    password: string;
+  };
+  registerFirstUser: {
+    email: string;
+    password: string;
+  };
+  unlock: {
+    email: string;
+    password: string;
+  };
+}
+export interface TrainerAuthOperations {
   forgotPassword: {
     email: string;
     password: string;
@@ -334,6 +355,46 @@ export interface Media {
   height?: number | null;
   focalX?: number | null;
   focalY?: number | null;
+}
+/**
+ * Accounts voor trainers.mijnleerlijn.chat — nooit bruikbaar om in te loggen op de gewone /admin.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainers".
+ */
+export interface Trainer {
+  id: number;
+  name: string;
+  /**
+   * Board-ID van het persoonlijke trainerboard, bv. 18424768045 ("Wessel - Trainingen").
+   */
+  mondayTrainerboardId: string;
+  /**
+   * Item-ID van deze trainer op board "5: Uitvoerder training" (18420120602) — bepaalt via Master Data se Trainer-kolom welke scholen als "Mijn scholen" tonen (architectuurrapport §4).
+   */
+  mondayUitvoerderItemId: string;
+  /**
+   * Uitgevinkt = kan niet meer inloggen, zonder het account te verwijderen.
+   */
+  actief?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+  email: string;
+  resetPasswordToken?: string | null;
+  resetPasswordExpiration?: string | null;
+  salt?: string | null;
+  hash?: string | null;
+  loginAttempts?: number | null;
+  lockUntil?: string | null;
+  sessions?:
+    | {
+        id: string;
+        createdAt?: string | null;
+        expiresAt: string;
+      }[]
+    | null;
+  password?: string | null;
+  collection: 'trainers';
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1891,6 +1952,10 @@ export interface PayloadLockedDocument {
         value: number | User;
       } | null)
     | ({
+        relationTo: 'trainers';
+        value: number | Trainer;
+      } | null)
+    | ({
         relationTo: 'variants';
         value: number | Variant;
       } | null)
@@ -2007,10 +2072,15 @@ export interface PayloadLockedDocument {
         value: number | MailSignalen;
       } | null);
   globalSlug?: string | null;
-  user: {
-    relationTo: 'users';
-    value: number | User;
-  };
+  user:
+    | {
+        relationTo: 'users';
+        value: number | User;
+      }
+    | {
+        relationTo: 'trainers';
+        value: number | Trainer;
+      };
   updatedAt: string;
   createdAt: string;
 }
@@ -2020,10 +2090,15 @@ export interface PayloadLockedDocument {
  */
 export interface PayloadPreference {
   id: number;
-  user: {
-    relationTo: 'users';
-    value: number | User;
-  };
+  user:
+    | {
+        relationTo: 'users';
+        value: number | User;
+      }
+    | {
+        relationTo: 'trainers';
+        value: number | Trainer;
+      };
   key?: string | null;
   value?:
     | {
@@ -2056,6 +2131,32 @@ export interface UsersSelect<T extends boolean = true> {
   name?: T;
   role?: T;
   variantScope?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  email?: T;
+  resetPasswordToken?: T;
+  resetPasswordExpiration?: T;
+  salt?: T;
+  hash?: T;
+  loginAttempts?: T;
+  lockUntil?: T;
+  sessions?:
+    | T
+    | {
+        id?: T;
+        createdAt?: T;
+        expiresAt?: T;
+      };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainers_select".
+ */
+export interface TrainersSelect<T extends boolean = true> {
+  name?: T;
+  mondayTrainerboardId?: T;
+  mondayUitvoerderItemId?: T;
+  actief?: T;
   updatedAt?: T;
   createdAt?: T;
   email?: T;

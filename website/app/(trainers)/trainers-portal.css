@@ -1,0 +1,12 @@
+/* Traineromgeving V1, Ronde 1 (2026-08-19) — enige, minimale CSS-aanvulling
+   bovenop app/globals.css voor deze subboom. Tailwind v4 se @theme-blokken
+   voegen tokens TOE aan (breiden niet uit i.p.v. wissen) Tailwinds eigen
+   standaardpalet, dus bv. bg-teal-600/bg-amber-50/bg-blue-50/bg-green-50 en
+   de al bestaande merktokens (rounded-xl, shadow-md, text-h1, ...) uit
+   globals.css werken hier al zonder verdere config — zie app/globals.css.
+   Alleen het portal-eigen kopletterfont (bewust een ander lettertype dan de
+   publieke site se Inter-only, zie app/(trainers)/layout.tsx) ontbrak nog
+   als bruikbare utility-klasse (font-display). */
+@theme {
+  --font-display: var(--font-manrope);
+}

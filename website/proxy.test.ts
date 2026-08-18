@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { getRedirectUrl } from "next/experimental/testing/server";
+import { getRedirectUrl, getRewrittenUrl } from "next/experimental/testing/server";
 import { proxy } from "./proxy";
 import { defaultVariant } from "@/config/variants";
 
@@ -91,5 +91,74 @@ describe("proxy", () => {
     await proxy(request);
 
     expect(mockResolveSlug).toHaveBeenCalledWith("mijnleerlijn.chat", "/ergens/anders");
+  });
+});
+
+// Traineromgeving V1, Ronde 1 (2026-08-19) — trainers.{ROOT_DOMAIN} moet
+// volledig buiten de variant-resolver om herschreven worden naar /trainers*
+// (architectuurrapport §11). Getest tegen de echte, geëxporteerde `proxy`-
+// functie, zelfde stijl als hierboven.
+describe("proxy — trainers.mijnleerlijn.chat host-routing", () => {
+  it("herschrijft de root (/) naar /trainers, zonder de variant-resolver aan te roepen", async () => {
+    const request = maakRequest("https://trainers.mijnleerlijn.chat/", "trainers.mijnleerlijn.chat");
+
+    const response = await proxy(request);
+
+    expect(getRewrittenUrl(response)).toBe("https://trainers.mijnleerlijn.chat/trainers");
+    expect(mockResolveSlug).not.toHaveBeenCalled();
+  });
+
+  it("herschrijft /scholen naar /trainers/scholen", async () => {
+    const request = maakRequest("https://trainers.mijnleerlijn.chat/scholen", "trainers.mijnleerlijn.chat");
+
+    const response = await proxy(request);
+
+    expect(getRewrittenUrl(response)).toBe("https://trainers.mijnleerlijn.chat/trainers/scholen");
+  });
+
+  it("herschrijft een geneste schooldetail-route en behoudt de querystring", async () => {
+    const request = maakRequest("https://trainers.mijnleerlijn.chat/scholen/montessori-gorinchem?tab=logboek", "trainers.mijnleerlijn.chat");
+
+    const response = await proxy(request);
+
+    expect(getRewrittenUrl(response)).toBe("https://trainers.mijnleerlijn.chat/trainers/scholen/montessori-gorinchem?tab=logboek");
+  });
+
+  it("herschrijft /login naar /trainers/login", async () => {
+    const request = maakRequest("https://trainers.mijnleerlijn.chat/login", "trainers.mijnleerlijn.chat");
+
+    const response = await proxy(request);
+
+    expect(getRewrittenUrl(response)).toBe("https://trainers.mijnleerlijn.chat/trainers/login");
+  });
+
+  it("laat /api/* ONGEWIJZIGD door — Payload's eigen /api/trainers/login blijft op zijn echte pad", async () => {
+    const request = maakRequest("https://trainers.mijnleerlijn.chat/api/trainers/login", "trainers.mijnleerlijn.chat");
+
+    const response = await proxy(request);
+
+    expect(getRewrittenUrl(response)).toBeNull();
+    expect(getRedirectUrl(response)).toBeNull();
+    expect(mockResolveSlug).not.toHaveBeenCalled();
+  });
+
+  it("raakt een ANDER host (de gewone hoofdsite) volledig niet aan — normale variant-resolutie blijft ongewijzigd", async () => {
+    mockResolveSlug.mockResolvedValue(defaultVariant.slug);
+    const request = maakRequest("https://mijnleerlijn.chat/contact", "mijnleerlijn.chat");
+
+    const response = await proxy(request);
+
+    expect(getRewrittenUrl(response)).toBeNull();
+    expect(mockResolveSlug).toHaveBeenCalledWith("mijnleerlijn.chat", "/contact");
+  });
+
+  it("raakt een ANDERE variant-subdomein volledig niet aan", async () => {
+    mockResolveSlug.mockResolvedValue("mijnmonti");
+    const request = maakRequest("https://mijnmonti.mijnleerlijn.chat/", "mijnmonti.mijnleerlijn.chat");
+
+    const response = await proxy(request);
+
+    expect(getRewrittenUrl(response)).toBeNull();
+    expect(mockResolveSlug).toHaveBeenCalled();
   });
 });

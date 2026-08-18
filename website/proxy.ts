@@ -48,12 +48,45 @@ import { defaultVariant } from "@/config/variants";
 //
 // Proxy draait standaard op de Node.js-runtime (Next.js 16+), dus een
 // Payload-aanroep binnen de resolver is hier toegestaan.
+
+// Traineromgeving V1, Ronde 1 (2026-08-19, architectuurrapport §11) —
+// trainers.{ROOT_DOMAIN} heeft NIETS met variant-herkenning te maken (geen
+// content-variant, geen white-label-merk) en moet dus vóór en volledig
+// buiten variantResolver.resolveSlug() om worden afgehandeld — anders zou
+// dit host stilzwijgend de gewone publieke standaardvariant tonen (de bug
+// die dit precies voorkomt: geen van de 4 resolutiestappen in
+// in-memory-variant-resolver.ts kent dit host, dus zou zonder deze
+// kortsluiting altijd op de default-variant terugvallen).
+//
+// `/api/*` en `/_next/*` blijven ONGEWIJZIGD doorgestuurd — Payload's eigen,
+// host-onafhankelijke REST-API (o.a. /api/trainers/login, /api/trainers/
+// logout) leeft op het exacte pad, niet onder /trainers, en moet dus nooit
+// herschreven worden. Alles overig wordt herschreven naar /trainers{pad},
+// waar app/(trainers)/trainers/... het daadwerkelijk rendert (eigen,
+// onafhankelijke root-layout — zie app/(trainers)/layout.tsx, Next.js se
+// "multiple root layouts", node_modules/next/dist/docs/.../route-groups.md).
+function trainersPortalRewrite(request: NextRequest, hoofddomein: string): NextResponse | null {
+  const schoneHost = (request.headers.get("host") ?? "").split(":")[0]?.toLowerCase() ?? "";
+  if (schoneHost !== `trainers.${hoofddomein}`) return null;
+
+  const pad = request.nextUrl.pathname;
+  if (pad.startsWith("/api") || pad.startsWith("/_next")) return NextResponse.next();
+
+  const url = request.nextUrl.clone();
+  url.pathname = pad === "/" ? "/trainers" : `/trainers${pad}`;
+  return NextResponse.rewrite(url);
+}
+
 export async function proxy(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
+  const hoofddomein = getRootDomain().toLowerCase();
+
+  const trainersResponse = trainersPortalRewrite(request, hoofddomein);
+  if (trainersResponse) return trainersResponse;
+
   const slug = await variantResolver.resolveSlug(host, request.nextUrl.pathname);
 
   const schoneHost = (host.split(":")[0] ?? "").toLowerCase();
-  const hoofddomein = getRootDomain().toLowerCase();
   const opHoofdsite = schoneHost === hoofddomein || schoneHost === `www.${hoofddomein}`;
 
   // Een niet-standaard slug die op de hoofdsite is opgelost, kan uitsluitend

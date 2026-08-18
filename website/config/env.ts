@@ -76,3 +76,29 @@ export function getRootDomain(): string {
   }
   return waarde || "localhost";
 }
+
+/**
+ * Traineromgeving V1, Ronde 1 (2026-08-19) — volledige origin (protocol +
+ * host + poort) van trainers.{ROOT_DOMAIN}, afgeleid i.p.v. een aparte
+ * env-var: hostnaam-voorvoegsel via getRootDomain() hierboven (dezelfde bron
+ * als proxy.ts se "trainers.{ROOT_DOMAIN}"-routering), protocol+poort via
+ * NEXT_PUBLIC_SERVER_URL (dezelfde bron als Payload's eigen `serverURL`,
+ * zie payload.config.ts) — zo blijft dit altijd kloppen met de omgeving
+ * waarin de app daadwerkelijk draait, zonder een derde, potentieel uit de
+ * pas lopende env-var te introduceren.
+ *
+ * ENIGE huidige gebruiker: payload.config.ts se `csrf`-allowlist. Zonder
+ * deze allowlist-vermelding wijst Payload's eigen extractJWT()
+ * (node_modules/payload/dist/auth/extractJWT.js) élke fetch()-POST vanaf
+ * trainers.{ROOT_DOMAIN} af die op Payload's eigen req.user leunt (bv.
+ * /api/trainers/logout) — zo'n fetch() stuurt altijd een Origin-header, en
+ * die kan nooit gelijk zijn aan serverURL zelf (ander subdomein). Exact
+ * dezelfde bugklasse als lib/auth/verify-session.ts beschrijft (daar
+ * ontdekt via een echt productie-incident), hier vooraf gevonden door de
+ * Payload-broncode te lezen vóórdat de loginpagina gebouwd werd.
+ */
+export function getTrainersOrigin(): string {
+  const serverUrl = optionalEnv("NEXT_PUBLIC_SERVER_URL") ?? "http://localhost:3000";
+  const { protocol, port } = new URL(serverUrl);
+  return `${protocol}//trainers.${getRootDomain()}${port ? `:${port}` : ""}`;
+}

@@ -29,11 +29,13 @@ export const RESERVED_VARIANT_SLUGS: readonly string[] = [
   "admin",
   // API — app/api/* én Payload's eigen REST-API (app/(payload)/api/*)
   "api",
-  // Infrastructuur — de hoofdsite zelf, en het aparte Curriculum
-  // Werkplaats-project (curriculum.mijnleerlijn.chat), nooit door de
-  // Helpdesk-wildcard over te nemen.
+  // Infrastructuur — de hoofdsite zelf, het aparte Curriculum
+  // Werkplaats-project (curriculum.mijnleerlijn.chat), en de Traineromgeving
+  // (trainers.mijnleerlijn.chat, zie proxy.ts se host-short-circuit) — geen
+  // van drieën ooit door de Helpdesk-wildcard over te nemen.
   "www",
   "curriculum",
+  "trainers",
 ];
 
 export function isReservedSlug(slug: string): boolean {
