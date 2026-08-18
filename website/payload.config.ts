@@ -10,6 +10,7 @@ import { isProduction, optionalEnv, requireEnv, getTrainersOrigin } from "@/conf
 import { privateBlobAdapter } from "@/lib/media/private-blob-adapter";
 import { Users } from "./payload/collections/Users";
 import { TrainerAccounts } from "./payload/collections/TrainerAccounts";
+import { TrainerLogEvents } from "./payload/collections/TrainerLogEvents";
 import { Variants } from "./payload/collections/Variants";
 import { Categories } from "./payload/collections/Categories";
 import { Articles } from "./payload/collections/Articles";
@@ -256,6 +257,7 @@ export default buildConfig({
   collections: [
     Users,
     TrainerAccounts,
+    TrainerLogEvents,
     Variants,
     Categories,
     Articles,

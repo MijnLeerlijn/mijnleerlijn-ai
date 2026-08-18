@@ -70,6 +70,7 @@ export interface Config {
   collections: {
     users: User;
     'trainer-accounts': TrainerAccount;
+    'trainer-log-events': TrainerLogEvent;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -109,6 +110,7 @@ export interface Config {
   collectionsSelect: {
     users: UsersSelect<false> | UsersSelect<true>;
     'trainer-accounts': TrainerAccountsSelect<false> | TrainerAccountsSelect<true>;
+    'trainer-log-events': TrainerLogEventsSelect<false> | TrainerLogEventsSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -395,6 +397,47 @@ export interface TrainerAccount {
     | null;
   password?: string | null;
   collection: 'trainer-accounts';
+}
+/**
+ * Audittrail voor trainingsmutaties (datum/status) vanuit de traineromgeving — write-back naar Monday.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-log-events".
+ */
+export interface TrainerLogEvent {
+  id: number;
+  trainer: number | TrainerAccount;
+  occurredAt: string;
+  /**
+   * Item-ID op board 4: Uitvoering (Trainingen) — geen lokale Payload-kopie van Monday-data, dus platte tekst, geen relatie.
+   */
+  mondayCentraleTrainingId: string;
+  mondayTrainerboardItemId?: string | null;
+  mondaySchoolId?: string | null;
+  schoolNaam?: string | null;
+  /**
+   * "Trainerboard-spiegel" is uitsluitend een datakwaliteitssignaal (numeric_mm5vkjzz wijkt af van de opgezochte waarde) — deze ronde schrijft dat veld nooit, alleen datum/status.
+   */
+  veld: 'datum' | 'status' | 'trainerboardMirrorSignaal';
+  /**
+   * Zelfde vocabulaire als WriteBackStatus (lib/trainers/writeback.ts). Een trainerboardMirrorSignaal-regel gebruikt altijd "conflict" (een afwijking, geen schrijfpoging).
+   */
+  status: 'geschreven' | 'conflict' | 'mislukt' | 'niet_geactiveerd';
+  summary: string;
+  /**
+   * Gestructureerde snapshot (oude/nieuwe waarde, kolom-ID, record) — zelfde dataminimalisatie-eis als sales-log-events: geen overbodige ruwe Monday-tekst.
+   */
+  payload?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1956,6 +1999,10 @@ export interface PayloadLockedDocument {
         value: number | TrainerAccount;
       } | null)
     | ({
+        relationTo: 'trainer-log-events';
+        value: number | TrainerLogEvent;
+      } | null)
+    | ({
         relationTo: 'variants';
         value: number | Variant;
       } | null)
@@ -2173,6 +2220,24 @@ export interface TrainerAccountsSelect<T extends boolean = true> {
         createdAt?: T;
         expiresAt?: T;
       };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-log-events_select".
+ */
+export interface TrainerLogEventsSelect<T extends boolean = true> {
+  trainer?: T;
+  occurredAt?: T;
+  mondayCentraleTrainingId?: T;
+  mondayTrainerboardItemId?: T;
+  mondaySchoolId?: T;
+  schoolNaam?: T;
+  veld?: T;
+  status?: T;
+  summary?: T;
+  payload?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

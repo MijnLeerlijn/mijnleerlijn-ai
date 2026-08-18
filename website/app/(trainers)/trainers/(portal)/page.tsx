@@ -72,7 +72,7 @@ export default async function TrainerDashboardPage() {
         <div className="rounded-xl border border-grijs-200 bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 text-grijs-600">
             <NotebookPen size={18} className={data.logboekOpenstaand.length > 0 ? "text-amber-600" : "text-teal-600"} />
-            <span className="text-label font-medium uppercase tracking-wide">Logboek openstaand</span>
+            <span className="text-label font-medium uppercase tracking-wide">Verslag nog invullen</span>
           </div>
           <p className={`mt-2 text-h1 font-bold ${data.logboekOpenstaand.length > 0 ? "text-amber-600" : "text-grijs-900"}`}>
             {data.logboekOpenstaand.length}
@@ -97,7 +97,7 @@ export default async function TrainerDashboardPage() {
       <section className="rounded-xl border border-grijs-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-grijs-100 px-4 py-3">
           <CalendarClock size={16} className="text-grijs-600" />
-          <h2 className="text-h3 font-semibold text-grijs-900">Binnenkort</h2>
+          <h2 className="text-h3 font-semibold text-grijs-900">Komend</h2>
         </div>
         <div className="flex flex-col divide-y divide-grijs-100 px-1 py-1">
           {data.komendeTrainingen.length === 0 ? (
@@ -112,7 +112,7 @@ export default async function TrainerDashboardPage() {
         <section className="rounded-xl border border-amber-200 bg-amber-50/40 shadow-sm">
           <div className="flex items-center gap-2 border-b border-amber-100 px-4 py-3">
             <NotebookPen size={16} className="text-amber-700" />
-            <h2 className="text-h3 font-semibold text-grijs-900">Logboek nog invullen</h2>
+            <h2 className="text-h3 font-semibold text-grijs-900">Verslag nog invullen</h2>
           </div>
           <div className="flex flex-col divide-y divide-amber-100 px-1 py-1">
             {data.logboekOpenstaand.map((training) => (

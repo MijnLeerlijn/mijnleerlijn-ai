@@ -34,7 +34,11 @@ function vandaagIsoAmsterdam(): string {
 // architectuurrapport §A) — nooit wijzigen zonder herbevestiging tegen een
 // echt board via /admin/trainers-diagnose/monday.
 const MASTER_DATA_BOARD_ID = "18420120365"; // 1: Scholen (Master Data)
-const UITVOERING_BOARD_ID = "18420120466"; // 4: Uitvoering (Trainingen)
+// Ronde 2 (2026-08-19) — geëxporteerd (was privé): lib/trainers/monday-
+// columns.ts/writeback.ts hebben het echte board-ID + de bestaande kolom-
+// ID's nodig als schrijfdoel voor de centrale training. Zuiver additief (een
+// export-keyword), geen enkele waarde of het leespad hier verandert.
+export const UITVOERING_BOARD_ID = "18420120466"; // 4: Uitvoering (Trainingen)
 
 const MD_TRAINER_KOLOM = "board_relation_mm5r2jy1";
 const MD_HOOFDCONTACTPERSOON_KOLOM = "board_relation_mm4v8fpm";
@@ -43,8 +47,8 @@ const MD_LOCATION_KOLOM = "text_mm5r9kn2";
 const MD_IMPLEMENTATIEFASE_KOLOM = "color_mm5q790a";
 
 const UV_SCHOOL_KOLOM = "board_relation_mm5tyc40";
-const UV_STATUS_KOLOM = "color_mm5tz3wk";
-const UV_DATUM_KOLOM = "date_mm5tnfvx";
+export const UV_STATUS_KOLOM = "color_mm5tz3wk";
+export const UV_DATUM_KOLOM = "date_mm5tnfvx";
 const UV_LOGBOEK_KOLOM = "boolean_mm5tvfc5";
 
 const TB_MASTER_ID_KOLOM = "numeric_mm5vceeq";
@@ -202,6 +206,19 @@ export interface TrainingSamenvatting {
   ruweStatusTekst: string | null;
   datum: string | null;
   logboekIngevuld: boolean;
+  /**
+   * Ronde 2 (2026-08-19) — item-ID van HET SPIEGELITEM op het EIGEN
+   * trainerboard van deze trainer, via de Master-ID-keten (nooit via naam).
+   * `null` betekent: deze trainer heeft geen eigen trainerboard-item voor
+   * deze training (bv. hard via Master Data.Trainer bevestigde school wiens
+   * trainingen nooit op dit trainerboard verschenen) — dan is bewerken vanuit
+   * de portal niet mogelijk: er is geen schrijfdoel en geen manier om
+   * eigenaarschap voor een mutatie te herverifiëren. lib/trainers/writeback.ts
+   * en de bewerk-UI moeten dit veld altijd controleren vóór ze een
+   * bewerkactie aanbieden/uitvoeren — nooit een trainerboard-item-ID los van
+   * hier aannemen of door de client laten aanleveren.
+   */
+  trainerboardItemId: string | null;
 }
 
 export interface TrainerSchoolBron {
@@ -336,6 +353,25 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
     });
   }
 
+  // Ronde 2 (2026-08-19) — ONVOORWAARDELIJK opgebouwd uit trainerboardStructuur
+  // (al opgehaald via de Promise.all hierboven), niet per-tier: elk
+  // trainerboard-item van déze trainer met een geldige Master ID vertelt "dit
+  // trainerboard-item hoort bij die centrale training", ongeacht of de
+  // centrale training zelf al een School-relatie heeft (tier 1) of pas via
+  // de naam-heuristiek hieronder wordt bevestigd (tier 2). Vóór deze ronde
+  // werd tbItem.id nergens bewaard — dit is de enige plek waar het
+  // trainerboard-item-ID ooit gekend is, dus moet het hier al vastgelegd
+  // worden, vóór de TrainingSamenvatting-objecten hieronder gebouwd worden.
+  // Randgeval (geen bug, bestond al): delen twee trainerboard-rijen
+  // toevallig dezelfde Master ID ("datakwaliteitsuitzondering"), dan wint de
+  // laatst-verwerkte hier — nu zichtbaar omdat deze Map een schrijfdoel
+  // voedt, maar niet nieuw veroorzaakt door deze wijziging.
+  const trainerboardItemIdByMasterId = new Map<string, string>();
+  for (const tbItem of trainerboardStructuur.items) {
+    if (!tbItem.masterId) continue;
+    trainerboardItemIdByMasterId.set(tbItem.masterId, tbItem.id);
+  }
+
   const trainingenPerSchool = new Map<string, TrainingSamenvatting[]>();
   // samenvatting hier bewaard (niet alleen schoolIds) — de tier-2-lus
   // hieronder heeft de VOLLEDIGE TrainingSamenvatting nodig om diezelfde
@@ -356,6 +392,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
       ruweStatusTekst: statusTekst,
       datum,
       logboekIngevuld: parseCheckboxIngevuld(kolommen.get(UV_LOGBOEK_KOLOM)?.value),
+      trainerboardItemId: trainerboardItemIdByMasterId.get(item.id) ?? null,
     };
     uitvoeringById.set(item.id, { schoolIds, samenvatting });
     for (const schoolId of schoolIds) {
@@ -546,11 +583,14 @@ export async function haalDashboardData(trainer: AuthTrainer): Promise<TrainerDa
   const trainingenVandaag = metDatumNietGeannuleerd.filter((t) => t.datum === vandaag);
   const komendeTrainingen = metDatumNietGeannuleerd.filter((t) => t.datum! > vandaag).sort((a, b) => a.datum!.localeCompare(b.datum!));
 
-  // "Logboek ingevuld = false" voor trainingen uit het verleden — puur
-  // datum+boolean, bewust NIET afhankelijk van de onzekerdere statuslabel-
-  // afleiding (bepaalTrainingStatus) — zie architectuurrapport, dashboard §.
+  // "Verslag nog invullen" — puur datum+boolean, bewust NIET afhankelijk van
+  // de onzekerdere statuslabel-afleiding (bepaalTrainingStatus). Ronde 2
+  // (2026-08-19), expliciet bevestigd door Michel: de datumgrens is "vandaag
+  // of in het verleden" (<=, niet <) — als een trainer na afloop vergeet de
+  // status van Gepland naar Gedaan te zetten, moet dit signaal juist blijven
+  // waarschuwen, dus de datum is de noodzakelijke voorwaarde, niet de status.
   const logboekOpenstaand = alleTrainingenMetSchool.filter(
-    (t) => t.datum !== null && t.datum < vandaag && !t.logboekIngevuld && t.status !== "geannuleerd"
+    (t) => t.datum !== null && t.datum <= vandaag && !t.logboekIngevuld && t.status !== "geannuleerd"
   );
 
   return { trainingenVandaag, komendeTrainingen, aantalScholen: context.scholen.size, logboekOpenstaand };
@@ -591,4 +631,34 @@ export async function haalSchoolDetail(trainer: AuthTrainer, schoolId: string): 
     },
     logboek,
   };
+}
+
+export interface TrainingVoorMutatie {
+  training: TrainingSamenvatting;
+  schoolId: string;
+  schoolNaam: string;
+}
+
+/**
+ * Ronde 2 (2026-08-19) — object-level autorisatie voor een training-
+ * MUTATIE, zelfde patroon als haalSchoolDetail hierboven: trainingId moet
+ * voorkomen in de resolutieladder van déze specifieke trainer, anders null
+ * (nooit een 403 — een trainer mag nooit kunnen afleiden of een training-ID
+ * van een andere trainer bestaat). lib/trainers/writeback.ts roept dit
+ * ALTIJD zelf aan vóór een mutatie en vertrouwt nooit een trainerboard-
+ * item-ID of school-ID dat uit het request zelf zou komen — die worden hier
+ * vers server-side herleid uit de trainer se eigen, net opnieuw opgehaalde
+ * context. Retourneert de VOLLEDIGE TrainingSamenvatting (incl.
+ * trainerboardItemId) zodat de aanroeper zelf kan bepalen of bewerken
+ * structureel mogelijk is (trainerboardItemId === null → niet bewerkbaar).
+ */
+export async function haalTrainingVoorMutatie(trainer: AuthTrainer, trainingId: string): Promise<TrainingVoorMutatie | null> {
+  const context = await verzamelTrainerContext(trainer);
+  for (const [schoolId, school] of context.scholen) {
+    const training = (context.trainingenPerSchool.get(schoolId) ?? []).find((t) => t.id === trainingId);
+    if (training) {
+      return { training, schoolId, schoolNaam: school.naam };
+    }
+  }
+  return null;
 }

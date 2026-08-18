@@ -4,30 +4,18 @@ import { ArrowLeft, MapPin, User, NotebookText } from "lucide-react";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalSchoolDetail, type TrainingSamenvatting } from "@/lib/trainers/monday-links";
 import { formatKorteDatum, formatKorteDatumTijd } from "@/lib/sales/format-datum";
+import { TRAINING_STATUS_LABEL, TRAINING_STATUS_KLEUR } from "@/lib/trainers/status-styles";
+import TrainingBewerkenDialog from "./training-bewerken-dialog";
 
 interface SchooldetailProps {
   params: Promise<{ school: string }>;
 }
 
-const STATUS_LABEL: Record<TrainingSamenvatting["status"], string> = {
-  open: "Open",
-  gepland: "Gepland",
-  gedaan: "Gedaan",
-  geannuleerd: "Geannuleerd",
-};
-
-const STATUS_KLEUR: Record<TrainingSamenvatting["status"], string> = {
-  open: "bg-amber-50 text-amber-700",
-  gepland: "bg-blue-50 text-blue-700",
-  gedaan: "bg-green-50 text-green-700",
-  geannuleerd: "bg-grijs-100 text-grijs-600",
-};
-
 function TrainingRij({ training, toonLogboekStatus = false }: { training: TrainingSamenvatting; toonLogboekStatus?: boolean }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2.5">
       <p className="min-w-[10rem] flex-1 text-body-sm font-medium text-grijs-900">{training.naam}</p>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         {toonLogboekStatus && (
           <span
             className={`rounded-full px-2 py-0.5 text-label font-medium ${
@@ -37,10 +25,26 @@ function TrainingRij({ training, toonLogboekStatus = false }: { training: Traini
             {training.logboekIngevuld ? "Logboek ingevuld" : "Logboek niet ingevuld"}
           </span>
         )}
-        <span className={`rounded-full px-2 py-0.5 text-label font-medium ${STATUS_KLEUR[training.status]}`}>
-          {STATUS_LABEL[training.status]}
+        <span className={`rounded-full px-2 py-0.5 text-label font-medium ${TRAINING_STATUS_KLEUR[training.status]}`}>
+          {TRAINING_STATUS_LABEL[training.status]}
         </span>
         <span className="w-20 text-right text-body-sm text-grijs-600">{formatKorteDatum(training.datum)}</span>
+        {/* Ronde 2 (2026-08-19) — bewerken uitsluitend mogelijk met een
+            bekend trainerboard-item-ID (haalTrainingVoorMutatie weigert
+            anders hard, zie lib/trainers/monday-links.ts/writeback.ts):
+            de knop hier al verbergen voorkomt dat een trainer een
+            bewerkdialoog opent die toch altijd zou falen. */}
+        {training.trainerboardItemId !== null && (
+          <TrainingBewerkenDialog
+            training={{
+              id: training.id,
+              naam: training.naam,
+              status: training.status,
+              ruweStatusTekst: training.ruweStatusTekst,
+              datum: training.datum,
+            }}
+          />
+        )}
       </div>
     </li>
   );

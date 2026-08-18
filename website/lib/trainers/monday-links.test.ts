@@ -635,6 +635,45 @@ describe("bepaalScholenVoorTrainer — resolutieladder", () => {
   });
 });
 
+describe("trainerboardItemId (Ronde 2) — schrijfdoel-resolutie voor lib/trainers/writeback.ts", () => {
+  it("tier 1 (training-koppeling): trainerboardItemId wordt onvoorwaardelijk gevuld, ook al bevestigt dit trainerboard-item de school niet zelf", async () => {
+    // vóór Ronde 2 werd tbItem.id (het trainerboard-item-ID) nergens
+    // bewaard — deze test bevestigt dat de nieuwe, onvoorwaardelijke
+    // masterId->tbItem.id-Map ook voor een tier-1 (harde School-koppeling)
+    // training het juiste trainerboard-item-ID oplevert, niet het centrale
+    // training-ID en niet null.
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "800", name: "Trainerboard-item", groupTitle: "School", masterId: "700" }]));
+
+    const detail = await haalSchoolDetail(TRAINER, "500");
+    expect(detail!.trainingen.open[0]).toMatchObject({ id: "700", trainerboardItemId: "800" });
+  });
+
+  it("tier 2 (legacy-unique): trainerboardItemId is het trainerboard-item dat de schoolnaammatch veroorzaakte", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Montessori Gorinchem" })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "12713002919", naam: "Training" })] });
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([{ id: "12717612402", name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: "12713002919" }])
+    );
+
+    const detail = await haalSchoolDetail(TRAINER, "500");
+    expect(detail!.trainingen.open[0]).toMatchObject({ id: "12713002919", trainerboardItemId: "12717612402" });
+  });
+
+  it("geen bijbehorend trainerboard-item (bv. hard bevestigd via Master Data.Trainer, maar deze training verscheen nooit op dit trainerboard) -> trainerboardItemId is null, geen crash", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([])); // leeg trainerboard — geen enkel item
+
+    const detail = await haalSchoolDetail(TRAINER, "500");
+    expect(detail!.trainingen.open[0]).toMatchObject({ id: "700", trainerboardItemId: null });
+  });
+});
+
 describe("haalDashboardData", () => {
   // Zelfde afleiding als vandaagIsoAmsterdam() in monday-links.ts (niet
   // new Date().toISOString().slice(0,10) — dat is UTC en kan enkele uren per
@@ -694,6 +733,22 @@ describe("haalDashboardData", () => {
 
     const data = await haalDashboardData(TRAINER);
     expect(data.logboekOpenstaand.map((t) => t.naam)).toEqual(["Verleden, niet ingevuld"]);
+  });
+
+  it("Ronde 2 (Beslissing 1, na review met Michel) — 'Verslag nog invullen' waarschuwt óók voor een training van VANDAAG (<=, niet <), ongeacht status: een training die nog op 'Gepland' staat omdat de trainer vergat 'm op Gedaan te zetten mag niet verdwijnen", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          uitvoeringItem({ id: "1", naam: "Vandaag, nog Gepland, niet ingevuld", schoolIds: ["500"], datum: VANDAAG, logboekIngevuld: false }),
+          uitvoeringItem({ id: "2", naam: "Vandaag, wél ingevuld", schoolIds: ["500"], datum: VANDAAG, logboekIngevuld: true }),
+        ],
+      });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const data = await haalDashboardData(TRAINER);
+    expect(data.logboekOpenstaand.map((t) => t.naam)).toEqual(["Vandaag, nog Gepland, niet ingevuld"]);
   });
 
   it("aantalScholen komt overeen met het aantal bevestigde scholen", async () => {
