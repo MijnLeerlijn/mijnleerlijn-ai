@@ -11,6 +11,7 @@ import { privateBlobAdapter } from "@/lib/media/private-blob-adapter";
 import { Users } from "./payload/collections/Users";
 import { TrainerAccounts } from "./payload/collections/TrainerAccounts";
 import { TrainerLogEvents } from "./payload/collections/TrainerLogEvents";
+import { TrainerAiLogEvents } from "./payload/collections/TrainerAiLogEvents";
 import { Variants } from "./payload/collections/Variants";
 import { Categories } from "./payload/collections/Categories";
 import { Articles } from "./payload/collections/Articles";
@@ -258,6 +259,7 @@ export default buildConfig({
     Users,
     TrainerAccounts,
     TrainerLogEvents,
+    TrainerAiLogEvents,
     Variants,
     Categories,
     Articles,

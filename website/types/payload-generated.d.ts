@@ -71,6 +71,7 @@ export interface Config {
     users: User;
     'trainer-accounts': TrainerAccount;
     'trainer-log-events': TrainerLogEvent;
+    'trainer-ai-log-events': TrainerAiLogEvent;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -111,6 +112,7 @@ export interface Config {
     users: UsersSelect<false> | UsersSelect<true>;
     'trainer-accounts': TrainerAccountsSelect<false> | TrainerAccountsSelect<true>;
     'trainer-log-events': TrainerLogEventsSelect<false> | TrainerLogEventsSelect<true>;
+    'trainer-ai-log-events': TrainerAiLogEventsSelect<false> | TrainerAiLogEventsSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -436,6 +438,30 @@ export interface TrainerLogEvent {
     | number
     | boolean
     | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Audittrail voor de adviserende Trainer-AI (Vraag-blok dashboard/schooldetail) — nooit vraag-/antwoordtekst zelf, uitsluitend gebruikssignaal.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-ai-log-events".
+ */
+export interface TrainerAiLogEvent {
+  id: number;
+  trainer: number | TrainerAccount;
+  occurredAt: string;
+  contextSoort: 'school' | 'algemeen';
+  /**
+   * Alleen gevuld bij contextSoort "school" — geen lokale Payload-kopie van Monday-data, dus platte tekst, geen relatie.
+   */
+  mondaySchoolId?: string | null;
+  schoolNaam?: string | null;
+  uitkomst: 'beantwoord' | 'mislukt';
+  /**
+   * Uitsluitend het aantal tekens — nooit de vraag zelf.
+   */
+  vraagLengte: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -2003,6 +2029,10 @@ export interface PayloadLockedDocument {
         value: number | TrainerLogEvent;
       } | null)
     | ({
+        relationTo: 'trainer-ai-log-events';
+        value: number | TrainerAiLogEvent;
+      } | null)
+    | ({
         relationTo: 'variants';
         value: number | Variant;
       } | null)
@@ -2236,6 +2266,21 @@ export interface TrainerLogEventsSelect<T extends boolean = true> {
   status?: T;
   summary?: T;
   payload?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-ai-log-events_select".
+ */
+export interface TrainerAiLogEventsSelect<T extends boolean = true> {
+  trainer?: T;
+  occurredAt?: T;
+  contextSoort?: T;
+  mondaySchoolId?: T;
+  schoolNaam?: T;
+  uitkomst?: T;
+  vraagLengte?: T;
   updatedAt?: T;
   createdAt?: T;
 }

@@ -19,6 +19,7 @@ function school(opts: { id: string; naam: string }): TrainerSchoolSamenvatting {
     locatie: "Gorinchem",
     implementatiefase: null,
     contactpersoonNaam: null,
+    contactpersoonBetrouwbaar: false,
     bron: "trainer-relatie",
     aantalOpen: 0,
     aantalGepland: 0,

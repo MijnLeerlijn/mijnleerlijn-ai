@@ -51,6 +51,8 @@ function masterDataItem(opts: {
   naam: string;
   trainerLinkedIds?: (string | number)[];
   hoofdcontactpersoon?: string | null;
+  /** Ronde 2 afronding, Trainer-AI — als gezet, krijgt de contactpersoon-kolom ook een echte .value-relatie (contactpersoonBetrouwbaar = true); zonder is .value leeg, zelfde als voorheen (contactpersoonBetrouwbaar = false). */
+  hoofdcontactpersoonLinkedId?: string | number;
   onderwijstype?: string | null;
   locatie?: string | null;
   implementatiefase?: string | null;
@@ -61,7 +63,11 @@ function masterDataItem(opts: {
     updated_at: "2026-08-19T00:00:00.000Z",
     column_values: [
       { id: "board_relation_mm5r2jy1", text: null, value: opts.trainerLinkedIds ? linkedPulseIdsValue(opts.trainerLinkedIds) : null },
-      { id: "board_relation_mm4v8fpm", text: opts.hoofdcontactpersoon ?? null, value: null },
+      {
+        id: "board_relation_mm4v8fpm",
+        text: opts.hoofdcontactpersoon ?? null,
+        value: opts.hoofdcontactpersoonLinkedId !== undefined ? linkedPulseIdsValue([opts.hoofdcontactpersoonLinkedId]) : null,
+      },
       { id: "dropdown_mm4v9rvg", text: opts.onderwijstype ?? null, value: null },
       { id: "text_mm5r9kn2", text: opts.locatie ?? null, value: null },
       { id: "color_mm5q790a", text: opts.implementatiefase ?? null, value: null },
@@ -794,6 +800,49 @@ describe("haalDashboardData", () => {
     expect(data.aantalScholen).toBe(2);
     void VANDAAG;
   });
+
+  it("Ronde 2 afronding, Trainer-AI — bevestigdeScholen bevat uitsluitend id/naam van déze trainer, alfabetisch (nl) gesorteerd, afgeleid uit dezelfde context (geen extra mockScholenPagina-aanroep t.o.v. een gewone haalDashboardData-call)", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          masterDataItem({ id: "501", naam: "Zilverschool", trainerLinkedIds: [999001] }),
+          masterDataItem({ id: "500", naam: "Achterhoekschool", trainerLinkedIds: [999001] }),
+        ],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const data = await haalDashboardData(TRAINER);
+
+    expect(data.bevestigdeScholen).toEqual([
+      { id: "500", naam: "Achterhoekschool" },
+      { id: "501", naam: "Zilverschool" },
+    ]);
+    // Zelfde 2 aanroepen (Master Data + Uitvoering) als elke andere test in
+    // dit blok — bevestigdeScholen wordt puur in-memory afgeleid van
+    // context.scholen, geen bepaalScholenVoorTrainer()/verzamelTrainerContext
+    // -herhaling.
+    expect(mockScholenPagina).toHaveBeenCalledTimes(2);
+  });
+
+  it("cross-trainer: bevestigdeScholen (dashboard 'Alle scholen') bevat nooit de school van een andere trainer, ook niet als die school in dezelfde Master Data-pagina meekomt", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          masterDataItem({ id: "500", naam: "Eigen school", trainerLinkedIds: [999001] }), // TRAINER.mondayUitvoerderItemId
+          masterDataItem({ id: "600", naam: "School van andere trainer", trainerLinkedIds: [999002] }), // een ANDERE trainer se relatie
+        ],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const data = await haalDashboardData(TRAINER);
+
+    expect(data.bevestigdeScholen).toEqual([{ id: "500", naam: "Eigen school" }]);
+    expect(data.bevestigdeScholen.map((s) => s.naam)).not.toContain("School van andere trainer");
+  });
 });
 
 describe("haalSchoolDetail — object-level autorisatie", () => {
@@ -832,6 +881,67 @@ describe("haalSchoolDetail — object-level autorisatie", () => {
     expect(detail!.trainingen.geannuleerd.map((t) => t.naam)).toEqual(["Geannuleerd"]);
     expect(detail!.logboek).toHaveLength(1);
     expect(mockUpdatesVoorItem).toHaveBeenCalledWith("500", 30);
+  });
+
+  it("sorteert trainingen binnen een sectie alfabetisch A-Z op naam, niet op de volgorde waarin Monday ze teruggeeft", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Eigen school", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          uitvoeringItem({ id: "1", naam: "Training", schoolIds: ["500"] }),
+          uitvoeringItem({ id: "2", naam: "Bijeenkomst | dagdeel", schoolIds: ["500"] }),
+          uitvoeringItem({ id: "3", naam: "Online spreekuur", schoolIds: ["500"] }),
+          uitvoeringItem({ id: "4", naam: "Online beheerderstraining", schoolIds: ["500"] }),
+        ],
+      });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+    mockUpdatesVoorItem.mockResolvedValue([]);
+
+    const detail = await haalSchoolDetail(TRAINER, "500");
+
+    // Alle vier hebben geen datum/status -> allemaal in de "open"-sectie.
+    expect(detail!.trainingen.open.map((t) => t.naam)).toEqual([
+      "Bijeenkomst | dagdeel",
+      "Online beheerderstraining",
+      "Online spreekuur",
+      "Training",
+    ]);
+  });
+
+  it("contactpersoonBetrouwbaar is true wanneer de contactpersoon-kolom een echte board_relation-koppeling heeft (.value), niet alleen gecachte tekst", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [masterDataItem({ id: "500", naam: "Eigen school", trainerLinkedIds: [999001], hoofdcontactpersoon: "Jeroen Bakker", hoofdcontactpersoonLinkedId: 12345 })],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+    mockUpdatesVoorItem.mockResolvedValue([]);
+
+    const detail = await haalSchoolDetail(TRAINER, "500");
+
+    expect(detail!.contactpersoonNaam).toBe("Jeroen Bakker");
+    expect(detail!.contactpersoonBetrouwbaar).toBe(true);
+  });
+
+  it("contactpersoonBetrouwbaar is false wanneer de contactpersoon-kolom uitsluitend gecachte tekst heeft, geen echte .value-relatie", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [masterDataItem({ id: "500", naam: "Eigen school", trainerLinkedIds: [999001], hoofdcontactpersoon: "Verouderde naam" })],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+    mockUpdatesVoorItem.mockResolvedValue([]);
+
+    const detail = await haalSchoolDetail(TRAINER, "500");
+
+    // contactpersoonNaam blijft ongewijzigd zichtbaar (bestaand gedrag, elders
+    // niet aangepast) — uitsluitend het NIEUWE betrouwbaarheidssignaal is
+    // false, dat is wat de nieuwe Trainer-AI-context moet respecteren.
+    expect(detail!.contactpersoonNaam).toBe("Verouderde naam");
+    expect(detail!.contactpersoonBetrouwbaar).toBe(false);
   });
 });
 

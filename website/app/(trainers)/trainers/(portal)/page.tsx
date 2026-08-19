@@ -4,6 +4,7 @@ import { CalendarDays, CalendarClock, School, NotebookPen } from "lucide-react";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalDashboardData, type TrainingMetSchool } from "@/lib/trainers/monday-links";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
+import { TrainerVraagBlok } from "./trainer-vraag-blok";
 
 export const metadata = { title: "Dashboard — Trainerportal" };
 
@@ -121,6 +122,12 @@ export default async function TrainerDashboardPage() {
           </div>
         </section>
       )}
+
+      {/* Ronde 2 afronding, Trainer-AI (2026-08-19) — expliciet ONDER de drie
+          operationele secties (Vandaag/Komend/Verslag nog invullen), nooit
+          ervoor: het Vraag-blok mag de operationele aandachtspunten nooit
+          verdringen (opdrachtseis). */}
+      <TrainerVraagBlok soort="dashboard" scholen={data.bevestigdeScholen} />
     </div>
   );
 }

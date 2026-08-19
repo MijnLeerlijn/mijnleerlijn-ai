@@ -6,6 +6,7 @@ import { haalSchoolDetail, type TrainingSamenvatting } from "@/lib/trainers/mond
 import type { TrainingWeergaveStatus } from "@/lib/trainers/training-weergave";
 import { formatKorteDatumTijd } from "@/lib/sales/format-datum";
 import { TrainingRij } from "./training-rij";
+import { TrainerVraagBlok } from "../../trainer-vraag-blok";
 
 interface SchooldetailProps {
   params: Promise<{ school: string }>;
@@ -103,6 +104,13 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
           <p className="px-4 py-4 text-body-sm text-grijs-600">Geen trainingen bekend voor deze school.</p>
         )}
       </section>
+
+      {/* Ronde 2 afronding, Trainer-AI (2026-08-19) — bewust tussen Trainingen
+          en Logboek: "de plek waar een trainer zich vóór een training snel
+          kan voorbereiden" (opdrachtseis) — direct na wat er gepland staat,
+          nog vóór de trainer het volledige logboek in hoeft te duiken. Geen
+          dropdown nodig: schoolId ligt al vast vanuit de route. */}
+      <TrainerVraagBlok soort="schooldetail" school={{ id: school.id, naam: school.naam }} />
 
       <section className="rounded-xl border border-grijs-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-grijs-100 px-4 py-3">

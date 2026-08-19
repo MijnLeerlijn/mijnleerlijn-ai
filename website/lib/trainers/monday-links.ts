@@ -1,6 +1,7 @@
 import { mondayQuery, haalScholenPagina, haalUpdatesVoorItem, type MondayColumnValue, type MondayUpdate } from "@/lib/sales/monday-client";
 import type { AuthTrainer } from "./auth";
 import { groepeerOpWeergaveStatus, type TrainingWeergaveStatus } from "./training-weergave";
+import { sorteerTrainingenAlfabetisch } from "./training-sortering";
 
 /**
  * "Vandaag" voor het dashboard — BEWUST een eigen, tijdzone-expliciete
@@ -230,6 +231,20 @@ export interface TrainerSchoolBron {
   implementatiefase: string | null;
   contactpersoonNaam: string | null;
   /**
+   * Ronde 2 afronding, Trainer-AI (2026-08-19) — of contactpersoonNaam
+   * daadwerkelijk uit de LIVE board_relation-koppeling komt (.value,
+   * linkedPulseIds) i.p.v. uitsluitend Monday's gecachte tekstweergave
+   * (.text) — zelfde .value-over-.text-voorkeur als parseNumeriekeKolomAlsId
+   * hierboven al toelicht: .text kan een verouderd/leeg-relatie-artefact
+   * tonen, .value is de daadwerkelijke, actuele relatie. Puur additief
+   * signaal, geen wijziging aan contactpersoonNaam zelf of aan de bestaande,
+   * elders al ongewijzigd blijvende contactpersoon-UI — uitsluitend gebruikt
+   * door de nieuwe Trainer-AI-context (lib/trainers/ai-context.ts) om nooit
+   * een mogelijk onbetrouwbare contactpersoon aan de AI-context toe te
+   * voegen (opdrachtseis "contactpersoon als deze betrouwbaar gekoppeld is").
+   */
+  contactpersoonBetrouwbaar: boolean;
+  /**
    * Hoe deze school in de bevestigde lijst terechtkwam — intern/
    * diagnostisch, geen trainer-facing onderscheid vereist (de UI toont tier
    * 1/2 hieronder ongedifferentieerd onder "Mijn scholen"). Betrouwbaarheid,
@@ -260,6 +275,7 @@ interface MasterDataSchoolRuw {
   locatie: string | null;
   implementatiefase: string | null;
   contactpersoonNaam: string | null;
+  contactpersoonBetrouwbaar: boolean;
   trainerLinkedIds: string[];
 }
 
@@ -350,6 +366,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
       locatie: kolommen.get(MD_LOCATION_KOLOM)?.text || null,
       implementatiefase: kolommen.get(MD_IMPLEMENTATIEFASE_KOLOM)?.text || null,
       contactpersoonNaam: kolommen.get(MD_HOOFDCONTACTPERSOON_KOLOM)?.text || null,
+      contactpersoonBetrouwbaar: parseLinkedPulseIds(kolommen.get(MD_HOOFDCONTACTPERSOON_KOLOM)?.value).length > 0,
       trainerLinkedIds: parseLinkedPulseIds(kolommen.get(MD_TRAINER_KOLOM)?.value),
     });
   }
@@ -414,6 +431,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
         locatie: school.locatie,
         implementatiefase: school.implementatiefase,
         contactpersoonNaam: school.contactpersoonNaam,
+        contactpersoonBetrouwbaar: school.contactpersoonBetrouwbaar,
         bron: "trainer-relatie",
       });
     }
@@ -449,6 +467,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
           locatie: school.locatie,
           implementatiefase: school.implementatiefase,
           contactpersoonNaam: school.contactpersoonNaam,
+          contactpersoonBetrouwbaar: school.contactpersoonBetrouwbaar,
           bron: "training-koppeling",
         });
       }
@@ -490,6 +509,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
         locatie: kandidaat.locatie,
         implementatiefase: kandidaat.implementatiefase,
         contactpersoonNaam: kandidaat.contactpersoonNaam,
+        contactpersoonBetrouwbaar: kandidaat.contactpersoonBetrouwbaar,
         bron: "legacy-unique",
       });
     }
@@ -565,6 +585,17 @@ export interface TrainerDashboardData {
   komendeTrainingen: TrainingMetSchool[];
   aantalScholen: number;
   logboekOpenstaand: TrainingMetSchool[];
+  /**
+   * Ronde 2 afronding, Trainer-AI (2026-08-19) — voor de dashboard-
+   * schoolkeuze bij het Vraag-blok ("Alle scholen" / een specifieke school).
+   * Bewust hier afgeleid van dezelfde context.scholen die haalDashboardData
+   * toch al ophaalt, i.p.v. de pagina apart bepaalScholenVoorTrainer() te
+   * laten aanroepen — dat zou verzamelTrainerContext() een tweede keer live
+   * uitvoeren (geen cache tussen aanroepen, zie de toelichting daar) voor
+   * exact dezelfde onderliggende data. Uitsluitend id/naam: de UI heeft geen
+   * trainingtellingen nodig voor een dropdown.
+   */
+  bevestigdeScholen: { id: string; naam: string }[];
 }
 
 /**
@@ -603,11 +634,16 @@ export async function haalDashboardData(trainer: AuthTrainer): Promise<TrainerDa
   const groepen = groepeerOpWeergaveStatus(alleTrainingenMetSchool, vandaag);
   const komendeTrainingen = [...groepen.komend].sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? ""));
 
+  const bevestigdeScholen = Array.from(context.scholen.values())
+    .map((school) => ({ id: school.id, naam: school.naam }))
+    .sort((a, b) => a.naam.localeCompare(b.naam, "nl"));
+
   return {
     trainingenVandaag: groepen.vandaag,
     komendeTrainingen,
     aantalScholen: context.scholen.size,
     logboekOpenstaand: groepen.verslag_nog_invullen,
+    bevestigdeScholen,
   };
 }
 
@@ -642,9 +678,23 @@ export async function haalSchoolDetail(trainer: AuthTrainer, schoolId: string): 
   const logboek = await haalUpdatesVoorItem(schoolId, MAX_SCHOOL_UPDATES);
   const vandaag = vandaagIsoAmsterdam();
 
+  // Ronde 2 afronding (2026-08-19) — alfabetische A-Z-sortering BINNEN elke
+  // sectie, puur presentationeel (geen Monday-schrijving, geen wijziging aan
+  // de bucket-indeling zelf). Bewust uitsluitend hier, niet in
+  // groepeerOpWeergaveStatus zelf: haalDashboardData gebruikt diezelfde
+  // functie voor "Komend" en behoudt daar zijn bestaande, chronologische
+  // sortering (expliciete opdrachtseis "Op schooldetail" — het dashboard
+  // wordt hier niet aangeraakt). Alle 6 secties krijgen altijd hun eigen
+  // array terug (groepeerOpWeergaveStatus initialiseert ze allemaal, ook
+  // leeg) — de cast hieronder is dus een exacte, gegarandeerde sleutelset.
+  const groepen = groepeerOpWeergaveStatus(trainingen, vandaag);
+  const gesorteerdeGroepen = Object.fromEntries(
+    Object.entries(groepen).map(([sectie, lijst]) => [sectie, sorteerTrainingenAlfabetisch(lijst)])
+  ) as Record<TrainingWeergaveStatus, TrainingSamenvatting[]>;
+
   return {
     ...school,
-    trainingen: groepeerOpWeergaveStatus(trainingen, vandaag),
+    trainingen: gesorteerdeGroepen,
     logboek,
   };
 }
