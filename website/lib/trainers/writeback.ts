@@ -38,7 +38,7 @@ import {
 // alleen de uiteindelijke mutatie wordt kortgesloten door de gate.
 export type WriteBackStatus = "geschreven" | "conflict" | "mislukt" | "niet_geactiveerd";
 
-export type TrainingSchrijfVeld = "datum" | "status";
+export type TrainingSchrijfVeld = "datum" | "status" | "logboek";
 
 export interface TrainingKolomResultaat {
   record: TrainingRecord;
@@ -71,6 +71,16 @@ export interface TrainingWijzigingsVerzoek {
   datum?: { nieuweWaarde: string | null; verwachteHuidigeWaarde: string | null };
   /** verwachteHuidigeRuweTekst is de RUWE tekst die de trainer laatst zag (TrainingSamenvatting.ruweStatusTekst) — nooit een uit TrainingStatus terug-gecodeerd label, zie schrijfStatusKolom. */
   status?: { nieuweWaarde: TrainingStatus; verwachteHuidigeRuweTekst: string | null };
+  /**
+   * Ronde 3 (2026-08-24) — logboek-afronding ná een succesvol trainings-
+   * verslag (lib/trainers/verslag.ts). Bewust GEEN `verwachteHuidigeWaarde`/
+   * conflictvergelijking zoals datum/status: dit is een server-gedreven,
+   * eenmalige afrondingsvlag die de trainer nooit zelf rechtstreeks bewerkt
+   * en waarvoor dus geen zinvolle "laatst geziene waarde" bestaat — zie
+   * verwerkTrainerboardRecord/verwerkCentraalRecord (vergelijkBijSchrijven
+   * altijd false voor dit veld, op beide records).
+   */
+  logboek?: { nieuweWaarde: boolean };
   /** Scoped retry: raakt geen kolom aan die al "geschreven" is — de aanroeper (dialoog) construeert dit verzoek dus zelf al zonder de geslaagde kolommen. */
   alleenRecord?: TrainingRecord;
 }
@@ -213,6 +223,31 @@ function datumNaarMondayWaarde(nieuweWaarde: string | null): string {
   return nieuweWaarde ?? "";
 }
 
+/**
+ * Ronde 3 (2026-08-24) — vertaalt de logboek-afrondingsvlag naar de Monday-
+ * schrijfvorm voor een boolean/checkbox-kolom via `change_simple_column_value`.
+ * BESTE POGING, ONGEVERIFIEERD: dit is de eerste keer dat dit schrijfpad een
+ * checkbox-kolom raakt (voorheen uitsluitend date-/dropdown-achtige
+ * kolomtypen) — algemene platformkennis, geen live bevestiging vanuit deze
+ * sessie mogelijk (zie lib/sales/monday-client.ts se toelichting bovenaan).
+ * Bewust GEEN fail-safe-herlees-bevestiging zoals datum-verwijderen die wél
+ * kreeg (Beslissing 2, Ronde 2): die bestond voor een specifiek, door-
+ * geredeneerd risico (lege string op een datumkolom); hier is er geen
+ * vergelijkbare, specifieke aanwijzing — een herlees-check tegen een zelf
+ * ook ongeverifieerde verwachte tekstweergave zou juist een vals-negatieve
+ * "mislukt"-melding kunnen geven op een in werkelijkheid geslaagde
+ * schrijving. Mocht Michels live Wessel-test laten zien dat
+ * `change_simple_column_value` checkbox-kolommen structureel weigert (een
+ * GraphQL-typefout, geen "verkeerde waarde"-fout): de bekende vervolgfix is
+ * een aparte `change_column_value`-JSON-variant (`{"checked":"true"}`,
+ * dezelfde vorm als parseCheckboxIngevuld in monday-links.ts al bij het
+ * lezen verwacht) — bewust hier geïsoleerd achter deze ene functie, zodat
+ * die vervolgfix een kleine, geïsoleerde wijziging blijft.
+ */
+function checkboxNaarMondayWaarde(nieuweWaarde: boolean): string {
+  return nieuweWaarde ? "true" : "";
+}
+
 async function verwerkTrainerboardRecord(
   payload: Payload,
   logContext: Parameters<typeof logTrainerWriteBackPoging>[1],
@@ -223,6 +258,7 @@ async function verwerkTrainerboardRecord(
   const kolomIds: string[] = [];
   if (verzoek.datum) kolomIds.push(KOLOM_VOOR.trainerboard.datum);
   if (verzoek.status) kolomIds.push(KOLOM_VOOR.trainerboard.status);
+  if (verzoek.logboek) kolomIds.push(KOLOM_VOOR.trainerboard.logboek);
   if (kolomIds.length === 0) return [];
 
   let waarden: Map<string, string | null>;
@@ -240,13 +276,24 @@ async function verwerkTrainerboardRecord(
       await logTrainerWriteBackPoging(payload, logContext, "status", "mislukt", boodschap, { record: "trainerboard" });
       resultaten.push({ record: "trainerboard", veld: "status", status: "mislukt", boodschap });
     }
+    if (verzoek.logboek) {
+      await logTrainerWriteBackPoging(payload, logContext, "logboek", "mislukt", boodschap, { record: "trainerboard" });
+      resultaten.push({ record: "trainerboard", veld: "logboek", status: "mislukt", boodschap });
+    }
     return resultaten;
   }
 
   const taken: Promise<TrainingKolomResultaat>[] = [];
+  // Parallelle array, expliciet bijgehouden per taak — NOOIT de veldnaam van
+  // een geworpen taak afleiden uit positie+datum-aanwezigheid (dat gokwerk
+  // was correct voor twee taken, maar labelt een derde, geworpen taak
+  // (logboek) fout zodra `datum` ontbreekt — precies de vorm van een
+  // afrondingsverzoek: {status, logboek}, geen datum).
+  const veldPerTaak: TrainingSchrijfVeld[] = [];
 
   if (verzoek.datum) {
     const actueleDatum = parseMondayDatum(waarden.get(KOLOM_VOOR.trainerboard.datum) ?? null);
+    veldPerTaak.push("datum");
     taken.push(
       verwerkKolomSchrijving(payload, logContext, {
         record: "trainerboard",
@@ -266,6 +313,7 @@ async function verwerkTrainerboardRecord(
 
   if (verzoek.status) {
     const actueleStatusTekst = waarden.get(KOLOM_VOOR.trainerboard.status) ?? null;
+    veldPerTaak.push("status");
     taken.push(
       verwerkKolomSchrijving(payload, logContext, {
         record: "trainerboard",
@@ -282,13 +330,31 @@ async function verwerkTrainerboardRecord(
     );
   }
 
+  if (verzoek.logboek) {
+    veldPerTaak.push("logboek");
+    taken.push(
+      verwerkKolomSchrijving(payload, logContext, {
+        record: "trainerboard",
+        veld: "logboek",
+        itemId: trainerboardItemId,
+        boardId: trainerboardId,
+        columnId: KOLOM_VOOR.trainerboard.logboek,
+        actueleWaarde: waarden.get(KOLOM_VOOR.trainerboard.logboek) ?? null,
+        nieuweMondayWaarde: checkboxNaarMondayWaarde(verzoek.logboek.nieuweWaarde),
+        gewenstWaardeVoorUi: String(verzoek.logboek.nieuweWaarde),
+        vergelijkBijSchrijven: false,
+        verwachteHuidigeWaarde: null,
+      })
+    );
+  }
+
   const settled = await Promise.allSettled(taken);
   return settled.map((uitkomst, i) =>
     uitkomst.status === "fulfilled"
       ? uitkomst.value
       : {
           record: "trainerboard" as const,
-          veld: (i === 0 && verzoek.datum ? "datum" : "status") as TrainingSchrijfVeld,
+          veld: veldPerTaak[i]!,
           status: "mislukt" as const,
           boodschap: uitkomst.reason instanceof Error ? uitkomst.reason.message : String(uitkomst.reason),
         }
@@ -305,6 +371,7 @@ async function verwerkCentraalRecord(
   const kolomIds: string[] = [CENTRAAL_TRAINERBOARD_ITEM_ID_KOLOM];
   if (verzoek.datum) kolomIds.push(KOLOM_VOOR.centraal.datum);
   if (verzoek.status) kolomIds.push(KOLOM_VOOR.centraal.status);
+  if (verzoek.logboek) kolomIds.push(KOLOM_VOOR.centraal.logboek);
 
   let waarden: Map<string, string | null>;
   try {
@@ -320,6 +387,10 @@ async function verwerkCentraalRecord(
     if (verzoek.status) {
       await logTrainerWriteBackPoging(payload, logContext, "status", "mislukt", boodschap, { record: "centraal" });
       resultaten.push({ record: "centraal", veld: "status", status: "mislukt", boodschap });
+    }
+    if (verzoek.logboek) {
+      await logTrainerWriteBackPoging(payload, logContext, "logboek", "mislukt", boodschap, { record: "centraal" });
+      resultaten.push({ record: "centraal", veld: "logboek", status: "mislukt", boodschap });
     }
     return { kolomResultaten: resultaten };
   }
@@ -342,9 +413,12 @@ async function verwerkCentraalRecord(
   }
 
   const taken: Promise<TrainingKolomResultaat>[] = [];
+  // Zelfde parallelle-veldarray-fix als verwerkTrainerboardRecord hierboven.
+  const veldPerTaak: TrainingSchrijfVeld[] = [];
 
   if (verzoek.datum) {
     const actueleDatum = parseMondayDatum(waarden.get(KOLOM_VOOR.centraal.datum) ?? null);
+    veldPerTaak.push("datum");
     taken.push(
       verwerkKolomSchrijving(payload, logContext, {
         record: "centraal",
@@ -364,6 +438,7 @@ async function verwerkCentraalRecord(
 
   if (verzoek.status) {
     const actueleStatusTekst = waarden.get(KOLOM_VOOR.centraal.status) ?? null;
+    veldPerTaak.push("status");
     taken.push(
       verwerkKolomSchrijving(payload, logContext, {
         record: "centraal",
@@ -387,13 +462,31 @@ async function verwerkCentraalRecord(
     );
   }
 
+  if (verzoek.logboek) {
+    veldPerTaak.push("logboek");
+    taken.push(
+      verwerkKolomSchrijving(payload, logContext, {
+        record: "centraal",
+        veld: "logboek",
+        itemId: centraleTrainingId,
+        boardId: UITVOERING_BOARD_ID,
+        columnId: KOLOM_VOOR.centraal.logboek,
+        actueleWaarde: waarden.get(KOLOM_VOOR.centraal.logboek) ?? null,
+        nieuweMondayWaarde: checkboxNaarMondayWaarde(verzoek.logboek.nieuweWaarde),
+        gewenstWaardeVoorUi: String(verzoek.logboek.nieuweWaarde),
+        vergelijkBijSchrijven: false,
+        verwachteHuidigeWaarde: null,
+      })
+    );
+  }
+
   const settled = await Promise.allSettled(taken);
   const kolomResultaten = settled.map((uitkomst, i) =>
     uitkomst.status === "fulfilled"
       ? uitkomst.value
       : {
           record: "centraal" as const,
-          veld: (i === 0 && verzoek.datum ? "datum" : "status") as TrainingSchrijfVeld,
+          veld: veldPerTaak[i]!,
           status: "mislukt" as const,
           boodschap: uitkomst.reason instanceof Error ? uitkomst.reason.message : String(uitkomst.reason),
         }

@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { getPayload } from "payload";
 import { ArrowLeft, MapPin, User, NotebookText } from "lucide-react";
+import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalSchoolDetail, type TrainingSamenvatting } from "@/lib/trainers/monday-links";
 import type { TrainingWeergaveStatus } from "@/lib/trainers/training-weergave";
+import { haalVerslagenPerTraining, type VerslagRecord } from "@/lib/trainers/verslag";
 import { formatKorteDatumTijd } from "@/lib/sales/format-datum";
 import { TrainingRij } from "./training-rij";
 import { TrainerVraagBlok } from "../../trainer-vraag-blok";
@@ -22,14 +25,33 @@ const SECTIE_TITEL: Record<TrainingWeergaveStatus, string> = {
   geannuleerd: "Geannuleerd",
 };
 
-function TrainingenGroep({ titel, trainingen, toonLogboekStatus = false }: { titel: string; trainingen: TrainingSamenvatting[]; toonLogboekStatus?: boolean }) {
+function TrainingenGroep({
+  titel,
+  trainingen,
+  schoolId,
+  toonLogboekStatus = false,
+  verslagenPerTraining,
+}: {
+  titel: string;
+  trainingen: TrainingSamenvatting[];
+  schoolId: string;
+  toonLogboekStatus?: boolean;
+  verslagenPerTraining: Map<string, VerslagRecord>;
+}) {
   if (trainingen.length === 0) return null;
   return (
     <div>
       <h3 className="px-3 pb-1 text-label font-medium uppercase tracking-wide text-grijs-500">{titel}</h3>
       <ul className="flex flex-col divide-y divide-grijs-100">
         {trainingen.map((training) => (
-          <TrainingRij key={training.id} training={training} toonLogboekStatus={toonLogboekStatus} logboekIngevuld={training.logboekIngevuld} />
+          <TrainingRij
+            key={training.id}
+            training={training}
+            schoolId={schoolId}
+            toonLogboekStatus={toonLogboekStatus}
+            logboekIngevuld={training.logboekIngevuld}
+            verslag={verslagenPerTraining.get(training.id)}
+          />
         ))}
       </ul>
     </div>
@@ -60,6 +82,14 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
 
   const { trainingen } = school;
   const heeftTrainingen = SECTIE_VOLGORDE.some((sectie) => trainingen[sectie].length > 0);
+
+  // Uitsluitend voor de secties die toonLogboekStatus (dus ook de
+  // verslag-CTA) tonen — zelfde contextminimalisatie-principe als elders in
+  // dit bestand, geen opzoeking voor trainingen waar de CTA toch niet
+  // verschijnt.
+  const payload = await getPayload({ config });
+  const verslagRelevanteIds = [...trainingen.verslag_nog_invullen, ...trainingen.gedaan].map((t) => t.id);
+  const verslagenPerTraining = await haalVerslagenPerTraining(payload, trainer, verslagRelevanteIds);
 
   return (
     <div className="flex flex-col gap-8">
@@ -96,7 +126,9 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
                 key={sectie}
                 titel={SECTIE_TITEL[sectie]}
                 trainingen={trainingen[sectie]}
+                schoolId={school.id}
                 toonLogboekStatus={sectie === "verslag_nog_invullen" || sectie === "gedaan"}
+                verslagenPerTraining={verslagenPerTraining}
               />
             ))}
           </div>

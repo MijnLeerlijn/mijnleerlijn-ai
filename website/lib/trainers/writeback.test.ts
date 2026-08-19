@@ -791,3 +791,100 @@ describe("werkTrainingBij — dubbele indiening (geen ongecontroleerde dubbele w
     expect(mockWijzigKolomWaarde).toHaveBeenCalledTimes(4); // 2 records x 2 identieke verzoeken
   });
 });
+
+describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsverslag)", () => {
+  it("logboek-only verzoek slaagt onafhankelijk op beide records via checkboxNaarMondayWaarde", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining();
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [{ id: "boolean_mm5v9vxd", text: null, value: null }],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "boolean_mm5tvfc5", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      logboek: { nieuweWaarde: true },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.resultaat.algeheleStatus).toBe("volledig_geslaagd");
+    expect(uitkomst.resultaat.kolomResultaten).toHaveLength(2); // trainerboard + centraal
+    expect(uitkomst.resultaat.kolomResultaten.every((k) => k.veld === "logboek")).toBe(true);
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", "true");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", "true");
+  });
+
+  it("logboek nieuweWaarde false -> checkboxNaarMondayWaarde schrijft een lege string, geen 'false'-tekst", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining();
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [{ id: "boolean_mm5v9vxd", text: "true", value: null }],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "boolean_mm5tvfc5", text: "true", value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, { logboek: { nieuweWaarde: false } });
+
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", "");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", "");
+  });
+
+  it("KRITIEKE CORRECTHEIDSFIX: settled.map()-fallback labelt een afgewezen logboek-taak correct als 'logboek', nooit als 'status' — exacte verzoekvorm van bevestigVerslag se afronding ({status, logboek}, geen datum)", async () => {
+    // De enige plek in verwerkKolomSchrijving waar een taak ECHT afwijst
+    // (Promise.allSettled "rejected"), i.p.v. slechts een
+    // {status:"mislukt"}-waarde teruggeeft: de afsluitende
+    // logTrainerWriteBackPoging-aanroep bij een geslaagde schrijving staat
+    // buiten de try/catch rond wijzigKolomWaarde. Laat die auditlogregel
+    // specifiek voor de geslaagde logboek-schrijving mislukken (bv. een
+    // tijdelijk databaseprobleem) om een echte afwijzing te forceren. Vóór de
+    // fix labelde settled.map()'s ternary (i === 0 && verzoek.datum ?
+    // "datum" : "status") elke afwijzing als "status" zodra verzoek.datum
+    // ontbrak — precies de vorm van dit verzoek — waardoor een UI die op
+    // kolomResultaten[i].veld een scoped retry bouwt, een {status:...}-retry
+    // zou samenstellen voor een taak die in werkelijkheid het logboek-veld
+    // raakte: de training zou dan nooit meer met succes af te ronden zijn.
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining();
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "status", text: null, value: null },
+        { id: "boolean_mm5v9vxd", text: null, value: null },
+      ],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "color_mm5tz3wk", text: null, value: null },
+        { id: "boolean_mm5tvfc5", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+    mockCreate.mockReset().mockImplementation(async (args: { data: { veld: string; status: string } }) => {
+      if (args.data.veld === "logboek" && args.data.status === "geschreven") {
+        throw new Error("Audit-log tijdelijk onbereikbaar");
+      }
+      return { id: 1 };
+    });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      status: { nieuweWaarde: "gedaan", verwachteHuidigeRuweTekst: null },
+      logboek: { nieuweWaarde: true },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    const statusResultaten = uitkomst.resultaat.kolomResultaten.filter((k) => k.veld === "status");
+    const logboekResultaten = uitkomst.resultaat.kolomResultaten.filter((k) => k.veld === "logboek");
+    expect(statusResultaten).toHaveLength(2); // trainerboard + centraal, beide geslaagd (audit-log daarvoor bleef werken)
+    expect(statusResultaten.every((k) => k.status === "geschreven")).toBe(true);
+    expect(logboekResultaten).toHaveLength(2); // trainerboard + centraal, beide afgewezen via de audit-log-fout
+    expect(logboekResultaten.every((k) => k.status === "mislukt")).toBe(true);
+    // De kern van de regressietest: een afgewezen taak wordt nooit fout
+    // gelabeld als "status" — vóór de fix gebeurde precies dat hier.
+    expect(uitkomst.resultaat.kolomResultaten.filter((k) => k.veld === "status" && k.status === "mislukt")).toHaveLength(0);
+    expect(uitkomst.resultaat.algeheleStatus).toBe("deels_geslaagd");
+    expect(uitkomst.resultaat.opnieuwProberen).toEqual({ trainerboard: true, centraal: true });
+  });
+});

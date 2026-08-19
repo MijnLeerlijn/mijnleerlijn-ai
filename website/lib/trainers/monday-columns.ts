@@ -1,5 +1,5 @@
 import type { TrainingStatus } from "./monday-links";
-import { UITVOERING_BOARD_ID, UV_DATUM_KOLOM, UV_STATUS_KOLOM } from "./monday-links";
+import { UITVOERING_BOARD_ID, UV_DATUM_KOLOM, UV_STATUS_KOLOM, UV_LOGBOEK_KOLOM } from "./monday-links";
 
 /**
  * Welk van de twee Monday-records een kolomschrijving raakt — hier
@@ -22,6 +22,13 @@ export type TrainingRecord = "trainerboard" | "centraal";
 // AuthTrainer.mondayTrainerboardId, geen constante nodig):
 export const TRAINERBOARD_DATUM_KOLOM = "date4"; // "Datum gepland"
 export const TRAINERBOARD_STATUS_KOLOM = "status"; // "Status"
+// Ronde 3 (2026-08-24) — LIVE aangeleverd door Michel in de opdracht (zelfde
+// vertrouwensstatus als de andere, door Michel bevestigde kolom-ID's in dit
+// bestand), zelf nog niet live getest vanuit deze sessie (geen
+// MONDAY_API_TOKEN/uitgaande toegang hier — zie writeback.ts se toelichting
+// bij checkboxNaarMondayWaarde voor het ongeverifieerde deel: het exacte
+// schrijfwaardeformaat voor een checkbox-kolom via change_simple_column_value).
+export const TRAINERBOARD_LOGBOEK_KOLOM = "boolean_mm5v9vxd"; // "Logboek ingevuld"-equivalent op het trainerboard
 
 // Centrale training-board (18420120466) — NIEUWE spiegelkolom, uitsluitend
 // leesalleen/diagnostisch in Ronde 2 (zie writeback.ts — Michel heeft
@@ -39,9 +46,9 @@ export const CENTRAAL_TRAINERBOARD_ITEM_ID_KOLOM = "numeric_mm5vkjzz"; // "Train
  * puur een enkele plek die de mapping vastlegt, zodat een kolom-ID nergens
  * anders als losse letterlijke string hoeft terug te komen.
  */
-export const KOLOM_VOOR: Record<TrainingRecord, { datum: string; status: string }> = {
-  trainerboard: { datum: TRAINERBOARD_DATUM_KOLOM, status: TRAINERBOARD_STATUS_KOLOM },
-  centraal: { datum: UV_DATUM_KOLOM, status: UV_STATUS_KOLOM },
+export const KOLOM_VOOR: Record<TrainingRecord, { datum: string; status: string; logboek: string }> = {
+  trainerboard: { datum: TRAINERBOARD_DATUM_KOLOM, status: TRAINERBOARD_STATUS_KOLOM, logboek: TRAINERBOARD_LOGBOEK_KOLOM },
+  centraal: { datum: UV_DATUM_KOLOM, status: UV_STATUS_KOLOM, logboek: UV_LOGBOEK_KOLOM },
 };
 
 export { UITVOERING_BOARD_ID };

@@ -51,7 +51,11 @@ const MD_IMPLEMENTATIEFASE_KOLOM = "color_mm5q790a";
 const UV_SCHOOL_KOLOM = "board_relation_mm5tyc40";
 export const UV_STATUS_KOLOM = "color_mm5tz3wk";
 export const UV_DATUM_KOLOM = "date_mm5tnfvx";
-const UV_LOGBOEK_KOLOM = "boolean_mm5tvfc5";
+// Geëxporteerd (Ronde 3, 2026-08-24): lib/trainers/monday-columns.ts heeft
+// deze kolom-ID nodig als schrijfdoel voor de logboek-afronding (zie
+// writeback.ts se nieuwe "logboek"-veld). Zuiver additief, leespad hier
+// ongewijzigd.
+export const UV_LOGBOEK_KOLOM = "boolean_mm5tvfc5";
 
 const TB_MASTER_ID_KOLOM = "numeric_mm5vceeq";
 

@@ -54,10 +54,11 @@ export const TrainerLogEvents: CollectionConfig = {
       options: [
         { label: "Datum", value: "datum" },
         { label: "Status", value: "status" },
+        { label: "Logboek ingevuld", value: "logboek" },
         { label: "Trainerboard-spiegel (signaal, geen schrijfpoging)", value: "trainerboardMirrorSignaal" },
       ],
       admin: {
-        description: "\"Trainerboard-spiegel\" is uitsluitend een datakwaliteitssignaal (numeric_mm5vkjzz wijkt af van de opgezochte waarde) — deze ronde schrijft dat veld nooit, alleen datum/status.",
+        description: "\"Trainerboard-spiegel\" is uitsluitend een datakwaliteitssignaal (numeric_mm5vkjzz wijkt af van de opgezochte waarde) — dat veld wordt nooit geschreven. \"Logboek ingevuld\" (Ronde 3) is de afrondingsvlag na een bevestigd trainingsverslag, zie lib/trainers/verslag.ts.",
       },
     },
     {

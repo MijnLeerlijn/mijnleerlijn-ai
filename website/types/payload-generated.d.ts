@@ -72,6 +72,7 @@ export interface Config {
     'trainer-accounts': TrainerAccount;
     'trainer-log-events': TrainerLogEvent;
     'trainer-ai-log-events': TrainerAiLogEvent;
+    'training-verslagen': TrainingVerslagen;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -113,6 +114,7 @@ export interface Config {
     'trainer-accounts': TrainerAccountsSelect<false> | TrainerAccountsSelect<true>;
     'trainer-log-events': TrainerLogEventsSelect<false> | TrainerLogEventsSelect<true>;
     'trainer-ai-log-events': TrainerAiLogEventsSelect<false> | TrainerAiLogEventsSelect<true>;
+    'training-verslagen': TrainingVerslagenSelect<false> | TrainingVerslagenSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -418,9 +420,9 @@ export interface TrainerLogEvent {
   mondaySchoolId?: string | null;
   schoolNaam?: string | null;
   /**
-   * "Trainerboard-spiegel" is uitsluitend een datakwaliteitssignaal (numeric_mm5vkjzz wijkt af van de opgezochte waarde) — deze ronde schrijft dat veld nooit, alleen datum/status.
+   * "Trainerboard-spiegel" is uitsluitend een datakwaliteitssignaal (numeric_mm5vkjzz wijkt af van de opgezochte waarde) — dat veld wordt nooit geschreven. "Logboek ingevuld" (Ronde 3) is de afrondingsvlag na een bevestigd trainingsverslag, zie lib/trainers/verslag.ts.
    */
-  veld: 'datum' | 'status' | 'trainerboardMirrorSignaal';
+  veld: 'datum' | 'status' | 'logboek' | 'trainerboardMirrorSignaal';
   /**
    * Zelfde vocabulaire als WriteBackStatus (lib/trainers/writeback.ts). Een trainerboardMirrorSignaal-regel gebruikt altijd "conflict" (een afwijking, geen schrijfpoging).
    */
@@ -462,6 +464,59 @@ export interface TrainerAiLogEvent {
    * Uitsluitend het aantal tekens — nooit de vraag zelf.
    */
   vraagLengte: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Concept/bevestigde trainingsverslagen — idempotentiestatus voor de dubbele Monday Update-write (training + centraal schoollogboek). Nooit rechtstreeks bewerken: verstoort de synchronisatie met Monday.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "training-verslagen".
+ */
+export interface TrainingVerslagen {
+  id: number;
+  trainer: number | TrainerAccount;
+  /**
+   * Server-side afgeleid via haalTrainingVoorMutatie — nooit door de client aangeleverd.
+   */
+  mondayTrainingId: string;
+  mondaySchoolId: string;
+  mondayTrainerboardItemId: string;
+  schoolNaam?: string | null;
+  trainingNaam?: string | null;
+  /**
+   * De vrije tekst zoals de trainer die typte, apart bewaard van de definitieve tekst zodat 'terug naar oorspronkelijke invoer' mogelijk blijft.
+   */
+  trainerInvoer?: string | null;
+  /**
+   * De bron van waarheid voor de Monday-schrijving — exact deze tekst gaat (identiek) naar beide Updates. Na een handmatige trainerwijziging wordt hier nooit meer automatisch AI overheen gehaald.
+   */
+  definitieveTekst?: string | null;
+  aiGegenereerd?: boolean | null;
+  status: 'concept' | 'gedeeltelijk' | 'bevestigd' | 'voltooid';
+  trainingUpdateStatus: 'niet_verzonden' | 'geschreven' | 'mislukt' | 'niet_geactiveerd';
+  /**
+   * Zodra gevuld: NOOIT opnieuw schrijven — dit veld IS de idempotentiegarantie voor deze kant.
+   */
+  trainingUpdateMondayId?: string | null;
+  schoolUpdateStatus: 'niet_verzonden' | 'geschreven' | 'mislukt' | 'niet_geactiveerd';
+  /**
+   * Zodra gevuld: NOOIT opnieuw schrijven — dit veld IS de idempotentiegarantie voor deze kant.
+   */
+  schoolUpdateMondayId?: string | null;
+  /**
+   * Het volledige, ongewijzigde TrainingWriteBackResultaat van de afrondingsstap (lib/trainers/writeback.ts) — alleen gezet zodra beide Updates geschreven zijn.
+   */
+  afrondingResultaat?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  bevestigdOp?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2033,6 +2088,10 @@ export interface PayloadLockedDocument {
         value: number | TrainerAiLogEvent;
       } | null)
     | ({
+        relationTo: 'training-verslagen';
+        value: number | TrainingVerslagen;
+      } | null)
+    | ({
         relationTo: 'variants';
         value: number | Variant;
       } | null)
@@ -2281,6 +2340,30 @@ export interface TrainerAiLogEventsSelect<T extends boolean = true> {
   schoolNaam?: T;
   uitkomst?: T;
   vraagLengte?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "training-verslagen_select".
+ */
+export interface TrainingVerslagenSelect<T extends boolean = true> {
+  trainer?: T;
+  mondayTrainingId?: T;
+  mondaySchoolId?: T;
+  mondayTrainerboardItemId?: T;
+  schoolNaam?: T;
+  trainingNaam?: T;
+  trainerInvoer?: T;
+  definitieveTekst?: T;
+  aiGegenereerd?: T;
+  status?: T;
+  trainingUpdateStatus?: T;
+  trainingUpdateMondayId?: T;
+  schoolUpdateStatus?: T;
+  schoolUpdateMondayId?: T;
+  afrondingResultaat?: T;
+  bevestigdOp?: T;
   updatedAt?: T;
   createdAt?: T;
 }

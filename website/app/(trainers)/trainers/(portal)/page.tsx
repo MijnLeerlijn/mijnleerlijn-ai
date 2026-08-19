@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CalendarDays, CalendarClock, School, NotebookPen } from "lucide-react";
+import { getPayload } from "payload";
+import { CalendarDays, CalendarClock, School, NotebookPen, Sparkles } from "lucide-react";
+import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalDashboardData, type TrainingMetSchool } from "@/lib/trainers/monday-links";
+import { haalVerslagenPerTraining, type VerslagRecord } from "@/lib/trainers/verslag";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { TrainerVraagBlok } from "./trainer-vraag-blok";
 
@@ -34,6 +37,44 @@ function LegeSectie({ tekst }: { tekst: string }) {
   return <p className="px-3 py-4 text-body-sm text-grijs-600">{tekst}</p>;
 }
 
+/**
+ * Traineromgeving V1, Ronde 3 (2026-08-24) — spec §17: "Trainer moet vanuit
+ * dashboard direct bij het juiste verslag komen." Het lokale
+ * training-verslagen-record (indien aanwezig) bepaalt het label: een reeds
+ * bevestigd/voltooid verslag krijgt nooit meer standaard "Verslag maken" te
+ * zien, ook al staat Monday's eigen logboekvlag hier (nog) op onwaar — de
+ * training staat dan alleen nog in deze sectie omdat de afronding
+ * (statusschrijving/checkbox) na een succesvolle dubbele Update-write
+ * gedeeltelijk kon mislukken (spec §12), niet omdat er niets is vastgelegd.
+ */
+function verslagCtaLabel(lokaal: VerslagRecord | undefined): string {
+  if (!lokaal) return "Verslag maken";
+  if (lokaal.status === "voltooid") return "Verslag bekijken";
+  if (lokaal.status === "gedeeltelijk" || lokaal.status === "bevestigd") return "Verslag afronden";
+  return "Verslag afmaken"; // concept: eerder gestart, nog niet bevestigd
+}
+
+function VerslagNogInvullenRij({ training, lokaal }: { training: TrainingMetSchool; lokaal: VerslagRecord | undefined }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg px-3 py-2.5">
+      <Link href={`/scholen/${training.schoolId}`} className="min-w-[10rem] flex-1 hover:underline">
+        <p className="text-body-sm font-medium text-grijs-900">{training.schoolNaam}</p>
+        <p className="text-label text-grijs-600">{training.naam}</p>
+      </Link>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <span className="text-body-sm text-grijs-600">{formatKorteDatum(training.datum)}</span>
+        <Link
+          href={`/scholen/${training.schoolId}/trainingen/${training.id}/verslag`}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-label font-semibold text-white transition-colors hover:bg-teal-700"
+        >
+          <Sparkles size={12} />
+          {verslagCtaLabel(lokaal)}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 // Architectuurrapport §16 Ronde 1 — uitsluitend read-only afgeleide
 // informatie, geen enkele Monday-mutatie. Trainingen zonder datum worden
 // nergens getoond (haalDashboardData() filtert dit al af, zie monday-
@@ -44,6 +85,15 @@ export default async function TrainerDashboardPage() {
 
   const data = await haalDashboardData(trainer);
   const voornaam = trainer.name.split(" ")[0] || trainer.name;
+
+  // Gebatcht (haalVerslagenPerTraining, lib/trainers/verslag.ts) i.p.v. één
+  // opzoeking per rij — zelfde reden als elders in dit bestand: geen N+1.
+  const payload = await getPayload({ config });
+  const verslagenPerTraining = await haalVerslagenPerTraining(
+    payload,
+    trainer,
+    data.logboekOpenstaand.map((t) => t.id)
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -117,7 +167,7 @@ export default async function TrainerDashboardPage() {
           </div>
           <div className="flex flex-col divide-y divide-amber-100 px-1 py-1">
             {data.logboekOpenstaand.map((training) => (
-              <TrainingRij key={training.id} training={training} toonLogboekTag />
+              <VerslagNogInvullenRij key={training.id} training={training} lokaal={verslagenPerTraining.get(training.id)} />
             ))}
           </div>
         </section>

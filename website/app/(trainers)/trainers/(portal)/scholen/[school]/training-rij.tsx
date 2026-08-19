@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import type { TrainingStatus } from "@/lib/trainers/monday-links";
 import { TRAINING_STATUS_KLEUR, TRAINING_STATUS_LABEL } from "@/lib/trainers/status-styles";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
@@ -16,6 +18,29 @@ interface TrainingProps {
   ruweStatusTekst: string | null;
   datum: string | null;
   trainerboardItemId: string | null;
+}
+
+// Eigen, losse frontend-vorm (geen import van server-only code in een
+// "use client"-bestand), zelfde conventie als schrijf-feedback.tsx — alleen
+// het veld dat het CTA-label hier bepaalt.
+export interface VerslagSamenvatting {
+  status: "concept" | "gedeeltelijk" | "bevestigd" | "voltooid";
+}
+
+/**
+ * Traineromgeving V1, Ronde 3 (2026-08-24) — spec §16: "'Verslag maken'
+ * indien nodig; 'Verslag bekijken' indien beschikbaar." Het lokale
+ * training-verslagen-record (indien aanwezig) wint altijd van Monday's
+ * eigen logboekvlag — zie page.tsx se toelichting bij dezelfde afweging op
+ * het dashboard.
+ */
+function verslagCta(logboekIngevuld: boolean, lokaal: VerslagSamenvatting | undefined): string | null {
+  if (lokaal) {
+    if (lokaal.status === "voltooid") return "Verslag bekijken";
+    if (lokaal.status === "gedeeltelijk" || lokaal.status === "bevestigd") return "Verslag afronden";
+    return "Verslag afmaken"; // concept
+  }
+  return logboekIngevuld ? "Verslag bekijken" : "Verslag maken";
 }
 
 interface VeldState {
@@ -49,12 +74,17 @@ const LEGE_VELD_STATE: VeldState = { bezig: false, resultaat: null, fout: null }
  */
 export function TrainingRij({
   training,
+  schoolId,
   toonLogboekStatus = false,
   logboekIngevuld = false,
+  verslag,
 }: {
   training: TrainingProps;
+  schoolId: string;
   toonLogboekStatus?: boolean;
   logboekIngevuld?: boolean;
+  /** Alleen relevant/meegegeven wanneer toonLogboekStatus true is (spec §16) — zie verslagCta() hierboven. */
+  verslag?: VerslagSamenvatting;
 }) {
   const router = useRouter();
 
@@ -161,6 +191,20 @@ export function TrainingRij({
           >
             {logboekIngevuld ? "Logboek ingevuld" : "Logboek niet ingevuld"}
           </span>
+        )}
+
+        {toonLogboekStatus && kanBewerken && (
+          <Link
+            href={`/scholen/${schoolId}/trainingen/${training.id}/verslag`}
+            className={
+              logboekIngevuld && !verslag
+                ? "text-label font-medium text-teal-700 hover:underline"
+                : "inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-2.5 py-1 text-label font-semibold text-white transition-colors hover:bg-teal-700"
+            }
+          >
+            {logboekIngevuld && !verslag ? null : <Sparkles size={11} />}
+            {verslagCta(logboekIngevuld, verslag)}
+          </Link>
         )}
 
         {kanBewerken ? (

@@ -294,14 +294,19 @@ export async function haalBoardMetKolommen(boardId: string): Promise<{ id: strin
 
 /**
  * Schrijft één kolomwaarde weg via Monday's `change_simple_column_value` —
- * accepteert een gewone stringwaarde (werkt voor zowel `date`- als
- * `dropdown`-kolomtypen, de enige 2 typen die Sales V1 ooit beschrijft, zie
- * lib/sales/monday-columns.ts se SchrijfbareKolomId). `create_labels_if_missing:
- * false` is bewust hard hier (nooit optioneel/aanroeper-instelbaar) — een
- * waarde die geen bestaand dropdown-label is moet een duidelijke Monday-fout
- * geven, nooit stilzwijgend een nieuw label op het live board aanmaken.
- * Roep dit NOOIT rechtstreeks aan buiten lib/sales/writeback.ts — dat bestand
- * bewaakt de kolom-allowlist, conflictdetectie en audit-logging.
+ * accepteert een gewone stringwaarde. Oorspronkelijk beschreven voor
+ * `date`-/`dropdown`-kolomtypen (Sales V1); inmiddels ook gebruikt voor
+ * trainer-datum/-status (lib/trainers/writeback.ts, Ronde 2) en, sinds
+ * Ronde 3, een `boolean`/checkbox-kolom (logboek-ingevuld-vlag) — die laatste
+ * waardevorm is algemene platformkennis, nog niet live bevestigd, zie
+ * lib/trainers/writeback.ts se toelichting bij `checkboxNaarMondayWaarde`.
+ * `create_labels_if_missing: false` is bewust hard hier (nooit optioneel/
+ * aanroeper-instelbaar) — een waarde die geen bestaand dropdown-label is
+ * moet een duidelijke Monday-fout geven, nooit stilzwijgend een nieuw label
+ * op het live board aanmaken. Roep dit NOOIT rechtstreeks aan buiten een
+ * writeback-orchestratiebestand (lib/sales/writeback.ts, lib/trainers/
+ * writeback.ts) — die bewaken de kolom-allowlist, conflictdetectie en
+ * audit-logging; deze functie zelf doet geen van drieën.
  */
 export async function wijzigKolomWaarde(itemId: string, boardId: string, columnId: string, waarde: string): Promise<void> {
   const mutation = `
@@ -318,4 +323,37 @@ export async function wijzigKolomWaarde(itemId: string, boardId: string, columnI
     }
   `;
   await mondayQuery<{ change_simple_column_value: { id: string } }>(mutation, { itemId, boardId, columnId, waarde });
+}
+
+/**
+ * Traineromgeving V1, Ronde 3 (2026-08-24) — maakt een NIEUWE Monday Update
+ * (activiteitenlogboek-notitie) aan via `create_update`. Anders dan
+ * `wijzigKolomWaarde` hierboven (overschrijft een bestaande kolomwaarde,
+ * van nature idempotent) DUPLICEERT elke aanroep hiervan — er bestaat geen
+ * "huidige waarde" om tegen te vergelijken. Idempotentie/veilige-retry-zorg
+ * hoort daarom NOOIT hier, maar uitsluitend bij de aanroeper (lib/trainers/
+ * verslag.ts se schrijfVerslagUpdateIdempotent, die zowel lokale staat als
+ * een live herlezing van bestaande Updates raadpleegt vóórdat dit hier
+ * aangeroepen wordt).
+ *
+ * `create_update` bestond tot deze ronde nergens in deze codebase (bevestigd:
+ * geen enkele eerdere aanroep, zie lib/trainers-diagnose/monday-readonly.ts
+ * se eigen doc-comment die dit expliciet uitsluit) — greenfield, dus zonder
+ * live-bevestigd precedent voor Monday's exacte Update-tekstopmaakregels;
+ * hier bewust platte tekst zonder markup verondersteld (zie lib/trainers/
+ * verslag.ts). Zelfde parametrische, nooit-string-interpolerende
+ * aanroepvorm als wijzigKolomWaarde — `tekst` gaat uitsluitend via het
+ * `variables`-object, `JSON.stringify` in mondayQuery() doet de escaping,
+ * ook voor lange meerregelige tekst.
+ */
+export async function maakUpdate(itemId: string, tekst: string): Promise<{ id: string }> {
+  const mutation = `
+    mutation MaakUpdate($itemId: ID!, $tekst: String!) {
+      create_update(item_id: $itemId, body: $tekst) {
+        id
+      }
+    }
+  `;
+  const data = await mondayQuery<{ create_update: { id: string } }>(mutation, { itemId, tekst });
+  return data.create_update;
 }

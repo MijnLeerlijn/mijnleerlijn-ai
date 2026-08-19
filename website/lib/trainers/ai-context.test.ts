@@ -6,6 +6,7 @@ import {
   bouwTrainerAlgemeenPrompt,
 } from "./ai-context";
 import { haalSchoolDetail, haalDashboardData, type SchoolDetail, type TrainerDashboardData } from "./monday-links";
+import { bouwVerslagUpdateTekst } from "./verslag";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V1, Ronde 2 afronding — Trainer-AI (2026-08-19). Dekt
@@ -146,6 +147,79 @@ describe("bouwTrainerSchoolPrompt — trainingen per sectie", () => {
     const context = { school: maakSchoolDetail() };
     const { contextBericht } = bouwTrainerSchoolPrompt(context);
     expect(contextBericht).toContain("Geen trainingen bekend voor deze school.");
+  });
+});
+
+// Traineromgeving V1, Ronde 3 (2026-08-24) — opdrachtseis: een bevestigd
+// trainingsverslag moet automatisch onderdeel worden van de Trainer-AI
+// schoolcontext, "zonder de architectuur opnieuw te ontwerpen" — ai-context.ts
+// zelf is voor deze ronde dan ook NERGENS gewijzigd (zie lib/trainers/verslag.ts:
+// bevestigVerslag schrijft het verslag als een gewone Monday Update op het
+// Master Data-schoolitem, via dezelfde create_update/haalUpdatesVoorItem-keten
+// als elke andere schoollogboek-notitie). Dit is dus geen test van nieuwe
+// code, maar het BEWIJS dat de bestaande, hierboven al geteste ONVERTROUWD-
+// opbouw (school.logboek -> formatLogboekBlok) een verslag automatisch
+// meeneemt zodra haalSchoolDetail() 'm teruggeeft — precies zoals elke
+// andere Update. bouwVerslagUpdateTekst (verslag.ts) bouwt hier de EXACTE
+// tekst op die bevestigVerslag() ook echt naar Monday zou schrijven, i.p.v.
+// een losse benadering — dit bewijst de daadwerkelijke, letterlijke
+// Update-vorm door de schoolcontext heen komt, niet slechts iets dat erop
+// lijkt.
+describe("bouwTrainerSchoolPrompt — Ronde 3-integratie (trainingsverslag automatisch in schoolcontext, geen wijziging aan ai-context.ts)", () => {
+  it("een bevestigd trainingsverslag (als Monday Update in school.logboek) komt automatisch in de schoolcontext terecht, herkenbaar als trainingsverslag", () => {
+    const verslagTekst = bouwVerslagUpdateTekst({
+      bevestigdOpIso: "2026-08-24T10:00:00.000Z",
+      trainingNaam: "Online spreekuur",
+      trainerNaam: "Wessel Kok",
+      verslagTekst: "Wat is behandeld:\nInrichting van de groepen is besproken en vastgesteld.\n\nAfspraken:\nVolgende keer verder met de weektaken.",
+    });
+    const verslagUpdate = {
+      id: "u-verslag-1",
+      item_id: "500",
+      text_body: verslagTekst,
+      created_at: "2026-08-24T10:00:00.000Z",
+      updated_at: "2026-08-24T10:00:00.000Z",
+      creator: { id: "1", name: "Wessel Kok" },
+    };
+    const context = { school: maakSchoolDetail({ logboek: [verslagUpdate] }) };
+
+    const { contextBericht } = bouwTrainerSchoolPrompt(context);
+
+    expect(contextBericht).toContain("TRAININGSVERSLAG — 24 augustus 2026");
+    expect(contextBericht).toContain("Inrichting van de groepen is besproken en vastgesteld.");
+    expect(contextBericht).toContain("Volgende keer verder met de weektaken.");
+    // Ook deze data staat, zoals elke andere Update, uitsluitend binnen het
+    // ONVERTROUWD-blok — een verslag krijgt geen bijzondere, minder strenge
+    // behandeling dan een gewone Monday-notitie.
+    const labelIndex = contextBericht.indexOf("[ONVERTROUWD");
+    const verslagIndex = contextBericht.indexOf("TRAININGSVERSLAG —");
+    expect(labelIndex).toBeGreaterThanOrEqual(0);
+    expect(verslagIndex).toBeGreaterThan(labelIndex);
+  });
+
+  it("meerdere eerdere verslagen blijven allemaal zichtbaar als continuïteit, geen enkel verslag wordt stilzwijgend weggelaten", () => {
+    const ouderVerslag = {
+      id: "u-verslag-oud",
+      item_id: "500",
+      text_body: bouwVerslagUpdateTekst({ bevestigdOpIso: "2026-06-01T09:00:00.000Z", trainingNaam: "Training", trainerNaam: "Wessel Kok", verslagTekst: "Keuzes over inrichting/werkwijze:\nGroepsindeling staat nog open." }),
+      created_at: "2026-06-01T09:00:00.000Z",
+      updated_at: "2026-06-01T09:00:00.000Z",
+      creator: { id: "1", name: "Wessel Kok" },
+    };
+    const nieuwVerslag = {
+      id: "u-verslag-nieuw",
+      item_id: "500",
+      text_body: bouwVerslagUpdateTekst({ bevestigdOpIso: "2026-08-24T09:00:00.000Z", trainingNaam: "Training", trainerNaam: "Wessel Kok", verslagTekst: "Wat is behandeld:\nDe groepsindeling is vandaag definitief besproken en besloten." }),
+      created_at: "2026-08-24T09:00:00.000Z",
+      updated_at: "2026-08-24T09:00:00.000Z",
+      creator: { id: "1", name: "Wessel Kok" },
+    };
+    const context = { school: maakSchoolDetail({ logboek: [nieuwVerslag, ouderVerslag] }) };
+
+    const { contextBericht } = bouwTrainerSchoolPrompt(context);
+
+    expect(contextBericht).toContain("Groepsindeling staat nog open.");
+    expect(contextBericht).toContain("De groepsindeling is vandaag definitief besproken en besloten.");
   });
 });
 

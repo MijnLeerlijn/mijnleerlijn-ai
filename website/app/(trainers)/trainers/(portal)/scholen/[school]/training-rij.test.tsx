@@ -90,7 +90,7 @@ afterEach(() => {
 describe("TrainingRij — StatusPopover", () => {
   it("toont de 4 statuskeuzes met hun labels zodra de statusbadge wordt aangeklikt", async () => {
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
 
     await user.click(screen.getByRole("button", { name: "Nieuw" }));
 
@@ -102,7 +102,7 @@ describe("TrainingRij — StatusPopover", () => {
   it("stuurt bij het kiezen van een status een PATCH met de verwachte body en credentials: same-origin", async () => {
     const fetchMock = mockFetchEenmaal(200, geschrevenResultaat());
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
 
     await user.click(screen.getByRole("button", { name: "Nieuw" }));
     await user.click(screen.getByRole("button", { name: /Gedaan/ }));
@@ -121,7 +121,7 @@ describe("TrainingRij — StatusPopover", () => {
   it("toont een compacte succesbevestiging (statustekst blijft zichtbaar, niet uitsluitend kleur) na een geslaagde schrijving", async () => {
     mockFetchEenmaal(200, geschrevenResultaat());
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
 
     await user.click(screen.getByRole("button", { name: "Nieuw" }));
     await user.click(screen.getByRole("button", { name: /Gedaan/ }));
@@ -148,7 +148,7 @@ describe("TrainingRij — StatusPopover", () => {
       })
     );
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
 
     await user.click(screen.getByRole("button", { name: "Nieuw" }));
     await user.click(screen.getByRole("button", { name: /Gedaan/ }));
@@ -167,7 +167,7 @@ describe("TrainingRij — StatusPopover", () => {
       })
     );
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
 
     await user.click(screen.getByRole("button", { name: "Nieuw" }));
     await user.click(screen.getByRole("button", { name: /Gedaan/ }));
@@ -190,7 +190,7 @@ describe("TrainingRij — StatusPopover", () => {
       vi.fn().mockRejectedValue(new Error("network down"))
     );
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
 
     await user.click(screen.getByRole("button", { name: "Nieuw" }));
     await user.click(screen.getByRole("button", { name: /Gedaan/ }));
@@ -202,7 +202,7 @@ describe("TrainingRij — StatusPopover", () => {
 describe("TrainingRij — DatumPopover", () => {
   it("toont 'Datum plannen' zolang er nog geen datum is, en de aankondiging dat kiezen de status op Gepland zet", async () => {
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
 
     await user.click(screen.getByRole("button", { name: /Datum plannen/ }));
 
@@ -220,7 +220,7 @@ describe("TrainingRij — DatumPopover", () => {
       })
     );
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
 
     await user.click(screen.getByRole("button", { name: /Datum plannen/ }));
     const invoer = screen.getByLabelText("Datum plannen");
@@ -239,7 +239,7 @@ describe("TrainingRij — DatumPopover", () => {
 
   it("toont geen 'Datum verwijderen' zolang er nog geen datum is", async () => {
     const user = userEvent.setup();
-    render(<TrainingRij training={BEWERKBARE_TRAINING} />);
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
     await user.click(screen.getByRole("button", { name: /Datum plannen/ }));
     expect(screen.queryByRole("button", { name: /Datum verwijderen/ })).not.toBeInTheDocument();
   });
@@ -253,7 +253,7 @@ describe("TrainingRij — DatumPopover", () => {
     // terecht alleen de INITIËLE prop, niet een latere prop-wijziging op
     // dezelfde instance.
     const user = userEvent.setup();
-    render(<TrainingRij training={{ ...BEWERKBARE_TRAINING, datum: "2026-09-01" }} />);
+    render(<TrainingRij training={{ ...BEWERKBARE_TRAINING, datum: "2026-09-01" }} schoolId="500" />);
     // Formattering is locale-afhankelijk (formatKorteDatum) — zoek daarom op
     // de accessible name via het label-patroon i.p.v. de exacte tekst.
     const triggers = screen.getAllByRole("button");
@@ -266,8 +266,51 @@ describe("TrainingRij — DatumPopover", () => {
 
 describe("TrainingRij — niet-bewerkbare training (geen trainerboardItemId)", () => {
   it("toont statische, niet-klikbare badge/datum in plaats van de popovers", () => {
-    render(<TrainingRij training={{ ...BEWERKBARE_TRAINING, trainerboardItemId: null }} />);
+    render(<TrainingRij training={{ ...BEWERKBARE_TRAINING, trainerboardItemId: null }} schoolId="500" />);
     expect(screen.queryByRole("button", { name: "Nieuw" })).not.toBeInTheDocument();
     expect(screen.getByText("Nieuw")).toBeInTheDocument(); // wél als platte tekst/badge zichtbaar
+  });
+});
+
+// Traineromgeving V1, Ronde 3 (2026-08-24) — spec §16 CTA-wiring. Uitsluitend
+// zichtbaar wanneer toonLogboekStatus true is (verslag_nog_invullen/gedaan-
+// secties, zie scholen/[school]/page.tsx) — nooit op Open/Komend, waar een
+// verslagprompt nog geen zin heeft.
+describe("TrainingRij — trainingsverslag-CTA (spec §16)", () => {
+  it("toont geen verslag-CTA wanneer toonLogboekStatus niet is meegegeven (bv. Open/Komend-secties)", () => {
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
+    expect(screen.queryByRole("link", { name: /Verslag/ })).not.toBeInTheDocument();
+  });
+
+  it("toont 'Verslag maken' (prominente knop) wanneer het logboek nog niet is ingevuld en er geen lokaal verslag bestaat", () => {
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={false} />);
+    const link = screen.getByRole("link", { name: /Verslag maken/ });
+    expect(link).toHaveAttribute("href", "/scholen/500/trainingen/700/verslag");
+  });
+
+  it("toont 'Verslag afronden' zodra er al een lokaal verslag met status 'gedeeltelijk' bestaat, ook al zegt Monday nog 'niet ingevuld' (lokale staat wint)", () => {
+    render(
+      <TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={false} verslag={{ status: "gedeeltelijk" }} />
+    );
+    expect(screen.getByRole("link", { name: /Verslag afronden/ })).toBeInTheDocument();
+  });
+
+  it("toont de rustigere 'Verslag bekijken'-link wanneer Monday's logboekvlag al true is en er geen lokaal verslag bekend is", () => {
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={true} />);
+    expect(screen.getByRole("link", { name: /Verslag bekijken/ })).toBeInTheDocument();
+  });
+
+  it("toont 'Verslag bekijken' voor een lokaal 'voltooid' verslag", () => {
+    render(
+      <TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={true} verslag={{ status: "voltooid" }} />
+    );
+    expect(screen.getByRole("link", { name: /Verslag bekijken/ })).toBeInTheDocument();
+  });
+
+  it("toont geen verslag-CTA voor een niet-bewerkbare training (geen trainerboardItemId), ook al is toonLogboekStatus true", () => {
+    render(
+      <TrainingRij training={{ ...BEWERKBARE_TRAINING, trainerboardItemId: null }} schoolId="500" toonLogboekStatus logboekIngevuld={false} />
+    );
+    expect(screen.queryByRole("link", { name: /Verslag/ })).not.toBeInTheDocument();
   });
 });

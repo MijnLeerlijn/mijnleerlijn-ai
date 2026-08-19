@@ -38,6 +38,8 @@ import * as migration_20260819_100000_trainer_accounts_v1 from './20260819_10000
 import * as migration_20260819_110000_trainer_accounts_system_rels_fix from './20260819_110000_trainer_accounts_system_rels_fix';
 import * as migration_20260819_120000_trainer_log_events_v1 from './20260819_120000_trainer_log_events_v1';
 import * as migration_20260819_130000_trainer_ai_log_events_v1 from './20260819_130000_trainer_ai_log_events_v1';
+import * as migration_20260824_090000_training_verslagen_v1 from './20260824_090000_training_verslagen_v1';
+import * as migration_20260824_100000_trainer_log_events_logboek_veld from './20260824_100000_trainer_log_events_logboek_veld';
 
 export const migrations = [
   {
@@ -239,5 +241,15 @@ export const migrations = [
     up: migration_20260819_130000_trainer_ai_log_events_v1.up,
     down: migration_20260819_130000_trainer_ai_log_events_v1.down,
     name: '20260819_130000_trainer_ai_log_events_v1',
+  },
+  {
+    up: migration_20260824_090000_training_verslagen_v1.up,
+    down: migration_20260824_090000_training_verslagen_v1.down,
+    name: '20260824_090000_training_verslagen_v1',
+  },
+  {
+    up: migration_20260824_100000_trainer_log_events_logboek_veld.up,
+    down: migration_20260824_100000_trainer_log_events_logboek_veld.down,
+    name: '20260824_100000_trainer_log_events_logboek_veld',
   },
 ];
