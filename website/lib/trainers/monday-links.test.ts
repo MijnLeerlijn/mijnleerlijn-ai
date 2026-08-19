@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mondayQuery, haalScholenPagina, haalUpdatesVoorItem } from "@/lib/sales/monday-client";
+import { mondayQuery, haalScholenPagina, haalUpdatesVoorItem, wijzigKolomWaarde, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
 import {
   parseLinkedPulseIds,
   parseCheckboxIngevuld,
@@ -15,12 +15,19 @@ import type { AuthTrainer } from "./auth";
 
 vi.mock("@/lib/sales/monday-client", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/sales/monday-client")>();
-  return { ...echt, mondayQuery: vi.fn(), haalScholenPagina: vi.fn(), haalUpdatesVoorItem: vi.fn() };
+  // wijzigKolomWaarde/haalItemMetKolomWaarden worden hier NIET door monday-
+  // links.ts zelf gebruikt (het leespad importeert ze niet eens) — uitsluitend
+  // gemockt zodat de test hieronder ("geen verborgen Monday-write tijdens
+  // een pageview") kan bewijzen dat ze nooit aangeroepen worden, i.p.v. dat
+  // alleen op de afwezigheid van de import te vertrouwen.
+  return { ...echt, mondayQuery: vi.fn(), haalScholenPagina: vi.fn(), haalUpdatesVoorItem: vi.fn(), wijzigKolomWaarde: vi.fn(), haalItemMetKolomWaarden: vi.fn() };
 });
 
 const mockQuery = vi.mocked(mondayQuery);
 const mockScholenPagina = vi.mocked(haalScholenPagina);
 const mockUpdatesVoorItem = vi.mocked(haalUpdatesVoorItem);
+const mockWijzigKolomWaarde = vi.mocked(wijzigKolomWaarde);
+const mockHaalItemMetKolomWaarden = vi.mocked(haalItemMetKolomWaarden);
 
 const TRAINER: AuthTrainer = {
   id: 1,
@@ -390,7 +397,9 @@ describe("bepaalScholenVoorTrainer — resolutieladder", () => {
     const detail = await haalSchoolDetail(TRAINER, "18420120365-montessori-gorinchem");
     expect(detail).not.toBeNull();
     expect(detail!.bron).toBe("legacy-unique");
-    expect(detail!.trainingen.gepland.map((t) => t.id)).toEqual(["12713002919"]);
+    // Toekomstige datum -> bucket "komend" (training-weergave.ts), niet meer
+    // de vlakke "gepland"-statusgroep van vóór Ronde 2 vervolg.
+    expect(detail!.trainingen.komend.map((t) => t.id)).toEqual(["12713002919"]);
 
     mockScholenPagina.mockReset();
     seedMocks();
@@ -751,6 +760,27 @@ describe("haalDashboardData", () => {
     expect(data.logboekOpenstaand.map((t) => t.naam)).toEqual(["Vandaag, nog Gepland, niet ingevuld"]);
   });
 
+  it("Ronde 2 vervolg — 'Vandaag' en 'Verslag nog invullen' zijn nu wederzijds-exclusief: een training van vandaag met een niet-ingevuld logboek verschijnt uitsluitend onder 'Verslag nog invullen', niet ook onder 'Vandaag'", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          uitvoeringItem({ id: "1", naam: "Vandaag, niet ingevuld", schoolIds: ["500"], datum: VANDAAG, logboekIngevuld: false }),
+          uitvoeringItem({ id: "2", naam: "Vandaag, wél ingevuld", schoolIds: ["500"], datum: VANDAAG, logboekIngevuld: true }),
+        ],
+      });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const data = await haalDashboardData(TRAINER);
+    // "Vandaag, niet ingevuld" zit uitsluitend in logboekOpenstaand (al
+    // gecontroleerd hierboven) — de kernwijziging hier is dat hij NIET ook
+    // nog los in trainingenVandaag verschijnt, zoals vóór deze ronde wél
+    // gebeurde (twee onafhankelijke filters die konden overlappen).
+    expect(data.trainingenVandaag.map((t) => t.naam)).toEqual(["Vandaag, wél ingevuld"]);
+    expect(data.logboekOpenstaand.map((t) => t.naam)).toEqual(["Vandaag, niet ingevuld"]);
+  });
+
   it("aantalScholen komt overeen met het aantal bevestigde scholen", async () => {
     mockScholenPagina
       .mockResolvedValueOnce({
@@ -777,14 +807,14 @@ describe("haalSchoolDetail — object-level autorisatie", () => {
     expect(mockUpdatesVoorItem).not.toHaveBeenCalled();
   });
 
-  it("geeft volledig detail terug voor een eigen school, met trainingen verdeeld over de 4 statusbuckets en het schoollogboek", async () => {
+  it("geeft volledig detail terug voor een eigen school, met trainingen verdeeld over de weergavebuckets (training-weergave.ts) en het schoollogboek", async () => {
     mockScholenPagina
       .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Eigen school", trainerLinkedIds: [999001], hoofdcontactpersoon: "Jeroen Bakker" })] })
       .mockResolvedValueOnce({
         cursor: null,
         items: [
           uitvoeringItem({ id: "1", naam: "Open", schoolIds: ["500"] }),
-          uitvoeringItem({ id: "2", naam: "Gepland", schoolIds: ["500"], datum: "2099-01-01" }),
+          uitvoeringItem({ id: "2", naam: "Komend", schoolIds: ["500"], datum: "2099-01-01" }),
           uitvoeringItem({ id: "3", naam: "Gedaan", schoolIds: ["500"], status: "Gedaan" }),
           uitvoeringItem({ id: "4", naam: "Geannuleerd", schoolIds: ["500"], status: "Geannuleerd" }),
         ],
@@ -797,10 +827,55 @@ describe("haalSchoolDetail — object-level autorisatie", () => {
     expect(detail).not.toBeNull();
     expect(detail!.contactpersoonNaam).toBe("Jeroen Bakker");
     expect(detail!.trainingen.open.map((t) => t.naam)).toEqual(["Open"]);
-    expect(detail!.trainingen.gepland.map((t) => t.naam)).toEqual(["Gepland"]);
+    expect(detail!.trainingen.komend.map((t) => t.naam)).toEqual(["Komend"]);
     expect(detail!.trainingen.gedaan.map((t) => t.naam)).toEqual(["Gedaan"]);
     expect(detail!.trainingen.geannuleerd.map((t) => t.naam)).toEqual(["Geannuleerd"]);
     expect(detail!.logboek).toHaveLength(1);
     expect(mockUpdatesVoorItem).toHaveBeenCalledWith("500", 30);
+  });
+});
+
+describe("Ronde 2 vervolg — geen verborgen Monday-write tijdens een pageview (GET/alleen-lezen)", () => {
+  // Expliciete opdrachtseis: "Ik wil hierbij géén verborgen Monday-write
+  // tijdens het alleen bekijken van een pagina." haalDashboardData/
+  // haalSchoolDetail/bepaalScholenVoorTrainer voeden uitsluitend Server
+  // Component-pagina's (GET-achtig, geen enkele Server Action/mutatie-
+  // trigger) — dit bewijst het ook op functieniveau, niet alleen doordat
+  // deze module wijzigKolomWaarde/haalItemMetKolomWaarden nooit importeert.
+  it("haalDashboardData roept nooit een Monday-schrijffunctie aan", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Training", schoolIds: ["500"], datum: "2026-09-01" })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    await haalDashboardData(TRAINER);
+
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
+    expect(mockHaalItemMetKolomWaarden).not.toHaveBeenCalled();
+  });
+
+  it("haalSchoolDetail roept nooit een Monday-schrijffunctie aan", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Training", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+    mockUpdatesVoorItem.mockResolvedValue([]);
+
+    await haalSchoolDetail(TRAINER, "500");
+
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
+    expect(mockHaalItemMetKolomWaarden).not.toHaveBeenCalled();
+  });
+
+  it("bepaalScholenVoorTrainer roept nooit een Monday-schrijffunctie aan", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
+    expect(mockHaalItemMetKolomWaarden).not.toHaveBeenCalled();
   });
 });

@@ -3,80 +3,51 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, MapPin, User, NotebookText } from "lucide-react";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalSchoolDetail, type TrainingSamenvatting } from "@/lib/trainers/monday-links";
-import { formatKorteDatum, formatKorteDatumTijd } from "@/lib/sales/format-datum";
-import { TRAINING_STATUS_LABEL, TRAINING_STATUS_KLEUR } from "@/lib/trainers/status-styles";
-import TrainingBewerkenDialog from "./training-bewerken-dialog";
+import type { TrainingWeergaveStatus } from "@/lib/trainers/training-weergave";
+import { formatKorteDatumTijd } from "@/lib/sales/format-datum";
+import { TrainingRij } from "./training-rij";
 
 interface SchooldetailProps {
   params: Promise<{ school: string }>;
 }
 
-function TrainingRij({ training, toonLogboekStatus = false }: { training: TrainingSamenvatting; toonLogboekStatus?: boolean }) {
-  return (
-    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2.5">
-      <p className="min-w-[10rem] flex-1 text-body-sm font-medium text-grijs-900">{training.naam}</p>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        {toonLogboekStatus && (
-          <span
-            className={`rounded-full px-2 py-0.5 text-label font-medium ${
-              training.logboekIngevuld ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
-            }`}
-          >
-            {training.logboekIngevuld ? "Logboek ingevuld" : "Logboek niet ingevuld"}
-          </span>
-        )}
-        <span className={`rounded-full px-2 py-0.5 text-label font-medium ${TRAINING_STATUS_KLEUR[training.status]}`}>
-          {TRAINING_STATUS_LABEL[training.status]}
-        </span>
-        <span className="w-20 text-right text-body-sm text-grijs-600">{formatKorteDatum(training.datum)}</span>
-        {/* Ronde 2 (2026-08-19) — bewerken uitsluitend mogelijk met een
-            bekend trainerboard-item-ID (haalTrainingVoorMutatie weigert
-            anders hard, zie lib/trainers/monday-links.ts/writeback.ts):
-            de knop hier al verbergen voorkomt dat een trainer een
-            bewerkdialoog opent die toch altijd zou falen. */}
-        {training.trainerboardItemId !== null && (
-          <TrainingBewerkenDialog
-            training={{
-              id: training.id,
-              naam: training.naam,
-              status: training.status,
-              ruweStatusTekst: training.ruweStatusTekst,
-              datum: training.datum,
-            }}
-          />
-        )}
-      </div>
-    </li>
-  );
-}
+const SECTIE_VOLGORDE: readonly TrainingWeergaveStatus[] = ["verslag_nog_invullen", "vandaag", "komend", "open", "gedaan", "geannuleerd"];
+const SECTIE_TITEL: Record<TrainingWeergaveStatus, string> = {
+  verslag_nog_invullen: "Verslag nog invullen",
+  vandaag: "Vandaag",
+  komend: "Komend",
+  open: "Nieuw",
+  gedaan: "Gedaan",
+  geannuleerd: "Geannuleerd",
+};
 
-function TrainingenGroep({
-  titel,
-  trainingen,
-  toonLogboekStatus = false,
-}: {
-  titel: string;
-  trainingen: TrainingSamenvatting[];
-  toonLogboekStatus?: boolean;
-}) {
+function TrainingenGroep({ titel, trainingen, toonLogboekStatus = false }: { titel: string; trainingen: TrainingSamenvatting[]; toonLogboekStatus?: boolean }) {
   if (trainingen.length === 0) return null;
   return (
     <div>
       <h3 className="px-3 pb-1 text-label font-medium uppercase tracking-wide text-grijs-500">{titel}</h3>
       <ul className="flex flex-col divide-y divide-grijs-100">
         {trainingen.map((training) => (
-          <TrainingRij key={training.id} training={training} toonLogboekStatus={toonLogboekStatus} />
+          <TrainingRij key={training.id} training={training} toonLogboekStatus={toonLogboekStatus} logboekIngevuld={training.logboekIngevuld} />
         ))}
       </ul>
     </div>
   );
 }
 
-// Architectuurrapport §6 — read-only schooldossier, ontworpen om later de
-// centrale trainer-werkruimte te worden. Secties Overzicht/Trainingen/
-// Logboek/Contactpersoon staan bewust sequentieel op één pagina i.p.v. als
-// JS-tabs: dit is puur read-only informatie, dus geen interactiviteitswinst,
-// en werkt zo vanzelf goed op mobiel (geen aparte mobiele tab-variant nodig).
+// Architectuurrapport §6 — schooldossier, ontworpen om later de centrale
+// trainer-werkruimte te worden. Secties Overzicht/Trainingen/Logboek/
+// Contactpersoon staan bewust sequentieel op één pagina i.p.v. als JS-tabs.
+//
+// Ronde 2 vervolg (2026-08-19) — trainingen zijn nu de eerste schrijfbare
+// gegevens in deze portal: status/datum wijzigen via de compacte popovers in
+// TrainingRij (vervangt de grote modal), gebouwd bovenop de bewezen veilige
+// writeback-laag (lib/trainers/writeback.ts, ongewijzigd qua
+// veiligheidsarchitectuur). Secties volgen nu dezelfde centrale bucket-
+// indeling als het dashboard (training-weergave.ts) — geen eigen
+// interpretatie meer. Deze pagina zelf blijft verder puur server-side
+// (auth-gate + één live Monday-fetch); alle interactiviteit zit in
+// TrainingRij en de popovers eronder.
 export default async function SchooldetailPagina({ params }: SchooldetailProps) {
   const { school: schoolId } = await params;
 
@@ -87,8 +58,7 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
   if (!school) notFound();
 
   const { trainingen } = school;
-  const heeftTrainingen =
-    trainingen.open.length + trainingen.gepland.length + trainingen.gedaan.length + trainingen.geannuleerd.length > 0;
+  const heeftTrainingen = SECTIE_VOLGORDE.some((sectie) => trainingen[sectie].length > 0);
 
   return (
     <div className="flex flex-col gap-8">
@@ -120,10 +90,14 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
         </div>
         {heeftTrainingen ? (
           <div className="flex flex-col gap-4 py-3">
-            <TrainingenGroep titel="Open" trainingen={trainingen.open} />
-            <TrainingenGroep titel="Gepland" trainingen={trainingen.gepland} />
-            <TrainingenGroep titel="Gedaan" trainingen={trainingen.gedaan} toonLogboekStatus />
-            <TrainingenGroep titel="Geannuleerd" trainingen={trainingen.geannuleerd} />
+            {SECTIE_VOLGORDE.map((sectie) => (
+              <TrainingenGroep
+                key={sectie}
+                titel={SECTIE_TITEL[sectie]}
+                trainingen={trainingen[sectie]}
+                toonLogboekStatus={sectie === "verslag_nog_invullen" || sectie === "gedaan"}
+              />
+            ))}
           </div>
         ) : (
           <p className="px-4 py-4 text-body-sm text-grijs-600">Geen trainingen bekend voor deze school.</p>

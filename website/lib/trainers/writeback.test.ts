@@ -9,6 +9,7 @@ import {
   haalItemMetKolomWaarden,
 } from "@/lib/sales/monday-client";
 import { werkTrainingBij } from "./writeback";
+import { UITVOERING_BOARD_ID } from "./monday-links";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V1, Ronde 2 (2026-08-19) — dekt lib/trainers/writeback.ts.
@@ -85,15 +86,15 @@ function masterDataItem(opts: { id: string; naam: string; trainerLinkedIds?: (st
   };
 }
 
-function uitvoeringItem(opts: { id: string; naam: string; schoolIds?: (string | number)[] }) {
+function uitvoeringItem(opts: { id: string; naam: string; schoolIds?: (string | number)[]; statusTekst?: string | null; datum?: string | null }) {
   return {
     id: opts.id,
     name: opts.naam,
     updated_at: "2026-08-19T00:00:00.000Z",
     column_values: [
       { id: "board_relation_mm5tyc40", text: null, value: opts.schoolIds ? linkedPulseIdsValue(opts.schoolIds) : null },
-      { id: "color_mm5tz3wk", text: null, value: null },
-      { id: "date_mm5tnfvx", text: null, value: null },
+      { id: "color_mm5tz3wk", text: opts.statusTekst ?? null, value: null },
+      { id: "date_mm5tnfvx", text: opts.datum ?? null, value: null },
       { id: "boolean_mm5tvfc5", text: null, value: null },
     ],
   };
@@ -116,12 +117,18 @@ function trainerboardBoardsResponse(items: { id: string; name: string; groupTitl
   };
 }
 
-/** Zet de resolutieladder zo op dat TRAINER se training CENTRALE_TRAINING_ID geldig is (tier 1, harde School-koppeling) mét een trainerboard-spiegelitem. */
-function seedGeldigeTraining(trainer: AuthTrainer = TRAINER, opts: { metTrainerboardItem?: boolean } = {}) {
+/** Zet de resolutieladder zo op dat TRAINER se training CENTRALE_TRAINING_ID geldig is (tier 1, harde School-koppeling) mét een trainerboard-spiegelitem. statusTekst/datum bepalen de LIVE status die werkTrainingBij bij binnenkomst ziet (voor de auto-statusregel bij datumwijzigingen) — standaard "open" (geen datum, geen statustekst), zelfde als voorheen. */
+function seedGeldigeTraining(
+  trainer: AuthTrainer = TRAINER,
+  opts: { metTrainerboardItem?: boolean; statusTekst?: string | null; datum?: string | null } = {}
+) {
   const metTbItem = opts.metTrainerboardItem ?? true;
   mockScholenPagina
     .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: SCHOOL_ID, naam: "Montessori Gorinchem", trainerLinkedIds: [Number(trainer.mondayUitvoerderItemId)] })] })
-    .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: CENTRALE_TRAINING_ID, naam: "Training", schoolIds: [SCHOOL_ID] })] });
+    .mockResolvedValueOnce({
+      cursor: null,
+      items: [uitvoeringItem({ id: CENTRALE_TRAINING_ID, naam: "Training", schoolIds: [SCHOOL_ID], statusTekst: opts.statusTekst, datum: opts.datum })],
+    });
   mockQuery.mockResolvedValue(
     trainerboardBoardsResponse(metTbItem ? [{ id: TRAINERBOARD_ITEM_ID, name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: CENTRALE_TRAINING_ID }] : [])
   );
@@ -205,13 +212,17 @@ describe("werkTrainingBij — datum, happy path + gate", () => {
     expect(mockWijzigKolomWaarde).not.toHaveBeenCalled(); // maar nooit gemuteerd
   });
 
-  it("PRODUCTIEGATE aan: datum zetten slaagt op beide records onafhankelijk", async () => {
+  it("PRODUCTIEGATE aan: datum zetten slaagt op beide records onafhankelijk (en zet, Ronde 2 vervolg, automatisch ook de status op Gepland)", async () => {
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
-    seedGeldigeTraining();
+    seedGeldigeTraining(); // status "open" — datum zetten triggert dus de automatische "-> Gepland"-regel, zie het aparte describe-blok verderop voor de volledige dekking daarvan
     mockLezenPerItem({
-      [TRAINERBOARD_ITEM_ID]: [{ id: "date4", text: null, value: null }],
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "date4", text: null, value: null },
+        { id: "status", text: null, value: null },
+      ],
       [CENTRALE_TRAINING_ID]: [
         { id: "date_mm5tnfvx", text: null, value: null },
+        { id: "color_mm5tz3wk", text: null, value: null },
         { id: "numeric_mm5vkjzz", text: null, value: null },
       ],
     });
@@ -223,7 +234,7 @@ describe("werkTrainingBij — datum, happy path + gate", () => {
     expect(uitkomst.soort).toBe("resultaat");
     if (uitkomst.soort !== "resultaat") return;
     expect(uitkomst.resultaat.algeheleStatus).toBe("volledig_geslaagd");
-    expect(uitkomst.resultaat.kolomResultaten).toHaveLength(2);
+    expect(uitkomst.resultaat.kolomResultaten.filter((k) => k.veld === "datum")).toHaveLength(2);
     expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "date4", "2026-09-01");
     expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "date_mm5tnfvx", "2026-09-01");
   });
@@ -506,5 +517,277 @@ describe("werkTrainingBij — auditlogging", () => {
       expect(call[0].data.trainer).toBe(TRAINER.id);
       expect(call[0].data.mondayCentraleTrainingId).toBe(CENTRALE_TRAINING_ID);
     }
+  });
+});
+
+describe("werkTrainingBij — automatische status bij datumwijziging (Ronde 2 vervolg)", () => {
+  it("datum zetten op een 'open' training zonder expliciete status -> automatisch status 'gepland' op beide records", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining(); // standaard: status "open", geen datum
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "date4", text: null, value: null },
+        { id: "status", text: null, value: null },
+      ],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "date_mm5tnfvx", text: null, value: null },
+        { id: "color_mm5tz3wk", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      datum: { nieuweWaarde: "2026-09-01", verwachteHuidigeWaarde: null },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.resultaat.algeheleStatus).toBe("volledig_geslaagd");
+    expect(uitkomst.resultaat.kolomResultaten).toHaveLength(4); // 2 records x (datum + status)
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "status", "Gepland");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "color_mm5tz3wk", "Gepland");
+  });
+
+  it("datum verwijderen op een 'gepland' training zonder expliciete status -> automatisch status 'open' (Nieuw)", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining(TRAINER, { statusTekst: "Gepland", datum: "2026-08-10" });
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "date4", text: "2026-08-10", value: null },
+        { id: "status", text: "Gepland", value: null },
+      ],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "date_mm5tnfvx", text: "2026-08-10", value: null },
+        { id: "color_mm5tz3wk", text: "Gepland", value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+    mockHaalItemMetKolomWaarden.mockResolvedValue({ id: "x", name: "x", column_values: [{ id: "date4", text: null, value: null }] });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      datum: { nieuweWaarde: null, verwachteHuidigeWaarde: "2026-08-10" },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.resultaat.algeheleStatus).toBe("volledig_geslaagd");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "status", "Nieuw");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "color_mm5tz3wk", "Nieuw");
+  });
+
+  it("datum wijzigen op een training die al 'gepland' is (blijft gepland) -> geen extra statusschrijving", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining(TRAINER, { statusTekst: "Gepland", datum: "2026-08-01" });
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [{ id: "date4", text: "2026-08-01", value: null }],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "date_mm5tnfvx", text: "2026-08-01", value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      datum: { nieuweWaarde: "2026-09-01", verwachteHuidigeWaarde: "2026-08-01" },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.resultaat.kolomResultaten.every((k) => k.veld === "datum")).toBe(true);
+    expect(uitkomst.resultaat.kolomResultaten).toHaveLength(2);
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), "status", expect.anything());
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), "color_mm5tz3wk", expect.anything());
+  });
+
+  it("datum wijzigen op een 'geannuleerd' training -> automatische statusregel grijpt niet in, status blijft ongewijzigd", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining(TRAINER, { statusTekst: "Geannuleerd", datum: "2026-08-01" });
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [{ id: "date4", text: "2026-08-01", value: null }],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "date_mm5tnfvx", text: "2026-08-01", value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      datum: { nieuweWaarde: "2026-09-01", verwachteHuidigeWaarde: "2026-08-01" },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.resultaat.kolomResultaten.every((k) => k.veld === "datum")).toBe(true);
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), "status", expect.anything());
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), "color_mm5tz3wk", expect.anything());
+  });
+
+  it("datum wijzigen op een 'gedaan' training -> automatische statusregel grijpt niet in", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining(TRAINER, { statusTekst: "Gedaan", datum: "2026-08-01" });
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [{ id: "date4", text: "2026-08-01", value: null }],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "date_mm5tnfvx", text: "2026-08-01", value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      datum: { nieuweWaarde: "2026-09-01", verwachteHuidigeWaarde: "2026-08-01" },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.resultaat.kolomResultaten.every((k) => k.veld === "datum")).toBe(true);
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), "status", expect.anything());
+  });
+
+  it("trainer stuurt zelf expliciet status mee samen met datum -> automatische afleiding overschrijft dit nooit", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining(); // status "open"
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "date4", text: null, value: null },
+        { id: "status", text: null, value: null },
+      ],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "date_mm5tnfvx", text: null, value: null },
+        { id: "color_mm5tz3wk", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    // Trainer annuleert de training EN wijzigt tegelijk de datum — een
+    // bewuste, expliciete combinatie. De automatische "datum -> Gepland"-
+    // regel zou hier zonder deze bescherming de expliciete annulering
+    // ongedaan maken.
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      datum: { nieuweWaarde: "2026-09-01", verwachteHuidigeWaarde: null },
+      status: { nieuweWaarde: "geannuleerd", verwachteHuidigeRuweTekst: null },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "status", "Geannuleerd");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "color_mm5tz3wk", "Geannuleerd");
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), "Gepland");
+  });
+});
+
+describe("werkTrainingBij — kolomniveau-onafhankelijkheid BINNEN één record (datum vs. de automatisch meegeschreven status)", () => {
+  it("datumkolom faalt, de automatisch meegeschreven statuskolom op datzelfde record slaagt gewoon onafhankelijk", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining(); // status "open"
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "date4", text: null, value: null },
+        { id: "status", text: null, value: null },
+      ],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "date_mm5tnfvx", text: null, value: null },
+        { id: "color_mm5tz3wk", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+    mockWijzigKolomWaarde.mockImplementation(async (_itemId, _boardId, columnId) => {
+      if (columnId === "date_mm5tnfvx") throw new Error("Monday tijdelijk onbereikbaar");
+    });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      datum: { nieuweWaarde: "2026-09-01", verwachteHuidigeWaarde: null },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    const centraalDatum = uitkomst.resultaat.kolomResultaten.find((k) => k.record === "centraal" && k.veld === "datum")!;
+    const centraalStatus = uitkomst.resultaat.kolomResultaten.find((k) => k.record === "centraal" && k.veld === "status")!;
+    expect(centraalDatum.status).toBe("mislukt");
+    expect(centraalStatus.status).toBe("geschreven"); // onafhankelijk geslaagd, ondanks dat de datumkolom op HETZELFDE record faalde
+    expect(uitkomst.resultaat.algeheleStatus).toBe("deels_geslaagd");
+  });
+
+  it("de automatisch meegeschreven statuskolom faalt, de datumkolom op datzelfde record slaagt gewoon onafhankelijk", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining();
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "date4", text: null, value: null },
+        { id: "status", text: null, value: null },
+      ],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "date_mm5tnfvx", text: null, value: null },
+        { id: "color_mm5tz3wk", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+    mockWijzigKolomWaarde.mockImplementation(async (_itemId, _boardId, columnId) => {
+      if (columnId === "color_mm5tz3wk") throw new Error("Monday tijdelijk onbereikbaar");
+    });
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
+      datum: { nieuweWaarde: "2026-09-01", verwachteHuidigeWaarde: null },
+    });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    const centraalDatum = uitkomst.resultaat.kolomResultaten.find((k) => k.record === "centraal" && k.veld === "datum")!;
+    const centraalStatus = uitkomst.resultaat.kolomResultaten.find((k) => k.record === "centraal" && k.veld === "status")!;
+    expect(centraalDatum.status).toBe("geschreven");
+    expect(centraalStatus.status).toBe("mislukt");
+    expect(uitkomst.resultaat.algeheleStatus).toBe("deels_geslaagd");
+  });
+});
+
+describe("werkTrainingBij — dubbele indiening (geen ongecontroleerde dubbele writes)", () => {
+  it("twee gelijktijdige, identieke verzoeken worden allebei als normale, onafhankelijke lees-vergelijk-schrijf-pogingen verwerkt (geen impliciete deduplicatie/lock nodig: de tweede vergelijkt gewoon tegen de dan al bijgewerkte live waarde)", async () => {
+    // Ronde 2 vervolg — expliciete opdrachtseis "dubbele submit geen
+    // ongecontroleerde dubbele writes". Dit project se stateloze
+    // lees-vergelijk-schrijf-architectuur (writeback.ts se eigen module-
+    // toelichting) maakt een aparte lock/dedup-laag overbodig: server-side
+    // is er sowieso geen enkel gedeeld, muteerbaar tussenstation — elke
+    // aanroep van werkTrainingBij is zijn eigen, volledig onafhankelijke
+    // live lees-vergelijk-schrijf-cyclus. De UI-kant voorkomt dubbele KLIKKEN
+    // apart (StatusPopover/DatumPopover zetten hun keuzeknoppen op
+    // disabled zodra bezig=true) — dit test de servergarantie die daaronder
+    // ligt: zelfs als er toch twee verzoeken na elkaar binnenkomen, ontstaat
+    // er nooit een ongecontroleerde dubbele schrijving of corrupte staat.
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    // Bewust mockResolvedValue (persistent, niet -Once) i.p.v.
+    // seedGeldigeTraining(): twee GELIJKTIJDIGE werkTrainingBij-aanroepen
+    // doorlopen elk hun eigen, volledige verzamelTrainerContext-cyclus (2x
+    // haalScholenPagina), dus in totaal 4 aanroepen — een one-shot-keten van
+    // 2 zou hier voor de tweede poging een undefined-response opleveren.
+    mockScholenPagina.mockImplementation(async (opties: { boardId: string }) =>
+      opties.boardId === UITVOERING_BOARD_ID
+        ? { cursor: null, items: [uitvoeringItem({ id: CENTRALE_TRAINING_ID, naam: "Training", schoolIds: [SCHOOL_ID] })] }
+        : { cursor: null, items: [masterDataItem({ id: SCHOOL_ID, naam: "Montessori Gorinchem", trainerLinkedIds: [Number(TRAINER.mondayUitvoerderItemId)] })] }
+    );
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([{ id: TRAINERBOARD_ITEM_ID, name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: CENTRALE_TRAINING_ID }])
+    );
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [{ id: "status", text: null, value: null }],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "color_mm5tz3wk", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    const verzoek = { status: { nieuweWaarde: "gedaan" as const, verwachteHuidigeRuweTekst: null } };
+    const [eersteUitkomst, tweedeUitkomst] = await Promise.all([
+      werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, verzoek),
+      werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, verzoek),
+    ]);
+
+    expect(eersteUitkomst.soort).toBe("resultaat");
+    expect(tweedeUitkomst.soort).toBe("resultaat");
+    if (eersteUitkomst.soort !== "resultaat" || tweedeUitkomst.soort !== "resultaat") return;
+    // Beide zien dezelfde (gemockte) live "niets veranderd"-waarde als
+    // baseline, dus beide slagen onafhankelijk — geen corrupte staat, geen
+    // exceptie, geen crash. Monday zelf zou bij een échte dubbele mutatie
+    // op hetzelfde item eenvoudigweg twee keer dezelfde waarde zetten
+    // (idempotent), nooit een fout resultaat.
+    expect(eersteUitkomst.resultaat.algeheleStatus).toBe("volledig_geslaagd");
+    expect(tweedeUitkomst.resultaat.algeheleStatus).toBe("volledig_geslaagd");
+    expect(mockWijzigKolomWaarde).toHaveBeenCalledTimes(4); // 2 records x 2 identieke verzoeken
   });
 });

@@ -1,5 +1,6 @@
 import { mondayQuery, haalScholenPagina, haalUpdatesVoorItem, type MondayColumnValue, type MondayUpdate } from "@/lib/sales/monday-client";
 import type { AuthTrainer } from "./auth";
+import { groepeerOpWeergaveStatus, type TrainingWeergaveStatus } from "./training-weergave";
 
 /**
  * "Vandaag" voor het dashboard — BEWUST een eigen, tijdzone-expliciete
@@ -566,7 +567,27 @@ export interface TrainerDashboardData {
   logboekOpenstaand: TrainingMetSchool[];
 }
 
-/** Architectuurrapport §16 Ronde 1 — dashboard, uitsluitend read-only afgeleide informatie. Trainingen zonder datum worden nergens getoond (expliciete opdrachtseis). */
+/**
+ * Architectuurrapport §16 Ronde 1, herbouwd in Ronde 2 vervolg (2026-08-19)
+ * op lib/trainers/training-weergave.ts se gedeelde bucket-logica —
+ * uitsluitend read-only afgeleide informatie, dashboard/schooldetail/Mijn
+ * scholen mogen geen van drieën meer hun eigen interpretatie van "wat
+ * betekent deze training nu" hebben.
+ *
+ * Gedragswijziging t.o.v. de eerste Ronde-2-pas: "Vandaag" en "Verslag nog
+ * invullen" waren voorheen twee ONAFHANKELIJKE filters — een training van
+ * vandaag met een nog niet ingevuld logboek kon dus in BEIDE secties
+ * tegelijk verschijnen. Met de nieuwe, centrale, wederzijds-exclusieve
+ * bucket-indeling (training-weergave.ts) wint "Verslag nog invullen" nu
+ * altijd van "Vandaag" voor zo'n training — de meer urgente sectie, geen
+ * verdubbelde/verwarrende weergave meer. De "datum <= vandaag +
+ * logboek niet ingevuld"-regel zelf (met Michel afgestemd, Ronde 2 eerste
+ * pas) blijft ONGEWIJZIGD — zie training-weergave.ts se toelichting.
+ *
+ * Trainingen zonder datum worden nog altijd nergens op dit dashboard getoond
+ * (expliciete opdrachtseis, ongewijzigd) — de "open"-bucket wordt hier
+ * bewust niet uitgelezen.
+ */
 export async function haalDashboardData(trainer: AuthTrainer): Promise<TrainerDashboardData> {
   const context = await verzamelTrainerContext(trainer);
   const vandaag = vandaagIsoAmsterdam();
@@ -579,30 +600,29 @@ export async function haalDashboardData(trainer: AuthTrainer): Promise<TrainerDa
     }
   }
 
-  const metDatumNietGeannuleerd = alleTrainingenMetSchool.filter((t) => t.datum !== null && t.status !== "geannuleerd");
-  const trainingenVandaag = metDatumNietGeannuleerd.filter((t) => t.datum === vandaag);
-  const komendeTrainingen = metDatumNietGeannuleerd.filter((t) => t.datum! > vandaag).sort((a, b) => a.datum!.localeCompare(b.datum!));
+  const groepen = groepeerOpWeergaveStatus(alleTrainingenMetSchool, vandaag);
+  const komendeTrainingen = [...groepen.komend].sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? ""));
 
-  // "Verslag nog invullen" — puur datum+boolean, bewust NIET afhankelijk van
-  // de onzekerdere statuslabel-afleiding (bepaalTrainingStatus). Ronde 2
-  // (2026-08-19), expliciet bevestigd door Michel: de datumgrens is "vandaag
-  // of in het verleden" (<=, niet <) — als een trainer na afloop vergeet de
-  // status van Gepland naar Gedaan te zetten, moet dit signaal juist blijven
-  // waarschuwen, dus de datum is de noodzakelijke voorwaarde, niet de status.
-  const logboekOpenstaand = alleTrainingenMetSchool.filter(
-    (t) => t.datum !== null && t.datum <= vandaag && !t.logboekIngevuld && t.status !== "geannuleerd"
-  );
-
-  return { trainingenVandaag, komendeTrainingen, aantalScholen: context.scholen.size, logboekOpenstaand };
+  return {
+    trainingenVandaag: groepen.vandaag,
+    komendeTrainingen,
+    aantalScholen: context.scholen.size,
+    logboekOpenstaand: groepen.verslag_nog_invullen,
+  };
 }
 
 export interface SchoolDetail extends TrainerSchoolBron {
-  trainingen: {
-    open: TrainingSamenvatting[];
-    gepland: TrainingSamenvatting[];
-    gedaan: TrainingSamenvatting[];
-    geannuleerd: TrainingSamenvatting[];
-  };
+  /**
+   * Ronde 2 vervolg (2026-08-19) — herbouwd op de centrale bucket-indeling
+   * (training-weergave.ts), vervangt de eerdere, uitsluitend op de ruwe
+   * status gebaseerde groepering ({open, gepland, gedaan, geannuleerd}).
+   * Schooldetail toont nu dezelfde secties/prioritering als het dashboard
+   * (Vandaag/Komend/Verslag nog invullen als aparte, herkenbare secties i.p.v.
+   * alles onder de vlakke "Gepland"-groep) — expliciete opdrachtseis "Vraagt
+   * één centrale productlogica ... Dashboard/Mijn scholen/Schooldetail elk
+   * hun eigen interpretatie" mag niet meer voorkomen.
+   */
+  trainingen: Record<TrainingWeergaveStatus, TrainingSamenvatting[]>;
   logboek: MondayUpdate[];
 }
 
@@ -620,15 +640,11 @@ export async function haalSchoolDetail(trainer: AuthTrainer, schoolId: string): 
 
   const trainingen = context.trainingenPerSchool.get(schoolId) ?? [];
   const logboek = await haalUpdatesVoorItem(schoolId, MAX_SCHOOL_UPDATES);
+  const vandaag = vandaagIsoAmsterdam();
 
   return {
     ...school,
-    trainingen: {
-      open: trainingen.filter((t) => t.status === "open"),
-      gepland: trainingen.filter((t) => t.status === "gepland").sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? "")),
-      gedaan: trainingen.filter((t) => t.status === "gedaan"),
-      geannuleerd: trainingen.filter((t) => t.status === "geannuleerd"),
-    },
+    trainingen: groepeerOpWeergaveStatus(trainingen, vandaag),
     logboek,
   };
 }

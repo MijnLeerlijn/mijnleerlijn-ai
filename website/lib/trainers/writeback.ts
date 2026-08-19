@@ -417,6 +417,36 @@ function bepaalOpnieuwProberen(kolomResultaten: TrainingKolomResultaat[]): Train
 }
 
 /**
+ * Ronde 2, vervolg (2026-08-19) — "datum kiezen zet automatisch status op
+ * Gepland" / "datum verwijderen zet automatisch status op Nieuw", expliciete
+ * productregel. Dit gebeurt UITSLUITEND hier, server-side — nooit
+ * afhankelijk van of de UI dit ook zelf netjes meestuurt (de UI mag dit
+ * gedrag aankondigen, maar de daadwerkelijke afdwinging staat hier, zodat de
+ * veilige schrijflaag nooit omzeild kan worden vanuit een andere/toekomstige
+ * client — "de UI moet bovenop de veilige writebacklaag werken, niet
+ * eromheen"). Grijpt NOOIT in als de trainer zelf al een expliciete status
+ * in hetzelfde verzoek meestuurt (diens intentie wint altijd), en NOOIT als
+ * de LIVE status al "geannuleerd" of "gedaan" is — dit is de bewust gekozen
+ * veilige regel voor datum-verwijderen (in plaats van blind een willekeurige
+ * nieuwe status aan te nemen): een datum wijzigen op een geannuleerde of
+ * afgeronde training mag die nooit stilzwijgend terugzetten naar
+ * "Gepland"/"Nieuw" — de trainer moet de status dan zelf expliciet wijzigen.
+ */
+function bepaalAutomatischeStatusBijDatumwijziging(
+  verzoek: TrainingWijzigingsVerzoek,
+  huidigeStatus: TrainingStatus,
+  huidigeRuweStatusTekst: string | null
+): TrainingWijzigingsVerzoek {
+  if (!verzoek.datum || verzoek.status) return verzoek;
+  if (huidigeStatus === "geannuleerd" || huidigeStatus === "gedaan") return verzoek;
+
+  const automatischeStatus: TrainingStatus = verzoek.datum.nieuweWaarde !== null ? "gepland" : "open";
+  if (automatischeStatus === huidigeStatus) return verzoek; // al correct, geen overbodige schrijving/logregel
+
+  return { ...verzoek, status: { nieuweWaarde: automatischeStatus, verwachteHuidigeRuweTekst: huidigeRuweStatusTekst } };
+}
+
+/**
  * Enige entreepunt voor een trainingsmutatie vanuit de portal. Her-
  * verifieert eigendom ALTIJD zelf server-side (haalTrainingVoorMutatie,
  * monday-links.ts) — trainingId is de enige door de client aangeleverde
@@ -428,7 +458,7 @@ export async function werkTrainingBij(
   payload: Payload,
   trainer: AuthTrainer,
   trainingId: string,
-  verzoek: TrainingWijzigingsVerzoek
+  ruwVerzoek: TrainingWijzigingsVerzoek
 ): Promise<TrainingMutatieUitkomst> {
   const gevonden = await haalTrainingVoorMutatie(trainer, trainingId);
   if (!gevonden) return { soort: "niet_gevonden" };
@@ -440,6 +470,8 @@ export async function werkTrainingBij(
       boodschap: "Deze training heeft geen eigen trainerboard-item en kan (nog) niet vanuit de portal bewerkt worden.",
     };
   }
+
+  const verzoek = bepaalAutomatischeStatusBijDatumwijziging(ruwVerzoek, training.status, training.ruweStatusTekst);
 
   const logContext = {
     trainerId: trainer.id,
