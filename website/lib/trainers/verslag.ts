@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Payload } from "payload";
+import { sql } from "@payloadcms/db-postgres";
 import { optionalEnv } from "@/config/env";
 import { generateStructuredOutput } from "@/services/ai-client";
 import { haalUpdatesVoorItem, maakUpdate, type MondayUpdate } from "@/lib/sales/monday-client";
@@ -232,10 +233,12 @@ export interface VerslagRecord {
   definitieveTekst?: string | null;
   aiGegenereerd?: boolean | null;
   status: "concept" | "gedeeltelijk" | "bevestigd" | "voltooid";
-  trainingUpdateStatus: "niet_verzonden" | "geschreven" | "mislukt" | "niet_geactiveerd";
+  trainingUpdateStatus: "niet_verzonden" | "bezig" | "geschreven" | "mislukt" | "niet_geactiveerd";
   trainingUpdateMondayId?: string | null;
-  schoolUpdateStatus: "niet_verzonden" | "geschreven" | "mislukt" | "niet_geactiveerd";
+  trainingUpdateClaimedAt?: string | null;
+  schoolUpdateStatus: "niet_verzonden" | "bezig" | "geschreven" | "mislukt" | "niet_geactiveerd";
   schoolUpdateMondayId?: string | null;
+  schoolUpdateClaimedAt?: string | null;
   afrondingResultaat?: unknown;
   bevestigdOp?: string | null;
 }
@@ -389,41 +392,161 @@ export function bouwVerslagUpdateTekst(opts: { bevestigdOpIso: string; trainingN
 
 const MAX_HERLEES_UPDATES = 30;
 
+// Concurrencyfix (2026-08-24, bovenop de oorspronkelijke Ronde 3-oplevering)
+// — leaseduur voor een "bezig"-claim (zie claimUpdateSlot hieronder). Lang
+// genoeg voor een normale Monday-roundtrip + Vercel cold start, kort genoeg
+// om een verweesde claim (proces gecrasht ná het claimen, vóór "geschreven"/
+// "mislukt") binnen een paar minuten vanzelf te laten herstellen — een
+// volgende poging (handmatige retry of dezelfde trainer die opnieuw klikt)
+// herclaimt dan gewoon. Eén gedeelde constante voor training- én
+// school-kant, geïnterpoleerd via make_interval() zodat er nooit twee
+// hardcoded literalen uit de pas kunnen lopen.
+const CLAIM_LEASE_SECONDEN = 120;
+
 interface VerslagUpdateSchrijfUitkomst {
-  status: "geschreven" | "mislukt" | "niet_geactiveerd";
+  status: "geschreven" | "mislukt" | "niet_geactiveerd" | "in_behandeling";
   mondayUpdateId: string | null;
   boodschap: string;
+}
+
+interface ClaimSlotUitkomst {
+  geclaimd: boolean;
+  actueleStatus: VerslagRecord["trainingUpdateStatus"];
+  actueleMondayId: string | null;
+}
+
+/**
+ * DE concurrencygarantie van deze ronde: een atomische, conditionele
+ * Postgres-UPDATE (`UPDATE ... WHERE ... RETURNING`) i.p.v. payload.update()
+ * (dat SELECT-dan-UPDATE doet, dus zelf NIET atomisch is — twee gelijktijdige
+ * aanroepen zouden allebei de pre-check kunnen doorstaan vóór een van beide
+ * schrijft). Onder Postgres' standaard READ COMMITTED serialiseren twee
+ * gelijktijdige UPDATE's op dezelfde rij automatisch via rijvergrendeling: de
+ * tweede aanroep wacht tot de eerste transactie committeert en herevalueert
+ * daarna zijn WHERE-conditie tegen de nu-gecommitte data — geen expliciete
+ * BEGIN/SELECT FOR UPDATE nodig. `payload.db.drizzle.execute(sql\`...\`)` is
+ * hier bewust de escape hatch naar rauwe SQL (Payload's Local API kent geen
+ * atomische conditional update) — zelfde, al bewezen patroon als
+ * payload/migrate-preflight.ts.
+ *
+ * Alleen claimbaar vanuit 'niet_verzonden'/'mislukt', OF vanuit 'bezig' met
+ * een verlopen lease (zie CLAIM_LEASE_SECONDEN) — dat laatste is de
+ * zelf-herstellende dekking voor een proces dat crashte ná het claimen.
+ * Twee volledig aparte SQL-takken (training/school) i.p.v. een dynamische
+ * kolomnaam: nooit stringinterpolatie van een identifier, alleen
+ * geparametriseerde waarden — `kant` komt hier bovendien nooit van een
+ * client, uitsluitend van de twee letterlijke aanroepen in bevestigVerslag.
+ *
+ * Bij verlies (0 rijen): herleest de rij via het normale, getypeerde
+ * payload.findByID (geen tweede rauwe SQL nodig) om te bepalen of dit
+ * "de andere aanvraag is al klaar" (idempotent succes) of "een andere
+ * aanvraag is nog bezig" betekent — zie schrijfVerslagUpdateIdempotent.
+ */
+async function claimUpdateSlot(payload: Payload, verslagId: number, kant: "training" | "school"): Promise<ClaimSlotUitkomst> {
+  const nu = new Date().toISOString();
+  const claimResultaat =
+    kant === "training"
+      ? await payload.db.drizzle.execute(sql`
+          UPDATE training_verslagen
+          SET training_update_status = 'bezig', training_update_claimed_at = ${nu}
+          WHERE id = ${verslagId}
+            AND (
+              training_update_status IN ('niet_verzonden', 'mislukt')
+              OR (training_update_status = 'bezig' AND training_update_claimed_at < now() - make_interval(secs => ${CLAIM_LEASE_SECONDEN}))
+            )
+          RETURNING id;
+        `)
+      : await payload.db.drizzle.execute(sql`
+          UPDATE training_verslagen
+          SET school_update_status = 'bezig', school_update_claimed_at = ${nu}
+          WHERE id = ${verslagId}
+            AND (
+              school_update_status IN ('niet_verzonden', 'mislukt')
+              OR (school_update_status = 'bezig' AND school_update_claimed_at < now() - make_interval(secs => ${CLAIM_LEASE_SECONDEN}))
+            )
+          RETURNING id;
+        `);
+
+  if (claimResultaat.rows.length > 0) {
+    return { geclaimd: true, actueleStatus: "bezig", actueleMondayId: null };
+  }
+
+  const actueel = (await payload.findByID({ collection: "training-verslagen", id: verslagId, overrideAccess: true, depth: 0 })) as VerslagRecord;
+  return {
+    geclaimd: false,
+    actueleStatus: kant === "training" ? actueel.trainingUpdateStatus : actueel.schoolUpdateStatus,
+    actueleMondayId: (kant === "training" ? actueel.trainingUpdateMondayId : actueel.schoolUpdateMondayId) ?? null,
+  };
+}
+
+/**
+ * ENIGE manier waarop bevestigVerslag hieronder nog data op deze rij
+ * schrijft ná de claim — bewust NOOIT payload.update(). Empirisch bevestigd
+ * tijdens het bouwen van deze concurrencyfix (real-Postgres-concurrency
+ * tests, lib/trainers/verslag.concurrency.real-postgres.test.ts): drie of
+ * meer overlappende payload.update()-aanroepen op DEZELFDE rij, kort na
+ * elkaar vanuit twee gelijktijdige bevestigVerslag()-aanroepen, konden een
+ * net geschreven veld (bv. trainingUpdateStatus="geschreven") terugzetten
+ * naar een oudere waarde — een verloren update, zichtbaar geworden als een
+ * DUPLICATE create_update-aanroep (de tweede aanvraag zag het veld weer als
+ * "niet_verzonden" en herclaimde het). Nooit gereproduceerd door de
+ * fake-mock-testsuite, die zelf geen rijmerge-gedrag heeft — precies het
+ * soort databasespecifieke race waarvoor de opdracht om "daadwerkelijk
+ * parallelle aanroepen tegen een échte database" vroeg.
+ *
+ * `kolommen` gebruikt uitsluitend sql.identifier() voor kolomnamen (nooit
+ * string-concatenatie) — kolomnamen komen hier altijd uit een vaste,
+ * hardcoded aanroep in dit bestand, nooit uit clientinvoer, dus geen
+ * SQL-injectierisico ondanks de dynamische opbouw. jsonb-waarden (zoals
+ * afronding_resultaat) moeten door de aanroeper al JSON.stringify'd zijn —
+ * deze laag doet geen kolomtype-detectie.
+ */
+async function schrijfVerslagVelden(payload: Payload, verslagId: number, kolommen: Record<string, string | number | boolean | null>): Promise<VerslagRecord> {
+  const toewijzingen = Object.entries(kolommen).map(([kolom, waarde]) => sql`${sql.identifier(kolom)} = ${waarde}`);
+  await payload.db.drizzle.execute(sql`UPDATE training_verslagen SET ${sql.join(toewijzingen, sql`, `)} WHERE id = ${verslagId};`);
+  return (await payload.findByID({ collection: "training-verslagen", id: verslagId, overrideAccess: true, depth: 0 })) as VerslagRecord;
 }
 
 /**
  * Idempotente Update-write — het kernpatroon van deze ronde, want
  * create_update (lib/sales/monday-client.ts) DUPLICEERT bij elke aanroep,
  * anders dan change_simple_column_value (dat een waarde overschrijft en dus
- * vanzelf idempotent is). Twee onafhankelijke lagen bescherming, in volgorde:
+ * vanzelf idempotent is). Drie lagen bescherming, in volgorde:
  *
  * 1. Lokale status "geschreven" -> direct terug, NOOIT opnieuw verzenden.
  *    Dit is de PRIMAIRE/snelle route bij een normale retry.
- * 2. Live herlezen (haalUpdatesVoorItem) en zoeken naar een Update met
+ * 2. Atomische claim (claimUpdateSlot) — de ECHTE concurrencygarantie: twee
+ *    écht gelijktijdige aanroepen voor dezelfde kant kunnen NOOIT allebei
+ *    voorbij dit punt komen, Postgres' rijvergrendeling garandeert dat.
+ *    Verliest deze aanroep de claim, dan wordt "in_behandeling"
+ *    teruggegeven (een andere aanvraag is al bezig) of, als die andere
+ *    aanvraag inmiddels klaar is, hetzelfde idempotente succes als laag 1.
+ * 3. Live herlezen (haalUpdatesVoorItem) en zoeken naar een Update met
  *    EXACT dezelfde text_body — geen los ingebed merkteken, de volledige
- *    samengestelde tekst zelf is de sleutel. Dit vangt twee scenario's die
- *    laag 1 alleen niet dekt: (a) een race tussen twee bijna-gelijktijdige
- *    bevestigingspogingen, (b) een eerdere aanroep die de Update wél
- *    succesvol schreef maar crashte vóórdat de lokale status werd
- *    bijgewerkt. Alleen als geen van beide een match oplevert, volgt de
- *    daadwerkelijke create_update-aanroep.
+ *    samengestelde tekst zelf is de sleutel. Dit vangt het scenario dat de
+ *    claim zelf niet dekt: een EERDERE aanroep die de Update wél succesvol
+ *    schreef maar crashte vóórdat de lokale status werd bijgewerkt (de
+ *    lease verliep dus als "verweesd", en deze aanroep herclaimt hem
+ *    terecht) — alleen als er geen match is, volgt de daadwerkelijke
+ *    create_update-aanroep, met Monday's eigen Idempotency-Key-header als
+ *    TWEEDE, onafhankelijke laag bovenop de claim (lib/sales/monday-client.ts
+ *    se maakUpdate).
  *
  * Mislukt de herlees-controle zelf (Monday tijdelijk onbereikbaar): "mislukt"
  * teruggeven, NOOIT doorschrijven zonder de controle — een gok hier zou
  * precies het duplicatierisico kunnen veroorzaken dat deze functie moet
- * voorkomen. Geen aparte idempotency-key nodig (spec §13, "geen data
- * opslaan omdat het kan"): de EXACTE, deterministisch samengestelde
- * updateTekst (zie bouwVerslagUpdateTekst — bevestigdOp ligt al vóór de
- * eerste schrijfpoging vast, zie bevestigVerslag) is zelf al de sleutel.
+ * voorkomen. De aanroeper (bevestigVerslag) zet de claim in dat geval terug
+ * naar "mislukt" via schrijfVerslagVelden (nooit payload.update(), zie die
+ * functie se doc-comment) — veilig, want alleen de claimhouder zelf raakt
+ * deze velden ooit aan zolang de claim actief is.
  */
 async function schrijfVerslagUpdateIdempotent(
+  payload: Payload,
+  verslagId: number,
+  kant: "training" | "school",
   itemId: string,
   updateTekst: string,
-  reedsGeschreven: { status: "niet_verzonden" | "geschreven" | "mislukt" | "niet_geactiveerd"; mondayUpdateId: string | null | undefined }
+  reedsGeschreven: { status: VerslagRecord["trainingUpdateStatus"]; mondayUpdateId: string | null | undefined }
 ): Promise<VerslagUpdateSchrijfUitkomst> {
   if (reedsGeschreven.status === "geschreven" && reedsGeschreven.mondayUpdateId) {
     return { status: "geschreven", mondayUpdateId: reedsGeschreven.mondayUpdateId, boodschap: "Al eerder geschreven — niet opnieuw verzonden." };
@@ -434,6 +557,18 @@ async function schrijfVerslagUpdateIdempotent(
       status: "niet_geactiveerd",
       mondayUpdateId: null,
       boodschap: "Verslag-writeback naar Monday staat nog niet aan voor productiegebruik (TRAINER_MONDAY_VERSLAG_ENABLED).",
+    };
+  }
+
+  const claim = await claimUpdateSlot(payload, verslagId, kant);
+  if (!claim.geclaimd) {
+    if (claim.actueleStatus === "geschreven" && claim.actueleMondayId) {
+      return { status: "geschreven", mondayUpdateId: claim.actueleMondayId, boodschap: "Al eerder geschreven door een andere aanvraag — niet opnieuw verzonden." };
+    }
+    return {
+      status: "in_behandeling",
+      mondayUpdateId: null,
+      boodschap: "Dit onderdeel wordt op dit moment al verwerkt door een andere aanvraag — probeer het over enkele seconden opnieuw.",
     };
   }
 
@@ -452,7 +587,7 @@ async function schrijfVerslagUpdateIdempotent(
   }
 
   try {
-    const resultaat = await maakUpdate(itemId, updateTekst);
+    const resultaat = await maakUpdate(itemId, updateTekst, `training-verslag:${verslagId}:${kant}`);
     return { status: "geschreven", mondayUpdateId: resultaat.id, boodschap: "Geschreven." };
   } catch (error) {
     return { status: "mislukt", mondayUpdateId: null, boodschap: error instanceof Error ? error.message : String(error) };
@@ -478,20 +613,35 @@ export type BevestigVerslagUitkomst =
  * de al-vastgelegde tekst hergebruikt — spec §21: de server mag een
  * reeds-bevestigd verslag nooit stilzwijgend met andere tekst overschrijven.
  *
+ * Concurrencyfix (2026-08-24, bovenop de oorspronkelijke Ronde 3-oplevering)
+ * — "idempotent door constructie" hierboven beschreef alleen het
+ * SEQUENTIËLE geval (retry ná afronding). Bij ÉCHT gelijktijdige aanvragen
+ * (dubbelklik, twee tabs, retry ná timeout, serverless-concurrency) is de
+ * garantie nu tweeledig: stap 3 hieronder EN elke schrijfVerslagUpdateIdempotent
+ * -aanroep in stap 4/5 gaan via een atomische Postgres-conditionele UPDATE
+ * (claimUpdateSlot) i.p.v. payload.update() — zie de doc-comments daar voor
+ * de precieze garantie. Cross-trainer-isolatie is een bijproduct van
+ * bestaande architectuur, geen apart mechanisme: haalVerslagVoorTraining
+ * hierboven scoped altijd al op `trainer.id`, dus trainer B kan de rij van
+ * trainer A hier structureel nooit eens BEREIKEN, laat staan claimen. Geen
+ * van beide claims is een globale/tabelbrede lock — uitsluitend
+ * `WHERE id = <verslagId>`, dus andere trainers' rijen zijn nooit geraakt.
+ *
  * Volgorde (spec §10, bewust in deze volgorde omdat het verslag zelf
  * belangrijker is dan de statusvlaggen):
  *  1. actuele ownership/context herverifiëren (ALTIJD, ook bij hervatting)
  *  2. niet-geannuleerd controleren
- *  3. definitieve tekst + bevestigingstijdstip lokaal FIXEREN, vóór enige
+ *  3. definitieve tekst + bevestigingstijdstip ATOMISCH FIXEREN, vóór enige
  *     Monday-schrijving — dit legt ook de headerdatum
  *     (bouwVerslagUpdateTekst) vast, zodat een latere hervatting exact
  *     dezelfde Update-tekst reconstrueert (nodig voor de exacte-tekst-match
  *     in schrijfVerslagUpdateIdempotent)
- *  4. Update schrijven naar de centrale training
- *  5. dezelfde Update schrijven naar de Master Data-school — ALTIJD
- *     geprobeerd, ongeacht de uitkomst van stap 4 (spec §11 beschrijft
- *     beide volgordes van deelmislukking als mogelijk, dus school mag nooit
- *     overgeslagen worden enkel omdat training net mislukte)
+ *  4. Update schrijven naar de centrale training (atomisch geclaimd)
+ *  5. dezelfde Update schrijven naar de Master Data-school (atomisch
+ *     geclaimd, volledig onafhankelijk van stap 4) — ALTIJD geprobeerd,
+ *     ongeacht de uitkomst van stap 4 (spec §11 beschrijft beide volgordes
+ *     van deelmislukking als mogelijk, dus school mag nooit overgeslagen
+ *     worden enkel omdat training net mislukte)
  *  6. pas als BEIDE (4) en (5) "geschreven" zijn: status/logboekvlaggen
  *     wijzigen via werkTrainingBij — nooit eerder (spec §9/§10 punt 5)
  */
@@ -512,17 +662,25 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
     return { soort: "geannuleerd", boodschap: "Deze training is inmiddels geannuleerd — er wordt geen verslag geschreven." };
   }
 
-  // Stap 3 — uitsluitend bij de allereerste bevestiging.
+  // Stap 3 — uitsluitend bij de allereerste bevestiging. Atomische
+  // conditionele UPDATE (concept -> gedeeltelijk), bewust GEEN
+  // payload.update(): bij twee écht gelijktijdige eerste bevestigingen mag
+  // hooguit ÉÉN tekst canoniek worden. Ongeacht winst of verlies wordt de
+  // rij hierna herlezen — bij verlies bevat die de tekst van de WINNAAR,
+  // nooit onze eigen (mogelijk andere) tekst, zodat de training- en
+  // school-Update hierna gegarandeerd exact dezelfde tekst krijgen, ongeacht
+  // welke van de twee gelijktijdige aanvragen wint. Zelfde atomische-UPDATE-
+  // garantie als claimUpdateSlot hierboven.
   let werkrij = rij;
   if (rij.status === "concept") {
     const tekst = definitieveTekst ? begrensLengte(definitieveTekst, MAX_DEFINITIEVETEKST_LENGTE).trim() : "";
     if (!tekst) return { soort: "niet_bewerkbaar", boodschap: "Geen tekst opgegeven om te bevestigen." };
-    werkrij = await payload.update({
-      collection: "training-verslagen",
-      id: rij.id,
-      overrideAccess: true,
-      data: { definitieveTekst: tekst, bevestigdOp: new Date().toISOString(), status: "gedeeltelijk" },
-    });
+    await payload.db.drizzle.execute(sql`
+      UPDATE training_verslagen
+      SET definitieve_tekst = ${tekst}, bevestigd_op = ${new Date().toISOString()}, status = 'gedeeltelijk'
+      WHERE id = ${rij.id} AND status = 'concept';
+    `);
+    werkrij = (await payload.findByID({ collection: "training-verslagen", id: rij.id, overrideAccess: true, depth: 0 })) as VerslagRecord;
   }
 
   if (!werkrij.definitieveTekst || !werkrij.bevestigdOp) {
@@ -537,43 +695,70 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
     verslagTekst: werkrij.definitieveTekst,
   });
 
-  // Stap 4.
+  // Stap 4. trainingInBehandeling blijft bewust LOKAAL (nooit naar de DB
+  // geschreven) — "in_behandeling" is geen status van het verslag zelf, maar
+  // het transiënte resultaat van DEZE aanroep. Bij verlies van de claim
+  // raakt dit blok trainingUpdateStatus/trainingUpdateMondayId in de DB
+  // dus NIET aan (spec-eis: status/checkbox-retry mag nooit de Updates
+  // opnieuw schrijven, en een verloren claim mag de velden van de winnaar
+  // nooit overschrijven).
   let trainingUpdateStatus = werkrij.trainingUpdateStatus;
   let trainingUpdateMondayId = werkrij.trainingUpdateMondayId ?? null;
+  let trainingInBehandeling = false;
   if (trainingUpdateStatus !== "geschreven") {
-    const uitkomst = await schrijfVerslagUpdateIdempotent(werkrij.mondayTrainingId, updateTekst, { status: trainingUpdateStatus, mondayUpdateId: trainingUpdateMondayId });
-    trainingUpdateStatus = uitkomst.status;
-    trainingUpdateMondayId = uitkomst.mondayUpdateId;
-    werkrij = await payload.update({
-      collection: "training-verslagen",
-      id: rij.id,
-      overrideAccess: true,
-      data: { trainingUpdateStatus, trainingUpdateMondayId: trainingUpdateMondayId ?? undefined },
+    const uitkomst = await schrijfVerslagUpdateIdempotent(payload, rij.id, "training", werkrij.mondayTrainingId, updateTekst, {
+      status: trainingUpdateStatus,
+      mondayUpdateId: trainingUpdateMondayId,
     });
+    if (uitkomst.status === "in_behandeling") {
+      trainingInBehandeling = true;
+    } else {
+      trainingUpdateStatus = uitkomst.status;
+      trainingUpdateMondayId = uitkomst.mondayUpdateId;
+      werkrij = await schrijfVerslagVelden(payload, rij.id, { training_update_status: trainingUpdateStatus, training_update_monday_id: trainingUpdateMondayId });
+    }
   }
 
-  // Stap 5.
+  // Stap 5. Zelfde in_behandeling-behandeling als stap 4, volledig
+  // onafhankelijk — de school-claim en de training-claim delen geen state,
+  // precies zoals de opdracht vereist ("training-update en school-update
+  // moeten onafhankelijk idempotent blijven").
   let schoolUpdateStatus = werkrij.schoolUpdateStatus;
   let schoolUpdateMondayId = werkrij.schoolUpdateMondayId ?? null;
+  let schoolInBehandeling = false;
   if (schoolUpdateStatus !== "geschreven") {
-    const uitkomst = await schrijfVerslagUpdateIdempotent(werkrij.mondaySchoolId, updateTekst, { status: schoolUpdateStatus, mondayUpdateId: schoolUpdateMondayId });
-    schoolUpdateStatus = uitkomst.status;
-    schoolUpdateMondayId = uitkomst.mondayUpdateId;
-    werkrij = await payload.update({
-      collection: "training-verslagen",
-      id: rij.id,
-      overrideAccess: true,
-      data: { schoolUpdateStatus, schoolUpdateMondayId: schoolUpdateMondayId ?? undefined },
+    const uitkomst = await schrijfVerslagUpdateIdempotent(payload, rij.id, "school", werkrij.mondaySchoolId, updateTekst, {
+      status: schoolUpdateStatus,
+      mondayUpdateId: schoolUpdateMondayId,
     });
+    if (uitkomst.status === "in_behandeling") {
+      schoolInBehandeling = true;
+    } else {
+      schoolUpdateStatus = uitkomst.status;
+      schoolUpdateMondayId = uitkomst.mondayUpdateId;
+      werkrij = await schrijfVerslagVelden(payload, rij.id, { school_update_status: schoolUpdateStatus, school_update_monday_id: schoolUpdateMondayId });
+    }
   }
 
   const beideGeschreven = trainingUpdateStatus === "geschreven" && schoolUpdateStatus === "geschreven";
   if (!beideGeschreven) {
-    werkrij = await payload.update({ collection: "training-verslagen", id: rij.id, overrideAccess: true, data: { status: "gedeeltelijk" } });
-    return { soort: "resultaat", verslag: werkrij, boodschap: "Verslag gedeeltelijk opgeslagen — niet alle onderdelen zijn nog geschreven." };
+    // De grove "gedeeltelijk"-statusvlag hieronder mag wél redundant/
+    // gelijktijdig door beide kanten van een race geschreven worden: het is
+    // een constante waarde (geen lees-wijzig-schrijf op bestaande data), dus
+    // zonder duplicatie- of divergentierisico. Toch via schrijfVerslagVelden
+    // (nooit payload.update()) — empirisch bevestigd dat payload.update() op
+    // DEZE rij een gelijktijdige, andere payload.update()-schrijving (zoals
+    // stap 4/5 hierboven) kan clobberen, zie de doc-comment bij
+    // schrijfVerslagVelden.
+    werkrij = await schrijfVerslagVelden(payload, rij.id, { status: "gedeeltelijk" });
+    const boodschap =
+      trainingInBehandeling || schoolInBehandeling
+        ? "Dit verslag wordt op dit moment al verwerkt door een andere aanvraag (bijvoorbeeld een tweede klik of tweede tabblad) — probeer het over enkele seconden opnieuw."
+        : "Verslag gedeeltelijk opgeslagen — niet alle onderdelen zijn nog geschreven.";
+    return { soort: "resultaat", verslag: werkrij, boodschap };
   }
 
-  werkrij = await payload.update({ collection: "training-verslagen", id: rij.id, overrideAccess: true, data: { status: "bevestigd" } });
+  werkrij = await schrijfVerslagVelden(payload, rij.id, { status: "bevestigd" });
 
   // Stap 6. Smalle, geaccepteerde TOCTOU-marge tussen stap 1/2 en hier (geen
   // Monday-transactie beschikbaar, zelfde klasse race als de rest van dit
@@ -589,11 +774,9 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
   }
 
   const afrondingVolledigGeslaagd = afronding.resultaat.algeheleStatus === "volledig_geslaagd" || afronding.resultaat.algeheleStatus === "niet_geactiveerd";
-  werkrij = await payload.update({
-    collection: "training-verslagen",
-    id: rij.id,
-    overrideAccess: true,
-    data: { afrondingResultaat: afronding.resultaat as unknown as Record<string, unknown>, status: afrondingVolledigGeslaagd ? "voltooid" : "bevestigd" },
+  werkrij = await schrijfVerslagVelden(payload, rij.id, {
+    afronding_resultaat: JSON.stringify(afronding.resultaat),
+    status: afrondingVolledigGeslaagd ? "voltooid" : "bevestigd",
   });
 
   return { soort: "resultaat", verslag: werkrij, afronding: afronding.resultaat };

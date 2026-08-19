@@ -97,10 +97,18 @@ export const TrainingVerslagen: CollectionConfig = {
       label: "Training-Update — status",
       options: [
         { label: "Niet verzonden", value: "niet_verzonden" },
+        { label: "Bezig (geclaimd)", value: "bezig" },
         { label: "Geschreven", value: "geschreven" },
         { label: "Mislukt", value: "mislukt" },
         { label: "Nog niet actief", value: "niet_geactiveerd" },
       ],
+      admin: { description: "'Bezig' is een kortstondige claim (zie trainingUpdateClaimedAt) — nooit een eindstatus. Alleen server-side via een atomische conditional UPDATE gezet, nooit hier handmatig." },
+    },
+    {
+      name: "trainingUpdateClaimedAt",
+      type: "date",
+      label: "Training-Update — geclaimd op",
+      admin: { description: "Alleen relevant zolang trainingUpdateStatus='bezig'. Een claim ouder dan de leasetermijn (lib/trainers/verslag.ts) wordt door een volgende poging als verweesd beschouwd en overschreven." },
     },
     {
       name: "trainingUpdateMondayId",
@@ -116,10 +124,18 @@ export const TrainingVerslagen: CollectionConfig = {
       label: "School-Update — status",
       options: [
         { label: "Niet verzonden", value: "niet_verzonden" },
+        { label: "Bezig (geclaimd)", value: "bezig" },
         { label: "Geschreven", value: "geschreven" },
         { label: "Mislukt", value: "mislukt" },
         { label: "Nog niet actief", value: "niet_geactiveerd" },
       ],
+      admin: { description: "'Bezig' is een kortstondige claim (zie schoolUpdateClaimedAt) — nooit een eindstatus. Alleen server-side via een atomische conditional UPDATE gezet, nooit hier handmatig." },
+    },
+    {
+      name: "schoolUpdateClaimedAt",
+      type: "date",
+      label: "School-Update — geclaimd op",
+      admin: { description: "Alleen relevant zolang schoolUpdateStatus='bezig'. Een claim ouder dan de leasetermijn (lib/trainers/verslag.ts) wordt door een volgende poging als verweesd beschouwd en overschreven." },
     },
     {
       name: "schoolUpdateMondayId",

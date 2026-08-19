@@ -12,7 +12,12 @@ const MAX_TRAINERINVOER = 4000;
 const MAX_DEFINITIEVETEKST = 8000;
 const AUTOSAVE_DEBOUNCE_MS = 1200;
 
-type UpdateStatus = "niet_verzonden" | "geschreven" | "mislukt" | "niet_geactiveerd";
+// "bezig" (concurrencyfix, 2026-08-24): een kortstondige serverclaim tijdens
+// het schrijven van de Monday Update — kan hier in principe zichtbaar
+// worden als deze pagina ververst terwijl een andere aanvraag (tweede tab,
+// dubbelklik) net bezig is. Zelfde amber "onderweg"-kleur als de fallback
+// hieronder, nooit rood/mislukt.
+type UpdateStatus = "niet_verzonden" | "bezig" | "geschreven" | "mislukt" | "niet_geactiveerd";
 type VerslagStatus = "concept" | "gedeeltelijk" | "bevestigd" | "voltooid";
 
 export interface VerslagInitieel {
@@ -35,6 +40,7 @@ const DENKHULP = [
 
 const UPDATE_LABEL: Record<UpdateStatus, string> = {
   niet_verzonden: "Nog niet verzonden",
+  bezig: "Wordt verwerkt…",
   geschreven: "Opgeslagen",
   mislukt: "Mislukt",
   niet_geactiveerd: "Nog niet actief",

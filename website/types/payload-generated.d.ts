@@ -494,12 +494,26 @@ export interface TrainingVerslagen {
   definitieveTekst?: string | null;
   aiGegenereerd?: boolean | null;
   status: 'concept' | 'gedeeltelijk' | 'bevestigd' | 'voltooid';
-  trainingUpdateStatus: 'niet_verzonden' | 'geschreven' | 'mislukt' | 'niet_geactiveerd';
+  /**
+   * 'Bezig' is een kortstondige claim (zie trainingUpdateClaimedAt) — nooit een eindstatus. Alleen server-side via een atomische conditional UPDATE gezet, nooit hier handmatig.
+   */
+  trainingUpdateStatus: 'niet_verzonden' | 'bezig' | 'geschreven' | 'mislukt' | 'niet_geactiveerd';
+  /**
+   * Alleen relevant zolang trainingUpdateStatus='bezig'. Een claim ouder dan de leasetermijn (lib/trainers/verslag.ts) wordt door een volgende poging als verweesd beschouwd en overschreven.
+   */
+  trainingUpdateClaimedAt?: string | null;
   /**
    * Zodra gevuld: NOOIT opnieuw schrijven — dit veld IS de idempotentiegarantie voor deze kant.
    */
   trainingUpdateMondayId?: string | null;
-  schoolUpdateStatus: 'niet_verzonden' | 'geschreven' | 'mislukt' | 'niet_geactiveerd';
+  /**
+   * 'Bezig' is een kortstondige claim (zie schoolUpdateClaimedAt) — nooit een eindstatus. Alleen server-side via een atomische conditional UPDATE gezet, nooit hier handmatig.
+   */
+  schoolUpdateStatus: 'niet_verzonden' | 'bezig' | 'geschreven' | 'mislukt' | 'niet_geactiveerd';
+  /**
+   * Alleen relevant zolang schoolUpdateStatus='bezig'. Een claim ouder dan de leasetermijn (lib/trainers/verslag.ts) wordt door een volgende poging als verweesd beschouwd en overschreven.
+   */
+  schoolUpdateClaimedAt?: string | null;
   /**
    * Zodra gevuld: NOOIT opnieuw schrijven — dit veld IS de idempotentiegarantie voor deze kant.
    */
@@ -2359,8 +2373,10 @@ export interface TrainingVerslagenSelect<T extends boolean = true> {
   aiGegenereerd?: T;
   status?: T;
   trainingUpdateStatus?: T;
+  trainingUpdateClaimedAt?: T;
   trainingUpdateMondayId?: T;
   schoolUpdateStatus?: T;
+  schoolUpdateClaimedAt?: T;
   schoolUpdateMondayId?: T;
   afrondingResultaat?: T;
   bevestigdOp?: T;

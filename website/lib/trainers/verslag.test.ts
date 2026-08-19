@@ -473,7 +473,7 @@ describe("bevestigVerslag", () => {
     mockMaakUpdate.mockReset().mockResolvedValue({ id: "update-training-1" });
     const tweede = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, "Andere tekst die genegeerd hoort te worden");
     expect(mockMaakUpdate).toHaveBeenCalledTimes(1);
-    expect(mockMaakUpdate).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, expect.any(String));
+    expect(mockMaakUpdate).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, expect.any(String), expect.any(String));
     if (tweede.soort !== "resultaat") return;
     expect(tweede.verslag.status).toBe("voltooid");
     // De uiteindelijk geschreven tekst is nog altijd de OORSPRONKELIJKE, nooit de tweede meegestuurde (spec §21).
@@ -636,7 +636,7 @@ describe("bevestigVerslag", () => {
     expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
   });
 
-  it("CONCURRENTIE (dubbele browser-tabs, spec §24): twee gelijktijdige eerste-bevestigingspogingen kunnen — geaccepteerde, gedocumenteerde smalle race, geen databasetransactie beschikbaar — allebei de herlees-precheck nog vóór elkaars schrijving voltooien; dit bewijst het GEDRAG (geen crash, geen corrupte staat), documenteert het niet als een garantie tegen elke race", async () => {
+  it("CONCURRENTIE (dubbele browser-tabs, spec §24) — mock-niveau regressiecheck: de atomische claim (fake-payload.ts se db.drizzle.execute-nabootsing) laat twee gelijktijdige eerste-bevestigingspogingen NOOIT allebei een Update schrijven. Dit is een snelle regressiecheck op de orchestratielogica zelf, GEEN bewijs tegen een echte databaseraceconditie — dat bewijs staat in lib/trainers/verslag.concurrency.real-postgres.test.ts (echte parallelle Postgres-verbindingen, echte rijvergrendeling)", async () => {
     vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
     const { payload } = maakFakePayload({});
@@ -655,6 +655,8 @@ describe("bevestigVerslag", () => {
     const finaleRij = await haalVerslagVoorTraining(payload, TRAINER, CENTRALE_TRAINING_ID);
     expect(finaleRij?.trainingUpdateStatus).toBe("geschreven");
     expect(finaleRij?.schoolUpdateStatus).toBe("geschreven");
+    // DE kern van de fix: precies twee create_update-aanroepen — één training, één school — nooit vier.
+    expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
   });
 
   it("AI VERZINT NIETS: de systeemprompt instrueert expliciet om nooit een keuze te concluderen die de trainer vandaag niet zelf benoemt", async () => {

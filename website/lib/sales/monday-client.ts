@@ -46,16 +46,31 @@ interface MondayGraphQlResponse<T> {
 // Helpdesk- en persoonlijke Gmail (zelfde gedeelde workspace-token, dus geen
 // reden om te dupliceren). Blijft verder ongewijzigd: geen enkele bestaande
 // aanroeper hierboven raakt hierdoor iets aan.
-export async function mondayQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+export async function mondayQuery<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  opties?: { idempotencyKey?: string }
+): Promise<T> {
   const token = requireEnv("MONDAY_API_TOKEN");
   const apiVersion = optionalEnv("MONDAY_API_VERSION") ?? DEFAULT_API_VERSION;
 
+  const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: token, "API-Version": apiVersion };
+  if (opties?.idempotencyKey) {
+    headers["Idempotency-Key"] = opties.idempotencyKey;
+  }
+
   const response = await fetch(MONDAY_API_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: token, "API-Version": apiVersion },
+    headers,
     body: JSON.stringify({ query, variables }),
   });
 
+  // Bij gelijke Idempotency-Key kan Monday hier ook 409 Conflict teruggeven
+  // (tweede aanroep terwijl de eerste nog loopt) — valt bewust in dezelfde
+  // generieke foutafhandeling hieronder. Dat leidt bij de aanroeper tot
+  // "mislukt", nooit tot een dubbele write: een volgende poging herclaimt
+  // pas ná de lease (lib/trainers/verslag.ts) en herleest dan eerst bestaande
+  // Updates op exacte tekst vóórdat er opnieuw geschreven wordt.
   if (!response.ok) {
     throw new Error(`Monday API-aanroep mislukt (HTTP ${response.status}).`);
   }
@@ -345,8 +360,19 @@ export async function wijzigKolomWaarde(itemId: string, boardId: string, columnI
  * aanroepvorm als wijzigKolomWaarde — `tekst` gaat uitsluitend via het
  * `variables`-object, `JSON.stringify` in mondayQuery() doet de escaping,
  * ook voor lange meerregelige tekst.
+ *
+ * `idempotencyKey` (concurrencyfix, zie lib/trainers/verslag.ts) — optioneel,
+ * gaat als `Idempotency-Key`-header mee (Monday's generieke, per-mutatie
+ * ondersteunde idempotentiemechanisme: eerste aanroep met een key wordt
+ * 30 minuten gecachet, een retry met DEZELFDE key levert het gecachete
+ * resultaat i.p.v. een nieuwe Update). Dit is een TWEEDE, onafhankelijke laag
+ * bovenop — nooit in plaats van — de atomische Postgres-claim: de claim is
+ * hier al de reden dat twee aanroepen met dezelfde key nooit gelijktijdig
+ * plaatsvinden, dit beschermt aanvullend tegen een bug in die claimlogica
+ * zelf. De aanroeper is verantwoordelijk voor een key die deterministisch en
+ * STABIEL is per logische write (nooit opnieuw gegenereerd bij een retry).
  */
-export async function maakUpdate(itemId: string, tekst: string): Promise<{ id: string }> {
+export async function maakUpdate(itemId: string, tekst: string, idempotencyKey?: string): Promise<{ id: string }> {
   const mutation = `
     mutation MaakUpdate($itemId: ID!, $tekst: String!) {
       create_update(item_id: $itemId, body: $tekst) {
@@ -354,6 +380,6 @@ export async function maakUpdate(itemId: string, tekst: string): Promise<{ id: s
       }
     }
   `;
-  const data = await mondayQuery<{ create_update: { id: string } }>(mutation, { itemId, tekst });
+  const data = await mondayQuery<{ create_update: { id: string } }>(mutation, { itemId, tekst }, { idempotencyKey });
   return data.create_update;
 }
