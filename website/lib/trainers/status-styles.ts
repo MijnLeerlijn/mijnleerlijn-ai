@@ -41,6 +41,26 @@ export const TRAINING_STATUS_RAND: Record<TrainingStatus, string> = {
 };
 
 /**
+ * Schooldetail-UX-ronde (2026-08-25) — compacte, VLAKGEVULDE badge voor de
+ * trainingsrij/statustrigger (opdrachtseis: "in de lijst zijn de statussen
+ * nu erg bleek, terwijl de status-popover juist heel duidelijk is... trek
+ * de visuele taal van de popover door naar de lijst"). Zelfde 4
+ * kleurfamilies/-intensiteit als TRAINING_STATUS_SOLID (de popoverkeuzes),
+ * maar met de compacte rounded-full-vorm en kleinere padding van de oude
+ * TRAINING_STATUS_KLEUR-badge i.p.v. de grote keuzeknoppen — "compacter dan
+ * de popoverknop, dezelfde duidelijke kleuridentiteit" (opdrachtseis
+ * letterlijk). Tekst blijft altijd meegerenderd door de aanroeper (nooit
+ * uitsluitend kleur als betekenisdrager, spec-eis elders al bewezen in
+ * training-rij.test.tsx).
+ */
+export const TRAINING_STATUS_BADGE: Record<TrainingStatus, string> = {
+  open: "bg-amber-500 text-white hover:bg-amber-600",
+  gepland: "bg-blue-600 text-white hover:bg-blue-700",
+  gedaan: "bg-green-600 text-white hover:bg-green-700",
+  geannuleerd: "bg-red-600 text-white hover:bg-red-700",
+};
+
+/**
  * Ronde 2 vervolg (2026-08-19) — vlakgevulde ("solid") variant, nieuw voor de
  * StatusPopover: 4 grote, direct klikbare gekleurde keuzes (Monday-stijl
  * bediening, zie opdracht), i.p.v. de lichte badge-vulling hierboven. Bewust

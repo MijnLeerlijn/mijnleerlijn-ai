@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import type { TrainingStatus } from "@/lib/trainers/monday-links";
-import { TRAINING_STATUS_KLEUR, TRAINING_STATUS_LABEL } from "@/lib/trainers/status-styles";
+import { TRAINING_STATUS_BADGE, TRAINING_STATUS_LABEL } from "@/lib/trainers/status-styles";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { StatusPopover } from "./status-popover";
 import { DatumPopover } from "./datum-popover";
@@ -27,20 +27,33 @@ export interface VerslagSamenvatting {
   status: "concept" | "gedeeltelijk" | "bevestigd" | "voltooid";
 }
 
+interface VerslagCta {
+  label: string;
+  /**
+   * Schooldetail-UX-ronde (2026-08-25) — opdrachtseis: "Verslag maken" moet
+   * de opvallende, primaire boodschap zijn (niet het systeemtaal-badge
+   * "Logboek niet ingevuld"); "Verslag bekijken" mag juist een kleine,
+   * secundaire actie zijn. `opvallend` bepaalt uitsluitend de STYLING
+   * hieronder (prominente knop vs. rustige tekstlink) — nooit de
+   * onderliggende data/route, die blijft voor elke variant identiek.
+   */
+  opvallend: boolean;
+}
+
 /**
- * Traineromgeving V1, Ronde 3 (2026-08-24) — spec §16: "'Verslag maken'
- * indien nodig; 'Verslag bekijken' indien beschikbaar." Het lokale
- * training-verslagen-record (indien aanwezig) wint altijd van Monday's
- * eigen logboekvlag — zie page.tsx se toelichting bij dezelfde afweging op
- * het dashboard.
+ * Traineromgeving V1, Ronde 3 (2026-08-24), uitgebreid Schooldetail-UX-ronde
+ * (2026-08-25) — spec §16: "'Verslag maken' indien nodig; 'Verslag bekijken'
+ * indien beschikbaar." Het lokale training-verslagen-record (indien
+ * aanwezig) wint altijd van Monday's eigen logboekvlag — zie page.tsx se
+ * toelichting bij dezelfde afweging op het dashboard.
  */
-function verslagCta(logboekIngevuld: boolean, lokaal: VerslagSamenvatting | undefined): string | null {
+function verslagCta(logboekIngevuld: boolean, lokaal: VerslagSamenvatting | undefined): VerslagCta {
   if (lokaal) {
-    if (lokaal.status === "voltooid") return "Verslag bekijken";
-    if (lokaal.status === "gedeeltelijk" || lokaal.status === "bevestigd") return "Verslag afronden";
-    return "Verslag afmaken"; // concept
+    if (lokaal.status === "voltooid") return { label: "Verslag bekijken", opvallend: false };
+    if (lokaal.status === "gedeeltelijk" || lokaal.status === "bevestigd") return { label: "Verslag afronden", opvallend: true };
+    return { label: "Verslag afmaken", opvallend: true }; // concept
   }
-  return logboekIngevuld ? "Verslag bekijken" : "Verslag maken";
+  return logboekIngevuld ? { label: "Verslag bekijken", opvallend: false } : { label: "Verslag maken", opvallend: true };
 }
 
 interface VeldState {
@@ -178,32 +191,28 @@ export function TrainingRij({
   }
 
   const kanBewerken = training.trainerboardItemId !== null;
+  const cta = toonLogboekStatus ? verslagCta(logboekIngevuld, verslag) : null;
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2.5">
       <p className="min-w-[10rem] flex-1 text-body-sm font-medium text-grijs-900">{training.naam}</p>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
-        {toonLogboekStatus && (
-          <span
-            className={`rounded-full px-2 py-0.5 text-label font-medium ${
-              logboekIngevuld ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
-            }`}
-          >
-            {logboekIngevuld ? "Logboek ingevuld" : "Logboek niet ingevuld"}
-          </span>
-        )}
-
-        {toonLogboekStatus && kanBewerken && (
+        {/* Schooldetail-UX-ronde (2026-08-25) — het "Logboek niet ingevuld"-
+            badge (systeemtaal, opdrachtseis) is bewust vervallen: de CTA
+            hieronder ("Verslag maken"/"Verslag bekijken") draagt nu zelf de
+            hoofdboodschap, en de sectiekop (training-secties.tsx) maakt via
+            zijn titel al duidelijk in welke bucket deze rij zit. */}
+        {cta && kanBewerken && (
           <Link
             href={`/scholen/${schoolId}/trainingen/${training.id}/verslag`}
             className={
-              logboekIngevuld && !verslag
-                ? "text-label font-medium text-teal-700 hover:underline"
-                : "inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-2.5 py-1 text-label font-semibold text-white transition-colors hover:bg-teal-700"
+              cta.opvallend
+                ? "inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-2.5 py-1 text-label font-semibold text-white transition-colors hover:bg-teal-700"
+                : "text-label font-medium text-teal-700 hover:underline"
             }
           >
-            {logboekIngevuld && !verslag ? null : <Sparkles size={11} />}
-            {verslagCta(logboekIngevuld, verslag)}
+            {cta.opvallend && <Sparkles size={11} />}
+            {cta.label}
           </Link>
         )}
 
@@ -236,7 +245,7 @@ export function TrainingRij({
         ) : (
           <>
             <span className="w-20 text-right text-body-sm text-grijs-600">{formatKorteDatum(training.datum)}</span>
-            <span className={`rounded-full px-2 py-0.5 text-label font-medium ${TRAINING_STATUS_KLEUR[training.status]}`}>
+            <span className={`rounded-full px-2 py-0.5 text-label font-semibold ${TRAINING_STATUS_BADGE[training.status]}`}>
               {TRAINING_STATUS_LABEL[training.status]}
             </span>
           </>

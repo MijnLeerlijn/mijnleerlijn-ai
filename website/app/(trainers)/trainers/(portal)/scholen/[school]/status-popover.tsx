@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { TrainingStatus } from "@/lib/trainers/monday-links";
-import { TRAINING_STATUS_LABEL, TRAINING_STATUS_KLEUR, TRAINING_STATUS_SOLID, TRAINING_STATUS_SELECTED_RING } from "@/lib/trainers/status-styles";
+import { TRAINING_STATUS_LABEL, TRAINING_STATUS_BADGE, TRAINING_STATUS_SOLID, TRAINING_STATUS_SELECTED_RING } from "@/lib/trainers/status-styles";
 import { usePopover } from "./use-popover";
 import { SchrijfFeedback, type WriteBackResultaat } from "./schrijf-feedback";
 
@@ -77,7 +77,7 @@ export function StatusPopover({
         onClick={toggle}
         aria-haspopup="true"
         aria-expanded={open}
-        className={`rounded-full px-2.5 py-1 text-label font-medium transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-donkerblauw ${TRAINING_STATUS_KLEUR[huidigeStatus]}`}
+        className={`rounded-full px-2.5 py-1 text-label font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-donkerblauw ${TRAINING_STATUS_BADGE[huidigeStatus]}`}
       >
         {TRAINING_STATUS_LABEL[huidigeStatus]}
       </button>

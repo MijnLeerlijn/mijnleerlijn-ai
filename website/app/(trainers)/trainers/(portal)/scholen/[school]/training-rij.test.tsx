@@ -314,3 +314,59 @@ describe("TrainingRij — trainingsverslag-CTA (spec §16)", () => {
     expect(screen.queryByRole("link", { name: /Verslag/ })).not.toBeInTheDocument();
   });
 });
+
+// Schooldetail-UX-ronde (2026-08-25) — opdrachtseis: "'Verslag maken' moet
+// opvallend zijn; 'Logboek niet ingevuld' mag niet de primaire boodschap
+// zijn; 'Verslag bekijken' mag juist een kleine, secundaire actie zijn."
+describe("TrainingRij — CTA-nadruk en verwijderde systeemtaal (Schooldetail-UX-ronde)", () => {
+  it("'Verslag maken' is de opvallende (prominente knop-stijl) CTA", () => {
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={false} />);
+    const link = screen.getByRole("link", { name: /Verslag maken/ });
+    expect(link).toHaveClass("bg-teal-600");
+  });
+
+  it("'Verslag afronden' (lokaal concept al onderweg) is óók de opvallende CTA", () => {
+    render(
+      <TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={false} verslag={{ status: "gedeeltelijk" }} />
+    );
+    expect(screen.getByRole("link", { name: /Verslag afronden/ })).toHaveClass("bg-teal-600");
+  });
+
+  it("'Verslag bekijken' is bewust de rustige, kleine CTA (geen prominente knop-stijl) — ook wanneer er al een lokaal 'voltooid' verslag bestaat", () => {
+    render(
+      <TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={true} verslag={{ status: "voltooid" }} />
+    );
+    const link = screen.getByRole("link", { name: /Verslag bekijken/ });
+    expect(link).not.toHaveClass("bg-teal-600");
+    expect(link).toHaveClass("hover:underline");
+  });
+
+  it("'Verslag bekijken' is ook rustig zonder lokaal verslag (Monday's logboekvlag al true)", () => {
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={true} />);
+    expect(screen.getByRole("link", { name: /Verslag bekijken/ })).not.toHaveClass("bg-teal-600");
+  });
+
+  it("toont nergens meer de systeemtaal 'Logboek ingevuld'/'Logboek niet ingevuld' (opdrachtseis: de CTA is de primaire boodschap, niet dit badge)", () => {
+    const { rerender } = render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={false} />);
+    expect(screen.queryByText(/Logboek niet ingevuld/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Logboek ingevuld$/)).not.toBeInTheDocument();
+
+    rerender(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={true} />);
+    expect(screen.queryByText(/Logboek niet ingevuld/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Logboek ingevuld$/)).not.toBeInTheDocument();
+  });
+
+  it("de statusbadge van een niet-bewerkbare training is vlakgevuld/duidelijk (TRAINING_STATUS_BADGE), niet de vroegere bleke pastelversie", () => {
+    render(<TrainingRij training={{ ...BEWERKBARE_TRAINING, trainerboardItemId: null, status: "open" }} schoolId="500" />);
+    const badge = screen.getByText("Nieuw");
+    expect(badge).toHaveClass("bg-amber-500");
+    expect(badge).toHaveClass("text-white");
+  });
+
+  it("de klikbare statustrigger (StatusPopover) is óók vlakgevuld/duidelijk, dezelfde kleuridentiteit als de popoverkeuzes zelf", () => {
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
+    const trigger = screen.getByRole("button", { name: "Nieuw" });
+    expect(trigger).toHaveClass("bg-amber-500");
+    expect(trigger).toHaveClass("text-white");
+  });
+});

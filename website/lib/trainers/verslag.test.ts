@@ -515,6 +515,86 @@ describe("bevestigVerslag", () => {
     expect(trainingTekst.indexOf("Trainer: Wessel Kok")).toBeLessThan(kopEinde);
   });
 
+  it("MONDAY-AUTEUR ≠ INHOUDELIJKE TRAINER (opdrachtseis, Schooldetail-UX-ronde 2026-08-25): Monday's Updates worden altijd technisch aangemaakt onder het gedeelde service-account (in productie 'Michel de Hond', trainers hebben geen eigen Monday-account) — de koplijn/bevestigdDoorTrainerNaam mag dat technische auteurschap nooit overnemen, uitsluitend de server-geverifieerde trainersessie", async () => {
+    vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    const { payload } = maakFakePayload({});
+    await maakConcept(payload);
+
+    // Realistische Monday-respons: bestaande logboekregels zijn (zoals in
+    // productie) altijd technisch aangemaakt onder het service-account —
+    // haalUpdatesVoorItem/haalUpdatesVoorItem se creator-veld toont dus
+    // "Michel de Hond", nooit de trainer zelf. Dit signaal mag nergens in
+    // bevestigVerslag() als trainernaam-bron dienen (die bron is uitsluitend
+    // trainer.name, hierboven al door meerdere tests bevestigd) — deze test
+    // maakt dat expliciet met exact de naam die in productie voor verwarring
+    // zou kunnen zorgen, i.p.v. een neutrale placeholder als "Iemand Anders".
+    mockHaalUpdatesVoorItem.mockResolvedValue([
+      { id: "oude-update", item_id: CENTRALE_TRAINING_ID, text_body: "Andere, niet-matchende tekst", created_at: "x", updated_at: "x", creator: { id: "999", name: "Michel de Hond" } },
+    ]);
+
+    const uitkomst = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, "Wat is behandeld:\nRekenen");
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.verslag.bevestigdDoorTrainerNaam).toBe("Wessel Kok");
+    expect(uitkomst.verslag.bevestigdDoorTrainerNaam).not.toBe("Michel de Hond");
+
+    const trainingTekst = mockMaakUpdate.mock.calls[0]![1] as string;
+    expect(trainingTekst).toContain("Trainer: Wessel Kok");
+    expect(trainingTekst).not.toContain("Michel de Hond");
+    expect(uitkomst.weergaveTekst).toContain("Trainer: Wessel Kok");
+    expect(uitkomst.weergaveTekst).not.toContain("Michel de Hond");
+  });
+
+  it("MONDAY-AUTEUR ≠ INHOUDELIJKE TRAINER, ook bij de legacy-backfill (bevestigdDoorTrainerNaam ontbreekt, retry ná d077816): het naamsnapshot wordt aangevuld uit de sessietrainer, nooit uit enig Monday-auteursveld", async () => {
+    vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    mockHaalTrainingVoorMutatie.mockResolvedValue(gevondenTraining({ status: "gedaan", ruweStatusTekst: "Gedaan" }));
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "status", text: "Gedaan", value: null },
+        { id: "boolean_mm5v9vxd", text: null, value: null },
+      ],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "color_mm5tz3wk", text: "Gedaan", value: null },
+        { id: "boolean_mm5tvfc5", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    const { payload } = maakFakePayload({
+      "training-verslagen": [
+        {
+          id: 1,
+          trainer: TRAINER.id,
+          mondayTrainingId: CENTRALE_TRAINING_ID,
+          mondaySchoolId: SCHOOL_ID,
+          mondayTrainerboardItemId: TRAINERBOARD_ITEM_ID,
+          schoolNaam: "Montessori Gorinchem",
+          trainingNaam: "Training",
+          definitieveTekst: "Wat is behandeld:\nRekenen",
+          status: "bevestigd",
+          trainingUpdateStatus: "geschreven",
+          trainingUpdateMondayId: "update-training-legacy-1",
+          schoolUpdateStatus: "geschreven",
+          schoolUpdateMondayId: "update-school-legacy-1",
+          bevestigdOp: "2026-08-19T10:00:00.000Z",
+          // bevestigdDoorTrainerNaam ontbreekt — precies het legacy-scenario uit d077816.
+        },
+      ],
+    });
+
+    const uitkomst = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID); // "Opnieuw proberen"
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.verslag.bevestigdDoorTrainerNaam).toBe("Wessel Kok");
+    expect(uitkomst.verslag.bevestigdDoorTrainerNaam).not.toBe("Michel de Hond");
+    expect(uitkomst.weergaveTekst).toContain("Trainer: Wessel Kok");
+    expect(uitkomst.weergaveTekst).not.toContain("Michel de Hond");
+  });
+
   it("KETEN GESLOTEN (opdrachtseis 'training verdwijnt daarna vanzelf uit Verslag nog invullen'): de exacte JSON die de logboek-checkboxfix naar Monday schrijft, wordt door parseCheckboxIngevuld (monday-links.ts — dezelfde functie die de dashboard-bucketindeling voedt) ondubbelzinnig als 'ingevuld' gelezen", async () => {
     vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
