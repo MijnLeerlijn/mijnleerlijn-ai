@@ -59,7 +59,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // 409: de onderliggende training-status is inmiddels gewijzigd — een conflict met de huidige toestand, geen ongeldige aanvraagvorm.
       return NextResponse.json({ error: uitkomst.boodschap }, { status: 409 });
     }
-    return NextResponse.json({ verslag: uitkomst.verslag, boodschap: uitkomst.boodschap, afronding: uitkomst.afronding });
+    return NextResponse.json({ verslag: uitkomst.verslag, boodschap: uitkomst.boodschap, afronding: uitkomst.afronding, weergaveTekst: uitkomst.weergaveTekst });
   } catch (error) {
     console.error("[api/trainers/trainingen/[id]/verslag/bevestig] mislukt:", error);
     return NextResponse.json({ error: "Bevestigen mislukt. Probeer het opnieuw." }, { status: 500 });

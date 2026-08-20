@@ -341,6 +341,41 @@ export async function wijzigKolomWaarde(itemId: string, boardId: string, columnI
 }
 
 /**
+ * Root-cause-fix (2026-08-20, ná Wessels live Ronde-3-test) — schrijft één
+ * kolomwaarde weg via Monday's `change_column_value`, voor kolomtypen die
+ * `change_simple_column_value` hierboven niet accepteert. Live bevestigd:
+ * de statuskolom (dropdown/label) schreef correct via
+ * `change_simple_column_value`, de checkbox-logboekkolom (boolean_mm5v9vxd/
+ * boolean_mm5tvfc5) niet — exact het scenario dat wijzigKolomWaarde se eigen
+ * doc-comment al vooraf benoemde. `waardeJson` moet door de AANROEPER al
+ * `JSON.stringify()`'d zijn (bv. `JSON.stringify({checked:"true"})` voor een
+ * checkbox) — Monday's `JSON`-scalar-argument verwacht zelf een STRING met
+ * JSON-inhoud als GraphQL-variabele, geen geneste GraphQL-objectwaarde
+ * (dezelfde asymmetrie als de leeskant: column_values[].value is ook altijd
+ * een string met JSON-inhoud, nooit een genest object). Algemene, stabiele
+ * Monday-platformkennis over dit scalar-gedrag — de exacte wire-vorm is
+ * vanuit deze sessie niet opnieuw live te bevestigen (geen MONDAY_API_TOKEN/
+ * uitgaand verkeer, zie de toelichting bovenaan dit bestand); de aanroeper
+ * (lib/trainers/writeback.ts) herleest daarom altijd na deze schrijving en
+ * rapporteert nooit "geschreven" zonder die bevestiging.
+ */
+export async function wijzigKolomWaardeJson(itemId: string, boardId: string, columnId: string, waardeJson: string): Promise<void> {
+  const mutation = `
+    mutation WijzigKolomWaardeJson($itemId: ID!, $boardId: ID!, $columnId: String!, $waardeJson: JSON!) {
+      change_column_value(
+        item_id: $itemId
+        board_id: $boardId
+        column_id: $columnId
+        value: $waardeJson
+      ) {
+        id
+      }
+    }
+  `;
+  await mondayQuery<{ change_column_value: { id: string } }>(mutation, { itemId, boardId, columnId, waardeJson });
+}
+
+/**
  * Traineromgeving V1, Ronde 3 (2026-08-24) — maakt een NIEUWE Monday Update
  * (activiteitenlogboek-notitie) aan via `create_update`. Anders dan
  * `wijzigKolomWaarde` hierboven (overschrijft een bestaande kolomwaarde,

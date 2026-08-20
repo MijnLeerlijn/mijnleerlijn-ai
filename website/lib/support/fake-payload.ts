@@ -168,10 +168,10 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
           const verslagen = arr("training-verslagen");
 
           if (tekst.includes("SET definitieve_tekst")) {
-            const [nieuweTekst, bevestigdOp, id] = params as [string, string, number];
+            const [nieuweTekst, bevestigdOp, trainerNaam, id] = params as [string, string, string, number];
             const doc = verslagen.find((d) => d.id === id && d.status === "concept");
             if (!doc) return { rows: [] };
-            Object.assign(doc, { definitieveTekst: nieuweTekst, bevestigdOp, status: "gedeeltelijk" });
+            Object.assign(doc, { definitieveTekst: nieuweTekst, bevestigdOp, status: "gedeeltelijk", bevestigdDoorTrainerNaam: trainerNaam });
             return { rows: [{ id }] };
           }
 

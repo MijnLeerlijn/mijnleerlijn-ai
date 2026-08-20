@@ -27,6 +27,13 @@ export interface VerslagInitieel {
   aiGegenereerd: boolean;
   trainingUpdateStatus: UpdateStatus;
   schoolUpdateStatus: UpdateStatus;
+  /**
+   * Kop+inhoud exact zoals naar Monday geschreven (bouwVerslagWeergaveTekst,
+   * server-side samengesteld — nooit hier client-side nagebouwd, dat zou
+   * "identiek" tot toeval maken). `undefined` zolang nog niet definitief
+   * bevestigd.
+   */
+  weergaveTekst?: string;
 }
 
 const DENKHULP = [
@@ -105,6 +112,7 @@ export function VerslagEditor({
   const [aiGegenereerd, setAiGegenereerd] = useState(verslagInitieel?.aiGegenereerd ?? false);
   const [trainingUpdateStatus, setTrainingUpdateStatus] = useState<UpdateStatus>(verslagInitieel?.trainingUpdateStatus ?? "niet_verzonden");
   const [schoolUpdateStatus, setSchoolUpdateStatus] = useState<UpdateStatus>(verslagInitieel?.schoolUpdateStatus ?? "niet_verzonden");
+  const [weergaveTekst, setWeergaveTekst] = useState<string | undefined>(verslagInitieel?.weergaveTekst);
 
   const [fase, setFase] = useState<"invoer" | "concept">(verslagInitieel?.definitieveTekst ? "concept" : "invoer");
 
@@ -211,6 +219,9 @@ export function VerslagEditor({
       if (verslag.definitieveTekst) setDefinitieveTekst(verslag.definitieveTekst);
       setTrainingUpdateStatus(verslag.trainingUpdateStatus);
       setSchoolUpdateStatus(verslag.schoolUpdateStatus);
+      // Server-samengesteld (zelfde functie als de Monday-schrijving) —
+      // nooit hier client-side nabouwen.
+      if (typeof uitkomst.data.weergaveTekst === "string") setWeergaveTekst(uitkomst.data.weergaveTekst);
       if (typeof uitkomst.data.boodschap === "string") setBevestigBoodschap(uitkomst.data.boodschap);
       setBevestigBezig(false);
       router.refresh(); // dashboard/schooldetail tonen bij terugnavigeren meteen de bijgewerkte status
@@ -232,7 +243,7 @@ export function VerslagEditor({
           <CheckCircle2 size={18} />
           Verslag ingevuld — opgeslagen bij de training en in het schoollogboek.
         </div>
-        <VerslagTekstReadOnly tekst={definitieveTekst} />
+        <VerslagTekstReadOnly tekst={weergaveTekst ?? definitieveTekst} />
       </div>
     );
   }
@@ -276,7 +287,7 @@ export function VerslagEditor({
             Opnieuw proberen
           </button>
         </div>
-        <VerslagTekstReadOnly tekst={definitieveTekst} />
+        <VerslagTekstReadOnly tekst={weergaveTekst ?? definitieveTekst} />
       </div>
     );
   }

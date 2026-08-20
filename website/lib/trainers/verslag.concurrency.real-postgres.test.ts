@@ -34,7 +34,7 @@ import { execFileSync } from "node:child_process";
 import { Pool } from "pg";
 import type { Payload } from "payload";
 import { haalTrainingVoorMutatie } from "./monday-links";
-import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde } from "@/lib/sales/monday-client";
+import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde, wijzigKolomWaardeJson, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
 import { KOLOM_VOOR } from "./monday-columns";
 import type { AuthTrainer } from "./auth";
 import type { TrainingVoorMutatie } from "./monday-links";
@@ -45,7 +45,15 @@ vi.mock("./monday-links", async (importOriginal) => {
 });
 vi.mock("@/lib/sales/monday-client", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/sales/monday-client")>();
-  return { ...echt, haalUpdatesVoorItem: vi.fn(), maakUpdate: vi.fn(), leesKolomWaarden: vi.fn(), wijzigKolomWaarde: vi.fn() };
+  return {
+    ...echt,
+    haalUpdatesVoorItem: vi.fn(),
+    maakUpdate: vi.fn(),
+    leesKolomWaarden: vi.fn(),
+    wijzigKolomWaarde: vi.fn(),
+    wijzigKolomWaardeJson: vi.fn(),
+    haalItemMetKolomWaarden: vi.fn(),
+  };
 });
 
 const mockHaalTrainingVoorMutatie = vi.mocked(haalTrainingVoorMutatie);
@@ -53,6 +61,8 @@ const mockHaalUpdatesVoorItem = vi.mocked(haalUpdatesVoorItem);
 const mockMaakUpdate = vi.mocked(maakUpdate);
 const mockLeesKolomWaarden = vi.mocked(leesKolomWaarden);
 const mockWijzigKolomWaarde = vi.mocked(wijzigKolomWaarde);
+const mockWijzigKolomWaardeJson = vi.mocked(wijzigKolomWaardeJson);
+const mockHaalItemMetKolomWaarden = vi.mocked(haalItemMetKolomWaarden);
 
 const TEST_DATABASE_URI = process.env.VERSLAG_CONCURRENCY_TEST_DATABASE_URI ?? "postgres://mijnleerlijn:mijnleerlijn@localhost:5432/mijnleerlijn";
 const TEST_DB_NAAM = "mijnleerlijn_verslag_concurrency_test";
@@ -179,6 +189,16 @@ describe.skipIf(!beschikbaar)("bevestigVerslag — ECHTE concurrency tegen echte
       columnIds.map((id) => ({ id, text: id === KOLOM_VOOR.centraal.status ? "Gepland" : null, value: null }))
     );
     mockWijzigKolomWaarde.mockReset().mockResolvedValue(undefined);
+    mockWijzigKolomWaardeJson.mockReset().mockResolvedValue(undefined);
+    // Root-cause-fix (2026-08-20, writeback.ts): checkbox-kolommen gaan via
+    // change_column_value (wijzigKolomWaardeJson) en vereisen daarna een
+    // herlees-bevestiging — standaard-gelukkig-pad hier, zelfde patroon als
+    // lib/trainers/verslag.test.ts.
+    mockHaalItemMetKolomWaarden.mockReset().mockImplementation(async (itemId: string, columnIds: string[]) => ({
+      id: itemId,
+      name: "x",
+      column_values: [{ id: columnIds[0]!, text: "v", value: JSON.stringify({ checked: "true" }) }],
+    }));
   });
 
   afterEach(() => {

@@ -41,6 +41,7 @@ import * as migration_20260819_130000_trainer_ai_log_events_v1 from './20260819_
 import * as migration_20260824_090000_training_verslagen_v1 from './20260824_090000_training_verslagen_v1';
 import * as migration_20260824_100000_trainer_log_events_logboek_veld from './20260824_100000_trainer_log_events_logboek_veld';
 import * as migration_20260824_110000_training_verslagen_claim_concurrency from './20260824_110000_training_verslagen_claim_concurrency';
+import * as migration_20260824_120000_training_verslagen_kop_velden from './20260824_120000_training_verslagen_kop_velden';
 
 export const migrations = [
   {
@@ -257,5 +258,10 @@ export const migrations = [
     up: migration_20260824_110000_training_verslagen_claim_concurrency.up,
     down: migration_20260824_110000_training_verslagen_claim_concurrency.down,
     name: '20260824_110000_training_verslagen_claim_concurrency',
+  },
+  {
+    up: migration_20260824_120000_training_verslagen_kop_velden.up,
+    down: migration_20260824_120000_training_verslagen_kop_velden.down,
+    name: '20260824_120000_training_verslagen_kop_velden',
   },
 ];

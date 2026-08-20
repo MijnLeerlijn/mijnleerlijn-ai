@@ -6,6 +6,7 @@ import {
   haalUpdatesVoorItem,
   leesKolomWaarden,
   wijzigKolomWaarde,
+  wijzigKolomWaardeJson,
   haalItemMetKolomWaarden,
 } from "@/lib/sales/monday-client";
 import { werkTrainingBij } from "./writeback";
@@ -28,6 +29,7 @@ vi.mock("@/lib/sales/monday-client", async (importOriginal) => {
     haalUpdatesVoorItem: vi.fn(),
     leesKolomWaarden: vi.fn(),
     wijzigKolomWaarde: vi.fn(),
+    wijzigKolomWaardeJson: vi.fn(),
     haalItemMetKolomWaarden: vi.fn(),
   };
 });
@@ -37,6 +39,7 @@ const mockScholenPagina = vi.mocked(haalScholenPagina);
 const mockUpdatesVoorItem = vi.mocked(haalUpdatesVoorItem);
 const mockLeesKolomWaarden = vi.mocked(leesKolomWaarden);
 const mockWijzigKolomWaarde = vi.mocked(wijzigKolomWaarde);
+const mockWijzigKolomWaardeJson = vi.mocked(wijzigKolomWaardeJson);
 const mockHaalItemMetKolomWaarden = vi.mocked(haalItemMetKolomWaarden);
 const mockCreate = vi.fn();
 
@@ -150,6 +153,7 @@ beforeEach(() => {
   mockUpdatesVoorItem.mockReset();
   mockLeesKolomWaarden.mockReset();
   mockWijzigKolomWaarde.mockReset().mockResolvedValue(undefined);
+  mockWijzigKolomWaardeJson.mockReset().mockResolvedValue(undefined);
   mockHaalItemMetKolomWaarden.mockReset();
   mockCreate.mockReset().mockResolvedValue({ id: 1 });
 });
@@ -793,7 +797,7 @@ describe("werkTrainingBij — dubbele indiening (geen ongecontroleerde dubbele w
 });
 
 describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsverslag)", () => {
-  it("logboek-only verzoek slaagt onafhankelijk op beide records via checkboxNaarMondayWaarde", async () => {
+  it("logboek-only verzoek slaagt onafhankelijk op beide records via checkboxNaarMondayWaarde, geschreven via change_column_value (JSON) en pas na herlees-bevestiging gerapporteerd", async () => {
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
     seedGeldigeTraining();
     mockLezenPerItem({
@@ -803,6 +807,14 @@ describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsversl
         { id: "numeric_mm5vkjzz", text: null, value: null },
       ],
     });
+    // Root-cause-fix (2026-08-20): Monday blijft bron van waarheid — een
+    // "geschreven"-rapportage vereist dat de herlezing (haalItemMetKolomWaarden)
+    // de checkbox ook daadwerkelijk aangevinkt bevestigt.
+    mockHaalItemMetKolomWaarden.mockImplementation(async (itemId: string, columnIds: string[]) => ({
+      id: itemId,
+      name: "x",
+      column_values: [{ id: columnIds[0]!, text: "v", value: JSON.stringify({ checked: "true" }) }],
+    }));
 
     const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
       logboek: { nieuweWaarde: true },
@@ -812,12 +824,15 @@ describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsversl
     if (uitkomst.soort !== "resultaat") return;
     expect(uitkomst.resultaat.algeheleStatus).toBe("volledig_geslaagd");
     expect(uitkomst.resultaat.kolomResultaten).toHaveLength(2); // trainerboard + centraal
-    expect(uitkomst.resultaat.kolomResultaten.every((k) => k.veld === "logboek")).toBe(true);
-    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", "true");
-    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", "true");
+    expect(uitkomst.resultaat.kolomResultaten.every((k) => k.veld === "logboek" && k.status === "geschreven")).toBe(true);
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled(); // checkbox gaat NOOIT via change_simple_column_value
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", JSON.stringify({ checked: "true" }));
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", JSON.stringify({ checked: "true" }));
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, ["boolean_mm5v9vxd"]);
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, ["boolean_mm5tvfc5"]);
   });
 
-  it("logboek nieuweWaarde false -> checkboxNaarMondayWaarde schrijft een lege string, geen 'false'-tekst", async () => {
+  it("logboek nieuweWaarde false -> checkboxNaarMondayWaarde schrijft een leeg JSON-object, geen 'false'-tekst", async () => {
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
     seedGeldigeTraining();
     mockLezenPerItem({
@@ -827,11 +842,41 @@ describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsversl
         { id: "numeric_mm5vkjzz", text: null, value: null },
       ],
     });
+    mockHaalItemMetKolomWaarden.mockImplementation(async (itemId: string, columnIds: string[]) => ({
+      id: itemId,
+      name: "x",
+      column_values: [{ id: columnIds[0]!, text: null, value: null }], // uitgevinkt: leeg/null, zelfde als parseCheckboxIngevuld elders verwacht
+    }));
 
-    await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, { logboek: { nieuweWaarde: false } });
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, { logboek: { nieuweWaarde: false } });
 
-    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", "");
-    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", "");
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.resultaat.kolomResultaten.every((k) => k.veld === "logboek" && k.status === "geschreven")).toBe(true);
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", JSON.stringify({}));
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", JSON.stringify({}));
+  });
+
+  it("logboek-checkboxwrite: mutatie slaagt maar herlezing bevestigt NIET aangevinkt -> mislukt, nooit stilzwijgend 'geschreven' (opdrachtseis: Monday blijft bron van waarheid)", async () => {
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    seedGeldigeTraining();
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [{ id: "boolean_mm5v9vxd", text: null, value: null }],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "boolean_mm5tvfc5", text: null, value: null },
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+    // mockHaalItemMetKolomWaarden blijft op zijn beforeEach-default (geen
+    // implementatie -> undefined -> parseCheckboxIngevuld(undefined) = false)
+    // -> herlezing bevestigt NOOIT "aangevinkt", ook al gooide de mutatie zelf niets.
+
+    const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, { logboek: { nieuweWaarde: true } });
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.resultaat.kolomResultaten.every((k) => k.veld === "logboek" && k.status === "mislukt")).toBe(true);
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalled(); // de mutatie werd wél geprobeerd
   });
 
   it("KRITIEKE CORRECTHEIDSFIX: settled.map()-fallback labelt een afgewezen logboek-taak correct als 'logboek', nooit als 'status' — exacte verzoekvorm van bevestigVerslag se afronding ({status, logboek}, geen datum)", async () => {
@@ -861,6 +906,15 @@ describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsversl
         { id: "numeric_mm5vkjzz", text: null, value: null },
       ],
     });
+    // De checkbox-herlees-bevestiging (root-cause-fix 2026-08-20) moet hier
+    // slagen, anders wordt de logboek-taak al vóór de "geschreven"-logregel
+    // afgewezen en test dit scenario niet meer de bedoelde Promise.allSettled
+    // "rejected"-tak (zie toelichting hierboven).
+    mockHaalItemMetKolomWaarden.mockImplementation(async (itemId: string, columnIds: string[]) => ({
+      id: itemId,
+      name: "x",
+      column_values: [{ id: columnIds[0]!, text: "v", value: JSON.stringify({ checked: "true" }) }],
+    }));
     mockCreate.mockReset().mockImplementation(async (args: { data: { veld: string; status: string } }) => {
       if (args.data.veld === "logboek" && args.data.status === "geschreven") {
         throw new Error("Audit-log tijdelijk onbereikbaar");

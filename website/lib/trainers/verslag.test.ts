@@ -9,8 +9,8 @@ import {
   haalVerslagenPerTraining,
   type VerslagStructuur,
 } from "./verslag";
-import { haalTrainingVoorMutatie, haalSchoolDetail } from "./monday-links";
-import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde } from "@/lib/sales/monday-client";
+import { haalTrainingVoorMutatie, haalSchoolDetail, parseCheckboxIngevuld } from "./monday-links";
+import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde, wijzigKolomWaardeJson, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
 import { generateStructuredOutput } from "@/services/ai-client";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import type { AuthTrainer } from "./auth";
@@ -36,7 +36,15 @@ vi.mock("./monday-links", async (importOriginal) => {
 });
 vi.mock("@/lib/sales/monday-client", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/sales/monday-client")>();
-  return { ...echt, haalUpdatesVoorItem: vi.fn(), maakUpdate: vi.fn(), leesKolomWaarden: vi.fn(), wijzigKolomWaarde: vi.fn() };
+  return {
+    ...echt,
+    haalUpdatesVoorItem: vi.fn(),
+    maakUpdate: vi.fn(),
+    leesKolomWaarden: vi.fn(),
+    wijzigKolomWaarde: vi.fn(),
+    wijzigKolomWaardeJson: vi.fn(),
+    haalItemMetKolomWaarden: vi.fn(),
+  };
 });
 vi.mock("@/services/ai-client", () => ({ generateStructuredOutput: vi.fn() }));
 
@@ -46,6 +54,8 @@ const mockHaalUpdatesVoorItem = vi.mocked(haalUpdatesVoorItem);
 const mockMaakUpdate = vi.mocked(maakUpdate);
 const mockLeesKolomWaarden = vi.mocked(leesKolomWaarden);
 const mockWijzigKolomWaarde = vi.mocked(wijzigKolomWaarde);
+const mockWijzigKolomWaardeJson = vi.mocked(wijzigKolomWaardeJson);
+const mockHaalItemMetKolomWaarden = vi.mocked(haalItemMetKolomWaarden);
 const mockGenerateStructuredOutput = vi.mocked(generateStructuredOutput);
 
 const TRAINER: AuthTrainer = {
@@ -133,6 +143,17 @@ beforeEach(() => {
   mockMaakUpdate.mockReset().mockImplementation(async () => ({ id: `update-${Math.random()}` }));
   mockLeesKolomWaarden.mockReset();
   mockWijzigKolomWaarde.mockReset().mockResolvedValue(undefined);
+  mockWijzigKolomWaardeJson.mockReset().mockResolvedValue(undefined);
+  // Standaard-gelukkig-pad voor de checkbox-herlees-bevestiging
+  // (root-cause-fix 2026-08-20, writeback.ts): elke test die de
+  // logboek-afronding niet zelf specifiek anders rigt, krijgt hier een
+  // bevestigde "aangevinkt"-herlezing, matchend met mockWijzigKolomWaardeJson
+  // se eigen standaard-succes hierboven.
+  mockHaalItemMetKolomWaarden.mockReset().mockImplementation(async (itemId: string, columnIds: string[]) => ({
+    id: itemId,
+    name: "x",
+    column_values: [{ id: columnIds[0]!, text: "v", value: JSON.stringify({ checked: "true" }) }],
+  }));
   mockGenerateStructuredOutput.mockReset();
   seedAfrondingsleeswaarden();
 });
@@ -176,9 +197,10 @@ describe("bouwVerslagUpdateTekst", () => {
       bevestigdOpIso: "2026-08-24T10:00:00.000Z",
       trainingNaam: "Online spreekuur",
       trainerNaam: "Wessel Kok",
+      schoolNaam: "Montessori Gorinchem",
       verslagTekst: "Wat is behandeld:\nRekenen",
     });
-    expect(tekst).toBe("TRAININGSVERSLAG — 24 augustus 2026\nTraining: Online spreekuur\nTrainer: Wessel Kok\n\nWat is behandeld:\nRekenen");
+    expect(tekst).toBe("TRAININGSVERSLAG — 24 augustus 2026\nTrainer: Wessel Kok\nSchool: Montessori Gorinchem\nTraining: Online spreekuur\n\nWat is behandeld:\nRekenen");
   });
 });
 
@@ -443,12 +465,85 @@ describe("bevestigVerslag", () => {
     expect(trainingTekst).toBe(schoolTekst);
     expect(trainingTekst).toContain("TRAININGSVERSLAG —");
     expect(trainingTekst).toContain("Trainer: Wessel Kok");
+    expect(trainingTekst).toContain("School: Montessori Gorinchem");
+    expect(trainingTekst).toContain("Training: Training");
+    // Kopvolgorde exact zoals opgegeven: Trainer, dan School, dan Training.
+    expect(trainingTekst.indexOf("Trainer:")).toBeLessThan(trainingTekst.indexOf("School:"));
+    expect(trainingTekst.indexOf("School:")).toBeLessThan(trainingTekst.indexOf("Training:"));
 
-    // Afronding pas NA beide Updates: status Gedaan + logboek true op beide records.
+    // Afronding pas NA beide Updates: status Gedaan + logboek true op beide
+    // records. Checkbox-kolommen gaan via wijzigKolomWaardeJson
+    // (change_column_value, root-cause-fix 2026-08-20), nooit meer via
+    // wijzigKolomWaarde (change_simple_column_value) — die accepteerde
+    // volgens Wessels live-test geen checkbox-kolommen.
     expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "status", "Gedaan");
-    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", "true");
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", JSON.stringify({ checked: "true" }));
     expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "color_mm5tz3wk", "Gedaan");
-    expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", "true");
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", JSON.stringify({ checked: "true" }));
+    // Herlezing bevestigt daadwerkelijk aangevinkt (Monday blijft bron van waarheid).
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, ["boolean_mm5v9vxd"]);
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, ["boolean_mm5tvfc5"]);
+  });
+
+  it("KOPNAAM IS ALTIJD SERVER-SIDE (opdrachtseis): een poging om een andere trainernaam via de vrije verslagtekst te smokkelen verschijnt nooit in de koplijn — die komt uitsluitend uit het server-geverifieerde trainer-object (trainer-accounts), nooit uit client-/vrije invoer", async () => {
+    vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    const { payload } = maakFakePayload({});
+    await maakConcept(payload);
+
+    // definitieveTekst is de enige cliëntaangeleverde tekst in dit hele pad.
+    // Een poging om daarin zelf een "Trainer: ..."-regel te zetten mag de
+    // echte koplijn nooit overschrijven of erdoor beïnvloed worden: die komt
+    // uitsluitend uit trainer.name (bevestigVerslag geeft altijd het
+    // server-side AuthTrainer-object door, nooit iets uit de request-body).
+    const kwaadaardigeTekst = "Trainer: Iemand Anders\nWat is behandeld:\nRekenen";
+    const uitkomst = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, kwaadaardigeTekst);
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+    expect(uitkomst.verslag.bevestigdDoorTrainerNaam).toBe("Wessel Kok");
+
+    const trainingTekst = mockMaakUpdate.mock.calls[0]![1] as string;
+    const schoolTekst = mockMaakUpdate.mock.calls[1]![1] as string;
+    expect(trainingTekst).toContain("Trainer: Wessel Kok");
+    expect(schoolTekst).toContain("Trainer: Wessel Kok");
+    // De echte koplijn staat vóór het lichaam; een gesmokkelde "Trainer:
+    // Iemand Anders" kan uitsluitend ín het lichaam voorkomen (zuivere
+    // concatenatie ná een vaste kop, geen interpolatie/overschrijving).
+    const kopEinde = trainingTekst.indexOf("\n\n");
+    expect(trainingTekst.slice(0, kopEinde)).not.toContain("Iemand Anders");
+    expect(trainingTekst.indexOf("Trainer: Wessel Kok")).toBeLessThan(kopEinde);
+  });
+
+  it("KETEN GESLOTEN (opdrachtseis 'training verdwijnt daarna vanzelf uit Verslag nog invullen'): de exacte JSON die de logboek-checkboxfix naar Monday schrijft, wordt door parseCheckboxIngevuld (monday-links.ts — dezelfde functie die de dashboard-bucketindeling voedt) ondubbelzinnig als 'ingevuld' gelezen", async () => {
+    vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    const { payload } = maakFakePayload({});
+    await maakConcept(payload);
+
+    await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, "Tekst");
+
+    // De centrale logboek-kolom (boolean_mm5tvfc5) is exact de kolom die
+    // haalDashboardData/haalSchoolDetail (monday-links.ts) leest om
+    // training.logboekIngevuld te bepalen, wat op zijn beurt
+    // groepeerOpWeergaveStatus (training-weergave.ts) voedt — al bewezen
+    // (monday-links.test.ts se "logboek-openstaand"-tests EN
+    // training-weergave.test.ts): logboekIngevuld: true verwijdert een
+    // training onvoorwaardelijk uit verslag_nog_invullen. Deze test sluit de
+    // laatste schakel: bewijst dat de BYTES die de fix daadwerkelijk
+    // verstuurt, door diezelfde leesfunctie ook echt als "true" herkend
+    // worden — precies de schrijf/lees-vormsymmetrie die de oorspronkelijke
+    // bug brak.
+    const centraalLogboekAanroep = mockWijzigKolomWaardeJson.mock.calls.find(
+      (call) => call[0] === CENTRALE_TRAINING_ID && call[2] === "boolean_mm5tvfc5"
+    );
+    const trainerboardLogboekAanroep = mockWijzigKolomWaardeJson.mock.calls.find(
+      (call) => call[0] === TRAINERBOARD_ITEM_ID && call[2] === "boolean_mm5v9vxd"
+    );
+    expect(centraalLogboekAanroep).toBeDefined();
+    expect(trainerboardLogboekAanroep).toBeDefined();
+    expect(parseCheckboxIngevuld(centraalLogboekAanroep![3] as string)).toBe(true);
+    expect(parseCheckboxIngevuld(trainerboardLogboekAanroep![3] as string)).toBe(true);
   });
 
   it("training-Update mislukt, school-Update slaagt -> gedeeltelijk, GEEN afronding, school niet dubbel verzonden bij retry", async () => {
@@ -540,7 +635,8 @@ describe("bevestigVerslag", () => {
     const verwachteTekst = bouwVerslagUpdateTekst({
       bevestigdOpIso: rijNaEersteMislukking!.bevestigdOp!,
       trainingNaam: rijNaEersteMislukking!.trainingNaam ?? "Training",
-      trainerNaam: TRAINER.name,
+      trainerNaam: rijNaEersteMislukking!.bevestigdDoorTrainerNaam ?? TRAINER.name,
+      schoolNaam: rijNaEersteMislukking!.schoolNaam ?? "Montessori Gorinchem",
       verslagTekst: "Tekst die eigenlijk al aankwam",
     });
     mockHaalUpdatesVoorItem.mockImplementation(async (itemId: string) => {
@@ -621,8 +717,11 @@ describe("bevestigVerslag", () => {
   it("beide Updates geschreven, maar de LOGBOEK-checkboxwrite van de afronding faalt (status lukt wél) -> blijft 'bevestigd', geen dubbele Updates bij een volgende poging", async () => {
     vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
-    mockWijzigKolomWaarde.mockImplementation(async (_itemId: string, _boardId: string, columnId: string) => {
-      if (columnId === "boolean_mm5v9vxd" || columnId === "boolean_mm5tvfc5") throw new Error("Monday tijdelijk onbereikbaar");
+    // Root-cause-fix (2026-08-20): logboek-checkboxkolommen gaan via
+    // wijzigKolomWaardeJson (change_column_value), niet meer via
+    // wijzigKolomWaarde (change_simple_column_value) — zie writeback.ts.
+    mockWijzigKolomWaardeJson.mockImplementation(async () => {
+      throw new Error("Monday tijdelijk onbereikbaar");
     });
     const { payload } = maakFakePayload({});
     await maakConcept(payload);
@@ -634,6 +733,54 @@ describe("bevestigVerslag", () => {
     expect(uitkomst.verslag.status).toBe("bevestigd");
     // Status zelf slaagde onafhankelijk van de logboekkolom (kolomniveau-onafhankelijkheid, writeback.ts).
     expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("ÉÉN CHECKBOX-KANT MISLUKT (opdrachtseis): trainerboard-logboek mislukt terwijl centraal-logboek onafhankelijk slaagt -> per-kolomresultaat wijst alleen die kant aan voor een retry, en de retry rondt veilig af zonder duplicaat-Update en zonder de reeds-geslaagde kant te beschadigen", async () => {
+    vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    const { payload } = maakFakePayload({});
+    await maakConcept(payload);
+
+    // Alleen de trainerboard-checkboxschrijving mislukt; de centrale
+    // checkboxschrijving (ander itemId, dezelfde functie) slaagt gewoon,
+    // evenals beide statuskolommen (die via wijzigKolomWaarde lopen, niet
+    // wijzigKolomWaardeJson — kolomniveau-onafhankelijkheid, writeback.ts).
+    mockWijzigKolomWaardeJson.mockImplementation(async (itemId: string) => {
+      if (itemId === TRAINERBOARD_ITEM_ID) throw new Error("Monday tijdelijk onbereikbaar (trainerboard)");
+    });
+
+    const eerste = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, "Tekst");
+    expect(eerste.soort).toBe("resultaat");
+    if (eerste.soort !== "resultaat") return;
+    expect(eerste.verslag.status).toBe("bevestigd"); // nog niet "voltooid" — afronding niet volledig geslaagd
+    expect(mockMaakUpdate).toHaveBeenCalledTimes(2); // beide Updates al klaar vóórdat de afronding faalt
+
+    const afronding = eerste.afronding!;
+    const trainerboardLogboek = afronding.kolomResultaten.find((k) => k.record === "trainerboard" && k.veld === "logboek");
+    const centraalLogboek = afronding.kolomResultaten.find((k) => k.record === "centraal" && k.veld === "logboek");
+    expect(trainerboardLogboek?.status).toBe("mislukt");
+    expect(centraalLogboek?.status).toBe("geschreven"); // de andere kant is écht onafhankelijk geslaagd
+    expect(afronding.opnieuwProberen).toEqual({ trainerboard: true, centraal: false }); // alleen die kant hoeft opnieuw
+
+    // Retry: Monday werkt nu weer voor beide kanten.
+    mockMaakUpdate.mockClear();
+    mockWijzigKolomWaardeJson.mockReset().mockResolvedValue(undefined);
+    mockHaalItemMetKolomWaarden.mockClear();
+    const tweede = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID);
+
+    expect(mockMaakUpdate).not.toHaveBeenCalled(); // geen enkele Update herhaald, ook niet bij een checkbox-retry
+    if (tweede.soort !== "resultaat") return;
+    expect(tweede.verslag.status).toBe("voltooid");
+    // De afronding is bewust ongescoped (verslag.ts roept werkTrainingBij
+    // zonder alleenRecord aan) — de al-geslaagde centrale kant wordt dus ook
+    // opnieuw geschreven. Dat is veilig omdat checkboxschrijving idempotent
+    // is: de herlees-bevestiging bewijst hier dat hij ná de retry nog steeds
+    // daadwerkelijk true is, nooit stilzwijgend aangenomen (Monday blijft
+    // bron van waarheid).
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, ["boolean_mm5v9vxd"]);
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, ["boolean_mm5tvfc5"]);
+    const finaleAfronding = tweede.afronding!;
+    expect(finaleAfronding.kolomResultaten.every((k) => k.veld !== "logboek" || k.status === "geschreven")).toBe(true);
   });
 
   it("CONCURRENTIE (dubbele browser-tabs, spec §24) — mock-niveau regressiecheck: de atomische claim (fake-payload.ts se db.drizzle.execute-nabootsing) laat twee gelijktijdige eerste-bevestigingspogingen NOOIT allebei een Update schrijven. Dit is een snelle regressiecheck op de orchestratielogica zelf, GEEN bewijs tegen een echte databaseraceconditie — dat bewijs staat in lib/trainers/verslag.concurrency.real-postgres.test.ts (echte parallelle Postgres-verbindingen, echte rijvergrendeling)", async () => {

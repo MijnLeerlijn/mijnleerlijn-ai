@@ -531,6 +531,10 @@ export interface TrainingVerslagen {
     | boolean
     | null;
   bevestigdOp?: string | null;
+  /**
+   * Snapshot van de ingelogde trainer se naam (trainer-accounts) op het moment van de eerste bevestiging — atomisch samen met definitieveTekst/bevestigdOp gezet, nooit later live herberekend. Dit is de tekst die letterlijk 'Trainer: ...' in de Monday Update en de portalweergave vult.
+   */
+  bevestigdDoorTrainerNaam?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2380,6 +2384,7 @@ export interface TrainingVerslagenSelect<T extends boolean = true> {
   schoolUpdateMondayId?: T;
   afrondingResultaat?: T;
   bevestigdOp?: T;
+  bevestigdDoorTrainerNaam?: T;
   updatedAt?: T;
   createdAt?: T;
 }

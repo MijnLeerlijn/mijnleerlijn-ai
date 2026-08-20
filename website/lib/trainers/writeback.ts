@@ -1,9 +1,10 @@
 import type { Payload } from "payload";
 import { optionalEnv, logFlagDiagnose } from "@/config/env";
-import { leesKolomWaarden, wijzigKolomWaarde, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
+import { leesKolomWaarden, wijzigKolomWaarde, wijzigKolomWaardeJson, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
 import {
   haalTrainingVoorMutatie,
   parseMondayDatum,
+  parseCheckboxIngevuld,
   type TrainingStatus,
   type TrainingSamenvatting,
 } from "./monday-links";
@@ -141,8 +142,19 @@ interface KolomSchrijfOpties {
    */
   vergelijkBijSchrijven: boolean;
   verwachteHuidigeWaarde: string | null;
-  /** Aanwezig (ook null) = doe na het schrijven een directe herlees-bevestiging; alleen gebruikt voor datum-verwijderen (Beslissing 2). */
+  /** Aanwezig (ook null) = doe na het schrijven een directe herlees-bevestiging tegen `.text`; alleen gebruikt voor datum-verwijderen (Beslissing 2). */
   herlezenNaSchrijvenVerwacht?: string | null;
+  /**
+   * Root-cause-fix (2026-08-20) — herlees-bevestiging voor checkbox-kolommen,
+   * tegen `.value` (via parseCheckboxIngevuld), NOOIT tegen `.text` (Monday's
+   * tekstweergave van een checkbox volgt een ander, hier ongebruikt contract).
+   * Monday blijft bron van waarheid (opdrachtseis): een mutatie-aanroep die
+   * niet gooit is GEEN bewijs dat de checkbox daadwerkelijk is aangevinkt —
+   * pas na deze herlees-bevestiging wordt "geschreven" gerapporteerd.
+   */
+  herlezenAlsCheckboxVerwacht?: boolean;
+  /** "json" = schrijf via change_column_value met een al-JSON.stringify'de waarde (checkbox-kolommen); onvermeld = change_simple_column_value (datum/status). */
+  mondayWaardeVorm?: "json";
 }
 
 async function verwerkKolomSchrijving(
@@ -180,11 +192,32 @@ async function verwerkKolomSchrijving(
   }
 
   try {
-    await wijzigKolomWaarde(opties.itemId, opties.boardId, opties.columnId, opties.nieuweMondayWaarde);
+    if (opties.mondayWaardeVorm === "json") {
+      await wijzigKolomWaardeJson(opties.itemId, opties.boardId, opties.columnId, opties.nieuweMondayWaarde);
+    } else {
+      await wijzigKolomWaarde(opties.itemId, opties.boardId, opties.columnId, opties.nieuweMondayWaarde);
+    }
   } catch (error) {
     const boodschap = error instanceof Error ? error.message : String(error);
     await logTrainerWriteBackPoging(payload, logContext, opties.veld, "mislukt", boodschap, { record: opties.record, columnId: opties.columnId });
     return { ...basis, status: "mislukt", boodschap };
+  }
+
+  if (opties.herlezenAlsCheckboxVerwacht !== undefined) {
+    let herlezenAangevinkt: boolean;
+    try {
+      const item = await haalItemMetKolomWaarden(opties.itemId, [opties.columnId]);
+      herlezenAangevinkt = parseCheckboxIngevuld(item?.column_values[0]?.value);
+    } catch (error) {
+      const boodschap = `Monday accepteerde de checkbox-mutatie, maar herlezen ter bevestiging mislukte: ${error instanceof Error ? error.message : String(error)}`;
+      await logTrainerWriteBackPoging(payload, logContext, opties.veld, "mislukt", boodschap, { record: opties.record, columnId: opties.columnId });
+      return { ...basis, status: "mislukt", boodschap };
+    }
+    if (herlezenAangevinkt !== opties.herlezenAlsCheckboxVerwacht) {
+      const boodschap = `Monday accepteerde de checkbox-mutatie, maar herlezen bevestigt niet de verwachte waarde (gelezen aangevinkt=${herlezenAangevinkt}) — niet als geslaagd gerapporteerd.`;
+      await logTrainerWriteBackPoging(payload, logContext, opties.veld, "mislukt", boodschap, { record: opties.record, columnId: opties.columnId, herlezenAangevinkt });
+      return { ...basis, status: "mislukt", boodschap };
+    }
   }
 
   if (opties.herlezenNaSchrijvenVerwacht !== undefined) {
@@ -225,28 +258,25 @@ function datumNaarMondayWaarde(nieuweWaarde: string | null): string {
 }
 
 /**
- * Ronde 3 (2026-08-24) — vertaalt de logboek-afrondingsvlag naar de Monday-
- * schrijfvorm voor een boolean/checkbox-kolom via `change_simple_column_value`.
- * BESTE POGING, ONGEVERIFIEERD: dit is de eerste keer dat dit schrijfpad een
- * checkbox-kolom raakt (voorheen uitsluitend date-/dropdown-achtige
- * kolomtypen) — algemene platformkennis, geen live bevestiging vanuit deze
- * sessie mogelijk (zie lib/sales/monday-client.ts se toelichting bovenaan).
- * Bewust GEEN fail-safe-herlees-bevestiging zoals datum-verwijderen die wél
- * kreeg (Beslissing 2, Ronde 2): die bestond voor een specifiek, door-
- * geredeneerd risico (lege string op een datumkolom); hier is er geen
- * vergelijkbare, specifieke aanwijzing — een herlees-check tegen een zelf
- * ook ongeverifieerde verwachte tekstweergave zou juist een vals-negatieve
- * "mislukt"-melding kunnen geven op een in werkelijkheid geslaagde
- * schrijving. Mocht Michels live Wessel-test laten zien dat
- * `change_simple_column_value` checkbox-kolommen structureel weigert (een
- * GraphQL-typefout, geen "verkeerde waarde"-fout): de bekende vervolgfix is
- * een aparte `change_column_value`-JSON-variant (`{"checked":"true"}`,
- * dezelfde vorm als parseCheckboxIngevuld in monday-links.ts al bij het
- * lezen verwacht) — bewust hier geïsoleerd achter deze ene functie, zodat
- * die vervolgfix een kleine, geïsoleerde wijziging blijft.
+ * Root-cause-fix (2026-08-20, ná Wessels live Ronde-3-test) — vertaalt de
+ * logboek-afrondingsvlag naar de Monday-schrijfvorm voor een boolean/
+ * checkbox-kolom. De oorspronkelijke poging (`nieuweWaarde ? "true" : ""`
+ * via `change_simple_column_value`) bleek in de live test niet te werken:
+ * de statuskolom (dropdown/label) schreef in datzelfde verzoek wél correct
+ * via diezelfde mutatie, dus de mutatie-laag zelf werkt — `change_simple_
+ * column_value` accepteert alleen géén checkbox-kolommen. Nu een
+ * JSON.stringify'de `{"checked":"true"}` (leeg object om uit te vinken),
+ * geschreven via `change_column_value` (wijzigKolomWaardeJson,
+ * lib/sales/monday-client.ts) — dezelfde JSON-vorm als parseCheckboxIngevuld
+ * (monday-links.ts) al bij het lezen verwacht, dus symmetrisch met de
+ * bevestigde leeskant. De exacte GraphQL-wire-vorm van Monday's JSON-scalar
+ * is algemene platformkennis, niet opnieuw live bevestigd vanuit deze
+ * sessie — vandaar de verplichte herlees-bevestiging (herlezenAlsCheckbox
+ * Verwacht, verwerkKolomSchrijving) die hier nooit ontbreekt: Monday blijft
+ * bron van waarheid, nooit een lokale aanname.
  */
 function checkboxNaarMondayWaarde(nieuweWaarde: boolean): string {
-  return nieuweWaarde ? "true" : "";
+  return JSON.stringify(nieuweWaarde ? { checked: "true" } : {});
 }
 
 async function verwerkTrainerboardRecord(
@@ -345,6 +375,8 @@ async function verwerkTrainerboardRecord(
         gewenstWaardeVoorUi: String(verzoek.logboek.nieuweWaarde),
         vergelijkBijSchrijven: false,
         verwachteHuidigeWaarde: null,
+        mondayWaardeVorm: "json",
+        herlezenAlsCheckboxVerwacht: verzoek.logboek.nieuweWaarde,
       })
     );
   }
@@ -477,6 +509,8 @@ async function verwerkCentraalRecord(
         gewenstWaardeVoorUi: String(verzoek.logboek.nieuweWaarde),
         vergelijkBijSchrijven: false,
         verwachteHuidigeWaarde: null,
+        mondayWaardeVorm: "json",
+        herlezenAlsCheckboxVerwacht: verzoek.logboek.nieuweWaarde,
       })
     );
   }

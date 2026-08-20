@@ -150,6 +150,15 @@ export const TrainingVerslagen: CollectionConfig = {
       admin: { description: "Het volledige, ongewijzigde TrainingWriteBackResultaat van de afrondingsstap (lib/trainers/writeback.ts) — alleen gezet zodra beide Updates geschreven zijn." },
     },
     { name: "bevestigdOp", type: "date", label: "Definitief bevestigd op" },
+    {
+      name: "bevestigdDoorTrainerNaam",
+      type: "text",
+      label: "Bevestigd door (trainernaam-snapshot)",
+      admin: {
+        description:
+          "Snapshot van de ingelogde trainer se naam (trainer-accounts) op het moment van de eerste bevestiging — atomisch samen met definitieveTekst/bevestigdOp gezet, nooit later live herberekend. Dit is de tekst die letterlijk 'Trainer: ...' in de Monday Update en de portalweergave vult.",
+      },
+    },
   ],
   indexes: [{ fields: ["trainer", "mondayTrainingId"], unique: true }],
 };

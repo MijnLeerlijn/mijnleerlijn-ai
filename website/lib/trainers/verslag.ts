@@ -241,6 +241,15 @@ export interface VerslagRecord {
   schoolUpdateClaimedAt?: string | null;
   afrondingResultaat?: unknown;
   bevestigdOp?: string | null;
+  /**
+   * Snapshot van trainer.name op het moment van de EERSTE bevestiging (stap
+   * 3, atomisch samen met definitieveTekst/bevestigdOp gezet) — nooit later
+   * live herberekend uit de trainer-accounts-relatie, want de Monday-Update-
+   * tekst zelf is na verzending ook onveranderlijk. Zo blijft de kop in
+   * Update/schoollogboek/portal blijvend identiek, ook als de trainer zijn
+   * accountnaam nadien wijzigt.
+   */
+  bevestigdDoorTrainerNaam?: string | null;
 }
 
 /**
@@ -383,11 +392,51 @@ function formatteerDatumHeaderNL(iso: string): string {
  * ondersteunen geen betrouwbaar op te slaan HTML/markup vanuit deze
  * schrijfroute (zelfde platte-tekst-aanpak als create_update elders), dus
  * geen opmaak buiten regeleinden.
+ *
+ * Kopvolgorde (2026-08-20, na Wessels live Ronde-3-test) — LETTERLIJK Trainer
+ * / School / Training, in die volgorde: expliciet zo opgegeven, zodat
+ * ondubbelzinnig is welke trainer het verslag daadwerkelijk maakte, ook al
+ * toont Monday zelf de technische auteur van de Update (het gedeelde
+ * servicetoken-account) nooit de trainer zelf.
  */
-export function bouwVerslagUpdateTekst(opts: { bevestigdOpIso: string; trainingNaam: string; trainerNaam: string; verslagTekst: string }): string {
-  return [`TRAININGSVERSLAG — ${formatteerDatumHeaderNL(opts.bevestigdOpIso)}`, `Training: ${opts.trainingNaam}`, `Trainer: ${opts.trainerNaam}`, "", opts.verslagTekst].join(
-    "\n"
-  );
+export function bouwVerslagUpdateTekst(opts: { bevestigdOpIso: string; trainerNaam: string; schoolNaam: string; trainingNaam: string; verslagTekst: string }): string {
+  return [
+    `TRAININGSVERSLAG — ${formatteerDatumHeaderNL(opts.bevestigdOpIso)}`,
+    `Trainer: ${opts.trainerNaam}`,
+    `School: ${opts.schoolNaam}`,
+    `Training: ${opts.trainingNaam}`,
+    "",
+    opts.verslagTekst,
+  ].join("\n");
+}
+
+/**
+ * Enige plek die de kop+inhoud-tekst reconstrueert buiten bevestigVerslag()
+ * zelf — gedeeld tussen de Monday-schrijving (impliciet, via dezelfde
+ * bouwVerslagUpdateTekst-aanroep in bevestigVerslag) en de portalweergave
+ * (app/(trainers)/.../verslag/page.tsx + de bevestig-route se JSON-respons):
+ * "identiek in Update, schoollogboek én portal" (opdrachtseis) is hierdoor
+ * een architecturele garantie — dezelfde functie, dezelfde velden, nooit een
+ * los client-side of tweede server-side samengestelde variant. Geeft `null`
+ * terug zolang het verslag nog niet definitief bevestigd is (nog geen
+ * bevestigdOp/bevestigdDoorTrainerNaam/definitieveTekst) — precies de staat
+ * waarin er nog niets is om weer te geven.
+ */
+export function bouwVerslagWeergaveTekst(opts: {
+  bevestigdOp?: string | null;
+  bevestigdDoorTrainerNaam?: string | null;
+  schoolNaam: string;
+  trainingNaam: string;
+  definitieveTekst?: string | null;
+}): string | null {
+  if (!opts.bevestigdOp || !opts.bevestigdDoorTrainerNaam || !opts.definitieveTekst) return null;
+  return bouwVerslagUpdateTekst({
+    bevestigdOpIso: opts.bevestigdOp,
+    trainerNaam: opts.bevestigdDoorTrainerNaam,
+    schoolNaam: opts.schoolNaam,
+    trainingNaam: opts.trainingNaam,
+    verslagTekst: opts.definitieveTekst,
+  });
 }
 
 const MAX_HERLEES_UPDATES = 30;
@@ -599,7 +648,7 @@ export type BevestigVerslagUitkomst =
   | { soort: "niet_gevonden" }
   | { soort: "niet_bewerkbaar"; boodschap: string }
   | { soort: "geannuleerd"; boodschap: string }
-  | { soort: "resultaat"; verslag: VerslagRecord; boodschap?: string; afronding?: TrainingWriteBackResultaat };
+  | { soort: "resultaat"; verslag: VerslagRecord; boodschap?: string; afronding?: TrainingWriteBackResultaat; weergaveTekst?: string };
 
 /**
  * Definitieve bevestiging — de kernorchestratie van deze ronde. Idempotent/
@@ -649,7 +698,10 @@ export type BevestigVerslagUitkomst =
 export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, trainingId: string, definitieveTekst?: string): Promise<BevestigVerslagUitkomst> {
   const rij = await haalVerslagVoorTraining(payload, trainer, trainingId);
   if (!rij) return { soort: "niet_gevonden" };
-  if (rij.status === "voltooid") return { soort: "resultaat", verslag: rij };
+  if (rij.status === "voltooid") {
+    const weergaveTekst = bouwVerslagWeergaveTekst({ ...rij, schoolNaam: rij.schoolNaam ?? "", trainingNaam: rij.trainingNaam ?? "" }) ?? undefined;
+    return { soort: "resultaat", verslag: rij, weergaveTekst };
+  }
 
   // Stap 1.
   const gevonden = await haalTrainingVoorMutatie(trainer, rij.mondayTrainingId);
@@ -676,25 +728,31 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
   if (rij.status === "concept") {
     const tekst = definitieveTekst ? begrensLengte(definitieveTekst, MAX_DEFINITIEVETEKST_LENGTE).trim() : "";
     if (!tekst) return { soort: "niet_bewerkbaar", boodschap: "Geen tekst opgegeven om te bevestigen." };
+    // trainer.name (nooit clientdata — zie AuthTrainer/verifyTrainerSessionCookie:
+    // altijd een verse payload.findByID op trainer-accounts) wordt hier
+    // ATOMISCH mee vastgelegd, samen met definitieveTekst/bevestigdOp/status
+    // — één historische snapshot, nooit later herberekend (zie
+    // VerslagRecord.bevestigdDoorTrainerNaam se doc-comment).
     await payload.db.drizzle.execute(sql`
       UPDATE training_verslagen
-      SET definitieve_tekst = ${tekst}, bevestigd_op = ${new Date().toISOString()}, status = 'gedeeltelijk'
+      SET definitieve_tekst = ${tekst}, bevestigd_op = ${new Date().toISOString()}, status = 'gedeeltelijk', bevestigd_door_trainer_naam = ${trainer.name}
       WHERE id = ${rij.id} AND status = 'concept';
     `);
     werkrij = (await payload.findByID({ collection: "training-verslagen", id: rij.id, overrideAccess: true, depth: 0 })) as VerslagRecord;
   }
 
-  if (!werkrij.definitieveTekst || !werkrij.bevestigdOp) {
-    // Kan structureel niet gebeuren (stap 3 zet ze altijd samen) — type-guard.
+  const updateTekst = bouwVerslagWeergaveTekst({
+    bevestigdOp: werkrij.bevestigdOp,
+    bevestigdDoorTrainerNaam: werkrij.bevestigdDoorTrainerNaam,
+    schoolNaam: werkrij.schoolNaam ?? gevonden.schoolNaam,
+    trainingNaam: werkrij.trainingNaam ?? gevonden.training.naam,
+    definitieveTekst: werkrij.definitieveTekst,
+  });
+  if (!updateTekst) {
+    // Kan structureel niet gebeuren (stap 3 zet definitieveTekst/bevestigdOp/
+    // bevestigdDoorTrainerNaam altijd samen) — type-guard.
     return { soort: "niet_bewerkbaar", boodschap: "Verslag heeft nog geen bevestigde tekst." };
   }
-
-  const updateTekst = bouwVerslagUpdateTekst({
-    bevestigdOpIso: werkrij.bevestigdOp,
-    trainingNaam: werkrij.trainingNaam ?? gevonden.training.naam,
-    trainerNaam: trainer.name,
-    verslagTekst: werkrij.definitieveTekst,
-  });
 
   // Stap 4. trainingInBehandeling blijft bewust LOKAAL (nooit naar de DB
   // geschreven) — "in_behandeling" is geen status van het verslag zelf, maar
@@ -756,7 +814,7 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
       trainingInBehandeling || schoolInBehandeling
         ? "Dit verslag wordt op dit moment al verwerkt door een andere aanvraag (bijvoorbeeld een tweede klik of tweede tabblad) — probeer het over enkele seconden opnieuw."
         : "Verslag gedeeltelijk opgeslagen — niet alle onderdelen zijn nog geschreven.";
-    return { soort: "resultaat", verslag: werkrij, boodschap };
+    return { soort: "resultaat", verslag: werkrij, boodschap, weergaveTekst: updateTekst };
   }
 
   werkrij = await schrijfVerslagVelden(payload, rij.id, { status: "bevestigd" });
@@ -771,7 +829,7 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
   });
 
   if (afronding.soort !== "resultaat") {
-    return { soort: "resultaat", verslag: werkrij, boodschap: "Verslag is opgeslagen, maar de afronding (status/logboek) kon niet worden voltooid." };
+    return { soort: "resultaat", verslag: werkrij, boodschap: "Verslag is opgeslagen, maar de afronding (status/logboek) kon niet worden voltooid.", weergaveTekst: updateTekst };
   }
 
   const afrondingVolledigGeslaagd = afronding.resultaat.algeheleStatus === "volledig_geslaagd" || afronding.resultaat.algeheleStatus === "niet_geactiveerd";
@@ -780,5 +838,5 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
     status: afrondingVolledigGeslaagd ? "voltooid" : "bevestigd",
   });
 
-  return { soort: "resultaat", verslag: werkrij, afronding: afronding.resultaat };
+  return { soort: "resultaat", verslag: werkrij, afronding: afronding.resultaat, weergaveTekst: updateTekst };
 }

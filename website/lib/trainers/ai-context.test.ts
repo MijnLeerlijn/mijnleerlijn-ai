@@ -171,6 +171,7 @@ describe("bouwTrainerSchoolPrompt — Ronde 3-integratie (trainingsverslag autom
       bevestigdOpIso: "2026-08-24T10:00:00.000Z",
       trainingNaam: "Online spreekuur",
       trainerNaam: "Wessel Kok",
+      schoolNaam: "Montessori Gorinchem",
       verslagTekst: "Wat is behandeld:\nInrichting van de groepen is besproken en vastgesteld.\n\nAfspraken:\nVolgende keer verder met de weektaken.",
     });
     const verslagUpdate = {
@@ -201,7 +202,7 @@ describe("bouwTrainerSchoolPrompt — Ronde 3-integratie (trainingsverslag autom
     const ouderVerslag = {
       id: "u-verslag-oud",
       item_id: "500",
-      text_body: bouwVerslagUpdateTekst({ bevestigdOpIso: "2026-06-01T09:00:00.000Z", trainingNaam: "Training", trainerNaam: "Wessel Kok", verslagTekst: "Keuzes over inrichting/werkwijze:\nGroepsindeling staat nog open." }),
+      text_body: bouwVerslagUpdateTekst({ bevestigdOpIso: "2026-06-01T09:00:00.000Z", trainingNaam: "Training", trainerNaam: "Wessel Kok", schoolNaam: "Montessori Gorinchem", verslagTekst: "Keuzes over inrichting/werkwijze:\nGroepsindeling staat nog open." }),
       created_at: "2026-06-01T09:00:00.000Z",
       updated_at: "2026-06-01T09:00:00.000Z",
       creator: { id: "1", name: "Wessel Kok" },
@@ -209,7 +210,7 @@ describe("bouwTrainerSchoolPrompt — Ronde 3-integratie (trainingsverslag autom
     const nieuwVerslag = {
       id: "u-verslag-nieuw",
       item_id: "500",
-      text_body: bouwVerslagUpdateTekst({ bevestigdOpIso: "2026-08-24T09:00:00.000Z", trainingNaam: "Training", trainerNaam: "Wessel Kok", verslagTekst: "Wat is behandeld:\nDe groepsindeling is vandaag definitief besproken en besloten." }),
+      text_body: bouwVerslagUpdateTekst({ bevestigdOpIso: "2026-08-24T09:00:00.000Z", trainingNaam: "Training", trainerNaam: "Wessel Kok", schoolNaam: "Montessori Gorinchem", verslagTekst: "Wat is behandeld:\nDe groepsindeling is vandaag definitief besproken en besloten." }),
       created_at: "2026-08-24T09:00:00.000Z",
       updated_at: "2026-08-24T09:00:00.000Z",
       creator: { id: "1", name: "Wessel Kok" },

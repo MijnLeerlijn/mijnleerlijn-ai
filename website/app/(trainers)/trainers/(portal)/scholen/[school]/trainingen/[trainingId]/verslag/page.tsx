@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalTrainingVoorMutatie } from "@/lib/trainers/monday-links";
-import { haalVerslagVoorTraining } from "@/lib/trainers/verslag";
+import { haalVerslagVoorTraining, bouwVerslagWeergaveTekst } from "@/lib/trainers/verslag";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { VerslagEditor } from "./verslag-editor";
 
@@ -81,6 +81,20 @@ export default async function VerslagPagina({ params }: VerslagPaginaProps) {
                   aiGegenereerd: Boolean(verslag.aiGegenereerd),
                   trainingUpdateStatus: verslag.trainingUpdateStatus,
                   schoolUpdateStatus: verslag.schoolUpdateStatus,
+                  // Zelfde functie als de Monday-schrijving (bevestigVerslag,
+                  // lib/trainers/verslag.ts) — "identiek in Update, school-
+                  // logboek én portal" is hierdoor een architecturele
+                  // garantie, geen toevallige gelijkenis. null zolang nog niet
+                  // definitief bevestigd (dan toont de editor sowieso nog
+                  // geen read-only weergave).
+                  weergaveTekst:
+                    bouwVerslagWeergaveTekst({
+                      bevestigdOp: verslag.bevestigdOp,
+                      bevestigdDoorTrainerNaam: verslag.bevestigdDoorTrainerNaam,
+                      schoolNaam: verslag.schoolNaam ?? schoolNaam,
+                      trainingNaam: verslag.trainingNaam ?? training.naam,
+                      definitieveTekst: verslag.definitieveTekst,
+                    }) ?? undefined,
                 }
               : null
           }
