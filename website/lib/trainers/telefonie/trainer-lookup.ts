@@ -43,6 +43,25 @@ export async function haalAuthTrainerVoorId(payload: Payload, trainerId: number)
   return naarAuthTrainer(doc);
 }
 
+export interface TelefonieProfiel {
+  mobielNummer: string | null;
+  telefonieActief: boolean;
+}
+
+/**
+ * Ronde 3.5 (2026-08-25) — spec §24: "Toon in Profiel het geregistreerde
+ * mobiele nummer." BEWUST geen los veld op AuthTrainer (dat type voedt overal
+ * de Monday-resolutieladder en hoeft deze twee telefonie-specifieke velden
+ * niet overal mee te dragen) — een eigen, kleine opzoeking, alleen gebruikt
+ * door app/(trainers)/trainers/(portal)/profiel/page.tsx. Wijzigen blijft in
+ * V1 bewust adminOnly (zie die pagina se toelichting) — deze functie is
+ * uitsluitend lezen.
+ */
+export async function haalTelefonieProfiel(payload: Payload, trainerId: number): Promise<TelefonieProfiel> {
+  const doc = await payload.findByID({ collection: "trainer-accounts", id: trainerId, overrideAccess: true, depth: 0, disableErrors: true });
+  return { mobielNummer: doc?.mobielNummer ?? null, telefonieActief: Boolean(doc?.telefonieActief) };
+}
+
 export async function vindTrainerVoorTelefoonnummer(payload: Payload, ruwNummer: string | null): Promise<TrainerVoorTelefonieUitkomst> {
   if (!ruwNummer) return { soort: "geen_geldig_nummer" };
   const genormaliseerd = normaliseerNederlandsNummer(ruwNummer);
