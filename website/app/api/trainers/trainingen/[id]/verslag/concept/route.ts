@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { verifyTrainerSessionCookie, TRAINER_SESSION_COOKIE_NAME } from "@/lib/trainers/auth";
-import { upsertConcept } from "@/lib/trainers/verslag";
+import { upsertConcept, verwijderConcept } from "@/lib/trainers/verslag";
 import { maakRateLimiter } from "@/lib/contact/validate";
 
 // Traineromgeving V1, Ronde 3 (2026-08-24) — concept bewaren/autosave (spec
@@ -63,5 +63,38 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch (error) {
     console.error("[api/trainers/trainingen/[id]/verslag/concept] mislukt:", error);
     return NextResponse.json({ error: "Concept opslaan mislukt. Probeer het opnieuw." }, { status: 500 });
+  }
+}
+
+// Ronde 3.5 (2026-08-25) — spec §14: trainer moet een fout (telefonisch)
+// concept kunnen verwijderen. Zelfde sessie-/eigendomscontrole als POST
+// hierboven; de eigenlijke veiligheidsgrens (alleen status "concept") zit in
+// verwijderConcept() zelf (lib/trainers/verslag.ts), niet hier.
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const payload = await getPayload({ config });
+
+  const sessieControle = await verifyTrainerSessionCookie(payload, request.cookies.get(TRAINER_SESSION_COOKIE_NAME)?.value);
+  if (!sessieControle.trainer) {
+    return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+  const trainer = sessieControle.trainer;
+
+  if (!beperkAanvragen.magVerder(String(trainer.id))) {
+    return NextResponse.json({ error: "Te veel aanvragen — probeer het over een minuut opnieuw." }, { status: 429 });
+  }
+
+  try {
+    const uitkomst = await verwijderConcept(payload, trainer, id);
+    if (uitkomst.soort === "niet_gevonden") {
+      return NextResponse.json({ error: "Concept niet gevonden." }, { status: 404 });
+    }
+    if (uitkomst.soort === "niet_verwijderbaar") {
+      return NextResponse.json({ error: uitkomst.boodschap }, { status: 422 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("[api/trainers/trainingen/[id]/verslag/concept] verwijderen mislukt:", error);
+    return NextResponse.json({ error: "Concept verwijderen mislukt. Probeer het opnieuw." }, { status: 500 });
   }
 }

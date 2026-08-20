@@ -250,6 +250,17 @@ export interface VerslagRecord {
    * accountnaam nadien wijzigt.
    */
   bevestigdDoorTrainerNaam?: string | null;
+  /**
+   * Ronde 3.5 (2026-08-25) — hoe dit record ontstond; uitsluitend gezet bij
+   * aanmaak (upsertConcept), nooit later herschreven. Zie payload/
+   * collections/TrainingVerslagen.ts. Bewust ZONDER het bijbehorende
+   * telefonieOproep-relatieveld hier: dat heeft (net als "trainer"
+   * hierboven al niet in dit type staat) de bekende depth:0-typinghobbel
+   * (number | TrainerTelefonieOproepen) — niets in dit bestand leest het
+   * ooit terug, alleen upsertConcept() schrijft het eenmalig weg, dus geen
+   * reden om die typingcomplexiteit hier te importeren.
+   */
+  bron?: "portal" | "telefoon" | null;
 }
 
 /**
@@ -306,12 +317,21 @@ export type VerslagConceptUitkomst = { soort: "niet_gevonden" } | { soort: "niet
  * realistische oorzaak; de winnaar bestaat gegarandeerd, dus herlezen en
  * normaal bijwerken. Zie payload/collections/TrainingVerslagen.ts se
  * unique index.
+ *
+ * `bron`/`telefonieOproepId` (Ronde 3.5, 2026-08-25) — uitsluitend gebruikt
+ * door lib/trainers/telefonie/oproep-state.ts bij de EERSTE aanmaak van een
+ * telefonisch concept; de gewone portalflow laat ze weg (default "portal",
+ * zie de collectie). Bewust NOOIT toegepast op de update-paden hieronder:
+ * bron is een onveranderlijk "hoe is deze rij ontstaan"-snapshot, geen
+ * live-bijgewerkt veld — een latere portal-bewerking van een telefonisch
+ * concept blijft dus gewoon bron="telefoon" tonen (spec §13 se kleine
+ * "Bron: telefonisch ingesproken"-label blijft kloppen).
  */
 export async function upsertConcept(
   payload: Payload,
   trainer: AuthTrainer,
   trainingId: string,
-  invoer: { trainerInvoer?: string; definitieveTekst?: string }
+  invoer: { trainerInvoer?: string; definitieveTekst?: string; bron?: "telefoon"; telefonieOproepId?: number }
 ): Promise<VerslagConceptUitkomst> {
   const gevonden = await haalTrainingVoorMutatie(trainer, trainingId);
   if (!gevonden) return { soort: "niet_gevonden" };
@@ -329,6 +349,11 @@ export async function upsertConcept(
   const definitieveTekst = invoer.definitieveTekst !== undefined ? begrensLengte(invoer.definitieveTekst, MAX_DEFINITIEVETEKST_LENGTE) : undefined;
   const schoolNaam = gevonden.schoolNaam;
   const trainingNaam = gevonden.training.naam;
+  // undefined = "dit veld niet aanraken" (Payload-conventie, zelfde als
+  // trainerInvoer/definitieveTekst hierboven) — alleen relevant op het
+  // create-pad hieronder, zie upsertConcept() se eigen doc-comment.
+  const bron = invoer.bron;
+  const telefonieOproepId = invoer.telefonieOproepId ?? null;
 
   const bestaand = await haalVerslagVoorTraining(payload, trainer, trainingId);
   if (bestaand) {
@@ -358,6 +383,13 @@ export async function upsertConcept(
         definitieveTekst,
         schoolNaam,
         trainingNaam,
+        // Payload-veldnaam is "telefonieOproep" (bewust zonder "Id"-suffix,
+        // zie payload/collections/TrainingVerslagen.ts se doc-comment bij dat
+        // veld) — deze functie se eigen parameter heet nog altijd
+        // telefonieOproepId (een scalar training-verslagen-rij-ID doorgeven
+        // voelt daar natuurlijker), vandaar de naamswisseling op deze ene regel.
+        telefonieOproep: telefonieOproepId,
+        bron: bron ?? "portal",
       },
     });
     return { soort: "ok", verslag: nieuw };
@@ -373,6 +405,74 @@ export async function upsertConcept(
     });
     return { soort: "ok", verslag: bijgewerkt };
   }
+}
+
+export type VerwijderConceptUitkomst = { soort: "niet_gevonden" } | { soort: "niet_verwijderbaar"; boodschap: string } | { soort: "ok" };
+
+/**
+ * Ronde 3.5 (2026-08-25) — spec §14: "Trainer moet een fout telefonisch
+ * concept kunnen verwijderen." Bewust NIET beperkt tot bron="telefoon": een
+ * verkeerd gestart portalconcept mag om dezelfde reden verwijderbaar zijn,
+ * geen tweede, aparte functie voor exact dezelfde bewerking.
+ *
+ * Veiligheidsgrens (spec §14, letterlijk): "mag nooit een reeds definitief
+ * verslag verwijderen uit Monday." De enige rijstatus waarbij GEGARANDEERD
+ * nog geen enkele Monday-schrijving is geprobeerd, is "concept" (zie
+ * bevestigVerslag() se stap 3/4/5 — pas ná "concept" wordt ooit
+ * schrijfVerslagUpdateIdempotent aangeroepen). Verwijderen buiten die status
+ * zou de idempotentiegarantie (trainingUpdateStatus/*MondayId) kunnen
+ * vernietigen — een latere nieuwe poging zou dan denken dat er nog nooit een
+ * Update geschreven is, en die alsnog dupliceren. Vandaar hier een harde
+ * weigering i.p.v. een soft-delete-vlag: eenvoudiger te redeneren, geen
+ * risico dat een toekomstige lezing de vlag vergeet te controleren.
+ */
+export async function verwijderConcept(payload: Payload, trainer: AuthTrainer, trainingId: string): Promise<VerwijderConceptUitkomst> {
+  const rij = await haalVerslagVoorTraining(payload, trainer, trainingId);
+  if (!rij) return { soort: "niet_gevonden" };
+  if (rij.status !== "concept") {
+    return { soort: "niet_verwijderbaar", boodschap: "Dit verslag is al (deels) bevestigd en kan niet meer verwijderd worden." };
+  }
+  await payload.delete({ collection: "training-verslagen", id: rij.id, overrideAccess: true });
+  return { soort: "ok" };
+}
+
+export interface TelefonischConcept {
+  mondayTrainingId: string;
+  schoolId: string;
+  schoolNaam: string;
+  trainingNaam: string;
+  /** Wanneer het gesprek binnenkwam (trainer-telefonie-oproepen.ontvangenOp) — getoond als "ingesproken op", zie portal-UX. */
+  ontvangenOp: string | null;
+}
+
+/**
+ * Ronde 3.5 (2026-08-25) — spec §13: "Toon prominent op Dashboard:
+ * 'Ingesproken verslag controleren' met school; training; datum; tijd
+ * ingesproken." Bewust GEEN losse Monday-leesronde voor de trainingsdatum
+ * zelf hier (zou deze functie een N-voudige live Monday-aanroep maken voor
+ * wat uitsluitend weergave is) — "ingesproken op" (het gespreksmoment, via
+ * de gekoppelde telefonie-oproep) dekt de behoefte al: de trainer belt vrijwel
+ * altijd kort na de training zelf, dus dat tijdstip is een betrouwbare
+ * proxy. depth:1 is hier bewust WEL nodig (i.t.t. de rest van dit bestand,
+ * dat overal depth:0 gebruikt) om telefonieOproep.ontvangenOp in één
+ * opzoeking mee te krijgen.
+ */
+export async function haalTelefonischeConceptenVoorTrainer(payload: Payload, trainer: AuthTrainer): Promise<TelefonischConcept[]> {
+  const resultaat = await payload.find({
+    collection: "training-verslagen",
+    where: { and: [{ trainer: { equals: trainer.id } }, { status: { equals: "concept" } }, { bron: { equals: "telefoon" } }] },
+    overrideAccess: true,
+    depth: 1,
+    sort: "-createdAt",
+    limit: 20,
+  });
+  return resultaat.docs.map((doc) => ({
+    mondayTrainingId: doc.mondayTrainingId,
+    schoolId: doc.mondaySchoolId,
+    schoolNaam: doc.schoolNaam ?? "Onbekende school",
+    trainingNaam: doc.trainingNaam ?? "Training",
+    ontvangenOp: typeof doc.telefonieOproep === "object" && doc.telefonieOproep ? doc.telefonieOproep.ontvangenOp : null,
+  }));
 }
 
 // ---------------------------------------------------------------------------

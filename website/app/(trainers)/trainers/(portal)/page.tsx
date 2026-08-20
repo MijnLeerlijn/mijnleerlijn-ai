@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getPayload } from "payload";
-import { CalendarDays, CalendarClock, School, NotebookPen, Sparkles } from "lucide-react";
+import { CalendarDays, CalendarClock, School, NotebookPen, Sparkles, PhoneIncoming } from "lucide-react";
 import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalDashboardData, type TrainingMetSchool } from "@/lib/trainers/monday-links";
-import { haalVerslagenPerTraining, type VerslagRecord } from "@/lib/trainers/verslag";
-import { formatKorteDatum } from "@/lib/sales/format-datum";
+import { haalVerslagenPerTraining, haalTelefonischeConceptenVoorTrainer, type VerslagRecord } from "@/lib/trainers/verslag";
+import { formatKorteDatum, formatKorteDatumTijd } from "@/lib/sales/format-datum";
 import { TrainerVraagBlok } from "./trainer-vraag-blok";
 
 export const metadata = { title: "Dashboard — Trainerportal" };
@@ -94,6 +94,8 @@ export default async function TrainerDashboardPage() {
     trainer,
     data.logboekOpenstaand.map((t) => t.id)
   );
+  // Ronde 3.5 (telefonie) — spec §13: "Toon prominent op Dashboard."
+  const telefonischeConcepten = await haalTelefonischeConceptenVoorTrainer(payload, trainer);
 
   return (
     <div className="flex flex-col gap-8">
@@ -130,6 +132,45 @@ export default async function TrainerDashboardPage() {
           </p>
         </div>
       </div>
+
+      {/* Ronde 3.5 (telefonie, 2026-08-25) — spec §13: prominent bovenaan,
+          nog vóór "Vandaag": een telefonisch ingesproken concept is een
+          verse, actie-vereisende gebeurtenis (een gesprek is net geweest) en
+          verdient daarom de meest opvallende plek op het dashboard, net als
+          "Verslag nog invullen" hieronder maar dan met een eigen, herkenbare
+          telefoonaccent i.p.v. amber — voorkomt verwarring met de gewone
+          "logboek nog niet ingevuld"-attentie. */}
+      {telefonischeConcepten.length > 0 && (
+        <section className="rounded-xl border border-teal-200 bg-teal-50/40 shadow-sm">
+          <div className="flex items-center gap-2 border-b border-teal-100 px-4 py-3">
+            <PhoneIncoming size={16} className="text-teal-700" />
+            <h2 className="text-h3 font-semibold text-grijs-900">Ingesproken verslag controleren</h2>
+          </div>
+          <div className="flex flex-col divide-y divide-teal-100 px-1 py-1">
+            {telefonischeConcepten.map((concept) => (
+              <div
+                key={concept.mondayTrainingId}
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg px-3 py-2.5"
+              >
+                <Link href={`/scholen/${concept.schoolId}`} className="min-w-[10rem] flex-1 hover:underline">
+                  <p className="text-body-sm font-medium text-grijs-900">{concept.schoolNaam}</p>
+                  <p className="text-label text-grijs-600">{concept.trainingNaam}</p>
+                </Link>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <span className="text-body-sm text-grijs-600">Ingesproken op {formatKorteDatumTijd(concept.ontvangenOp)}</span>
+                  <Link
+                    href={`/scholen/${concept.schoolId}/trainingen/${concept.mondayTrainingId}/verslag`}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-label font-semibold text-white transition-colors hover:bg-teal-700"
+                  >
+                    <PhoneIncoming size={12} />
+                    Controleren
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-xl border border-grijs-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-grijs-100 px-4 py-3">

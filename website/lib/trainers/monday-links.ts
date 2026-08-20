@@ -20,7 +20,7 @@ import { sorteerTrainingenAlfabetisch } from "./training-sortering";
  * Bewust NIET in format-datum.ts zelf aangepast: dat bestand wordt ook door
  * Sales gebruikt (buiten deze opdracht se scope) en mag niet wijzigen.
  */
-function vandaagIsoAmsterdam(): string {
+export function vandaagIsoAmsterdam(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam" }).format(new Date());
 }
 
@@ -649,6 +649,50 @@ export async function haalDashboardData(trainer: AuthTrainer): Promise<TrainerDa
     logboekOpenstaand: groepen.verslag_nog_invullen,
     bevestigdeScholen,
   };
+}
+
+/**
+ * Ronde 3.5 (2026-08-25) — Telefonische verslaglegging: de trainingkandidaten
+ * die het telefoniesysteem een gebelde trainer mag voorleggen (spec §5).
+ * Bewust een EIGEN, kleinere selectie dan haalDashboardData()/haalSchoolDetail
+ * (die tonen ALLE trainingen resp. gegroepeerd op de volledige bucket-
+ * indeling) — hier gaat het uitsluitend om "waarschijnlijk waarvoor de
+ * trainer nu net belt": recent genoeg (vandaag t/m TELEFONIE_RECENTE_DAGEN
+ * dagen geleden), heeft een trainerboard-item (zonder dat kan er sowieso geen
+ * verslag aan gekoppeld worden, zelfde poort als bevestigVerslag() se stap 1),
+ * en niet geannuleerd (zelfde poort als bevestigVerslag() se stap 2 — nooit
+ * een verslag aanbieden voor een training die toch al geen Update meer
+ * accepteert). Toekomstige trainingen worden bewust NIET aangeboden (spec §5:
+ * "begin klein", en inhoudelijk vreemd om nu al een verslag te maken voor een
+ * training die nog moet plaatsvinden) — een bewuste V1-vereenvoudiging, zie
+ * het opleverrapport.
+ *
+ * Zelfde databron/resolutieketen als haalDashboardData (verzamelTrainerContext)
+ * — geen aparte Monday-aanroep, geen tweede interpretatie van "welke
+ * trainingen hoort deze trainer" (spec §6: de write-identiteit komt altijd uit
+ * dezelfde resolutieladder, nooit uit een losse telefonie-specifieke query).
+ */
+const TELEFONIE_RECENTE_DAGEN = 3;
+
+export async function haalRecenteTrainingenVoorTelefonie(trainer: AuthTrainer): Promise<TrainingMetSchool[]> {
+  const context = await verzamelTrainerContext(trainer);
+  const vandaag = vandaagIsoAmsterdam();
+  const vandaagMs = new Date(`${vandaag}T00:00:00Z`).getTime();
+
+  const alle: TrainingMetSchool[] = [];
+  for (const school of context.scholen.values()) {
+    for (const training of context.trainingenPerSchool.get(school.id) ?? []) {
+      alle.push({ ...training, schoolId: school.id, schoolNaam: school.naam });
+    }
+  }
+
+  return alle
+    .filter((t) => t.trainerboardItemId !== null && t.status !== "geannuleerd" && t.datum !== null)
+    .filter((t) => {
+      const diffDagen = (vandaagMs - new Date(`${t.datum}T00:00:00Z`).getTime()) / (1000 * 60 * 60 * 24);
+      return diffDagen >= 0 && diffDagen <= TELEFONIE_RECENTE_DAGEN;
+    })
+    .sort((a, b) => (b.datum ?? "").localeCompare(a.datum ?? "")); // meest recent eerst — spec §5 se prioriteit vandaag > gisteren > eerder
 }
 
 export interface SchoolDetail extends TrainerSchoolBron {

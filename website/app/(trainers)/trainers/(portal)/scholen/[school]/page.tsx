@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getPayload } from "payload";
-import { ArrowLeft, MapPin } from "lucide-react";
+import { ArrowLeft, MapPin, PhoneIncoming } from "lucide-react";
 import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalSchoolDetail } from "@/lib/trainers/monday-links";
-import { haalVerslagenPerTraining } from "@/lib/trainers/verslag";
+import { haalVerslagenPerTraining, haalTelefonischeConceptenVoorTrainer } from "@/lib/trainers/verslag";
 import { formatKorteDatumTijd } from "@/lib/sales/format-datum";
 import { TrainingSecties, LegeToestand } from "./training-secties";
 import { SchooldetailTabs } from "./schooldetail-tabs";
@@ -45,6 +45,13 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
   const payload = await getPayload({ config });
   const verslagRelevanteIds = [...trainingen.verslag_nog_invullen, ...trainingen.gedaan].map((t) => t.id);
   const verslagenPerTraining = await haalVerslagenPerTraining(payload, trainer, verslagRelevanteIds);
+  // Ronde 3.5 (telefonie) — spec §13: "Same on Schooldetail." Los van
+  // verslagenPerTraining hierboven: een telefonisch ingesproken concept kan
+  // bij een training staan die Monday-status-technisch nog niet in
+  // "verslag_nog_invullen"/"gedaan" valt (de trainer belde bv. vóór het zelf
+  // op "Gedaan" zetten) — een eigen banner boven de tabs is daarom
+  // betrouwbaarder dan uitsluitend op de bestaande sectie-CTA's vertrouwen.
+  const telefonischeConceptenVoorSchool = (await haalTelefonischeConceptenVoorTrainer(payload, trainer)).filter((c) => c.schoolId === school.id);
 
   const trainingenPaneel = <TrainingSecties trainingen={trainingen} schoolId={school.id} verslagenPerTraining={verslagenPerTraining} />;
 
@@ -94,6 +101,32 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
           )}
         </p>
       </div>
+
+      {telefonischeConceptenVoorSchool.length > 0 && (
+        <section className="rounded-xl border border-teal-200 bg-teal-50/40 shadow-sm">
+          <div className="flex items-center gap-2 border-b border-teal-100 px-4 py-3">
+            <PhoneIncoming size={16} className="text-teal-700" />
+            <h2 className="text-h3 font-semibold text-grijs-900">Ingesproken verslag controleren</h2>
+          </div>
+          <div className="flex flex-col divide-y divide-teal-100 px-1 py-1">
+            {telefonischeConceptenVoorSchool.map((concept) => (
+              <div key={concept.mondayTrainingId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg px-3 py-2.5">
+                <div className="min-w-[10rem] flex-1">
+                  <p className="text-body-sm font-medium text-grijs-900">{concept.trainingNaam}</p>
+                  <p className="text-label text-grijs-600">Ingesproken op {formatKorteDatumTijd(concept.ontvangenOp)}</p>
+                </div>
+                <Link
+                  href={`/scholen/${school.id}/trainingen/${concept.mondayTrainingId}/verslag`}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-label font-semibold text-white transition-colors hover:bg-teal-700"
+                >
+                  <PhoneIncoming size={12} />
+                  Controleren
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-xl border border-grijs-200 bg-white shadow-sm">
         <SchooldetailTabs

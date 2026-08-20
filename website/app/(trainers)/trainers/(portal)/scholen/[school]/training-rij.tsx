@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
+import { Sparkles, PhoneIncoming } from "lucide-react";
 import type { TrainingStatus } from "@/lib/trainers/monday-links";
 import { TRAINING_STATUS_BADGE, TRAINING_STATUS_LABEL } from "@/lib/trainers/status-styles";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
@@ -25,6 +25,8 @@ interface TrainingProps {
 // het veld dat het CTA-label hier bepaalt.
 export interface VerslagSamenvatting {
   status: "concept" | "gedeeltelijk" | "bevestigd" | "voltooid";
+  /** Ronde 3.5 (telefonie) — bepaalt uitsluitend het CTA-label/-icoon hieronder, zie verslagCta(). */
+  bron?: "portal" | "telefoon" | null;
 }
 
 interface VerslagCta {
@@ -38,6 +40,8 @@ interface VerslagCta {
    * onderliggende data/route, die blijft voor elke variant identiek.
    */
   opvallend: boolean;
+  /** Ronde 3.5 (telefonie) — telefoonicoon i.p.v. Sparkles bij een nog te controleren ingesproken concept. */
+  telefonisch?: boolean;
 }
 
 /**
@@ -51,7 +55,12 @@ function verslagCta(logboekIngevuld: boolean, lokaal: VerslagSamenvatting | unde
   if (lokaal) {
     if (lokaal.status === "voltooid") return { label: "Verslag bekijken", opvallend: false };
     if (lokaal.status === "gedeeltelijk" || lokaal.status === "bevestigd") return { label: "Verslag afronden", opvallend: true };
-    return { label: "Verslag afmaken", opvallend: true }; // concept
+    // concept — Ronde 3.5 (telefonie, spec §13): een nog-te-controleren
+    // ingesproken concept krijgt een eigen, herkenbare CTA i.p.v. het gewone
+    // "Verslag afmaken" (dat impliceert "nog beginnen", terwijl hier al een
+    // AI-voorstel klaarstaat om te controleren).
+    if (lokaal.bron === "telefoon") return { label: "Ingesproken verslag controleren", opvallend: true, telefonisch: true };
+    return { label: "Verslag afmaken", opvallend: true };
   }
   return logboekIngevuld ? { label: "Verslag bekijken", opvallend: false } : { label: "Verslag maken", opvallend: true };
 }
@@ -211,7 +220,7 @@ export function TrainingRij({
                 : "text-label font-medium text-teal-700 hover:underline"
             }
           >
-            {cta.opvallend && <Sparkles size={11} />}
+            {cta.opvallend && (cta.telefonisch ? <PhoneIncoming size={11} /> : <Sparkles size={11} />)}
             {cta.label}
           </Link>
         )}

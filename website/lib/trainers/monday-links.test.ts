@@ -10,6 +10,7 @@ import {
   bepaalScholenVoorTrainer,
   haalDashboardData,
   haalSchoolDetail,
+  haalRecenteTrainingenVoorTelefonie,
 } from "./monday-links";
 import type { AuthTrainer } from "./auth";
 
@@ -988,4 +989,107 @@ describe("Ronde 2 vervolg — geen verborgen Monday-write tijdens een pageview (
     expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
     expect(mockHaalItemMetKolomWaarden).not.toHaveBeenCalled();
   });
+});
+
+describe("haalRecenteTrainingenVoorTelefonie (Ronde 3.5, telefonie — spec §5/§6)", () => {
+  const VANDAAG = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam" }).format(new Date());
+  /** Negatief = in de toekomst. Behandelt VANDAAG als een kalenderdag (12:00 UTC, nooit een middernachtrand). */
+  function dagenGeleden(n: number): string {
+    const d = new Date(`${VANDAAG}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  it("neemt een training van vandaag mee, met trainerboardItemId server-side gekoppeld via de Master-ID-keten (spec §6: nooit een tweede interpretatie)", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Training vandaag", schoolIds: ["500"], datum: VANDAAG })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "2001", name: "Training vandaag", masterId: "1" }]));
+
+    const trainingen = await haalRecenteTrainingenVoorTelefonie(TRAINER);
+    expect(trainingen).toHaveLength(1);
+    expect(trainingen[0]!.trainerboardItemId).toBe("2001");
+    expect(trainingen[0]!.schoolId).toBe("500");
+    expect(trainingen[0]!.schoolNaam).toBe("School");
+  });
+
+  it("sluit een training zonder gekoppeld trainerboard-item uit — telefonisch nooit een niet-bewerkbare training aanbieden", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Training", schoolIds: ["500"], datum: VANDAAG })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([])); // geen matchend masterId
+
+    expect(await haalRecenteTrainingenVoorTelefonie(TRAINER)).toEqual([]);
+  });
+
+  it("sluit een geannuleerde training uit, ook al valt de datum binnen het venster", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Geannuleerd", schoolIds: ["500"], datum: VANDAAG, status: "Geannuleerd" })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "2001", name: "x", masterId: "1" }]));
+
+    expect(await haalRecenteTrainingenVoorTelefonie(TRAINER)).toEqual([]);
+  });
+
+  it("sluit een training zonder datum uit", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Zonder datum", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "2001", name: "x", masterId: "1" }]));
+
+    expect(await haalRecenteTrainingenVoorTelefonie(TRAINER)).toEqual([]);
+  });
+
+  it("sluit een training buiten het recente venster uit (>3 dagen geleden) én een toekomstige training (spec §5: 'begin klein, recente trainingen rond vandaag')", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          uitvoeringItem({ id: "1", naam: "4 dagen geleden", schoolIds: ["500"], datum: dagenGeleden(4) }),
+          uitvoeringItem({ id: "2", naam: "Morgen", schoolIds: ["500"], datum: dagenGeleden(-1) }),
+        ],
+      });
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([
+        { id: "2001", name: "x", masterId: "1" },
+        { id: "2002", name: "y", masterId: "2" },
+      ])
+    );
+
+    expect(await haalRecenteTrainingenVoorTelefonie(TRAINER)).toEqual([]);
+  });
+
+  it("neemt trainingen tot en met 3 dagen geleden mee, gesorteerd meest-recent-eerst", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          uitvoeringItem({ id: "1", naam: "3 dagen geleden", schoolIds: ["500"], datum: dagenGeleden(3) }),
+          uitvoeringItem({ id: "2", naam: "Vandaag", schoolIds: ["500"], datum: VANDAAG }),
+          uitvoeringItem({ id: "3", naam: "Gisteren", schoolIds: ["500"], datum: dagenGeleden(1) }),
+        ],
+      });
+    mockQuery.mockResolvedValue(
+      trainerboardBoardsResponse([
+        { id: "2001", name: "x", masterId: "1" },
+        { id: "2002", name: "y", masterId: "2" },
+        { id: "2003", name: "z", masterId: "3" },
+      ])
+    );
+
+    const trainingen = await haalRecenteTrainingenVoorTelefonie(TRAINER);
+    expect(trainingen.map((t) => t.naam)).toEqual(["Vandaag", "Gisteren", "3 dagen geleden"]);
+  });
+
+  // Scenario 7 uit de opdracht ("training van een andere trainer nooit
+  // aangeboden") is op DIT niveau niet los te simuleren: trainerboardStructuur
+  // wordt al opgehaald op trainer.mondayTrainerboardId (de eigen
+  // trainerboard-query), dus "een andere trainer" betekent hier praktisch
+  // "geen trainerboard-item" — al gedekt door de test hierboven. De
+  // trainer-scoping zelf (Tier 1/Tier 1-vervolg) heeft al brede, bestaande
+  // dekking elders in dit bestand (bepaalScholenVoorTrainer). Het end-to-end
+  // scenario — trainer A krijgt telefonisch nooit trainer B se trainingen te
+  // kiezen — wordt bewezen in lib/trainers/telefonie/gesprek.test.ts.
 });

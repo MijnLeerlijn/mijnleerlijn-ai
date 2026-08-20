@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, generateText, embed } from "ai";
+import { generateObject, generateText, embed, transcribe } from "ai";
 import { z } from "zod";
 import { requireEnv, optionalEnv } from "@/config/env";
 
@@ -29,6 +29,16 @@ import { requireEnv, optionalEnv } from "@/config/env";
 
 const DEFAULT_MODEL_ID = "gpt-4o";
 const DEFAULT_EMBEDDING_MODEL_ID = "text-embedding-3-small";
+// Ronde 3.5 (2026-08-25, telefonische verslaglegging) — whisper-1 i.p.v. de
+// nieuwere gpt-4o(-mini)-transcribe-modellen: expliciet gekozen om het
+// bewezenste, langst-gedocumenteerde Nederlandstalige-ondersteuningstraject
+// te gebruiken (OpenAI's eigen Whisper-benchmarks tonen Nederlands als een
+// goed ondersteunde taal) voor spraak die inhoudelijk over trainingen/
+// scholen gaat — nooit eerder in DEZE sessie live tegen echte trainerspraak
+// getest (geen uitgaand netwerk naar api.openai.com beschikbaar), zie het
+// opleverrapport. Overschrijfbaar via TRANSCRIPTIE_MODEL_ID, zelfde patroon
+// als AI_MODEL_ID/EMBEDDING_MODEL_ID hierboven.
+const DEFAULT_TRANSCRIPTIE_MODEL_ID = "whisper-1";
 
 function openaiClient() {
   return createOpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
@@ -42,6 +52,11 @@ export function getAiModelId(): string {
 /** Overschrijfbaar via EMBEDDING_MODEL_ID (env) zonder codewijziging — zie .env.example. */
 export function getEmbeddingModelId(): string {
   return optionalEnv("EMBEDDING_MODEL_ID") ?? DEFAULT_EMBEDDING_MODEL_ID;
+}
+
+/** Overschrijfbaar via TRANSCRIPTIE_MODEL_ID (env) zonder codewijziging — zie .env.example. */
+export function getTranscriptieModelId(): string {
+  return optionalEnv("TRANSCRIPTIE_MODEL_ID") ?? DEFAULT_TRANSCRIPTIE_MODEL_ID;
 }
 
 export interface StructuredOutputArgs<T> {
@@ -108,6 +123,28 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const model = openaiClient().embedding(getEmbeddingModelId());
   const result = await embed({ model, value: text });
   return result.embedding;
+}
+
+/**
+ * Ronde 3.5 (2026-08-25) — spraak-naar-tekst voor telefonisch ingesproken
+ * trainingsverslagen (lib/trainers/telefonie/), dezelfde centrale AI-client/
+ * providerabstractie als de rest van dit bestand — GEEN los
+ * transcriptie-SDK'tje ernaast (opdrachtseis: "gebruik de bestaande OpenAI/
+ * AI-infrastructuur waar passend"). `audio` zijn de RUWE bytes, al door de
+ * aanroeper provider-geauthenticeerd opgehaald (lib/trainers/telefonie/
+ * twilio-provider.ts se haalOpnameOp) — deze functie downloadt zelf nooit
+ * van een URL, juist om nooit per ongeluk een niet-geauthenticeerde
+ * opnamelink te laten volgen.
+ *
+ * Gooit door bij een fout (zelfde conventie als generateEmbedding hierboven)
+ * — de aanroeper (lib/trainers/telefonie/oproep-state.ts) vangt dit af en
+ * markeert de oproep als mislukt (foutcode "transcriptie_mislukt"), nooit
+ * een leeg/verzonnen transcript doorzetten naar de verslag-AI.
+ */
+export async function transcribeAudio(audio: ArrayBuffer): Promise<string> {
+  const model = openaiClient().transcription(getTranscriptieModelId());
+  const result = await transcribe({ model, audio: new Uint8Array(audio) });
+  return result.text;
 }
 
 export interface ChatTextArgs {

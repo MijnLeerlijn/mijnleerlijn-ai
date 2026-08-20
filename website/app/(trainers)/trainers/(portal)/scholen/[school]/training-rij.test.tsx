@@ -313,6 +313,26 @@ describe("TrainingRij — trainingsverslag-CTA (spec §16)", () => {
     );
     expect(screen.queryByRole("link", { name: /Verslag/ })).not.toBeInTheDocument();
   });
+
+  // Ronde 3.5 (telefonie, spec §13) — een nog-te-controleren ingesproken
+  // concept krijgt een eigen, herkenbare CTA i.p.v. het gewone "Verslag
+  // afmaken" (dat impliceert "nog beginnen", terwijl hier al een
+  // AI-voorstel klaarstaat).
+  it("toont 'Ingesproken verslag controleren' voor een concept met bron='telefoon', in plaats van het gewone 'Verslag afmaken'", () => {
+    render(
+      <TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={false} verslag={{ status: "concept", bron: "telefoon" }} />
+    );
+    const link = screen.getByRole("link", { name: /Ingesproken verslag controleren/ });
+    expect(link).toHaveAttribute("href", "/scholen/500/trainingen/700/verslag");
+    expect(link).toHaveClass("bg-teal-600"); // opvallend, net als de andere actie-vereisende CTA's
+    expect(screen.queryByRole("link", { name: /^Verslag afmaken$/ })).not.toBeInTheDocument();
+  });
+
+  it("een portalconcept (bron='portal' of onbekend) blijft gewoon 'Verslag afmaken' tonen — geen telefonie-specifieke tekst zonder telefonie", () => {
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={false} verslag={{ status: "concept" }} />);
+    expect(screen.getByRole("link", { name: /Verslag afmaken/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Ingesproken/ })).not.toBeInTheDocument();
+  });
 });
 
 // Schooldetail-UX-ronde (2026-08-25) — opdrachtseis: "'Verslag maken' moet

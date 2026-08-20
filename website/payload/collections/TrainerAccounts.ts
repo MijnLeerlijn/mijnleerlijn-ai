@@ -46,7 +46,7 @@ export const TrainerAccounts: CollectionConfig = {
   labels: { singular: "Trainer-account", plural: "Trainer-accounts" },
   admin: {
     useAsTitle: "name",
-    defaultColumns: ["name", "email", "mondayTrainerboardId", "actief"],
+    defaultColumns: ["name", "email", "mondayTrainerboardId", "actief", "mobielNummer", "telefonieActief"],
     group: "Basis — Technisch beheer",
     description: "Accounts voor trainers.mijnleerlijn.chat — nooit bruikbaar om in te loggen op de gewone /admin.",
   },
@@ -83,6 +83,26 @@ export const TrainerAccounts: CollectionConfig = {
       defaultValue: true,
       label: "Actief",
       admin: { description: "Uitgevinkt = kan niet meer inloggen, zonder het account te verwijderen." },
+    },
+    {
+      name: "mobielNummer",
+      type: "text",
+      unique: true,
+      label: "Mobiel nummer (telefonie)",
+      admin: {
+        description:
+          "Genormaliseerd E.164-formaat, bv. +31612345678 (lib/trainers/telefonie/nummer.ts se normaliseerNederlandsNummer — altijd via die functie zetten, nooit ruwe invoer). Postgres' unique-index behandelt NULL als 'geen waarde, geen botsing' (meerdere trainers mogen dit dus leeg laten) — uniciteit geldt alleen zodra een nummer daadwerkelijk gezet is. Ronde 3.5 (2026-08-25): dit is uitsluitend een IDENTIFICATIESIGNAAL voor inkomende gesprekken (caller-ID is niet spoofing-bestendig) — geeft nooit rechtstreeks toestemming voor een definitieve Monday-write; alleen een concept aanmaken. Voor V1 alleen door een beheerder wijzigbaar (zie Profiel-pagina toelichting) — een zelfbedieningswijziging vereist eerst SMS-verificatie, nog niet gebouwd.",
+      },
+    },
+    {
+      name: "telefonieActief",
+      type: "checkbox",
+      defaultValue: false,
+      label: "Telefonische verslaglegging (pilot)",
+      admin: {
+        description:
+          "Ronde 3.5 (2026-08-25) — pilot-allowlist per trainer (spec §26), BEWUST geen hardcoded trainer-ID in businesslogica. Een trainer die telefonisch herkend wordt maar dit veld niet aan heeft staan, krijgt een nette 'nog niet beschikbaar'-melding, geen toegang tot trainingskeuze/opname.",
+      },
     },
   ],
 };

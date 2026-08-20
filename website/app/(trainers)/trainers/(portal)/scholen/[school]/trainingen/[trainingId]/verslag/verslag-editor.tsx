@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Sparkles, CheckCircle2, AlertTriangle, RotateCcw } from "lucide-react";
+import { Loader2, Sparkles, CheckCircle2, AlertTriangle, RotateCcw, PhoneIncoming, Trash2, ChevronDown } from "lucide-react";
 
 // Traineromgeving V1, Ronde 3 (2026-08-24) — de trainingsverslag-editor.
 // Eigen, losse frontend-types (geen import van server-only code in een
@@ -34,6 +34,8 @@ export interface VerslagInitieel {
    * bevestigd.
    */
   weergaveTekst?: string;
+  /** Ronde 3.5 (telefonie) — spec §13: "Toon klein: Bron: telefonisch ingesproken." */
+  bron?: "portal" | "telefoon" | null;
 }
 
 const DENKHULP = [
@@ -113,6 +115,10 @@ export function VerslagEditor({
   const [trainingUpdateStatus, setTrainingUpdateStatus] = useState<UpdateStatus>(verslagInitieel?.trainingUpdateStatus ?? "niet_verzonden");
   const [schoolUpdateStatus, setSchoolUpdateStatus] = useState<UpdateStatus>(verslagInitieel?.schoolUpdateStatus ?? "niet_verzonden");
   const [weergaveTekst, setWeergaveTekst] = useState<string | undefined>(verslagInitieel?.weergaveTekst);
+  // Ronde 3.5 (telefonie) — uitsluitend bij aanmaak gezet, nooit later
+  // herschreven (zie payload/collections/TrainingVerslagen.ts) — geen state
+  // nodig, blijft voor de levensduur van dit component identiek.
+  const bron = verslagInitieel?.bron ?? null;
 
   const [fase, setFase] = useState<"invoer" | "concept">(verslagInitieel?.definitieveTekst ? "concept" : "invoer");
 
@@ -122,6 +128,9 @@ export function VerslagEditor({
   const [bevestigBezig, setBevestigBezig] = useState(false);
   const [bevestigFout, setBevestigFout] = useState<string | null>(null);
   const [bevestigBoodschap, setBevestigBoodschap] = useState<string | null>(null);
+  const [toonTranscript, setToonTranscript] = useState(false);
+  const [verwijderBezig, setVerwijderBezig] = useState(false);
+  const [verwijderFout, setVerwijderFout] = useState<string | null>(null);
 
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current); }, []);
@@ -231,6 +240,34 @@ export function VerslagEditor({
     }
   }
 
+  // Ronde 3.5 (telefonie) — spec §14: trainer moet een fout (telefonisch)
+  // concept kunnen verwijderen. Alleen aangeboden zolang status "concept" is
+  // (kanNogBewerken) — daarna weigert de server dit toch (verwijderConcept,
+  // lib/trainers/verslag.ts), dus de knop verschijnt dan al niet meer.
+  async function verwijderHuidigConcept() {
+    if (verwijderBezig) return;
+    if (!window.confirm("Dit concept verwijderen? Dit kan niet ongedaan worden gemaakt.")) return;
+    setVerwijderBezig(true);
+    setVerwijderFout(null);
+    try {
+      const response = await fetch(`/api/trainers/trainingen/${trainingId}/verslag/concept`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const uitkomst = await verwerkJson(response);
+      if (!uitkomst.ok) {
+        setVerwijderFout(uitkomst.fout);
+        setVerwijderBezig(false);
+        return;
+      }
+      router.push(`/scholen/${schoolId}`);
+      router.refresh();
+    } catch {
+      setVerwijderFout("Verwijderen mislukt — controleer je verbinding en probeer het opnieuw.");
+      setVerwijderBezig(false);
+    }
+  }
+
   // -------------------------------------------------------------------
   // Reeds afgerond of onderweg — read-only tekst + eventuele retry-actie.
   // Zodra status voorbij "concept" is, ligt definitieveTekst vast (spec §21)
@@ -239,6 +276,7 @@ export function VerslagEditor({
   if (status === "voltooid") {
     return (
       <div className="flex flex-col gap-4">
+        <BronBadge bron={bron} />
         <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50/60 px-4 py-3 text-body-sm font-medium text-green-800">
           <CheckCircle2 size={18} />
           Verslag ingevuld — opgeslagen bij de training en in het schoollogboek.
@@ -252,6 +290,7 @@ export function VerslagEditor({
     const afrondingOnvolledig = status === "bevestigd";
     return (
       <div className="flex flex-col gap-4">
+        <BronBadge bron={bron} />
         <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
           <div className="flex items-start gap-2 text-body-sm font-medium text-amber-800">
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
@@ -306,7 +345,10 @@ export function VerslagEditor({
         </div>
       )}
 
-      <StapIndicator fase={fase} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <StapIndicator fase={fase} />
+        <BronBadge bron={bron} />
+      </div>
 
       {fase === "invoer" ? (
         <section className="rounded-xl border border-grijs-200 bg-white p-4 shadow-sm">
@@ -362,7 +404,13 @@ export function VerslagEditor({
             <Link href={`/scholen/${schoolId}`} className="text-body-sm font-medium text-grijs-600 hover:text-grijs-800 hover:underline">
               Annuleren
             </Link>
+            {status === "concept" && <VerwijderConceptKnop bezig={verwijderBezig} onClick={() => void verwijderHuidigConcept()} />}
           </div>
+          {verwijderFout && (
+            <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-label text-red-700">
+              {verwijderFout}
+            </p>
+          )}
         </section>
       ) : (
         <section className="rounded-xl border border-grijs-200 bg-white p-4 shadow-sm">
@@ -397,6 +445,27 @@ export function VerslagEditor({
             </button>
           </div>
 
+          {/* Ronde 3.5 (telefonie) — spec §13: "transcript inzien indien
+              nuttig." trainerInvoer IS het transcript voor een telefonisch
+              concept; "Terug naar oorspronkelijke invoer" hierboven biedt al
+              bewerktoegang, dit is uitsluitend voor snel meelezen zonder van
+              fase te wisselen. */}
+          {bron === "telefoon" && trainerInvoer.trim().length > 0 && (
+            <div className="mt-3 border-t border-grijs-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setToonTranscript((v) => !v)}
+                className="flex items-center gap-1.5 text-label font-medium text-grijs-600 hover:text-grijs-800"
+              >
+                <ChevronDown size={13} className={`transition-transform ${toonTranscript ? "rotate-180" : ""}`} />
+                Transcript bekijken
+              </button>
+              {toonTranscript && (
+                <p className="mt-2 whitespace-pre-line rounded-lg bg-grijs-50 p-3 text-body-sm text-grijs-700">{trainerInvoer}</p>
+              )}
+            </div>
+          )}
+
           {bevestigFout && (
             <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-label text-red-700">
               {bevestigFout}
@@ -425,7 +494,13 @@ export function VerslagEditor({
             <Link href={`/scholen/${schoolId}`} className="text-body-sm font-medium text-grijs-600 hover:text-grijs-800 hover:underline">
               Annuleren
             </Link>
+            {status === "concept" && <VerwijderConceptKnop bezig={verwijderBezig} onClick={() => void verwijderHuidigConcept()} />}
           </div>
+          {verwijderFout && (
+            <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-label text-red-700">
+              {verwijderFout}
+            </p>
+          )}
         </section>
       )}
     </div>
@@ -463,6 +538,32 @@ function AutosaveIndicator({ status }: { status: "idle" | "bezig" | "opgeslagen"
       {status === "opgeslagen" && "Concept opgeslagen"}
       {status === "fout" && <span className="text-amber-700">Concept kon niet worden opgeslagen — je tekst blijft zichtbaar, probeer het zo opnieuw.</span>}
     </p>
+  );
+}
+
+/** Ronde 3.5 (telefonie) — spec §13: "Toon klein: Bron: telefonisch ingesproken." Niets getoond voor bron="portal"/null — dat is en blijft de standaardflow, geen badge nodig om "gewoon" te zijn. */
+function BronBadge({ bron }: { bron: "portal" | "telefoon" | null }) {
+  if (bron !== "telefoon") return null;
+  return (
+    <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-50 px-2.5 py-1 text-label font-medium text-teal-700">
+      <PhoneIncoming size={11} />
+      Bron: telefonisch ingesproken
+    </span>
+  );
+}
+
+/** Ronde 3.5 (telefonie) — spec §14. Bewust een rustige, secundaire tekstlink (geen grote rode knop): verwijderen is hier een uitzonderingspad, niet de hoofdactie op deze pagina. */
+function VerwijderConceptKnop({ bezig, onClick }: { bezig: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={bezig}
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 text-body-sm font-medium text-grijs-500 hover:text-red-700 disabled:cursor-wait disabled:opacity-60"
+    >
+      {bezig ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+      Concept verwijderen
+    </button>
   );
 }
 

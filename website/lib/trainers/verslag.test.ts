@@ -7,6 +7,8 @@ import {
   bevestigVerslag,
   haalVerslagVoorTraining,
   haalVerslagenPerTraining,
+  verwijderConcept,
+  haalTelefonischeConceptenVoorTrainer,
   type VerslagStructuur,
 } from "./verslag";
 import { haalTrainingVoorMutatie, haalSchoolDetail, parseCheckboxIngevuld } from "./monday-links";
@@ -1027,5 +1029,160 @@ describe("bevestigVerslag", () => {
     expect(opnieuwOpgehaald?.definitieveTekst).toBe("Door de trainer handmatig herschreven tekst");
     // aiGegenereerd blijft "true" staan (historisch feit: AI is gebruikt bij opstellen), ook al is de tekst nu handmatig.
     expect(opnieuwOpgehaald?.aiGegenereerd).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ronde 3.5 (telefonie, 2026-08-25) — bron/telefonieOproepId + verwijderConcept.
+// De telefonieflow zelf (lib/trainers/telefonie/gesprek.ts) roept exact
+// dezelfde upsertConcept()/structureerVerslag() aan als de portal — deze
+// tests bewijzen dat de UITBREIDING (bron/telefonieOproepId) het bestaande
+// portalgedrag niet raakt, en dat de trainer-scoping/veiligheidsgrenzen ook
+// voor telefonisch aangemaakte concepten onverkort gelden.
+// ---------------------------------------------------------------------------
+
+describe("upsertConcept — bron/telefonieOproepId (Ronde 3.5, telefonie)", () => {
+  it("standaard (geen bron opgegeven) -> bron='portal', ongewijzigd portalgedrag", async () => {
+    const { payload } = maakFakePayload({});
+    const uitkomst = await upsertConcept(payload, TRAINER, CENTRALE_TRAINING_ID, { trainerInvoer: "Notities" });
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.verslag.bron).toBe("portal");
+  });
+
+  it("scenario 19: bron='telefoon' + telefonieOproepId worden vastgelegd bij een telefonisch aangemaakt concept", async () => {
+    const { payload, collection } = maakFakePayload({});
+    const uitkomst = await upsertConcept(payload, TRAINER, CENTRALE_TRAINING_ID, { trainerInvoer: "Vandaag rekenen gedaan", bron: "telefoon", telefonieOproepId: 555 });
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.verslag.bron).toBe("telefoon");
+    // telefonieOproepId staat bewust NIET op VerslagRecord (zelfde
+    // relatieveld-dieptedubbelzinnigheid als trainer elders in dit bestand,
+    // zie de doc-comment bij VerslagRecord) — hier via de rauwe fake-rij
+    // gecontroleerd i.p.v. via het getypeerde uitkomst.verslag.
+    expect(collection("training-verslagen")[0]!.telefonieOproep).toBe(555);
+  });
+
+  it("scenario 17/18: een telefonisch aangemaakt concept respecteert dezelfde trainer-scoping als elk ander concept — nooit zichtbaar voor een andere trainer", async () => {
+    const { payload } = maakFakePayload({});
+    await upsertConcept(payload, TRAINER, CENTRALE_TRAINING_ID, { trainerInvoer: "x", bron: "telefoon", telefonieOproepId: 555 });
+    expect(await haalVerslagVoorTraining(payload, TRAINER, CENTRALE_TRAINING_ID)).not.toBeNull();
+    expect(await haalVerslagVoorTraining(payload, TRAINER_B, CENTRALE_TRAINING_ID)).toBeNull();
+  });
+});
+
+describe("verwijderConcept (Ronde 3.5, telefonie — spec §14: trainer mag een verkeerd ingesproken concept verwijderen)", () => {
+  it("scenario 21: een concept (nog niet bevestigd) kan verwijderd worden", async () => {
+    const { payload, collection } = maakFakePayload({});
+    await maakConcept(payload);
+    const uitkomst = await verwijderConcept(payload, TRAINER, CENTRALE_TRAINING_ID);
+    expect(uitkomst).toEqual({ soort: "ok" });
+    expect(collection("training-verslagen")).toHaveLength(0);
+  });
+
+  it("niet-bestaand verslag -> niet_gevonden", async () => {
+    const { payload } = maakFakePayload({});
+    expect(await verwijderConcept(payload, TRAINER, CENTRALE_TRAINING_ID)).toEqual({ soort: "niet_gevonden" });
+  });
+
+  it("scenario 18: het concept van een andere trainer kan niet verwijderd worden — verschijnt als niet_gevonden, nooit een foutmelding die het bestaan verraadt", async () => {
+    const { payload } = maakFakePayload({});
+    await maakConcept(payload, TRAINER);
+    expect(await verwijderConcept(payload, TRAINER_B, CENTRALE_TRAINING_ID)).toEqual({ soort: "niet_gevonden" });
+  });
+
+  it("KRITIEKE VEILIGHEIDSGRENS: een reeds (deels) bevestigd verslag kan NOOIT verwijderd worden — status 'bevestigd' is niet meer verwijderbaar, voorkomt het vernietigen van de idempotentiegarantie tegen een dubbele Monday-Update", async () => {
+    const { payload, collection } = maakFakePayload({
+      "training-verslagen": [
+        {
+          id: 1,
+          trainer: TRAINER.id,
+          mondayTrainingId: CENTRALE_TRAINING_ID,
+          mondaySchoolId: SCHOOL_ID,
+          mondayTrainerboardItemId: TRAINERBOARD_ITEM_ID,
+          status: "bevestigd",
+          definitieveTekst: "Al bevestigde tekst",
+        },
+      ],
+    });
+    const uitkomst = await verwijderConcept(payload, TRAINER, CENTRALE_TRAINING_ID);
+    expect(uitkomst.soort).toBe("niet_verwijderbaar");
+    expect(collection("training-verslagen")).toHaveLength(1);
+  });
+
+  it("KRITIEKE VEILIGHEIDSGRENS vervolg: status 'voltooid' (definitief, beide Monday-Updates geschreven) kan evenmin verwijderd worden", async () => {
+    const { payload, collection } = maakFakePayload({
+      "training-verslagen": [
+        { id: 1, trainer: TRAINER.id, mondayTrainingId: CENTRALE_TRAINING_ID, status: "voltooid", trainingUpdateStatus: "geschreven", schoolUpdateStatus: "geschreven" },
+      ],
+    });
+    expect((await verwijderConcept(payload, TRAINER, CENTRALE_TRAINING_ID)).soort).toBe("niet_verwijderbaar");
+    expect(collection("training-verslagen")).toHaveLength(1);
+  });
+
+  it("scenario 21 vervolg: een telefonisch aangemaakt concept (bron='telefoon') kan net zo verwijderd worden als een portalconcept — geen aparte regel voor telefonie", async () => {
+    const { payload, collection } = maakFakePayload({});
+    await upsertConcept(payload, TRAINER, CENTRALE_TRAINING_ID, { trainerInvoer: "verkeerd ingesproken", bron: "telefoon", telefonieOproepId: 555 });
+    expect(await verwijderConcept(payload, TRAINER, CENTRALE_TRAINING_ID)).toEqual({ soort: "ok" });
+    expect(collection("training-verslagen")).toHaveLength(0);
+  });
+});
+
+describe("haalTelefonischeConceptenVoorTrainer (Ronde 3.5, telefonie — spec §13: dashboard/schooldetail-banner)", () => {
+  it("vindt uitsluitend concept-status + bron=telefoon rijen van déze trainer, met ontvangenOp uit de gekoppelde oproep", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [
+        {
+          id: 1,
+          trainer: TRAINER.id,
+          mondayTrainingId: CENTRALE_TRAINING_ID,
+          mondaySchoolId: SCHOOL_ID,
+          schoolNaam: "Montessori Gorinchem",
+          trainingNaam: "Training",
+          status: "concept",
+          bron: "telefoon",
+          // Simuleert depth:1-populatie (de fake doet geen echte join) — een
+          // ECHTE Payload-fetch met depth:1 zou hier het volledige
+          // TrainerTelefonieOproepen-object teruggeven, geen kaal ID.
+          telefonieOproep: { id: 501, ontvangenOp: "2026-08-25T10:15:00.000Z" },
+          createdAt: "2026-08-25T10:16:00.000Z",
+        },
+      ],
+    });
+
+    const concepten = await haalTelefonischeConceptenVoorTrainer(payload, TRAINER);
+
+    expect(concepten).toEqual([
+      { mondayTrainingId: CENTRALE_TRAINING_ID, schoolId: SCHOOL_ID, schoolNaam: "Montessori Gorinchem", trainingNaam: "Training", ontvangenOp: "2026-08-25T10:15:00.000Z" },
+    ]);
+  });
+
+  it("sluit portalconcepten (bron='portal') uit, ook al is de status ook 'concept'", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [{ id: 1, trainer: TRAINER.id, mondayTrainingId: CENTRALE_TRAINING_ID, mondaySchoolId: SCHOOL_ID, status: "concept", bron: "portal" }],
+    });
+    expect(await haalTelefonischeConceptenVoorTrainer(payload, TRAINER)).toEqual([]);
+  });
+
+  it("sluit een reeds gecontroleerd/bevestigd telefonieconcept uit (status != 'concept' meer) — banner verdwijnt vanzelf ná controleren", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [{ id: 1, trainer: TRAINER.id, mondayTrainingId: CENTRALE_TRAINING_ID, mondaySchoolId: SCHOOL_ID, status: "voltooid", bron: "telefoon" }],
+    });
+    expect(await haalTelefonischeConceptenVoorTrainer(payload, TRAINER)).toEqual([]);
+  });
+
+  it("scenario 17/18: nooit het telefonieconcept van een andere trainer", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [{ id: 1, trainer: TRAINER_B.id, mondayTrainingId: CENTRALE_TRAINING_ID, mondaySchoolId: SCHOOL_ID, status: "concept", bron: "telefoon" }],
+    });
+    expect(await haalTelefonischeConceptenVoorTrainer(payload, TRAINER)).toEqual([]);
+  });
+
+  it("ontbrekende gekoppelde oproep (bv. inmiddels verwijderd) -> ontvangenOp null, gooit nooit", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [{ id: 1, trainer: TRAINER.id, mondayTrainingId: CENTRALE_TRAINING_ID, mondaySchoolId: SCHOOL_ID, status: "concept", bron: "telefoon", telefonieOproep: null }],
+    });
+    const concepten = await haalTelefonischeConceptenVoorTrainer(payload, TRAINER);
+    expect(concepten[0]!.ontvangenOp).toBeNull();
   });
 });

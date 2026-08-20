@@ -1,26 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { POST } from "./route";
+import { POST, DELETE } from "./route";
 import { verifyTrainerSessionCookie } from "@/lib/trainers/auth";
-import { upsertConcept } from "@/lib/trainers/verslag";
+import { upsertConcept, verwijderConcept } from "@/lib/trainers/verslag";
 import type { AuthTrainer } from "@/lib/trainers/auth";
 
-// Traineromgeving V1, Ronde 3 (2026-08-24) — dekt de HTTP-laag van
-// POST .../verslag/concept. upsertConcept zelf (ownership/opslaglogica) is
-// al gedekt in lib/trainers/verslag.test.ts — deze route-tests bewaken
-// uitsluitend sessieverificatie, validatie, rate limiting en
-// uitkomst-vertaling, zelfde mockpatroon als app/api/trainers/trainingen/
-// [id]/route.test.ts.
+// Traineromgeving V1, Ronde 3 (2026-08-24), DELETE toegevoegd Ronde 3.5
+// (2026-08-25, spec §14) — dekt de HTTP-laag van POST/DELETE
+// .../verslag/concept. upsertConcept/verwijderConcept zelf (ownership/
+// opslaglogica) zijn al gedekt in lib/trainers/verslag.test.ts — deze
+// route-tests bewaken uitsluitend sessieverificatie, validatie, rate
+// limiting en uitkomst-vertaling, zelfde mockpatroon als app/api/trainers/
+// trainingen/[id]/route.test.ts.
 vi.mock("payload", () => ({ getPayload: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/payload.config", () => ({ default: {} }));
 vi.mock("@/lib/trainers/auth", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/trainers/auth")>();
   return { ...echt, verifyTrainerSessionCookie: vi.fn() };
 });
-vi.mock("@/lib/trainers/verslag", () => ({ upsertConcept: vi.fn() }));
+vi.mock("@/lib/trainers/verslag", () => ({ upsertConcept: vi.fn(), verwijderConcept: vi.fn() }));
 
 const mockVerify = vi.mocked(verifyTrainerSessionCookie);
 const mockUpsertConcept = vi.mocked(upsertConcept);
+const mockVerwijderConcept = vi.mocked(verwijderConcept);
 
 function maakTrainer(id: number): AuthTrainer {
   return { id, name: "Wessel", email: "wessel@mijnleerlijn.nl", mondayTrainerboardId: "18424768045", mondayUitvoerderItemId: "12419116827", actief: true };
@@ -38,9 +40,17 @@ function roep(body: unknown, id = "700") {
   return POST(maakRequest(body), { params: Promise.resolve({ id }) });
 }
 
+function roepDelete(id = "700") {
+  return DELETE(
+    new NextRequest("http://localhost:3000/api/trainers/trainingen/700/verslag/concept", { method: "DELETE", headers: { Cookie: "payload-token=geldig" } }),
+    { params: Promise.resolve({ id }) }
+  );
+}
+
 beforeEach(() => {
   mockVerify.mockReset();
   mockUpsertConcept.mockReset();
+  mockVerwijderConcept.mockReset();
 });
 
 describe("POST .../verslag/concept — sessie", () => {
@@ -123,6 +133,58 @@ describe("POST .../verslag/concept — rate limiting", () => {
     let laatsteStatus = 200;
     for (let i = 0; i < 65; i++) {
       laatsteStatus = (await roep({ trainerInvoer: "x" })).status;
+    }
+    expect(laatsteStatus).toBe(429);
+  });
+});
+
+// Ronde 3.5 (telefonie, spec §14) — DELETE .../verslag/concept.
+describe("DELETE .../verslag/concept — sessie", () => {
+  it("weigert zonder geldige trainersessie met 401, roept verwijderConcept nooit aan", async () => {
+    mockVerify.mockResolvedValue({ trainer: null, cookieAanwezig: false, reden: "geen-cookie" });
+    expect((await roepDelete()).status).toBe(401);
+    expect(mockVerwijderConcept).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE .../verslag/concept — uitkomst-vertaling", () => {
+  beforeEach(() => {
+    mockVerify.mockResolvedValue({ trainer: maakTrainer(103), cookieAanwezig: true });
+  });
+
+  it("niet_gevonden -> 404", async () => {
+    mockVerwijderConcept.mockResolvedValue({ soort: "niet_gevonden" });
+    expect((await roepDelete()).status).toBe(404);
+  });
+
+  it("niet_verwijderbaar -> 422 met de boodschap uit verslag.ts", async () => {
+    mockVerwijderConcept.mockResolvedValue({ soort: "niet_verwijderbaar", boodschap: "Dit verslag is al (deels) bevestigd en kan niet meer verwijderd worden." });
+    const response = await roepDelete();
+    expect(response.status).toBe(422);
+    expect((await response.json()).error).toBe("Dit verslag is al (deels) bevestigd en kan niet meer verwijderd worden.");
+  });
+
+  it("ok -> 200", async () => {
+    mockVerwijderConcept.mockResolvedValue({ soort: "ok" });
+    const response = await roepDelete("700");
+    expect(response.status).toBe(200);
+    expect(mockVerwijderConcept).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 103 }), "700");
+  });
+
+  it("een onverwachte fout levert 500 op", async () => {
+    mockVerwijderConcept.mockRejectedValue(new Error("db weg"));
+    expect((await roepDelete()).status).toBe(500);
+  });
+});
+
+describe("DELETE .../verslag/concept — rate limiting", () => {
+  it("429 na te veel aanvragen van dezelfde trainer binnen het venster", async () => {
+    mockVerify.mockResolvedValue({ trainer: maakTrainer(9002), cookieAanwezig: true });
+    mockVerwijderConcept.mockResolvedValue({ soort: "ok" });
+
+    let laatsteStatus = 200;
+    for (let i = 0; i < 65; i++) {
+      laatsteStatus = (await roepDelete()).status;
     }
     expect(laatsteStatus).toBe(429);
   });

@@ -56,6 +56,37 @@ export const TrainingVerslagen: CollectionConfig = {
   },
   fields: [
     { name: "trainer", type: "relationship", relationTo: "trainer-accounts", required: true, label: "Trainer", index: true },
+    {
+      name: "bron",
+      type: "select",
+      required: true,
+      defaultValue: "portal",
+      label: "Bron",
+      options: [
+        { label: "Portal", value: "portal" },
+        { label: "Telefoon (ingesproken)", value: "telefoon" },
+      ],
+      admin: {
+        description:
+          "Ronde 3.5 (2026-08-25) — hoe dit conceptrecord is ontstaan. Uitsluitend gezet bij de EERSTE aanmaak (upsertConcept), nooit later herschreven — een portal-verslag blijft 'portal' ook als de trainer 'm daarna telefonisch aanvult, en vice versa (dezelfde rij, want (trainer, mondayTrainingId) blijft uniek).",
+      },
+    },
+    {
+      // Ronde 3.5 (telefonie) — LET OP bij hernoemen: Payload-postgres se
+      // FK-kolomconventie voor relationship-velden is ALTIJD
+      // snake_case(veldnaam)+"_id", zonder uitzondering voor een veldnaam die
+      // toevallig al op "Id" eindigt. Een veld letterlijk "telefonieOproepId"
+      // genoemd verwacht dus kolom telefonie_oproep_id_id — bestond niet
+      // (live gevonden via de real-Postgres-concurrencytest), vandaar de
+      // bewust kale naam hier (zelfde patroon als "trainer" hierboven, dat
+      // wél correct naar trainer_id resolveert). De migratiekolom heet dus al
+      // gewoon telefonie_oproep_id — geen migratiewijziging nodig geweest.
+      name: "telefonieOproep",
+      type: "relationship",
+      relationTo: "trainer-telefonie-oproepen",
+      label: "Telefonie-oproep (indien bron=telefoon)",
+      admin: { description: "Koppeling naar het call-staterecord dat dit concept aanmaakte — uitsluitend voor diagnostiek/traceerbaarheid, nooit een tweede bron van waarheid voor de verslagtekst zelf (die staat in trainerInvoer/definitieveTekst)." },
+    },
     { name: "mondayTrainingId", type: "text", required: true, label: "Monday-ID centrale training", admin: { description: "Server-side afgeleid via haalTrainingVoorMutatie — nooit door de client aangeleverd." } },
     { name: "mondaySchoolId", type: "text", required: true, label: "Monday-ID school (Master Data)" },
     { name: "mondayTrainerboardItemId", type: "text", required: true, label: "Monday-ID trainerboard-item" },

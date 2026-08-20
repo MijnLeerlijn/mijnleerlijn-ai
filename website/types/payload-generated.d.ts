@@ -73,6 +73,7 @@ export interface Config {
     'trainer-log-events': TrainerLogEvent;
     'trainer-ai-log-events': TrainerAiLogEvent;
     'training-verslagen': TrainingVerslagen;
+    'trainer-telefonie-oproepen': TrainerTelefonieOproepen;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -115,6 +116,7 @@ export interface Config {
     'trainer-log-events': TrainerLogEventsSelect<false> | TrainerLogEventsSelect<true>;
     'trainer-ai-log-events': TrainerAiLogEventsSelect<false> | TrainerAiLogEventsSelect<true>;
     'training-verslagen': TrainingVerslagenSelect<false> | TrainingVerslagenSelect<true>;
+    'trainer-telefonie-oproepen': TrainerTelefonieOproepenSelect<false> | TrainerTelefonieOproepenSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -383,6 +385,14 @@ export interface TrainerAccount {
    * Uitgevinkt = kan niet meer inloggen, zonder het account te verwijderen.
    */
   actief?: boolean | null;
+  /**
+   * Genormaliseerd E.164-formaat, bv. +31612345678 (lib/trainers/telefonie/nummer.ts se normaliseerNederlandsNummer — altijd via die functie zetten, nooit ruwe invoer). Postgres' unique-index behandelt NULL als 'geen waarde, geen botsing' (meerdere trainers mogen dit dus leeg laten) — uniciteit geldt alleen zodra een nummer daadwerkelijk gezet is. Ronde 3.5 (2026-08-25): dit is uitsluitend een IDENTIFICATIESIGNAAL voor inkomende gesprekken (caller-ID is niet spoofing-bestendig) — geeft nooit rechtstreeks toestemming voor een definitieve Monday-write; alleen een concept aanmaken. Voor V1 alleen door een beheerder wijzigbaar (zie Profiel-pagina toelichting) — een zelfbedieningswijziging vereist eerst SMS-verificatie, nog niet gebouwd.
+   */
+  mobielNummer?: string | null;
+  /**
+   * Ronde 3.5 (2026-08-25) — pilot-allowlist per trainer (spec §26), BEWUST geen hardcoded trainer-ID in businesslogica. Een trainer die telefonisch herkend wordt maar dit veld niet aan heeft staan, krijgt een nette 'nog niet beschikbaar'-melding, geen toegang tot trainingskeuze/opname.
+   */
+  telefonieActief?: boolean | null;
   updatedAt: string;
   createdAt: string;
   email: string;
@@ -477,6 +487,14 @@ export interface TrainingVerslagen {
   id: number;
   trainer: number | TrainerAccount;
   /**
+   * Ronde 3.5 (2026-08-25) — hoe dit conceptrecord is ontstaan. Uitsluitend gezet bij de EERSTE aanmaak (upsertConcept), nooit later herschreven — een portal-verslag blijft 'portal' ook als de trainer 'm daarna telefonisch aanvult, en vice versa (dezelfde rij, want (trainer, mondayTrainingId) blijft uniek).
+   */
+  bron: 'portal' | 'telefoon';
+  /**
+   * Koppeling naar het call-staterecord dat dit concept aanmaakte — uitsluitend voor diagnostiek/traceerbaarheid, nooit een tweede bron van waarheid voor de verslagtekst zelf (die staat in trainerInvoer/definitieveTekst).
+   */
+  telefonieOproep?: (number | null) | TrainerTelefonieOproepen;
+  /**
    * Server-side afgeleid via haalTrainingVoorMutatie — nooit door de client aangeleverd.
    */
   mondayTrainingId: string;
@@ -535,6 +553,83 @@ export interface TrainingVerslagen {
    * Snapshot van de ingelogde trainer se naam (trainer-accounts) op het moment van de eerste bevestiging — atomisch samen met definitieveTekst/bevestigdOp gezet, nooit later live herberekend. Dit is de tekst die letterlijk 'Trainer: ...' in de Monday Update en de portalweergave vult.
    */
   bevestigdDoorTrainerNaam?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Call-state en diagnostiek voor telefonisch ingesproken trainingsverslagen (Ronde 3.5). Bevat nooit de volledige transcriptietekst of audio — die staat (indien geslaagd) in het gekoppelde trainingsverslag. Nooit rechtstreeks bewerken.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-telefonie-oproepen".
+ */
+export interface TrainerTelefonieOproepen {
+  id: number;
+  provider: 'twilio';
+  /**
+   * Twilio CallSid — de idempotentiesleutel voor dit hele gesprek.
+   */
+  providerCallId: string;
+  /**
+   * Leeg zolang het nummer niet (nog) matcht — zie foutcode.
+   */
+  trainer?: (number | null) | TrainerAccount;
+  ruwNummer?: string | null;
+  genormaliseerdNummer?: string | null;
+  nummerVerborgen?: boolean | null;
+  status:
+    | 'ontvangen'
+    | 'trainer_herkend'
+    | 'training_gekozen'
+    | 'opname_verwacht'
+    | 'opname_ontvangen'
+    | 'transcriptie_bezig'
+    | 'concept_klaar'
+    | 'mislukt';
+  foutcode?:
+    | (
+        | 'onbekend_nummer'
+        | 'nummer_verborgen'
+        | 'trainer_niet_pilot'
+        | 'conflict_meerdere_trainers'
+        | 'geen_training_gevonden'
+        | 'geen_keuze_gemaakt'
+        | 'opname_mislukt'
+        | 'transcriptie_mislukt'
+        | 'structurering_mislukt'
+        | 'database_onbereikbaar'
+        | 'onbekende_fout'
+      )
+    | null;
+  foutmelding?: string | null;
+  /**
+   * Wat de trainer telefonisch te kiezen kreeg (id/naam/school/datum) — uitsluitend diagnostiek, geen bron van waarheid.
+   */
+  kandidaatTrainingen?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  gekozenMondayTrainingId?: string | null;
+  gekozenMondaySchoolId?: string | null;
+  gekozenMondayTrainerboardItemId?: string | null;
+  gekozenSchoolNaam?: string | null;
+  gekozenTrainingNaam?: string | null;
+  /**
+   * Twilio RecordingSid — tweede idempotentiesleutel, specifiek voor de opnameverwerkingsstap.
+   */
+  recordingProviderId?: string | null;
+  recordingDuurSeconden?: number | null;
+  /**
+   * Uitsluitend de lengte, nooit de tekst zelf — spec §9 dataminimalisatie.
+   */
+  transcriptieLengte?: number | null;
+  verslag?: (number | null) | TrainingVerslagen;
+  ontvangenOp: string;
+  afgerondOp?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2110,6 +2205,10 @@ export interface PayloadLockedDocument {
         value: number | TrainingVerslagen;
       } | null)
     | ({
+        relationTo: 'trainer-telefonie-oproepen';
+        value: number | TrainerTelefonieOproepen;
+      } | null)
+    | ({
         relationTo: 'variants';
         value: number | Variant;
       } | null)
@@ -2311,6 +2410,8 @@ export interface TrainerAccountsSelect<T extends boolean = true> {
   mondayTrainerboardId?: T;
   mondayUitvoerderItemId?: T;
   actief?: T;
+  mobielNummer?: T;
+  telefonieActief?: T;
   updatedAt?: T;
   createdAt?: T;
   email?: T;
@@ -2367,6 +2468,8 @@ export interface TrainerAiLogEventsSelect<T extends boolean = true> {
  */
 export interface TrainingVerslagenSelect<T extends boolean = true> {
   trainer?: T;
+  bron?: T;
+  telefonieOproep?: T;
   mondayTrainingId?: T;
   mondaySchoolId?: T;
   mondayTrainerboardItemId?: T;
@@ -2385,6 +2488,35 @@ export interface TrainingVerslagenSelect<T extends boolean = true> {
   afrondingResultaat?: T;
   bevestigdOp?: T;
   bevestigdDoorTrainerNaam?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-telefonie-oproepen_select".
+ */
+export interface TrainerTelefonieOproepenSelect<T extends boolean = true> {
+  provider?: T;
+  providerCallId?: T;
+  trainer?: T;
+  ruwNummer?: T;
+  genormaliseerdNummer?: T;
+  nummerVerborgen?: T;
+  status?: T;
+  foutcode?: T;
+  foutmelding?: T;
+  kandidaatTrainingen?: T;
+  gekozenMondayTrainingId?: T;
+  gekozenMondaySchoolId?: T;
+  gekozenMondayTrainerboardItemId?: T;
+  gekozenSchoolNaam?: T;
+  gekozenTrainingNaam?: T;
+  recordingProviderId?: T;
+  recordingDuurSeconden?: T;
+  transcriptieLengte?: T;
+  verslag?: T;
+  ontvangenOp?: T;
+  afgerondOp?: T;
   updatedAt?: T;
   createdAt?: T;
 }

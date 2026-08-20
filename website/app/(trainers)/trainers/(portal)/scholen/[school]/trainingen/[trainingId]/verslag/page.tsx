@@ -95,6 +95,7 @@ export default async function VerslagPagina({ params }: VerslagPaginaProps) {
                       trainingNaam: verslag.trainingNaam ?? training.naam,
                       definitieveTekst: verslag.definitieveTekst,
                     }) ?? undefined,
+                  bron: verslag.bron ?? null,
                 }
               : null
           }

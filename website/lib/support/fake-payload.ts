@@ -145,6 +145,15 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
       Object.assign(doc, opts.data);
       return doc;
     },
+    // Ronde 3.5 (telefonie) — lib/trainers/verslag.ts se verwijderConcept()
+    // is de eerste aanroeper van payload.delete() in dit bestand.
+    delete: async (opts: { collection: string; id: number }) => {
+      const lijst = arr(opts.collection);
+      const index = lijst.findIndex((d) => d.id === opts.id);
+      if (index === -1) throw new Error(`Niet gevonden: ${opts.collection}/${opts.id}`);
+      const [doc] = lijst.splice(index, 1);
+      return doc;
+    },
     // Concurrencyfix (2026-08-24) — lib/trainers/verslag.ts se atomische
     // claim-UPDATE's gaan via payload.db.drizzle.execute(sql`...`), niet via
     // payload.update() (zie de doc-comments daar voor de reden: alleen een
@@ -195,26 +204,67 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
             return { rows: [{ id }] };
           }
 
-          // schrijfVerslagVelden (lib/trainers/verslag.ts) — dynamische,
+          // Ronde 3.5 (telefonie) — claimOpnameVerwerking se atomische
+          // conditionele UPDATE (lib/trainers/telefonie/oproep-state.ts):
+          // zelfde claimprincipe als training_update_status/school_update_
+          // status hierboven, maar op trainer_telefonie_oproepen, met een
+          // vaste doelstatus i.p.v. een "bezig"-lease (Twilio's
+          // recordingStatusCallback komt nooit gelijktijdig-parallel binnen,
+          // wél soms herhaald ná de eerste, al-verwerkte aanroep — vandaar
+          // "claimbaar zolang er nog geen ANDERE recordingProviderId
+          // geclaimd heeft", i.p.v. een tijd-gebaseerde lease).
+          if (tekst.includes("SET status = 'opname_ontvangen'")) {
+            const [recordingProviderId, id] = params as [string, number, string];
+            const oproepen = arr("trainer-telefonie-oproepen");
+            const doc = oproepen.find((d) => d.id === id);
+            if (!doc) return { rows: [] };
+            const statusOk = doc.status === "training_gekozen" || doc.status === "opname_verwacht";
+            const recordingOk = doc.recordingProviderId === undefined || doc.recordingProviderId === null || doc.recordingProviderId === recordingProviderId;
+            if (!statusOk || !recordingOk) return { rows: [] };
+            Object.assign(doc, { status: "opname_ontvangen", recordingProviderId });
+            return { rows: [{ id }] };
+          }
+
+          // schrijfVerslagVelden/schrijfOproepVelden — dynamische,
           // willekeurige kolomcombinatie via sql.identifier(), hier dus ook
           // generiek nagebootst i.p.v. per-combinatie: kolomnamen staan al
           // LETTERLIJK in `tekst` (zie ontleedRaweSql), alleen de waarden
           // zijn "?"-placeholders. Laatste param is altijd het rij-ID (de
           // WHERE id = ?-clausule staat hier bewust ALTIJD als laatste).
-          const setMatch = /^UPDATE training_verslagen SET (.+) WHERE id = \?;$/.exec(tekst);
+          // Tabelnaam (snake_case, gevangen als groep 1) -> Payload-
+          // collectieslug (kebab-case) is voor beide huidige aanroepers
+          // (training_verslagen/trainer_telefonie_oproepen) een simpele
+          // underscore->streepje-vertaling — vandaar generiek i.p.v.
+          // hardcoded op training_verslagen (Ronde 3.5-uitbreiding).
+          const setMatch = /^UPDATE (\w+) SET (.+) WHERE id = \?;$/.exec(tekst);
           if (setMatch) {
-            const kolomNamen = [...setMatch[1]!.matchAll(/(\w+) = \?/g)].map((m) => m[1]!);
+            const tabel = setMatch[1]!.replace(/_/g, "-");
+            const kolomNamen = [...setMatch[2]!.matchAll(/(\w+) = \?/g)].map((m) => m[1]!);
             const id = params[params.length - 1] as number;
-            const doc = verslagen.find((d) => d.id === id);
+            const doc = arr(tabel).find((d) => d.id === id);
             if (!doc) return { rows: [] };
+            // afronding_resultaat/kandidaat_trainingen zijn de enige jsonb-
+            // kolommen die via dit generieke pad geschreven worden — de echte
+            // Postgres-kolom rondt een JSON.stringify()-string vanzelf terug
+            // naar een object/array (payload.findByID hierboven doet dat ná
+            // een ECHTE write ook), dus nabootsen voor gedragsgelijkheid.
+            const JSONB_KOLOMMEN = new Set(["afronding_resultaat", "kandidaat_trainingen"]);
+            // Payload-postgres se FK-kolomconventie voor relationship-velden
+            // is ALTIJD snake_case(veldnaam)+"_id", zonder uitzondering —
+            // ook ontdekt (live, via de real-Postgres-concurrencytest) dat
+            // een veldnaam die toevallig al op "Id" eindigt GEEN vrijstelling
+            // krijgt: zo'n veld zou een dubbele "_id_id"-kolom verwachten, die
+            // nooit bestaat. Alle relatievelden in dit project heten daarom
+            // inmiddels bewust kaal (bv. "trainer", "verslag" — geen "Id"-
+            // suffix), en de naïeve snake->camelCase-conversie hieronder zou
+            // hun "_id"-kolom terugvertalen naar bv. "trainerId"/"verslagId",
+            // wat niet bestaat: de echte Payload-ORM-laag (payload.findByID)
+            // geeft dit veld terug onder zijn eigen, kale veldnaam.
+            const RELATIEVELD_KOLOM_OVERRIDES: Record<string, string> = { trainer_id: "trainer", verslag_id: "verslag" };
             kolomNamen.forEach((snakeCase, i) => {
-              const camelCase = snakeCase.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+              const camelCase = RELATIEVELD_KOLOM_OVERRIDES[snakeCase] ?? snakeCase.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
               const waarde = params[i];
-              // afronding_resultaat is de enige jsonb-kolom hier — de echte
-              // Postgres-kolom rondt een JSON.stringify()-string vanzelf
-              // terug naar een object (payload.findByID hierboven doet dat
-              // ná een ECHTE write ook), dus nabootsen voor gedragsgelijkheid.
-              doc[camelCase] = snakeCase === "afronding_resultaat" && typeof waarde === "string" ? JSON.parse(waarde) : waarde;
+              doc[camelCase] = JSONB_KOLOMMEN.has(snakeCase) && typeof waarde === "string" ? JSON.parse(waarde) : waarde;
             });
             return { rows: [{ id }] };
           }

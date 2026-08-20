@@ -42,6 +42,7 @@ import * as migration_20260824_090000_training_verslagen_v1 from './20260824_090
 import * as migration_20260824_100000_trainer_log_events_logboek_veld from './20260824_100000_trainer_log_events_logboek_veld';
 import * as migration_20260824_110000_training_verslagen_claim_concurrency from './20260824_110000_training_verslagen_claim_concurrency';
 import * as migration_20260824_120000_training_verslagen_kop_velden from './20260824_120000_training_verslagen_kop_velden';
+import * as migration_20260825_090000_telefonie_v1 from './20260825_090000_telefonie_v1';
 
 export const migrations = [
   {
@@ -263,5 +264,10 @@ export const migrations = [
     up: migration_20260824_120000_training_verslagen_kop_velden.up,
     down: migration_20260824_120000_training_verslagen_kop_velden.down,
     name: '20260824_120000_training_verslagen_kop_velden',
+  },
+  {
+    up: migration_20260825_090000_telefonie_v1.up,
+    down: migration_20260825_090000_telefonie_v1.down,
+    name: '20260825_090000_telefonie_v1',
   },
 ];
