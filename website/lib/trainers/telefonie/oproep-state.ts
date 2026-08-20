@@ -24,10 +24,24 @@ import type { TrainerTelefonieOproepen } from "@/types/payload-generated";
 // statisch afleiden), zelfde soort aanname als VerslagRecord/AuthTrainer
 // elders in lib/trainers/ al maken voor exact hetzelfde patroon.
 
-/** Zelfde generieke, dynamische SET-opbouw als lib/trainers/verslag.ts se schrijfVerslagVelden — zie die functie se doc-comment voor de volledige veiligheidsredenering (uitsluitend sql.identifier() voor kolomnamen, altijd hardcoded aanroepen, nooit clientinvoer). */
+/**
+ * Zelfde generieke, dynamische SET-opbouw als lib/trainers/verslag.ts se
+ * schrijfVerslagVelden — zie die functie se doc-comment voor de volledige
+ * veiligheidsredenering (uitsluitend sql.identifier() voor kolomnamen,
+ * altijd hardcoded aanroepen, nooit clientinvoer).
+ *
+ * updated_at = now() (2026-08-25, gate 1) — bewust altijd meegenomen, ook al
+ * vraagt geen enkele aanroeper hier expliciet om: raw SQL via
+ * db.drizzle.execute() gaat buiten Payload's eigen ORM om, die normaliter
+ * bij ELKE update automatisch updatedAt bijwerkt. Zonder dit zou
+ * updatedAt bevroren blijven op het aanmaakmoment van de rij, waardoor de
+ * onderhoudsronde se "al X minuten niet meer bijgewerkt"-vastgelopen-detectie
+ * (claimTranscriptieRetry) een oude-maar-actief-in-behandeling-zijnde rij
+ * onterecht als vastgelopen zou behandelen.
+ */
 async function schrijfOproepVelden(payload: Payload, oproepId: number, kolommen: Record<string, string | number | boolean | null>): Promise<TrainerTelefonieOproepen> {
   const toewijzingen = Object.entries(kolommen).map(([kolom, waarde]) => sql`${sql.identifier(kolom)} = ${waarde}`);
-  await payload.db.drizzle.execute(sql`UPDATE trainer_telefonie_oproepen SET ${sql.join(toewijzingen, sql`, `)} WHERE id = ${oproepId};`);
+  await payload.db.drizzle.execute(sql`UPDATE trainer_telefonie_oproepen SET ${sql.join(toewijzingen, sql`, `)}, updated_at = now() WHERE id = ${oproepId};`);
   return (await payload.findByID({
     collection: "trainer-telefonie-oproepen",
     id: oproepId,
@@ -95,6 +109,7 @@ export type OproepFoutcode =
   | "geen_keuze_gemaakt"
   | "opname_mislukt"
   | "transcriptie_mislukt"
+  | "bewaartermijn_verstreken"
   | "structurering_mislukt"
   | "database_onbereikbaar"
   | "onbekende_fout";
@@ -104,7 +119,7 @@ export async function zetMislukt(
   oproepId: number,
   foutcode: OproepFoutcode,
   foutmelding: string,
-  extra: { ruwNummer?: string | null; genormaliseerdNummer?: string | null; nummerVerborgen?: boolean; trainerId?: number } = {}
+  extra: { ruwNummer?: string | null; genormaliseerdNummer?: string | null; nummerVerborgen?: boolean; trainerId?: number; transcriptiePogingen?: number } = {}
 ): Promise<TrainerTelefonieOproepen> {
   return schrijfOproepVelden(payload, oproepId, {
     status: "mislukt",
@@ -115,6 +130,12 @@ export async function zetMislukt(
     ...(extra.genormaliseerdNummer !== undefined ? { genormaliseerd_nummer: extra.genormaliseerdNummer } : {}),
     ...(extra.nummerVerborgen !== undefined ? { nummer_verborgen: extra.nummerVerborgen } : {}),
     ...(extra.trainerId !== undefined ? { trainer_id: extra.trainerId } : {}),
+    // gate 1: laatste pogingenteller ook bij een definitieve mislukking
+    // vastleggen — anders blijft admin de voorlaatste stand zien (deze functie
+    // schrijft zelf geen transcriptie_pogingen, de aanroeper in gesprek.ts se
+    // verwerkTranscriptieMislukking telt al 1 hoger dan het laatst opgeslagen
+    // aantal vóór dit definitieve besluit).
+    ...(extra.transcriptiePogingen !== undefined ? { transcriptie_pogingen: extra.transcriptiePogingen } : {}),
   });
 }
 
@@ -170,11 +191,17 @@ export async function zetOpnameVerwacht(payload: Payload, oproepId: number): Pro
  * dezelfde recordingProviderId 0 geraakte rijen en slaat het volledige
  * download+transcribeer+concept-traject over. Retourneert of DEZE aanroep de
  * claim won.
+ *
+ * Slaat sinds de transcriptieherstelronde (2026-08-25) ook meteen
+ * ophaalReferentie op, in DEZELFDE atomische stap — sluit een eerder
+ * mogelijk gat: een crash tussen deze claim en de latere zetTranscriptieBezig
+ * liet de referentie voorheen ongeschreven achter, waardoor een automatische
+ * retry de opname nooit meer had kunnen terugvinden.
  */
-export async function claimOpnameVerwerking(payload: Payload, oproepId: number, recordingProviderId: string): Promise<boolean> {
+export async function claimOpnameVerwerking(payload: Payload, oproepId: number, recordingProviderId: string, ophaalReferentie: string | null): Promise<boolean> {
   const resultaat = await payload.db.drizzle.execute(sql`
     UPDATE trainer_telefonie_oproepen
-    SET status = 'opname_ontvangen', recording_provider_id = ${recordingProviderId}
+    SET status = 'opname_ontvangen', recording_provider_id = ${recordingProviderId}, opname_ophaal_referentie = ${ophaalReferentie}, updated_at = now()
     WHERE id = ${oproepId}
       AND status IN ('training_gekozen', 'opname_verwacht')
       AND (recording_provider_id IS NULL OR recording_provider_id = ${recordingProviderId});
@@ -194,4 +221,91 @@ export async function zetConceptKlaar(payload: Payload, oproepId: number, gegeve
     transcriptie_lengte: gegevens.transcriptieLengte,
     afgerond_op: new Date().toISOString(),
   });
+}
+
+/**
+ * Transcriptieherstelronde (2026-08-25, production-readiness-gate 1) — een
+ * mislukte poging die nog binnen zowel het pogingenbudget als de
+ * bewaartermijn valt: HERSTELBAAR, geen terminale status. De audio blijft
+ * bewust bij de provider staan (opnameVerwijderdOp blijft leeg) tot een
+ * volgende poging alsnog lukt, of tot deze route uiteindelijk uitgeput raakt
+ * (zie zetTranscriptieDefinitiefMislukt hieronder). Bewust GEEN
+ * console.error/log van de foutmelding zelf hier — uitsluitend het
+ * al-begrensde (500 tekens) veld in de database, nooit de ruwe fout naar
+ * gewone logs (spec §9/opdracht-gate 1).
+ */
+export async function zetTranscriptieHerstelbaarMislukt(
+  payload: Payload,
+  oproepId: number,
+  gegevens: { pogingen: number; volgendePogingOp: string; foutmelding: string }
+): Promise<TrainerTelefonieOproepen> {
+  return schrijfOproepVelden(payload, oproepId, {
+    status: "transcriptie_mislukt_herstelbaar",
+    transcriptie_pogingen: gegevens.pogingen,
+    volgende_transcriptiepoging: gegevens.volgendePogingOp,
+    foutcode: "transcriptie_mislukt",
+    foutmelding: gegevens.foutmelding.slice(0, 500),
+  });
+}
+
+/** Audio daadwerkelijk verwijderd bij de provider — admin-zichtbaarheidseis (gate 1): dit veld is de plek om "staat de audio er nog?" af te lezen. */
+export async function zetOpnameVerwijderd(payload: Payload, oproepId: number): Promise<TrainerTelefonieOproepen> {
+  return schrijfOproepVelden(payload, oproepId, { opname_verwijderd_op: new Date().toISOString(), volgende_transcriptiepoging: null });
+}
+
+/**
+ * DE idempotentiegarantie voor de onderhoudsronde (gate 1) — atomische
+ * conditionele UPDATE, zelfde bewezen vorm als claimOpnameVerwerking
+ * hierboven. Claimt in twee gevallen (naar 'transcriptie_bezig', exact
+ * dezelfde status als een verse webhook zou zetten, zodat
+ * verwerkTranscriptiepoging() in gesprek.ts geen apart onderhoudspad hoeft
+ * te kennen):
+ *  1. status='transcriptie_mislukt_herstelbaar' EN de geplande volgende
+ *     poging is verstreken — de normale, geplande retry.
+ *  2. status IN ('opname_ontvangen','transcriptie_bezig') EN al langer dan
+ *     STUCK_TIMEOUT_MS niet meer bijgewerkt — herstel van een gecrashte/
+ *     time-outende serverless-aanroep (spec-eis "veilig voor serverless").
+ * Retourneert of DEZE aanroep de claim won — voorkomt dat de onderhoudsronde
+ * zelf (bij een dubbele cron-trigger) of de onderhoudsronde samen met een
+ * laat-binnenkomende providerwebhook dezelfde rij dubbel oppakt.
+ */
+export async function claimTranscriptieRetry(payload: Payload, oproepId: number, vastgelopenVoorTijdstip: string): Promise<boolean> {
+  const resultaat = await payload.db.drizzle.execute(sql`
+    UPDATE trainer_telefonie_oproepen
+    SET status = 'transcriptie_bezig', updated_at = now()
+    WHERE id = ${oproepId}
+      AND (
+        (status = 'transcriptie_mislukt_herstelbaar' AND volgende_transcriptiepoging <= now())
+        OR (status IN ('opname_ontvangen', 'transcriptie_bezig') AND updated_at < ${vastgelopenVoorTijdstip})
+      );
+    RETURNING id;
+  `);
+  return resultaat.rows.length > 0;
+}
+
+/**
+ * Kandidaten voor de onderhoudsronde — twee categorieën (zie
+ * claimTranscriptieRetry hierboven se doc-comment). Uitsluitend ID's: elke
+ * kandidaat wordt daarna individueel, atomisch geclaimd, nooit in bulk
+ * bijgewerkt (voorkomt dat twee gelijktijdige onderhoudsrondes elkaars werk
+ * dubbel doen).
+ */
+export async function vindOnderhoudsKandidaten(payload: Payload, vastgelopenVoorTijdstip: string, limiet: number): Promise<number[]> {
+  const [herstelbaar, vastgelopen] = await Promise.all([
+    payload.find({
+      collection: "trainer-telefonie-oproepen",
+      where: { and: [{ status: { equals: "transcriptie_mislukt_herstelbaar" } }, { volgendeTranscriptiepoging: { less_than_equal: new Date().toISOString() } }] },
+      overrideAccess: true,
+      limit: limiet,
+      depth: 0,
+    }),
+    payload.find({
+      collection: "trainer-telefonie-oproepen",
+      where: { and: [{ status: { in: ["opname_ontvangen", "transcriptie_bezig"] } }, { updatedAt: { less_than: vastgelopenVoorTijdstip } }] },
+      overrideAccess: true,
+      limit: limiet,
+      depth: 0,
+    }),
+  ]);
+  return [...herstelbaar.docs, ...vastgelopen.docs].map((doc) => doc.id as number);
 }

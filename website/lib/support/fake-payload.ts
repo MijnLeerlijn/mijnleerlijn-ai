@@ -92,6 +92,19 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
       if (voorwaarde && typeof voorwaarde === "object" && "in" in voorwaarde) {
         return (voorwaarde as { in: unknown[] }).in.includes(waarde);
       }
+      // Gate 1 (telefonie-onderhoudsronde, 2026-08-25) — vindOnderhoudsKandidaten
+      // filtert op "volgendeTranscriptiepoging <= nu" resp. "updatedAt <
+      // vastgelopen-drempel". String-vergelijking is hier veilig: alle
+      // datums komen consequent als ISO-8601 binnen (new Date().toISOString()),
+      // wat lexicografisch dezelfde volgorde geeft als chronologisch.
+      if (voorwaarde && typeof voorwaarde === "object" && "less_than_equal" in voorwaarde) {
+        if (waarde === undefined || waarde === null) return false;
+        return String(waarde) <= String((voorwaarde as { less_than_equal: unknown }).less_than_equal);
+      }
+      if (voorwaarde && typeof voorwaarde === "object" && "less_than" in voorwaarde) {
+        if (waarde === undefined || waarde === null) return false;
+        return String(waarde) < String((voorwaarde as { less_than: unknown }).less_than);
+      }
       // `exists: false` = leeg/niet gezet (undefined, null, of een lege
       // array bij een hasMany-relatieveld); `exists: true` het omgekeerde.
       if (voorwaarde && typeof voorwaarde === "object" && "exists" in voorwaarde) {
@@ -212,16 +225,38 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
           // recordingStatusCallback komt nooit gelijktijdig-parallel binnen,
           // wél soms herhaald ná de eerste, al-verwerkte aanroep — vandaar
           // "claimbaar zolang er nog geen ANDERE recordingProviderId
-          // geclaimd heeft", i.p.v. een tijd-gebaseerde lease).
+          // geclaimd heeft", i.p.v. een tijd-gebaseerde lease). Slaat sinds
+          // gate 1 ook opnameOphaalReferentie + updatedAt op, in dezelfde
+          // atomische stap als de echte SQL.
           if (tekst.includes("SET status = 'opname_ontvangen'")) {
-            const [recordingProviderId, id] = params as [string, number, string];
+            const [recordingProviderId, ophaalReferentie, id] = params as [string, string | null, number, string];
             const oproepen = arr("trainer-telefonie-oproepen");
             const doc = oproepen.find((d) => d.id === id);
             if (!doc) return { rows: [] };
             const statusOk = doc.status === "training_gekozen" || doc.status === "opname_verwacht";
             const recordingOk = doc.recordingProviderId === undefined || doc.recordingProviderId === null || doc.recordingProviderId === recordingProviderId;
             if (!statusOk || !recordingOk) return { rows: [] };
-            Object.assign(doc, { status: "opname_ontvangen", recordingProviderId });
+            Object.assign(doc, { status: "opname_ontvangen", recordingProviderId, opnameOphaalReferentie: ophaalReferentie, updatedAt: new Date().toISOString() });
+            return { rows: [{ id }] };
+          }
+
+          // Gate 1 (2026-08-25) — claimTranscriptieRetry se atomische
+          // conditionele UPDATE: claimbaar vanuit twee categorieën, zie de
+          // doc-comment bij die functie (oproep-state.ts) voor de volledige
+          // toelichting. Zelfde claimprincipe, andere voorwaarde.
+          if (tekst.includes("SET status = 'transcriptie_bezig'")) {
+            const [id, vastgelopenVoorTijdstip] = params as [number, string];
+            const oproepen = arr("trainer-telefonie-oproepen");
+            const doc = oproepen.find((d) => d.id === id);
+            if (!doc) return { rows: [] };
+            const nu = new Date().toISOString();
+            const volgendePogingKlaar = doc.status === "transcriptie_mislukt_herstelbaar" && typeof doc.volgendeTranscriptiepoging === "string" && doc.volgendeTranscriptiepoging <= nu;
+            const vastgelopen =
+              (doc.status === "opname_ontvangen" || doc.status === "transcriptie_bezig") &&
+              typeof doc.updatedAt === "string" &&
+              doc.updatedAt < vastgelopenVoorTijdstip;
+            if (!volgendePogingKlaar && !vastgelopen) return { rows: [] };
+            Object.assign(doc, { status: "transcriptie_bezig", updatedAt: nu });
             return { rows: [{ id }] };
           }
 
@@ -266,6 +301,14 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
               const waarde = params[i];
               doc[camelCase] = JSONB_KOLOMMEN.has(snakeCase) && typeof waarde === "string" ? JSON.parse(waarde) : waarde;
             });
+            // Gate 1 — schrijfOproepVelden (oproep-state.ts) hangt sinds
+            // 2026-08-25 altijd een letterlijke ", updated_at = now()" aan
+            // deze SET-clausule (geen "?"-param, dus niet via kolomNamen
+            // hierboven gevangen) — hier expliciet nagebootst, alléén
+            // wanneer de echte SQL-tekst dat fragment ook daadwerkelijk
+            // bevat (schrijfVerslagVelden in lib/trainers/verslag.ts doet
+            // dit bewust niet, blijft dus ongewijzigd).
+            if (tekst.includes(", updated_at = now()")) doc.updatedAt = new Date().toISOString();
             return { rows: [{ id }] };
           }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameAfgerond, verwerkOpnameStatus } from "./gesprek";
+import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameAfgerond, verwerkOpnameStatus, verwerkTelefonieOnderhoud } from "./gesprek";
 import { claimOpnameVerwerking } from "./oproep-state";
 import { haalRecenteTrainingenVoorTelefonie, haalTrainingVoorMutatie, haalSchoolDetail, vandaagIsoAmsterdam } from "../monday-links";
 import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde, wijzigKolomWaardeJson, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
@@ -513,15 +513,127 @@ describe("verwerkOpnameStatus", () => {
     expect(provider.verwijderOpname).toHaveBeenCalledWith("RE1");
   });
 
-  it("scenario 14: transcriptie mislukt -> mislukt met foutcode transcriptie_mislukt, geen concept aangemaakt", async () => {
+  it("scenario 14 (Gate 1): transcriptie mislukt bij eerste poging -> herstelbare status, retry gepland, audio blijft staan, geen concept aangemaakt", async () => {
     const oproepId = await oproepKlaarVoorOpname();
+    const provider = maakFakeProvider();
     mockTranscribeAudio.mockRejectedValue(new Error("Whisper tijdelijk onbereikbaar"));
-    await verwerkOpnameStatus(payload, maakFakeProvider(), oproepId, {});
+    await verwerkOpnameStatus(payload, provider, oproepId, {});
 
     expect(collection("training-verslagen")).toHaveLength(0);
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("transcriptie_mislukt_herstelbaar");
+    expect(rij.foutcode).toBe("transcriptie_mislukt");
+    expect(rij.transcriptiePogingen).toBe(1);
+    expect(typeof rij.volgendeTranscriptiepoging).toBe("string");
+    expect(new Date(rij.volgendeTranscriptiepoging as string).getTime()).toBeGreaterThan(Date.now());
+
+    // Spec: bij een herstelbare mislukking blijft de opname bewust bij de
+    // provider staan (nodig voor de retry) — pas bij definitieve mislukking
+    // of na de bewaartermijn wordt hij opgeruimd.
+    expect(provider.verwijderOpname).not.toHaveBeenCalled();
+    expect(rij.opnameVerwijderdOp ?? null).toBeNull();
+  });
+
+  it("Gate 1: na MAX_TRANSCRIPTIE_POGINGEN mislukte pogingen -> definitief 'mislukt', audio alsnog opgeruimd", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const provider = maakFakeProvider();
+    mockTranscribeAudio.mockRejectedValue(new Error("Whisper tijdelijk onbereikbaar"));
+
+    // 1e poging via de webhook, daarna 4 herstelpogingen via de onderhoudsronde
+    // (totaal 5 = MAX_TRANSCRIPTIE_POGINGEN).
+    await verwerkOpnameStatus(payload, provider, oproepId, {});
+    for (let i = 0; i < 4; i += 1) {
+      const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+      rij.volgendeTranscriptiepoging = new Date(Date.now() - 1000).toISOString();
+      await verwerkTelefonieOnderhoud(payload, provider);
+    }
+
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.status).toBe("mislukt");
     expect(rij.foutcode).toBe("transcriptie_mislukt");
+    expect(rij.transcriptiePogingen).toBe(5);
+    expect(collection("training-verslagen")).toHaveLength(0);
+
+    // Definitieve mislukking -> audio wordt alsnog actief opgeruimd (spec: nooit
+    // audio laten staan zonder dat er nog een retry gepland is).
+    expect(provider.verwijderOpname).toHaveBeenCalledWith("RE1");
+    expect(rij.opnameVerwijderdOp).not.toBeNull();
+  });
+
+  it("Gate 1: bewaartermijn verstreken vóórdat het pogingenbudget op is -> definitief 'mislukt' met foutcode bewaartermijn_verstreken, audio opgeruimd", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const provider = maakFakeProvider();
+    mockTranscribeAudio.mockRejectedValue(new Error("Whisper tijdelijk onbereikbaar"));
+
+    const rijVoorOntvangst = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    rijVoorOntvangst.ontvangenOp = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(); // > 24u geleden
+
+    await verwerkOpnameStatus(payload, provider, oproepId, {});
+
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("mislukt");
+    expect(rij.foutcode).toBe("bewaartermijn_verstreken");
+    expect(rij.transcriptiePogingen).toBe(1);
+    expect(collection("training-verslagen")).toHaveLength(0);
+    expect(provider.verwijderOpname).toHaveBeenCalledWith("RE1");
+    expect(rij.opnameVerwijderdOp).not.toBeNull();
+  });
+
+  it("Gate 1: een retry na een eerdere herstelbare mislukking maakt nooit een tweede concept (upsertConcept blijft find-or-create op [trainer, mondayTrainingId])", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const provider = maakFakeProvider();
+
+    mockTranscribeAudio.mockRejectedValueOnce(new Error("Whisper tijdelijk onbereikbaar"));
+    await verwerkOpnameStatus(payload, provider, oproepId, {});
+    let rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("transcriptie_mislukt_herstelbaar");
+
+    mockTranscribeAudio.mockResolvedValue("Vandaag rekenen gedaan, fijne sfeer.");
+    rij.volgendeTranscriptiepoging = new Date(Date.now() - 1000).toISOString();
+    await verwerkTelefonieOnderhoud(payload, provider);
+
+    rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("concept_klaar");
+    expect(collection("training-verslagen")).toHaveLength(1);
+    expect(mockTranscribeAudio).toHaveBeenCalledTimes(2);
+  });
+
+  it("Gate 1: de onderhoudsronde herstelt een 'vastgelopen' rij (crash tussen claim en afronding) zonder een tweede concept te maken", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const provider = maakFakeProvider();
+
+    // Simuleer een serverless-crash: de claim is doorgevoerd (status +
+    // ophaalreferentie liggen al vast) maar de container stierf vóór de
+    // transcriptie kon starten/eindigen. updatedAt ligt ver in het verleden.
+    await claimOpnameVerwerking(payload, oproepId, "RE1", "https://provider.example/recordings/RE1");
+    const vastgelopen = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    vastgelopen.updatedAt = new Date(Date.now() - 30 * 60 * 1000).toISOString(); // > STUCK_TIMEOUT_MS
+
+    const resultaat = await verwerkTelefonieOnderhoud(payload, provider);
+
+    expect(resultaat.geclaimd).toBe(1);
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("concept_klaar");
+    expect(collection("training-verslagen")).toHaveLength(1);
+  });
+
+  it("Gate 1: de onderhoudsronde is idempotent — een gelijktijdige/dubbele aanroep verwerkt dezelfde herstelbare rij maar één keer", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const provider = maakFakeProvider();
+    mockTranscribeAudio.mockRejectedValueOnce(new Error("Whisper tijdelijk onbereikbaar"));
+    await verwerkOpnameStatus(payload, provider, oproepId, {});
+
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    rij.volgendeTranscriptiepoging = new Date(Date.now() - 1000).toISOString();
+    mockTranscribeAudio.mockResolvedValue("Vandaag rekenen gedaan, fijne sfeer.");
+
+    // "Gelijktijdig" gesimuleerd als twee sequentiële aanroepen zonder tussentijdse
+    // wijziging — de atomaire claim-UPDATE moet de tweede aanroep leeg laten uitkomen.
+    const [eerste, tweede] = await Promise.all([verwerkTelefonieOnderhoud(payload, provider), verwerkTelefonieOnderhoud(payload, provider)]);
+
+    expect(eerste.geclaimd + tweede.geclaimd).toBe(1);
+    expect(collection("training-verslagen")).toHaveLength(1);
+    expect(mockTranscribeAudio).toHaveBeenCalledTimes(2); // 1e mislukte poging + 1 geslaagde retry
   });
 
   it("scenario 16: AI-structurering mislukt -> concept blijft toch bewaard (trainerInvoer=transcript), oproep alsnog concept_klaar — trainer kan later zelf 'Maak verslag' klikken in de portal", async () => {
@@ -550,7 +662,7 @@ describe("verwerkOpnameStatus", () => {
 
   it("scenario 11/24 vervolg: een reeds elders geclaimde opname (bv. race met een net iets snellere gelijktijdige callback) wordt door DEZE aanroep stil overgeslagen", async () => {
     const oproepId = await oproepKlaarVoorOpname();
-    const gewonnen = await claimOpnameVerwerking(payload, oproepId, "RE1");
+    const gewonnen = await claimOpnameVerwerking(payload, oproepId, "RE1", "https://provider.example/recordings/RE1");
     expect(gewonnen).toBe(true);
 
     await verwerkOpnameStatus(payload, maakFakeProvider(), oproepId, {});

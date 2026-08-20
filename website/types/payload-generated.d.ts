@@ -583,6 +583,7 @@ export interface TrainerTelefonieOproepen {
     | 'opname_verwacht'
     | 'opname_ontvangen'
     | 'transcriptie_bezig'
+    | 'transcriptie_mislukt_herstelbaar'
     | 'concept_klaar'
     | 'mislukt';
   foutcode?:
@@ -595,6 +596,7 @@ export interface TrainerTelefonieOproepen {
         | 'geen_keuze_gemaakt'
         | 'opname_mislukt'
         | 'transcriptie_mislukt'
+        | 'bewaartermijn_verstreken'
         | 'structurering_mislukt'
         | 'database_onbereikbaar'
         | 'onbekende_fout'
@@ -622,11 +624,27 @@ export interface TrainerTelefonieOproepen {
    * Twilio RecordingSid — tweede idempotentiesleutel, specifiek voor de opnameverwerkingsstap.
    */
   recordingProviderId?: string | null;
+  /**
+   * De providerreferentie om de opname opnieuw op te halen bij een automatische retry (spec: transcriptieherstel) — nooit een publiek bruikbare URL op zichzelf, download vereist nog altijd providerauthenticatie (Basic Auth met Account SID/Auth Token). Uitsluitend gebruikt door de onderhoudsronde (lib/trainers/telefonie/gesprek.ts se verwerkTelefonieOnderhoud).
+   */
+  opnameOphaalReferentie?: string | null;
   recordingDuurSeconden?: number | null;
   /**
    * Uitsluitend de lengte, nooit de tekst zelf — spec §9 dataminimalisatie.
    */
   transcriptieLengte?: number | null;
+  /**
+   * Aantal keer dat ophalen+transcriberen geprobeerd is (initiële poging + automatische retries). Begrensd, zie MAX_TRANSCRIPTIE_POGINGEN in gesprek.ts.
+   */
+  transcriptiePogingen?: number | null;
+  /**
+   * Leeg zodra de zaak is afgerond (concept klaar) of definitief is opgegeven. Alleen gezet terwijl status 'Transcriptie mislukt (herstelbaar)' is.
+   */
+  volgendeTranscriptiepoging?: string | null;
+  /**
+   * Leeg zolang de audio nog bij de provider staat (bv. tijdens herstelbare retries) — admin-zichtbaarheidseis: dit veld is DE plek om te zien of een tijdelijk mislukte verwerking nog audio heeft staan of al is opgeruimd.
+   */
+  opnameVerwijderdOp?: string | null;
   verslag?: (number | null) | TrainingVerslagen;
   ontvangenOp: string;
   afgerondOp?: string | null;
@@ -2512,8 +2530,12 @@ export interface TrainerTelefonieOproepenSelect<T extends boolean = true> {
   gekozenSchoolNaam?: T;
   gekozenTrainingNaam?: T;
   recordingProviderId?: T;
+  opnameOphaalReferentie?: T;
   recordingDuurSeconden?: T;
   transcriptieLengte?: T;
+  transcriptiePogingen?: T;
+  volgendeTranscriptiepoging?: T;
+  opnameVerwijderdOp?: T;
   verslag?: T;
   ontvangenOp?: T;
   afgerondOp?: T;

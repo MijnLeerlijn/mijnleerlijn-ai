@@ -2,6 +2,7 @@ import type { Payload } from "payload";
 import { optionalEnv, getTrainersOrigin } from "@/config/env";
 import type { TelefonieProvider, VoiceInstructie } from "./provider";
 import { vindTrainerVoorTelefoonnummer, haalAuthTrainerVoorId } from "./trainer-lookup";
+import type { AuthTrainer } from "../auth";
 import { normaliseerNederlandsNummer } from "./nummer";
 import { haalRecenteTrainingenVoorTelefonie, vandaagIsoAmsterdam } from "../monday-links";
 import { upsertConcept, structureerVerslag } from "../verslag";
@@ -16,6 +17,10 @@ import {
   claimOpnameVerwerking,
   zetTranscriptieBezig,
   zetConceptKlaar,
+  zetTranscriptieHerstelbaarMislukt,
+  zetOpnameVerwijderd,
+  claimTranscriptieRetry,
+  vindOnderhoudsKandidaten,
   type OproepFoutcode,
 } from "./oproep-state";
 import type { TrainerTelefonieOproepen } from "@/types/payload-generated";
@@ -43,6 +48,41 @@ const GATHER_TIMEOUT_SECONDEN = 8;
 const MAX_OPNAME_DUUR_SECONDEN = 900; // 15 minuten — bovengrens spec §8 ("10-15 minuten")
 const OPNAME_STILTE_TIMEOUT_SECONDEN = 5;
 const OPNAME_STOP_TOETS = "#";
+
+// Production-readiness-gate 1 (2026-08-25) — transcriptieherstel +
+// audiobewaartermijn. GEKOZEN WAARDEN EN MOTIVATIE (expliciet, zoals
+// gevraagd):
+//
+// MAX_TRANSCRIPTIE_POGINGEN = 5 — begrensd (spec-eis "maximaal een begrensd
+// aantal automatische retries"). Dekt een tijdelijke Whisper-/OpenAI-storing
+// van enkele uren zonder de audio onnodig lang vast te houden; 5 pogingen
+// met TRANSCRIPTIE_RETRY_DELAY_MS ertussen duren doorgaans onder de 2 uur.
+//
+// TRANSCRIPTIE_RETRY_DELAY_MS = 10 minuten — kort genoeg om binnen
+// MAX_BEWAARTERMIJN_MS alle 5 pogingen te kunnen doen, lang genoeg om een
+// kortstondige providerstoring niet meteen opnieuw te raken.
+//
+// MAX_BEWAARTERMIJN_MS = 24 uur (vanaf ontvangenOp, het gespreksmoment) — DE
+// harde bovengrens: hierna wordt de audio ALTIJD verwijderd, ongeacht
+// resterend pogingenbudget (spec §9-dataminimalisatie weegt zwaarder dan
+// "nog een kans geven"). 24 uur is bewust ruim boven wat de pogingenteller
+// realistisch nodig heeft (dat exhaust doorgaans al binnen ~2 uur, zie
+// hierboven) — de 24 uur is dus vrijwel altijd een stille achtervanger, geen
+// dagelijks geraakte limiet, en tegelijk kort genoeg om spraakopnames met
+// persoonsgegevens over trainers/scholen niet langer dan één etmaal ergens
+// te laten staan zonder dat er ooit een bruikbaar concept uit is gekomen.
+//
+// STUCK_TIMEOUT_MS = 20 minuten — hoelang een rij in 'opname_ontvangen'/
+// 'transcriptie_bezig' mag blijven staan vóór de onderhoudsronde 'm als
+// vastgelopen (bv. een gecrashte/time-outende serverless-aanroep) beschouwt
+// en alsnog in het herstelpad trekt. Ruim boven de realistische duur van een
+// download+Whisper-transcriptie van een 15-minuten-opname, kort genoeg om
+// een echt vastgelopen rij niet dagenlang onopgemerkt te laten hangen.
+const MAX_TRANSCRIPTIE_POGINGEN = 5;
+const TRANSCRIPTIE_RETRY_DELAY_MS = 10 * 60 * 1000;
+const MAX_BEWAARTERMIJN_MS = 24 * 60 * 60 * 1000;
+const STUCK_TIMEOUT_MS = 20 * 60 * 1000;
+const ONDERHOUD_LIMIET_PER_CATEGORIE = 50; // begrenzing per onderhoudsronde-aanroep, voorkomt een onbegrensde cronrun
 
 function telefonieIsActief(): boolean {
   return optionalEnv("TRAINER_TELEFONIE_ENABLED") === "true";
@@ -295,7 +335,7 @@ export async function verwerkOpnameStatus(payload: Payload, provider: TelefonieP
     return;
   }
 
-  const gewonnen = await claimOpnameVerwerking(payload, oproepId, status.providerRecordingId);
+  const gewonnen = await claimOpnameVerwerking(payload, oproepId, status.providerRecordingId, status.ophaalReferentie);
   if (!gewonnen) return; // al (in behandeling) verwerkt door een eerdere/duplicaat-aanroep — spec §12/§18/§24, stil, geen fout
 
   const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
@@ -311,13 +351,40 @@ export async function verwerkOpnameStatus(payload: Payload, provider: TelefonieP
   }
 
   await zetTranscriptieBezig(payload, oproepId, status.duurSeconden);
+  await verwerkTranscriptiepoging(payload, provider, oproep, trainer);
+}
+
+/**
+ * Gedeelde transcriptiepoging (production-readiness-gate 1, 2026-08-25) —
+ * gebruikt door zowel de recordingStatus-webhook (verwerkOpnameStatus
+ * hierboven) als de onderhoudsronde (verwerkTelefonieOnderhoud hieronder).
+ * Eén pad garandeert dat een automatische retry zich exact hetzelfde
+ * gedraagt als de eerste poging: dezelfde upsertConcept()-aanroep, dus
+ * dezelfde find-or-create-garantie op [trainer, mondayTrainingId] — een
+ * retry kan structureel geen tweede concept maken, precies zoals een gewone
+ * dubbele webhook dat al niet kon (spec-eis gate 1: "retries mogen nooit een
+ * tweede concept maken").
+ *
+ * oproep MOET al door de aanroeper geclaimd zijn naar status
+ * 'transcriptie_bezig' (via claimOpnameVerwerking resp.
+ * claimTranscriptieRetry) — deze functie claimt zelf niets.
+ */
+async function verwerkTranscriptiepoging(payload: Payload, provider: TelefonieProvider, oproep: TrainerTelefonieOproepen, trainer: AuthTrainer): Promise<void> {
+  if (!oproep.opnameOphaalReferentie || !oproep.recordingProviderId) {
+    // Structureel zeldzaam sinds claimOpnameVerwerking de ophaalreferentie
+    // atomisch mét de claim zelf opslaat — defensief nooit een download
+    // proberen zonder referentie (kan alleen nog bij zeer oude, vóór deze
+    // ronde geclaimde rijen).
+    await verwerkTranscriptieMislukking(payload, provider, oproep, new Error("Geen opname-ophaalreferentie bekend."));
+    return;
+  }
 
   let transcript: string;
   try {
-    const audio = await provider.haalOpnameOp(status.ophaalReferentie);
+    const audio = await provider.haalOpnameOp(oproep.opnameOphaalReferentie);
     transcript = await transcribeAudio(audio);
   } catch (error) {
-    await zetMislukt(payload, oproepId, "transcriptie_mislukt", error instanceof Error ? error.message : String(error));
+    await verwerkTranscriptieMislukking(payload, provider, oproep, error);
     return;
   }
 
@@ -325,10 +392,10 @@ export async function verwerkOpnameStatus(payload: Payload, provider: TelefonieP
     const conceptUitkomst = await upsertConcept(payload, trainer, oproep.gekozenMondayTrainingId as string, {
       trainerInvoer: transcript,
       bron: "telefoon",
-      telefonieOproepId: oproepId,
+      telefonieOproepId: oproep.id,
     });
     if (conceptUitkomst.soort !== "ok") {
-      await zetMislukt(payload, oproepId, "onbekende_fout", `upsertConcept: ${conceptUitkomst.soort} — ${"boodschap" in conceptUitkomst ? conceptUitkomst.boodschap : ""}`);
+      await zetMislukt(payload, oproep.id, "onbekende_fout", `upsertConcept: ${conceptUitkomst.soort} — ${"boodschap" in conceptUitkomst ? conceptUitkomst.boodschap : ""}`);
       return;
     }
 
@@ -339,15 +406,99 @@ export async function verwerkOpnameStatus(payload: Payload, provider: TelefonieP
     // Nooit een fout hier de héle telefonieflow als mislukt markeren.
     await structureerVerslag(payload, trainer, oproep.gekozenMondayTrainingId as string, transcript);
 
-    await zetConceptKlaar(payload, oproepId, { verslagId: conceptUitkomst.verslag.id, transcriptieLengte: transcript.length });
+    await zetConceptKlaar(payload, oproep.id, { verslagId: conceptUitkomst.verslag.id, transcriptieLengte: transcript.length });
   } finally {
     // Spec §9: audio bewaren zolang nodig voor transcriptie, daarna
     // verwijderen zodra transcriptie + concept veilig staan — best-effort,
     // MAG nooit de al-geslaagde conceptaanmaak alsnog als mislukt melden.
+    // zetOpnameVerwijderd is de admin-zichtbaarheidseis uit gate 1: hierna
+    // staat expliciet vast dat de audio weg is, niet alleen impliciet.
     try {
-      await provider.verwijderOpname(status.providerRecordingId);
+      await provider.verwijderOpname(oproep.recordingProviderId);
+      await zetOpnameVerwijderd(payload, oproep.id);
     } catch (error) {
       console.error("[telefonie] opname verwijderen bij provider mislukt (concept staat al veilig lokaal):", error);
     }
   }
+}
+
+/**
+ * Gate 1 — herstelbaar-of-definitief-mislukt, zie de MAX_TRANSCRIPTIE_
+ * POGINGEN/MAX_BEWAARTERMIJN_MS-toelichting bovenaan dit bestand voor de
+ * volledige motivatie van de gekozen grenzen. Bewust GEEN console.error met
+ * de ruwe foutinhoud (spec-eis "geen transcriptie/audio in gewone logs") —
+ * uitsluitend een generieke, contentloze regel; de begrensde foutmelding
+ * zelf (max. 500 tekens, geen audio/transcript) staat al veilig in de
+ * database via zetTranscriptieHerstelbaarMislukt/zetMislukt.
+ */
+async function verwerkTranscriptieMislukking(payload: Payload, provider: TelefonieProvider, oproep: TrainerTelefonieOproepen, error: unknown): Promise<void> {
+  const pogingen = (oproep.transcriptiePogingen ?? 0) + 1;
+  const ontvangenMs = new Date(oproep.ontvangenOp).getTime();
+  const bewaartermijnVerstreken = Date.now() - ontvangenMs > MAX_BEWAARTERMIJN_MS;
+  const boodschap = error instanceof Error ? error.message : String(error);
+  console.error(`[telefonie] transcriptiepoging mislukt (oproepId=${oproep.id}, poging=${pogingen}/${MAX_TRANSCRIPTIE_POGINGEN})`);
+
+  if (pogingen < MAX_TRANSCRIPTIE_POGINGEN && !bewaartermijnVerstreken) {
+    await zetTranscriptieHerstelbaarMislukt(payload, oproep.id, {
+      pogingen,
+      volgendePogingOp: new Date(Date.now() + TRANSCRIPTIE_RETRY_DELAY_MS).toISOString(),
+      foutmelding: boodschap,
+    });
+    return; // audio blijft bewust bewaard voor de volgende poging
+  }
+
+  // Uitgeput — pogingenbudget op óf bewaartermijn verstreken (welke van
+  // de twee het eerst raakt wint, zie de constante-toelichting hierboven).
+  // Definitief mislukt; audio nu actief opruimen, nooit onbeperkt laten staan.
+  await zetMislukt(payload, oproep.id, bewaartermijnVerstreken ? "bewaartermijn_verstreken" : "transcriptie_mislukt", boodschap, { transcriptiePogingen: pogingen });
+  if (oproep.recordingProviderId) {
+    try {
+      await provider.verwijderOpname(oproep.recordingProviderId);
+      await zetOpnameVerwijderd(payload, oproep.id);
+    } catch {
+      console.error(`[telefonie] opname verwijderen na definitief mislukte transcriptie ook mislukt (oproepId=${oproep.id})`);
+    }
+  }
+}
+
+/**
+ * De onderhoudsronde (production-readiness-gate 1) — cron-getriggerd (zie
+ * app/api/trainers/telefonie/onderhoud/route.ts + vercel.json), GEEN
+ * in-memory timer: hergebruikt de al-bestaande Vercel-Cron-scheduler-
+ * primitive (zelfde patroon als app/api/sales/sync/route.ts, spec-eis
+ * "gebruik bestaande scheduler/queue-primitives"). Pakt begrensd per aanroep
+ * kandidaten op (ONDERHOUD_LIMIET_PER_CATEGORIE), claimt elke kandidaat
+ * atomisch (claimTranscriptieRetry — voorkomt dat twee gelijktijdige
+ * cronruns, of een cronrun samen met een laat-binnenkomende providerwebhook,
+ * dezelfde rij dubbel oppakken — spec-eis "veilig voor serverless/
+ * dubbele callbacks"), en verwerkt daarna via DEZELFDE
+ * verwerkTranscriptiepoging() als de webhook-route.
+ */
+export async function verwerkTelefonieOnderhoud(payload: Payload, provider: TelefonieProvider): Promise<{ geclaimd: number }> {
+  if (!telefonieIsActief()) return { geclaimd: 0 };
+
+  const vastgelopenVoorTijdstip = new Date(Date.now() - STUCK_TIMEOUT_MS).toISOString();
+  const kandidaten = await vindOnderhoudsKandidaten(payload, vastgelopenVoorTijdstip, ONDERHOUD_LIMIET_PER_CATEGORIE);
+
+  let geclaimd = 0;
+  for (const oproepId of kandidaten) {
+    const gewonnen = await claimTranscriptieRetry(payload, oproepId, vastgelopenVoorTijdstip);
+    if (!gewonnen) continue; // verloren aan een gelijktijdige aanroep, of inmiddels elders afgerond — stil, geen fout
+
+    const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
+    if (!oproep || !oproep.trainer || !oproep.gekozenMondayTrainingId) {
+      await zetMislukt(payload, oproepId, "onbekende_fout", "Onderhoudsronde: geclaimde oproep zonder trainer/training.");
+      continue;
+    }
+    const trainer = await haalAuthTrainerVoorId(payload, oproep.trainer as number);
+    if (!trainer) {
+      await zetMislukt(payload, oproepId, "onbekende_fout", "Onderhoudsronde: trainer niet meer vindbaar.");
+      continue;
+    }
+
+    await verwerkTranscriptiepoging(payload, provider, oproep, trainer);
+    geclaimd += 1;
+  }
+
+  return { geclaimd };
 }

@@ -25,7 +25,7 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
   labels: { singular: "Telefonie-oproep", plural: "Telefonie-oproepen" },
   admin: {
     useAsTitle: "providerCallId",
-    defaultColumns: ["trainer", "status", "gekozenSchoolNaam", "gekozenTrainingNaam", "ontvangenOp", "foutcode"],
+    defaultColumns: ["trainer", "status", "gekozenSchoolNaam", "gekozenTrainingNaam", "ontvangenOp", "foutcode", "transcriptiePogingen", "opnameVerwijderdOp"],
     group: "Basis — Technisch beheer",
     description:
       "Call-state en diagnostiek voor telefonisch ingesproken trainingsverslagen (Ronde 3.5). Bevat nooit de volledige transcriptietekst of audio — die staat (indien geslaagd) in het gekoppelde trainingsverslag. Nooit rechtstreeks bewerken.",
@@ -56,6 +56,10 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
         { label: "Opname verwacht", value: "opname_verwacht" },
         { label: "Opname ontvangen", value: "opname_ontvangen" },
         { label: "Transcriptie bezig", value: "transcriptie_bezig" },
+        {
+          label: "Transcriptie mislukt (herstelbaar — automatische retry gepland)",
+          value: "transcriptie_mislukt_herstelbaar",
+        },
         { label: "Concept klaar", value: "concept_klaar" },
         { label: "Mislukt", value: "mislukt" },
       ],
@@ -72,7 +76,8 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
         { label: "Geen recente training gevonden", value: "geen_training_gevonden" },
         { label: "Geen geldige keuze gemaakt", value: "geen_keuze_gemaakt" },
         { label: "Opname mislukt/leeg", value: "opname_mislukt" },
-        { label: "Transcriptie mislukt", value: "transcriptie_mislukt" },
+        { label: "Transcriptie mislukt (max. pogingen bereikt)", value: "transcriptie_mislukt" },
+        { label: "Bewaartermijn verstreken vóór transcriptie lukte", value: "bewaartermijn_verstreken" },
         { label: "AI-structurering mislukt", value: "structurering_mislukt" },
         { label: "Database tijdelijk onbereikbaar", value: "database_onbereikbaar" },
         { label: "Onbekende fout", value: "onbekende_fout" },
@@ -91,8 +96,39 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
     { name: "gekozenSchoolNaam", type: "text", label: "Gekozen training — school (naam)" },
     { name: "gekozenTrainingNaam", type: "text", label: "Gekozen training — naam" },
     { name: "recordingProviderId", type: "text", index: true, label: "Provider-opname-ID", admin: { description: "Twilio RecordingSid — tweede idempotentiesleutel, specifiek voor de opnameverwerkingsstap." } },
+    {
+      name: "opnameOphaalReferentie",
+      type: "text",
+      label: "Opname-ophaalreferentie (provider-URL)",
+      admin: {
+        description:
+          "De providerreferentie om de opname opnieuw op te halen bij een automatische retry (spec: transcriptieherstel) — nooit een publiek bruikbare URL op zichzelf, download vereist nog altijd providerauthenticatie (Basic Auth met Account SID/Auth Token). Uitsluitend gebruikt door de onderhoudsronde (lib/trainers/telefonie/gesprek.ts se verwerkTelefonieOnderhoud).",
+      },
+    },
     { name: "recordingDuurSeconden", type: "number", label: "Opnameduur (seconden)" },
     { name: "transcriptieLengte", type: "number", label: "Transcriptielengte (tekens)", admin: { description: "Uitsluitend de lengte, nooit de tekst zelf — spec §9 dataminimalisatie." } },
+    {
+      name: "transcriptiePogingen",
+      type: "number",
+      defaultValue: 0,
+      label: "Transcriptiepogingen",
+      admin: { description: "Aantal keer dat ophalen+transcriberen geprobeerd is (initiële poging + automatische retries). Begrensd, zie MAX_TRANSCRIPTIE_POGINGEN in gesprek.ts." },
+    },
+    {
+      name: "volgendeTranscriptiepoging",
+      type: "date",
+      label: "Volgende automatische retry gepland op",
+      admin: { description: "Leeg zodra de zaak is afgerond (concept klaar) of definitief is opgegeven. Alleen gezet terwijl status 'Transcriptie mislukt (herstelbaar)' is." },
+    },
+    {
+      name: "opnameVerwijderdOp",
+      type: "date",
+      label: "Opname verwijderd bij provider op",
+      admin: {
+        description:
+          "Leeg zolang de audio nog bij de provider staat (bv. tijdens herstelbare retries) — admin-zichtbaarheidseis: dit veld is DE plek om te zien of een tijdelijk mislukte verwerking nog audio heeft staan of al is opgeruimd.",
+      },
+    },
     // Kale naam (geen "Id"-suffix) — zelfde reden als training-verslagen se
     // telefonieOproep-veld: Payload-postgres se FK-kolomconventie is ALTIJD
     // snake_case(veldnaam)+"_id" zonder uitzondering, dus "verslagId" zou
