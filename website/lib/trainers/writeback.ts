@@ -191,6 +191,28 @@ async function verwerkKolomSchrijving(
     return { ...basis, status: "niet_geactiveerd", boodschap };
   }
 
+  // Legacy-retry-fix (ná 61ffb42) — als de live Monday-waarde al exact de
+  // gewenste waarde is, is een nieuwe mutatie-aanroep een no-op zonder enig
+  // nut (opdrachtseis: "als status Gedaan al correct staat, niet onnodig
+  // opnieuw schrijven"). Vooral relevant wanneer een retry alleen nog een
+  // ANDER kolom moet afronden (bv. een legacy-verslag waarvan de
+  // statuswrite al eerder slaagde, maar de logboek-checkbox destijds
+  // mislukte). Uitsluitend voor tekstvergelijkbare kolommen (datum/status)
+  // — NOOIT voor checkbox-kolommen (mondayWaardeVorm: "json"): een checkbox
+  // se actueleWaarde is de .text-representatie, niet vergelijkbaar met de
+  // JSON-schrijfvorm, en Monday blijft daar hoe dan ook altijd bron van
+  // waarheid via de verplichte herlees-bevestiging hieronder — dit
+  // skip-pad omzeilt die herlezing dus nooit.
+  if (opties.mondayWaardeVorm !== "json" && opties.actueleWaarde === opties.nieuweMondayWaarde) {
+    const boodschap = `${opties.columnId}: al "${opties.actueleWaarde}" — niet opnieuw geschreven.`;
+    await logTrainerWriteBackPoging(payload, logContext, opties.veld, "geschreven", boodschap, {
+      record: opties.record,
+      columnId: opties.columnId,
+      reedsCorrect: true,
+    });
+    return { ...basis, status: "geschreven", boodschap };
+  }
+
   try {
     if (opties.mondayWaardeVorm === "json") {
       await wijzigKolomWaardeJson(opties.itemId, opties.boardId, opties.columnId, opties.nieuweMondayWaarde);

@@ -704,6 +704,111 @@ describe("bevestigVerslag", () => {
     expect(mockMaakUpdate).not.toHaveBeenCalled();
   });
 
+  it("LEGACY-RECORD (verslag definitief bevestigd vóór 61ffb42 — bevestigdDoorTrainerNaam ontbreekt terwijl bevestigdOp/definitieveTekst/beide Updates al aanwezig zijn): 'Opnieuw proberen' backfilt het ontbrekende naamsnapshot server-side, verzendt NOOIT een nieuwe Update, slaat de al-correcte statuswrite over, en rondt uitsluitend de nog openstaande logboekcheckbox(es) af tot volledig 'voltooid'", async () => {
+    vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
+    vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+
+    // Monday's live status-kolommen staan al op "Gedaan" (precies zoals in
+    // Wessels live-test: de statuswrite slaagde destijds al, alleen de
+    // logboek-checkbox mislukte toen nog door de root-cause-bug van
+    // vóór 61ffb42).
+    mockHaalTrainingVoorMutatie.mockResolvedValue(gevondenTraining({ status: "gedaan", ruweStatusTekst: "Gedaan" }));
+    mockLezenPerItem({
+      [TRAINERBOARD_ITEM_ID]: [
+        { id: "status", text: "Gedaan", value: null },
+        { id: "boolean_mm5v9vxd", text: null, value: null }, // logboek nog false
+      ],
+      [CENTRALE_TRAINING_ID]: [
+        { id: "color_mm5tz3wk", text: "Gedaan", value: null },
+        { id: "boolean_mm5tvfc5", text: null, value: null }, // logboek nog false
+        { id: "numeric_mm5vkjzz", text: null, value: null },
+      ],
+    });
+
+    const { payload } = maakFakePayload({
+      "training-verslagen": [
+        {
+          id: 1,
+          trainer: TRAINER.id,
+          mondayTrainingId: CENTRALE_TRAINING_ID,
+          mondaySchoolId: SCHOOL_ID,
+          mondayTrainerboardItemId: TRAINERBOARD_ITEM_ID,
+          schoolNaam: "Montessori Gorinchem",
+          trainingNaam: "Training",
+          definitieveTekst: "Wat is behandeld:\nRekenen (live-verslag van vóór 61ffb42)",
+          status: "bevestigd", // beide Updates al klaar, afronding destijds niet volledig gelukt
+          trainingUpdateStatus: "geschreven",
+          trainingUpdateMondayId: "update-training-legacy-1",
+          schoolUpdateStatus: "geschreven",
+          schoolUpdateMondayId: "update-school-legacy-1",
+          bevestigdOp: "2026-08-19T10:00:00.000Z", // bestond al vóór 61ffb42
+          // bevestigdDoorTrainerNaam ontbreekt bewust — deze kolom bestond nog niet toen dit verslag destijds bevestigd werd.
+        },
+      ],
+    });
+
+    // "Opnieuw proberen" — geen definitieveTekst meegestuurd, exact zoals de portal dat bij een retry doet.
+    const uitkomst = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID);
+
+    expect(uitkomst.soort).toBe("resultaat");
+    if (uitkomst.soort !== "resultaat") return;
+
+    // Geen enkele nieuwe Monday Update — beide kanten waren al "geschreven" (idempotentie behouden).
+    expect(mockMaakUpdate).not.toHaveBeenCalled();
+
+    // Legacy-bevestigingsgegevens veilig aangevuld — server-side, uit het ingelogde trainer-account, nooit clientinput.
+    expect(uitkomst.verslag.bevestigdDoorTrainerNaam).toBe("Wessel Kok");
+    // bevestigdOp/definitieveTekst zelf blijven ongewijzigd (spec §21: bevestigde tekst wijzigt nooit stilzwijgend).
+    expect(uitkomst.verslag.bevestigdOp).toBe("2026-08-19T10:00:00.000Z");
+    expect(uitkomst.verslag.definitieveTekst).toContain("vóór 61ffb42");
+
+    // Status stond al op "Gedaan" op Monday -> niet onnodig opnieuw geschreven.
+    expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
+
+    // De logboekcheckbox was de enige nog openstaande afrondingsstap: wél geschreven, én herlezen ter bevestiging.
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", JSON.stringify({ checked: "true" }));
+    expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", JSON.stringify({ checked: "true" }));
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, ["boolean_mm5v9vxd"]);
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, ["boolean_mm5tvfc5"]);
+
+    // Eindresultaat: volledig voltooid.
+    expect(uitkomst.verslag.status).toBe("voltooid");
+  });
+
+  it("LEGACY-RECORD, tweede aanroep (backfill is zelf idempotent): een herhaalde 'opnieuw proberen' ná een al-geslaagde legacy-backfill schrijft het naamsnapshot niet nogmaals en verzendt nog steeds geen nieuwe Update", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [
+        {
+          id: 1,
+          trainer: TRAINER.id,
+          mondayTrainingId: CENTRALE_TRAINING_ID,
+          mondaySchoolId: SCHOOL_ID,
+          mondayTrainerboardItemId: TRAINERBOARD_ITEM_ID,
+          schoolNaam: "Montessori Gorinchem",
+          trainingNaam: "Training",
+          definitieveTekst: "Wat is behandeld:\nRekenen",
+          status: "voltooid",
+          trainingUpdateStatus: "geschreven",
+          trainingUpdateMondayId: "update-training-legacy-1",
+          schoolUpdateStatus: "geschreven",
+          schoolUpdateMondayId: "update-school-legacy-1",
+          bevestigdOp: "2026-08-19T10:00:00.000Z",
+          bevestigdDoorTrainerNaam: "Wessel Kok", // al eerder aangevuld (bv. door de vorige test se scenario)
+        },
+      ],
+    });
+
+    const uitkomst = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID);
+
+    expect(uitkomst.soort).toBe("resultaat");
+    expect(mockHaalTrainingVoorMutatie).not.toHaveBeenCalled(); // al "voltooid" -> onmiddellijk kortgesloten, zoals bij een modern verslag
+    expect(mockMaakUpdate).not.toHaveBeenCalled();
+    if (uitkomst.soort === "resultaat") {
+      expect(uitkomst.verslag.bevestigdDoorTrainerNaam).toBe("Wessel Kok");
+      expect(uitkomst.weergaveTekst).toContain("Trainer: Wessel Kok");
+    }
+  });
+
   it("trainer B kan trainer A se training niet bevestigen, ook al kent hij het exacte training-ID (ownership, anti-enumeratie, spec §19 'handmatig training-ID wijzigen werkt niet')", async () => {
     const { payload } = maakFakePayload({});
     await maakConcept(payload, TRAINER);

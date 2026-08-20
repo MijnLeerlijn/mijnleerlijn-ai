@@ -439,6 +439,43 @@ export function bouwVerslagWeergaveTekst(opts: {
   });
 }
 
+/**
+ * Legacy-retryfix (ná 61ffb42) — een verslag dat al definitief bevestigd
+ * was VÓÓR 61ffb42 heeft wél bevestigdOp/definitieveTekst (bestonden toen
+ * al), maar mist bevestigdDoorTrainerNaam: die kolom wordt sindsdien pas
+ * atomisch samen met de rest gezet in bevestigVerslag() se stap 3
+ * hieronder. Zonder backfill blijft bouwVerslagWeergaveTekst voor zo'n rij
+ * permanent `null` teruggeven (die functie eist alle drie velden) — wat
+ * bevestigVerslag hieronder liet vastlopen op "Verslag heeft nog geen
+ * bevestigde tekst.", óók bij een reine "opnieuw proberen" die alleen nog
+ * de logboek-checkbox moest afronden (root cause, live Wessel-hertest ná
+ * 61ffb42).
+ *
+ * Backfill uitsluitend wanneer de inhoud aantoonbaar al aanwezig is
+ * (bevestigdOp ÉN definitieveTekst) — nooit bij een echt onvolledig/nog-
+ * concept verslag. trainer.name komt hier, net als in stap 3, altijd van
+ * het server-geverifieerde sessietrainer-object (nooit clientinvoer) —
+ * haalVerslagVoorTraining garandeert bovendien al dat déze rij van déze
+ * trainer is (spec §19), dus dit is dezelfde eigenaar die de oorspronkelijke
+ * bevestiging destijds deed. Uitsluitend via schrijfVerslagVelden (nooit
+ * payload.update(), zie die functie se doc-comment) en raakt bevestigdOp/
+ * definitieveTekst zelf nooit aan (spec §21: bevestigde tekst wijzigt nooit
+ * stilzwijgend).
+ *
+ * Bewust GEEN aparte migratie/bulk-backfill-script: dit lazy pad raakt
+ * uitsluitend rijen die daadwerkelijk opnieuw bevestigd/bekeken worden
+ * (precies de rijen waarvoor het ontbrekende veld iets uitmaakt), is zelf
+ * idempotent (een tweede aanroep ziet bevestigdDoorTrainerNaam al gezet en
+ * doet niets) en concurrency-veilig (dezelfde raw-SQL-schrijfhelper als de
+ * rest van dit bestand) — een bulk-migratie zou bovendien geen andere
+ * naamsbron hebben dan diezelfde actuele trainer.name, dus geen enkel
+ * data-fidelity-voordeel bieden boven dit kleinere, veiligere pad.
+ */
+async function backfillLegacyTrainerNaamIndienNodig(payload: Payload, verslagRij: VerslagRecord, trainer: AuthTrainer): Promise<VerslagRecord> {
+  if (verslagRij.bevestigdDoorTrainerNaam || !verslagRij.bevestigdOp || !verslagRij.definitieveTekst) return verslagRij;
+  return schrijfVerslagVelden(payload, verslagRij.id, { bevestigd_door_trainer_naam: trainer.name });
+}
+
 const MAX_HERLEES_UPDATES = 30;
 
 // Concurrencyfix (2026-08-24, bovenop de oorspronkelijke Ronde 3-oplevering)
@@ -699,8 +736,12 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
   const rij = await haalVerslagVoorTraining(payload, trainer, trainingId);
   if (!rij) return { soort: "niet_gevonden" };
   if (rij.status === "voltooid") {
-    const weergaveTekst = bouwVerslagWeergaveTekst({ ...rij, schoolNaam: rij.schoolNaam ?? "", trainingNaam: rij.trainingNaam ?? "" }) ?? undefined;
-    return { soort: "resultaat", verslag: rij, weergaveTekst };
+    // Legacy-retryfix: ook een reeds-voltooide rij van vóór 61ffb42 kan het
+    // naamsnapshot nog missen — zonder backfill zou de portal hier voorgoed
+    // een lege weergaveTekst tonen (zie backfillLegacyTrainerNaamIndienNodig).
+    const weergaveRij = await backfillLegacyTrainerNaamIndienNodig(payload, rij, trainer);
+    const weergaveTekst = bouwVerslagWeergaveTekst({ ...weergaveRij, schoolNaam: weergaveRij.schoolNaam ?? "", trainingNaam: weergaveRij.trainingNaam ?? "" }) ?? undefined;
+    return { soort: "resultaat", verslag: weergaveRij, weergaveTekst };
   }
 
   // Stap 1.
@@ -741,6 +782,13 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
     werkrij = (await payload.findByID({ collection: "training-verslagen", id: rij.id, overrideAccess: true, depth: 0 })) as VerslagRecord;
   }
 
+  // Legacy-retryfix: voor een NIEUW verslag (net door stap 3 hierboven
+  // bevestigd) is dit altijd een no-op — stap 3 zet alle drie velden al
+  // atomisch samen. Alleen een rij van vóór 61ffb42 (bevestigdOp/
+  // definitieveTekst al aanwezig, bevestigdDoorTrainerNaam nog niet) wordt
+  // hier daadwerkelijk aangevuld, vóórdat verder wordt gegaan.
+  werkrij = await backfillLegacyTrainerNaamIndienNodig(payload, werkrij, trainer);
+
   const updateTekst = bouwVerslagWeergaveTekst({
     bevestigdOp: werkrij.bevestigdOp,
     bevestigdDoorTrainerNaam: werkrij.bevestigdDoorTrainerNaam,
@@ -749,8 +797,9 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
     definitieveTekst: werkrij.definitieveTekst,
   });
   if (!updateTekst) {
-    // Kan structureel niet gebeuren (stap 3 zet definitieveTekst/bevestigdOp/
-    // bevestigdDoorTrainerNaam altijd samen) — type-guard.
+    // Structureel alleen nog bereikbaar bij een écht onvolledig verslag
+    // (geen bevestigdOp/definitieveTekst — kan niet gebeuren ná stap 3/de
+    // backfill hierboven, die dekken samen elke bereikbare combinatie).
     return { soort: "niet_bewerkbaar", boodschap: "Verslag heeft nog geen bevestigde tekst." };
   }
 
