@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Payload } from "payload";
 import { sql } from "@payloadcms/db-postgres";
-import { optionalEnv } from "@/config/env";
+import { optionalEnv, logFlagDiagnose } from "@/config/env";
 import { generateStructuredOutput } from "@/services/ai-client";
 import { haalUpdatesVoorItem, maakUpdate, type MondayUpdate } from "@/lib/sales/monday-client";
 import { haalTrainingVoorMutatie, haalSchoolDetail, type TrainingSamenvatting, type SchoolDetail } from "./monday-links";
@@ -552,6 +552,7 @@ async function schrijfVerslagUpdateIdempotent(
     return { status: "geschreven", mondayUpdateId: reedsGeschreven.mondayUpdateId, boodschap: "Al eerder geschreven — niet opnieuw verzonden." };
   }
 
+  logFlagDiagnose("TRAINER_MONDAY_VERSLAG_ENABLED"); // TIJDELIJK — productie-diagnose (2026-08-20), zie config/env.ts
   if (optionalEnv("TRAINER_MONDAY_VERSLAG_ENABLED") !== "true") {
     return {
       status: "niet_geactiveerd",

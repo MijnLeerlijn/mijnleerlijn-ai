@@ -25,6 +25,37 @@ export function optionalEnv(name: string): string | undefined {
 }
 
 /**
+ * TIJDELIJKE diagnostiek (2026-08-20) — productie-incident: Vercel Production
+ * toont TRAINER_MONDAY_WRITEBACK_ENABLED/TRAINER_MONDAY_VERSLAG_ENABLED als
+ * exact "true" en er is nadien opnieuw gedeployed, maar de draaiende code
+ * gedraagt zich alsof beide vlaggen uit staan ("Nog niet actief" blijft
+ * getoond). De code-lezing zelf is gecontroleerd en correct (optionalEnv(),
+ * dynamische process.env[name]-opzoeking, per aanroep opnieuw gelezen, geen
+ * module-load-time caching, geen "use client", geen NEXT_PUBLIC_-prefix, dus
+ * geen build-time inlining via Next.js se env{}-mechanisme of withPayload —
+ * zie de toelichting bij de aanroepplekken in lib/trainers/writeback.ts en
+ * lib/trainers/verslag.ts) — dus vermoedelijk een omgevingsconfiguratie-
+ * mismatch (verkeerde Vercel-environmentscope, verkeerde branch, een
+ * onzichtbaar teken in de waarde, of een deployment die niet daadwerkelijk
+ * de nieuwste is). Deze functie logt UITSLUITEND afgeleide feiten (aanwezig/
+ * lengte/exacte-match/match-na-trim + Vercel's eigen, niet-geheime
+ * platformvariabelen) — NOOIT de ruwe waarde van deze of enige andere
+ * env-var. Aanroepen bij een write-poging, vlak vóór de bestaande
+ * optionalEnv(...) !== "true"-poort — die poort zelf blijft ongewijzigd.
+ * VERWIJDEREN zodra de oorzaak in Vercel se Function Logs bevestigd is.
+ */
+export function logFlagDiagnose(naam: string): void {
+  const ruw = process.env[naam];
+  console.log(
+    `[flag-diagnose] ${naam}: aanwezig=${ruw !== undefined} lengte=${ruw?.length ?? 0} ` +
+      `exactGelijkAanTrue=${ruw === "true"} gelijkNaTrim=${ruw?.trim() === "true"} ` +
+      `NODE_ENV=${process.env.NODE_ENV ?? "(niet gezet)"} VERCEL_ENV=${process.env.VERCEL_ENV ?? "(niet gezet)"} ` +
+      `VERCEL_GIT_COMMIT_SHA=${process.env.VERCEL_GIT_COMMIT_SHA ?? "(niet gezet)"} ` +
+      `VERCEL_GIT_COMMIT_REF=${process.env.VERCEL_GIT_COMMIT_REF ?? "(niet gezet)"}`
+  );
+}
+
+/**
  * Verplicht in productie, optioneel in development — voor integraties die
  * lokaal een expliciete development-adapter gebruiken (zie
  * services/email.ts, services/storage.ts) maar in productie nooit stilzwijgend

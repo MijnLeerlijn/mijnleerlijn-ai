@@ -1,5 +1,5 @@
 import type { Payload } from "payload";
-import { optionalEnv } from "@/config/env";
+import { optionalEnv, logFlagDiagnose } from "@/config/env";
 import { leesKolomWaarden, wijzigKolomWaarde, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
 import {
   haalTrainingVoorMutatie,
@@ -172,6 +172,7 @@ async function verwerkKolomSchrijving(
     };
   }
 
+  logFlagDiagnose("TRAINER_MONDAY_WRITEBACK_ENABLED"); // TIJDELIJK — productie-diagnose (2026-08-20), zie config/env.ts
   if (optionalEnv("TRAINER_MONDAY_WRITEBACK_ENABLED") !== "true") {
     const boodschap = `Write-back naar Monday-kolom "${opties.columnId}" staat nog niet aan voor productiegebruik (TRAINER_MONDAY_WRITEBACK_ENABLED).`;
     await logTrainerWriteBackPoging(payload, logContext, opties.veld, "niet_geactiveerd", boodschap, { record: opties.record, columnId: opties.columnId });
