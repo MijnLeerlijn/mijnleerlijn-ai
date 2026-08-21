@@ -23,8 +23,8 @@ import type { TrainingMetSchool, TrainingVoorMutatie, SchoolDetail } from "../mo
 // hier bewijsbaar NOOIT aangeroepen worden) en @/services/ai-client
 // (transcribeAudio/generateStructuredOutput — externe OpenAI-aanroepen). De
 // TelefonieProvider zelf is providerneutraal en wordt hier als eenvoudig fake
-// object doorgegeven — geen Twilio-specifieke mock nodig (die staat apart in
-// twilio-provider.test.ts).
+// object doorgegeven — geen Telnyx-specifieke mock nodig (die staat apart in
+// telnyx-provider.test.ts).
 vi.mock("../monday-links", async (importOriginal) => {
   const echt = await importOriginal<typeof import("../monday-links")>();
   return { ...echt, haalTrainingVoorMutatie: vi.fn(), haalSchoolDetail: vi.fn(), haalRecenteTrainingenVoorTelefonie: vi.fn() };
@@ -140,7 +140,9 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
           ophaalReferentie: "https://provider.example/recordings/RE1",
         }) as OpnameStatusGegevens
     ),
-    bouwVoiceResponse: () => "<Response/>",
+    voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
+    beantwoordOproep: vi.fn().mockResolvedValue(undefined),
+    stopOpname: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     verwijderOpname: vi.fn().mockResolvedValue(undefined),
     ...overrides,

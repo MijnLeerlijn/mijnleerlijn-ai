@@ -37,8 +37,31 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
     delete: adminOnly,
   },
   fields: [
-    { name: "provider", type: "select", required: true, defaultValue: "twilio", label: "Provider", options: [{ label: "Twilio", value: "twilio" }] },
-    { name: "providerCallId", type: "text", required: true, unique: true, index: true, label: "Provider-call-ID", admin: { description: "Twilio CallSid — de idempotentiesleutel voor dit hele gesprek." } },
+    {
+      name: "provider",
+      type: "select",
+      required: true,
+      defaultValue: "telnyx",
+      label: "Provider",
+      // "twilio" bewust nog in de opties (nooit een enum-waarde stilzwijgend
+      // laten verdwijnen, zelfde regel als Gate 1 se status/foutcode-enums) —
+      // de telefoniepilot is nog niet gestart geweest (TRAINER_TELEFONIE_ENABLED
+      // stond nooit aan), dus er bestaan geen echte rijen met provider=twilio,
+      // maar de historische optie blijft veilig zichtbaar/kiesbaar in de admin.
+      options: [
+        { label: "Telnyx", value: "telnyx" },
+        { label: "Twilio (uitgefaseerd, zie opleverrapport providermigratie)", value: "twilio" },
+      ],
+    },
+    {
+      name: "providerCallId",
+      type: "text",
+      required: true,
+      unique: true,
+      index: true,
+      label: "Provider-call-ID",
+      admin: { description: "De providerspecifieke identifier voor dit hele gesprek (bij Telnyx: call_control_id) — de idempotentiesleutel." },
+    },
     { name: "trainer", type: "relationship", relationTo: "trainer-accounts", label: "Trainer", index: true, admin: { description: "Leeg zolang het nummer niet (nog) matcht — zie foutcode." } },
     { name: "ruwNummer", type: "text", label: "Caller-ID (ruw, zoals gerapporteerd)" },
     { name: "genormaliseerdNummer", type: "text", label: "Genormaliseerd nummer (E.164)" },
@@ -102,7 +125,7 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
       label: "Opname-ophaalreferentie (provider-URL)",
       admin: {
         description:
-          "De providerreferentie om de opname opnieuw op te halen bij een automatische retry (spec: transcriptieherstel) — nooit een publiek bruikbare URL op zichzelf, download vereist nog altijd providerauthenticatie (Basic Auth met Account SID/Auth Token). Uitsluitend gebruikt door de onderhoudsronde (lib/trainers/telefonie/gesprek.ts se verwerkTelefonieOnderhoud).",
+          "De providerreferentie om de opname opnieuw op te halen bij een automatische retry (spec: transcriptieherstel) — bij Telnyx het recording_id, nooit een kale/publiek bruikbare URL op zichzelf (download vereist nog altijd providerauthenticatie, bij Telnyx een Bearer-API-key). Uitsluitend gebruikt door de onderhoudsronde (lib/trainers/telefonie/gesprek.ts se verwerkTelefonieOnderhoud).",
       },
     },
     { name: "recordingDuurSeconden", type: "number", label: "Opnameduur (seconden)" },

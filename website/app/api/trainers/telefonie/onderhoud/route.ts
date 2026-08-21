@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { optionalEnv } from "@/config/env";
-import { twilioProvider } from "@/lib/trainers/telefonie/twilio-provider";
+import { telnyxProvider } from "@/lib/trainers/telefonie/telnyx-provider";
 import { verwerkTelefonieOnderhoud } from "@/lib/trainers/telefonie/gesprek";
 
 // Traineromgeving V1, Ronde 3.5 vervolg (2026-08-25) — production-
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   const payload = await getPayload({ config });
   try {
-    const resultaat = await verwerkTelefonieOnderhoud(payload, twilioProvider());
+    const resultaat = await verwerkTelefonieOnderhoud(payload, telnyxProvider());
     return NextResponse.json(resultaat);
   } catch (error) {
     // Spec §9: geen ruwe foutinhoud (kan in theorie provider-responstekst

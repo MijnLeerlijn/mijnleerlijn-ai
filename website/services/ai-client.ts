@@ -132,7 +132,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
  * transcriptie-SDK'tje ernaast (opdrachtseis: "gebruik de bestaande OpenAI/
  * AI-infrastructuur waar passend"). `audio` zijn de RUWE bytes, al door de
  * aanroeper provider-geauthenticeerd opgehaald (lib/trainers/telefonie/
- * twilio-provider.ts se haalOpnameOp) — deze functie downloadt zelf nooit
+ * telnyx-provider.ts se haalOpnameOp) — deze functie downloadt zelf nooit
  * van een URL, juist om nooit per ongeluk een niet-geauthenticeerde
  * opnamelink te laten volgen.
  *

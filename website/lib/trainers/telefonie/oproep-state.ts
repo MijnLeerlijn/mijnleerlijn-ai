@@ -70,7 +70,7 @@ export async function maakOfHaalOproep(payload: Payload, providerCallId: string)
     return (await payload.create({
       collection: "trainer-telefonie-oproepen",
       overrideAccess: true,
-      data: { provider: "twilio", providerCallId, status: "ontvangen", ontvangenOp: new Date().toISOString() },
+      data: { provider: "telnyx", providerCallId, status: "ontvangen", ontvangenOp: new Date().toISOString() },
     })) as unknown as TrainerTelefonieOproepen;
   } catch {
     const herhaald = await payload.find({

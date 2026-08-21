@@ -564,9 +564,9 @@ export interface TrainingVerslagen {
  */
 export interface TrainerTelefonieOproepen {
   id: number;
-  provider: 'twilio';
+  provider: 'telnyx' | 'twilio';
   /**
-   * Twilio CallSid — de idempotentiesleutel voor dit hele gesprek.
+   * De providerspecifieke identifier voor dit hele gesprek (bij Telnyx: call_control_id) — de idempotentiesleutel.
    */
   providerCallId: string;
   /**
@@ -625,7 +625,7 @@ export interface TrainerTelefonieOproepen {
    */
   recordingProviderId?: string | null;
   /**
-   * De providerreferentie om de opname opnieuw op te halen bij een automatische retry (spec: transcriptieherstel) — nooit een publiek bruikbare URL op zichzelf, download vereist nog altijd providerauthenticatie (Basic Auth met Account SID/Auth Token). Uitsluitend gebruikt door de onderhoudsronde (lib/trainers/telefonie/gesprek.ts se verwerkTelefonieOnderhoud).
+   * De providerreferentie om de opname opnieuw op te halen bij een automatische retry (spec: transcriptieherstel) — bij Telnyx het recording_id, nooit een kale/publiek bruikbare URL op zichzelf (download vereist nog altijd providerauthenticatie, bij Telnyx een Bearer-API-key). Uitsluitend gebruikt door de onderhoudsronde (lib/trainers/telefonie/gesprek.ts se verwerkTelefonieOnderhoud).
    */
   opnameOphaalReferentie?: string | null;
   recordingDuurSeconden?: number | null;

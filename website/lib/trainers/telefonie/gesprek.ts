@@ -47,7 +47,7 @@ const MAX_KANDIDATEN_VOOR_KEUZE = 9; // één DTMF-cijfer per keuze
 const GATHER_TIMEOUT_SECONDEN = 8;
 const MAX_OPNAME_DUUR_SECONDEN = 900; // 15 minuten — bovengrens spec §8 ("10-15 minuten")
 const OPNAME_STILTE_TIMEOUT_SECONDEN = 5;
-const OPNAME_STOP_TOETS = "#";
+export const OPNAME_STOP_TOETS = "#"; // export: de Telnyx-dispatcher-route heeft dezelfde waarde nodig om een losstaand call.dtmf.received-event te herkennen (zie het route-bestand)
 
 // Production-readiness-gate 1 (2026-08-25) — transcriptieherstel +
 // audiobewaartermijn. GEKOZEN WAARDEN EN MOTIVATIE (expliciet, zoals
@@ -308,7 +308,16 @@ export async function verwerkTrainingKeuze(
   ];
 }
 
-/** <Record> se action-URL — vuurt zodra de opname STOPT (niet per se al beschikbaar), puur voor het afrondende gesproken bericht (spec §7-voorbeeld). Geen verwerking hier — dat gebeurt async via verwerkOpnameStatus (recordingStatusCallback). */
+/**
+ * Het afrondende gesproken "dank je"-bericht (spec §7-voorbeeld) — puur de
+ * tekst, geen verwerking hier (dat gebeurt async via verwerkOpnameStatus).
+ * Providerneutraal en zonder args, dus vanuit meerdere triggerpunten
+ * herbruikbaar: bij Telnyx zowel vanuit een vroegtijdig gestopte opname
+ * (call.dtmf.received op de stop-toets) als vanuit de reguliere
+ * recording-saved-afhandeling (zie app/api/trainers/telefonie/webhook/route.ts) —
+ * Telnyx kent, anders dan Twilio's <Record action>, geen aparte "opname is
+ * zojuist gestopt"-callback.
+ */
 export function verwerkOpnameAfgerond(): VoiceInstructie[] {
   if (!telefonieIsActief()) return NIET_BESCHIKBAAR;
   return [

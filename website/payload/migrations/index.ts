@@ -44,6 +44,7 @@ import * as migration_20260824_110000_training_verslagen_claim_concurrency from 
 import * as migration_20260824_120000_training_verslagen_kop_velden from './20260824_120000_training_verslagen_kop_velden';
 import * as migration_20260825_090000_telefonie_v1 from './20260825_090000_telefonie_v1';
 import * as migration_20260825_100000_telefonie_retry_retentie from './20260825_100000_telefonie_retry_retentie';
+import * as migration_20260825_110000_telefonie_telnyx_provider from './20260825_110000_telefonie_telnyx_provider';
 
 export const migrations = [
   {
@@ -275,5 +276,10 @@ export const migrations = [
     up: migration_20260825_100000_telefonie_retry_retentie.up,
     down: migration_20260825_100000_telefonie_retry_retentie.down,
     name: '20260825_100000_telefonie_retry_retentie',
+  },
+  {
+    up: migration_20260825_110000_telefonie_telnyx_provider.up,
+    down: migration_20260825_110000_telefonie_telnyx_provider.down,
+    name: '20260825_110000_telefonie_telnyx_provider',
   },
 ];

@@ -69,10 +69,14 @@ function verzamelBestanden(map: string): string[] {
 describe("Architectuurgrens telefonie (spec §29)", () => {
   const bestanden = [...GESCANDE_MAPPEN.flatMap(verzamelBestanden)];
 
-  // Sanity check op de scan zelf — als dit ooit 0 oplevert, bewijst de test
-  // hieronder stilzwijgend niets meer (bv. door een mapverplaatsing).
+  // Sanity check op de scan zelf — als dit ooit (bijna) 0 oplevert, bewijst
+  // de test hieronder stilzwijgend niets meer (bv. door een mapverplaatsing).
+  // Drempel bewust verlaagd bij de Telnyx-providermigratie (2026-08-25
+  // vervolg): de 4 losse Twilio-webhookroutes zijn vervangen door ÉÉN
+  // dispatcher-route (zie app/api/trainers/telefonie/webhook/route.ts) — een
+  // legitieme, kleinere bestandenverzameling, geen verzwakking van de scan.
   it("de scan vindt daadwerkelijk telefonie-bronbestanden (sanity check)", () => {
-    expect(bestanden.length).toBeGreaterThan(10);
+    expect(bestanden.length).toBeGreaterThan(5);
   });
 
   it.each(bestanden.map((pad) => [pad.replace(`${PROJECT_ROOT}/`, ""), pad] as const))("%s roept geen enkele Monday-mutatiefunctie/-mutatie aan en importeert nooit de mutatielaag rechtstreeks", (_naam, pad) => {
