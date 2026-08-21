@@ -1,6 +1,6 @@
 import { createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { requireEnv } from "@/config/env";
-import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens, VoiceInstructie, VoiceWebhookRespons } from "./provider";
+import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens, SpreekAfgerondGegevens, VoiceInstructie, VoiceWebhookRespons } from "./provider";
 
 // Traineromgeving V1, Ronde 3.5 vervolg (2026-08-25) — providermigratie
 // Twilio -> Telnyx. Dit is de ENIGE plek waar Telnyx-specifieke concepten
@@ -172,6 +172,20 @@ async function telnyxCommando(callControlId: string, actie: string, body: Record
   }
 }
 
+/**
+ * Productieblocker-ronde (2026-08-26) — codeert "welke vervolgstap moet er
+ * volgen zodra dit speak-commando volledig is afgespeeld" in client_state
+ * (Telnyx vereist een geldige base64-string). Uitsluitend een label +
+ * poging-nummer (+ optioneel een uniek nonce-getal voor de
+ * limietwaarschuwing, zie provider.ts se zeg_en_hervat_opname-doc-comment)
+ * — geen persoonsgegeven, veilig om zo mee te sturen (spec §9). Gedecodeerd
+ * door gesprek.ts se verwerkSpreekAfgerond(), na het call.speak.ended-event.
+ */
+function coderenClientState(actie: string, poging: number, nonce?: number): string {
+  const ruw = nonce !== undefined ? `${actie}:${poging}:${nonce}` : `${actie}:${poging}`;
+  return Buffer.from(ruw, "utf8").toString("base64");
+}
+
 /** Vertaalt één providerneutrale VoiceInstructie naar de bijbehorende Telnyx Call Control-commando('s). */
 async function voerInstructieUit(callControlId: string, instructie: VoiceInstructie): Promise<void> {
   switch (instructie.soort) {
@@ -204,21 +218,38 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
       });
       return;
     case "zeg_en_neem_op": {
-      // Fix 2026-08-26 (trainertelefonie V1-afronding) — de vorige versie
-      // van dit commando negeerde instructie.tekst volledig (de doc-comment
-      // hierboven claimde een "voorafgaand speak-commando" vanuit de route,
-      // maar verwerkTrainingKeuze gaf altijd precies ÉÉN instructie terug —
-      // er was dus NOOIT een voorafgaande speak-stap; de prompttekst werd
-      // hierdoor in productie nooit daadwerkelijk uitgesproken, zie het
-      // opleverrapport). Spec §8 vereist nu een exacte, letterlijke
-      // spreektekst vlak vóór opnemen, dus alsnog eerst spreken.
-      await telnyxCommando(callControlId, "speak", {
-        payload: instructie.tekst,
-        payload_type: "text",
-        voice: TELNYX_TTS_VOICE,
-        language: TELNYX_TTS_TAAL,
-        service_level: TELNYX_TTS_SERVICE_LEVEL,
-      });
+      // Productieblocker-ronde (2026-08-26) — spreekt UITSLUITEND de tekst
+      // uit. Een eerdere versie stuurde hier fire-and-forget ook meteen
+      // record_start + gather mee — dat gaf GEEN garantie dat de tekst al
+      // klaar was met afspelen (Telnyx' eigen SDK-broncode bevestigt dat
+      // speak/record_start onafhankelijke commando's zijn, geen impliciete
+      // wachtrij tussen commandosoorten). De daadwerkelijke opnamestart
+      // volgt nu pas op het call.speak.ended-event (zie
+      // ontleedSpreekAfgerond hieronder + gesprek.ts se
+      // verwerkSpreekAfgerond) — DE deterministische garantie: Telnyx
+      // documenteert "Expected Webhooks: call.speak.started, call.speak.ended"
+      // exact voor het speak-commando.
+      //
+      // client_state (spec §10/§12/§18, "actie:poging") laat het latere
+      // call.speak.ended-event weten dat hierna record_start voor DEZE
+      // poging moet volgen — puur een poging-nummer plus een vast label,
+      // geen persoonsgegeven, veilig om zo mee te sturen (spec §9).
+      await telnyxCommando(
+        callControlId,
+        "speak",
+        {
+          payload: instructie.tekst,
+          payload_type: "text",
+          voice: TELNYX_TTS_VOICE,
+          language: TELNYX_TTS_TAAL,
+          service_level: TELNYX_TTS_SERVICE_LEVEL,
+          client_state: coderenClientState("start_opname", instructie.poging),
+        },
+        `speak-start-poging${instructie.poging}`
+      );
+      return;
+    }
+    case "opname_starten": {
       // Bewust GEEN `transcription`-parameter (default false, spec §11:
       // eigen Whisper-infrastructuur, nooit Telnyx' eigen transcriptiedienst
       // — die kost bovendien apart, óók impliciet via timeout_secs se eigen
@@ -271,6 +302,56 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
     case "stop_opname":
       await telnyxCommando(callControlId, "record_stop", {}, `poging${instructie.poging}`);
       return;
+    case "zeg_en_hervat_opname": {
+      // Productieblocker-ronde (2026-08-26, spec §11 "een 4e '*' mag # nooit
+      // breken") — de HUIDIGE opname blijft geldig: eerst pauzeren (zodat de
+      // waarschuwing zelf nooit in de opname/het verslag terechtkomt, spec
+      // §9 dataminimalisatie — record_pause/record_resume zijn Telnyx'
+      // eigen, officieel gedocumenteerde commando's hiervoor, geen
+      // work-around), dan de tekst spreken. Hervatten (+ de gather
+      // her-bewapenen) volgt pas op call.speak.ended, net als bij
+      // zeg_en_neem_op hierboven — zelfde deterministische garantie.
+      // record_pause kent zelf geen Expected Webhooks (Telnyx' eigen
+      // documentatie: "There are no webhooks associated with this
+      // command"), dus normale sequentiële afhandeling hier volstaat — er
+      // ís geen ander officieel wachtmechanisme voor.
+      await telnyxCommando(callControlId, "record_pause", {}, `pauze-poging${instructie.poging}-${instructie.nonce}`);
+      await telnyxCommando(
+        callControlId,
+        "speak",
+        {
+          payload: instructie.tekst,
+          payload_type: "text",
+          voice: TELNYX_TTS_VOICE,
+          language: TELNYX_TTS_TAAL,
+          service_level: TELNYX_TTS_SERVICE_LEVEL,
+          client_state: coderenClientState("hervat_opname", instructie.poging, instructie.nonce),
+        },
+        `speak-hervat-poging${instructie.poging}-${instructie.nonce}`
+      );
+      return;
+    }
+    case "opname_hervatten": {
+      await telnyxCommando(callControlId, "record_resume", {}, `hervat-poging${instructie.poging}-${instructie.nonce}`);
+      // Zelfde parallelle, stille gather als opname_starten hierboven — de
+      // vorige (die de '*'-druk op de limiet zelf ving) is inmiddels
+      // verbruikt (maximum_digits:1), dus zonder deze her-bewapening zou
+      // een daaropvolgende '#' niet meer opgevangen worden.
+      await telnyxCommando(
+        callControlId,
+        "gather",
+        {
+          gather_id: "opname_toets",
+          valid_digits: `${instructie.stopToets}${instructie.herstartToets}`,
+          minimum_digits: 1,
+          maximum_digits: 1,
+          timeout_millis: (instructie.maxDuurSeconden + 30) * 1000,
+          initial_timeout_millis: (instructie.maxDuurSeconden + 30) * 1000,
+        },
+        `hervat-poging${instructie.poging}-${instructie.nonce}`
+      );
+      return;
+    }
   }
 }
 
@@ -598,6 +679,15 @@ export function telnyxProvider(): TelefonieProvider {
         // payloadveld al plat op — geen aparte parsing hier nodig.
         clientState: vormVelden.client_state ?? null,
       };
+    },
+
+    ontleedSpreekAfgerond(vormVelden): SpreekAfgerondGegevens {
+      // call.speak.ended bevat, anders dan call.recording.saved, WEL
+      // rechtstreeks call_control_id (bevestigd tegen Telnyx' eigen
+      // SDK-broncode, CallSpeakEnded.Payload in webhooks.ts) — geen
+      // call_leg_id-terugval nodig, vlakTelnyxEventAf (webhook-helpers.ts)
+      // slaat het toch al plat op.
+      return { providerCallId: vormVelden.call_control_id ?? "", clientState: vormVelden.client_state ?? null };
     },
 
     async voerVoiceInstructiesUit(providerCallId, instructies): Promise<VoiceWebhookRespons> {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { telnyxProvider } from "@/lib/trainers/telefonie/telnyx-provider";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkOpnameAfgerond, verwerkOpnameStatus } from "@/lib/trainers/telefonie/gesprek";
+import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkSpreekAfgerond, verwerkOpnameAfgerond, verwerkOpnameStatus } from "@/lib/trainers/telefonie/gesprek";
 import { maakOfHaalOproep } from "@/lib/trainers/telefonie/oproep-state";
 import type { TelefonieProvider } from "@/lib/trainers/telefonie/provider";
 
@@ -21,7 +21,15 @@ vi.mock("@/payload.config", () => ({ default: {} }));
 vi.mock("@/lib/trainers/telefonie/telnyx-provider", () => ({ telnyxProvider: vi.fn() }));
 vi.mock("@/lib/trainers/telefonie/gesprek", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/trainers/telefonie/gesprek")>();
-  return { ...echt, verwerkInkomendeCall: vi.fn(), verwerkTrainingKeuze: vi.fn(), verwerkOpnameToets: vi.fn(), verwerkOpnameAfgerond: vi.fn(), verwerkOpnameStatus: vi.fn() };
+  return {
+    ...echt,
+    verwerkInkomendeCall: vi.fn(),
+    verwerkTrainingKeuze: vi.fn(),
+    verwerkOpnameToets: vi.fn(),
+    verwerkSpreekAfgerond: vi.fn(),
+    verwerkOpnameAfgerond: vi.fn(),
+    verwerkOpnameStatus: vi.fn(),
+  };
 });
 vi.mock("@/lib/trainers/telefonie/oproep-state", () => ({ maakOfHaalOproep: vi.fn() }));
 
@@ -29,6 +37,7 @@ const mockTelnyxProvider = vi.mocked(telnyxProvider);
 const mockVerwerkInkomendeCall = vi.mocked(verwerkInkomendeCall);
 const mockVerwerkTrainingKeuze = vi.mocked(verwerkTrainingKeuze);
 const mockVerwerkOpnameToets = vi.mocked(verwerkOpnameToets);
+const mockVerwerkSpreekAfgerond = vi.mocked(verwerkSpreekAfgerond);
 const mockVerwerkOpnameAfgerond = vi.mocked(verwerkOpnameAfgerond);
 const mockVerwerkOpnameStatus = vi.mocked(verwerkOpnameStatus);
 const mockMaakOfHaalOproep = vi.mocked(maakOfHaalOproep);
@@ -40,6 +49,7 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
     ontleedInkomendeCall: vi.fn(),
     ontleedGatherResultaat: vi.fn(),
     ontleedOpnameStatus: vi.fn(),
+    ontleedSpreekAfgerond: vi.fn(),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn(),
@@ -64,6 +74,7 @@ beforeEach(() => {
   mockVerwerkInkomendeCall.mockReset().mockResolvedValue([]);
   mockVerwerkTrainingKeuze.mockReset().mockResolvedValue([]);
   mockVerwerkOpnameToets.mockReset().mockResolvedValue([]);
+  mockVerwerkSpreekAfgerond.mockReset().mockResolvedValue([]);
   mockVerwerkOpnameAfgerond.mockReset().mockReturnValue([{ soort: "zeg_en_ophangen", tekst: "Dank je." }]);
   mockVerwerkOpnameStatus.mockReset().mockResolvedValue(undefined);
   mockMaakOfHaalOproep.mockReset().mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
@@ -157,6 +168,19 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
 
     expect(mockVerwerkTrainingKeuze).toHaveBeenCalledTimes(1);
     expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
+  });
+
+  it("call.speak.ended -> dispatcht naar verwerkSpreekAfgerond met de opgeloste oproepId (spec: deterministische speak->opname-sequencing)", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
+    const instructies = [{ soort: "opname_starten" as const, maxDuurSeconden: 900, stilteTimeoutSeconden: 5, stopToets: "#", herstartToets: "*", poging: 0 }];
+    mockVerwerkSpreekAfgerond.mockResolvedValue(instructies);
+
+    await POST(maakRequest({ data: { event_type: "call.speak.ended", payload: { call_control_id: "cc_1", client_state: "c3RhcnRfb3BuYW1lOjA=" } } }));
+
+    expect(mockVerwerkSpreekAfgerond).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ client_state: "c3RhcnRfb3BuYW1lOjA=" }));
+    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", instructies);
   });
 
   it("call.recording.saved -> verwerkOpnameStatus aangeroepen mét de opgeloste oproepId, daarna best-effort afsluitend bericht", async () => {

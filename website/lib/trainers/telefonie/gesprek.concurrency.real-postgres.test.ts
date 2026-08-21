@@ -117,6 +117,7 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
     ontleedOpnameStatus: vi.fn(
       () => ({ providerCallId: "CA1", providerRecordingId: "RE1", status: "voltooid", duurSeconden: 30, ophaalReferentie: "https://provider.example/RE1", clientState: null }) as OpnameStatusGegevens
     ),
+    ontleedSpreekAfgerond: vi.fn(() => ({ providerCallId: "CA1", clientState: null })),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn().mockResolvedValue(new ArrayBuffer(8)),

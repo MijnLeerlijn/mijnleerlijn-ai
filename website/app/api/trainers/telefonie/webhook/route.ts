@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { telnyxProvider } from "@/lib/trainers/telefonie/telnyx-provider";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkOpnameAfgerond, verwerkOpnameStatus } from "@/lib/trainers/telefonie/gesprek";
+import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkSpreekAfgerond, verwerkOpnameAfgerond, verwerkOpnameStatus } from "@/lib/trainers/telefonie/gesprek";
 import { maakOfHaalOproep } from "@/lib/trainers/telefonie/oproep-state";
 import { ontleedTelnyxWebhookJson, vlakTelnyxEventAf } from "@/lib/trainers/telefonie/webhook-helpers";
 import { maakRateLimiter } from "@/lib/contact/validate";
@@ -46,10 +46,22 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 //                       feitelijk altijd dode code. Vervangen door een
 //                       PARALLELLE, stille gather-opdracht die naast elke
 //                       opname meeloopt (telnyx-provider.ts se
-//                       voerInstructieUit, zeg_en_neem_op-tak) — dit IS nu de
-//                       daadwerkelijke, geverifieerd werkende mechaniek achter
-//                       zowel '#' (stoppen+verwerken) als '*' (afwijzen+
-//                       opnieuw beginnen, spec §9/§10), geen vangnet meer.
+//                       voerInstructieUit, opname_starten/opname_hervatten-
+//                       tak) — dit IS nu de daadwerkelijke, geverifieerd
+//                       werkende mechaniek achter zowel '#' (stoppen+
+//                       verwerken) als '*' (afwijzen+opnieuw beginnen, spec
+//                       §9/§10), geen vangnet meer.
+//  call.speak.ended -> productieblocker-ronde (2026-08-26, spec "instructie
+//                       moet volledig zijn uitgesproken vóór opname start")
+//                       -> verwerkSpreekAfgerond: DE deterministische
+//                       bevestiging (Telnyx' eigen "Expected Webhooks" op het
+//                       speak-commando) dat een eerdere zeg_en_neem_op/
+//                       zeg_en_hervat_opname-tekst volledig is uitgesproken —
+//                       pas dan volgt record_start/record_resume. Een
+//                       call.speak.ended zonder herkenbare client_state (bv.
+//                       het gewone afscheidsbericht) wordt door
+//                       verwerkSpreekAfgerond zelf stil genegeerd, geen
+//                       aparte voorwaarde hier nodig.
 //  call.recording.saved/.error -> verwerkOpnameStatus (ongewijzigd, inclusief
 //                       de bestaande idempotentieclaim/transcriptieherstel/
 //                       audiobewaartermijn uit gate 1) — vervanger van
@@ -61,7 +73,7 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 //                       bewust nooit door (zie provider.ts) — onschadelijk
 //                       als het gesprek dan al beëindigd is (bv. via de
 //                       '#'-afhandeling hierboven, of de beller hing zelf al op).
-//  alles anders      -> stil genegeerd (bv. call.hangup, call.speak.ended,
+//  alles anders      -> stil genegeerd (bv. call.hangup, call.speak.started,
 //                       call.answered voor een niet-inkomend/onverwacht
 //                       been) — Telnyx stuurt veel meer event_types dan deze
 //                       flow gebruikt, spec §19 se "nooit een onnodige fout":
@@ -133,6 +145,14 @@ export async function POST(request: NextRequest) {
           vormVelden.gather_id === "opname_toets"
             ? await verwerkOpnameToets(payload, provider, oproep.id, vormVelden)
             : await verwerkTrainingKeuze(payload, provider, oproep.id, vormVelden);
+        await provider.voerVoiceInstructiesUit(callControlId, instructies);
+        break;
+      }
+
+      case "call.speak.ended": {
+        if (!beperkPerGesprek.magVerder(callControlId)) break;
+        const oproep = await maakOfHaalOproep(payload, callControlId);
+        const instructies = await verwerkSpreekAfgerond(payload, provider, oproep.id, vormVelden);
         await provider.voerVoiceInstructiesUit(callControlId, instructies);
         break;
       }

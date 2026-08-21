@@ -391,8 +391,6 @@ async function kiesTrainingEnStartOpname(
       tekst: `Je maakt een verslag voor ${bevestigd.schoolNaam}. Spreek je verslag in na de piep. Sluit af met een hekje. Wil je opnieuw beginnen? Druk dan op het sterretje.`,
       actieUrl: pad(`opname-afgerond?oproepId=${oproepId}`),
       statusCallbackUrl: pad(`opname-status?oproepId=${oproepId}`),
-      maxDuurSeconden: MAX_OPNAME_DUUR_SECONDEN,
-      stilteTimeoutSeconden: OPNAME_STILTE_TIMEOUT_SECONDEN,
       stopToets: OPNAME_STOP_TOETS,
       herstartToets: OPNAME_HERSTART_TOETS,
       poging: 0,
@@ -477,14 +475,31 @@ export async function verwerkOpnameToets(
 
   if (cijfers === OPNAME_HERSTART_TOETS) {
     if (huidigePoging >= MAX_HEROPNAME_POGINGEN) {
-      // Spec §11 — limiet bereikt: verdere '*'-drukken worden genegeerd, de
-      // lopende opname loopt gewoon door (stilte-timeout/max-duur/'#'
-      // blijven de normale afronding). Bekende, bewust geaccepteerde
-      // beperking: het huidige opname_toets-gather-commando is al verbruikt
-      // (maximum_digits:1) en wordt hier niet opnieuw gestart, dus een latere
-      // '#'-druk in DEZELFDE opname wordt vanaf dit punt ook niet meer
-      // opgevangen — zie het opleverrapport.
-      return [];
+      // Productieblocker-ronde (2026-08-26, spec §11 "# moet altijd blijven
+      // werken") — de limiet is bereikt: de HUIDIGE opname blijft gewoon
+      // geldig/lopend, NOOIT gestopt. Pauzeert 'm (telnyx-provider.ts se
+      // zeg_en_hervat_opname-tak), spreekt de waarschuwing uit, en hervat +
+      // herbewapent de gather pas na call.speak.ended (verwerkSpreekAfgerond
+      // hieronder) — dus '#' blijft daarna gewoon actief. heropnamePogingen
+      // blijft bewust ongewijzigd: er start geen nieuwe opname.
+      return [
+        {
+          soort: "zeg_en_hervat_opname",
+          tekst: "Je kunt niet nog een keer opnieuw beginnen. Ga verder met je huidige opname en sluit af met een hekje.",
+          poging: huidigePoging,
+          // Random i.p.v. een persistente teller: puur nodig om het
+          // command_id van twee ACHTEREENVOLGENDE keren op de limiet van
+          // elkaar te onderscheiden (huidigePoging blijft dan immers gelijk)
+          // — zie provider.ts se zeg_en_hervat_opname-doc-comment voor de
+          // volledige redenering. Date.now() alleen bleek in de praktijk
+          // (en in een test, twee snelle sequentiële aanroepen binnen
+          // dezelfde milliseconde) niet altijd uniek — Math.random() over
+          // een groot bereik maakt een botsing verwaarloosbaar; dit hoeft
+          // geen cryptografisch/persistent uniek getal te zijn, uitsluitend
+          // command_id-onderscheid binnen één gesprek.
+          nonce: Math.floor(Math.random() * 1e15),
+        },
+      ];
     }
     const volgendePoging = huidigePoging + 1;
     await zetOpnameVerwacht(payload, oproepId, volgendePoging);
@@ -495,8 +510,6 @@ export async function verwerkOpnameToets(
         tekst: "Geen probleem. We beginnen opnieuw. Spreek je verslag in na de piep en sluit af met een hekje.",
         actieUrl: pad(`opname-afgerond?oproepId=${oproepId}`),
         statusCallbackUrl: pad(`opname-status?oproepId=${oproepId}`),
-        maxDuurSeconden: MAX_OPNAME_DUUR_SECONDEN,
-        stilteTimeoutSeconden: OPNAME_STILTE_TIMEOUT_SECONDEN,
         stopToets: OPNAME_STOP_TOETS,
         herstartToets: OPNAME_HERSTART_TOETS,
         poging: volgendePoging,
@@ -506,6 +519,74 @@ export async function verwerkOpnameToets(
 
   // Ongeldig digit (kan structureel niet via valid_digits, defensief) of een
   // lege/timeout-gather — geen actie, de opname loopt gewoon door.
+  return [];
+}
+
+/**
+ * Productieblocker-ronde (2026-08-26) — spec "instructie moet volledig zijn
+ * uitgesproken vóór opname start": de call.speak.ended-webhookafhandeling.
+ * DE deterministische garantie (geen timing-gok): elke "zeg_en_neem_op"/
+ * "zeg_en_hervat_opname"-instructie hierboven spreekt UITSLUITEND de tekst
+ * uit en codeert in client_state welke vervolgstap moet volgen; Telnyx
+ * bevestigt via dit event, hard-gedocumenteerd als "Expected Webhooks" van
+ * het speak-commando, dat de tekst daadwerkelijk volledig is afgespeeld —
+ * pas DAN geeft deze functie de instructie terug die de opname
+ * start/hervat. Onherkenbare/ontbrekende client_state (bv. het gewone
+ * afscheidsbericht, dat geen client_state meekrijgt) wordt stil genegeerd —
+ * dit event hoort dan niet bij een opname-sequencing.
+ */
+export async function verwerkSpreekAfgerond(
+  payload: Payload,
+  provider: TelefonieProvider,
+  oproepId: number,
+  vormVelden: Record<string, string>
+): Promise<VoiceInstructie[]> {
+  if (!telefonieIsActief()) return NIET_BESCHIKBAAR;
+
+  const { clientState } = provider.ontleedSpreekAfgerond(vormVelden);
+  if (!clientState) return [];
+
+  const gedecodeerd = Buffer.from(clientState, "base64").toString("utf8");
+  const [actie, pogingRuw, extraRuw] = gedecodeerd.split(":");
+  const poging = Number.parseInt(pogingRuw ?? "", 10);
+  if (!Number.isInteger(poging)) return [];
+
+  const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
+  if (!oproep || oproep.status !== "opname_verwacht") return []; // niet (meer) relevant — spec §12/§24, stil, geen fout
+
+  if (actie === "start_opname") {
+    // Structureel kan dit niet verouderd zijn (zie provider.ts se
+    // zeg_en_neem_op-doc-comment: er is geen actieve gather tussen het
+    // spreken en dit event, dus geen '*'/'#' kan tussentijds een NIEUWERE
+    // poging gestart hebben) — defensief toch bevestigen tegen de huidige
+    // stand op de oproep, nooit blind vertrouwen op het meegegeven getal.
+    if ((oproep.heropnamePogingen ?? 0) !== poging) return [];
+    return [
+      {
+        soort: "opname_starten",
+        maxDuurSeconden: MAX_OPNAME_DUUR_SECONDEN,
+        stilteTimeoutSeconden: OPNAME_STILTE_TIMEOUT_SECONDEN,
+        stopToets: OPNAME_STOP_TOETS,
+        herstartToets: OPNAME_HERSTART_TOETS,
+        poging,
+      },
+    ];
+  }
+
+  if (actie === "hervat_opname") {
+    const nonce = Number.parseInt(extraRuw ?? "", 10);
+    return [
+      {
+        soort: "opname_hervatten",
+        maxDuurSeconden: MAX_OPNAME_DUUR_SECONDEN,
+        stopToets: OPNAME_STOP_TOETS,
+        herstartToets: OPNAME_HERSTART_TOETS,
+        poging,
+        nonce: Number.isInteger(nonce) ? nonce : 0,
+      },
+    ];
+  }
+
   return [];
 }
 

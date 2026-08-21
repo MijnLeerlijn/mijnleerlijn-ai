@@ -60,6 +60,22 @@ export interface OpnameStatusGegevens {
 }
 
 /**
+ * Trainertelefonie V1-afronding, productieblocker-ronde (2026-08-26, spec
+ * "instructie moet volledig zijn uitgesproken vóór opname start") — het
+ * resultaat van een call.speak.ended-event: DE deterministische, door
+ * Telnyx zelf gegarandeerde bevestiging dat een eerder speak-commando
+ * volledig is afgespeeld (Expected Webhooks van het speak-commando:
+ * call.speak.started/call.speak.ended — hard bevestigd tegen Telnyx' eigen
+ * SDK-broncode, zie het opleverrapport). Geen timing-gok, geen arbitraire
+ * delay.
+ */
+export interface SpreekAfgerondGegevens {
+  providerCallId: string;
+  /** client_state zoals meegegeven op het BIJBEHORENDE speak-commando — draagt hier WELKE vervolgstap (opname starten/hervatten, voor welke poging) hoort te volgen. Null bij een speak zonder client_state (bv. het gewone afscheidsbericht) — die gevallen worden door gesprek.ts se verwerkSpreekAfgerond stil genegeerd. */
+  clientState: string | null;
+}
+
+/**
  * Providerneutrale spreekinstructies — de webhookroutes/call-state-logica
  * bouwen een lijst hiervan; de provideradapter vertaalt dat naar zijn eigen
  * call-control-formaat (bij Twilio: TwiML-XML). Bewust een gesloten, kleine
@@ -70,20 +86,47 @@ export type VoiceInstructie =
   | { soort: "zeg_en_ophangen"; tekst: string }
   | { soort: "zeg_en_kies_cijfers"; tekst: string; actieUrl: string; maxCijfers: number; timeoutSeconden: number }
   | {
+      /**
+       * Productieblocker-ronde (2026-08-26) — spreekt UITSLUITEND de tekst
+       * uit. Start ZELF geen opname meer (dat deed een eerdere versie van
+       * deze instructie wel, fire-and-forget, met het risico dat record_start
+       * al begint terwijl de tekst nog speelt). Zodra Telnyx bevestigt dat de
+       * tekst volledig is uitgesproken (call.speak.ended, zie
+       * SpreekAfgerondGegevens hierboven), pakt gesprek.ts se
+       * verwerkSpreekAfgerond() het via het meegegeven client_state weer op
+       * en levert dan pas de "opname_starten"-instructie hieronder — dat IS
+       * de deterministische garantie, geen timing-gok.
+       */
       soort: "zeg_en_neem_op";
       tekst: string;
       actieUrl: string;
       statusCallbackUrl: string;
-      maxDuurSeconden: number;
-      stilteTimeoutSeconden: number;
       /** '#' — direct stoppen en verwerken (spec §9). */
       stopToets: string;
       /** '*' — huidige opname afwijzen en opnieuw beginnen, ZELFDE gekozen training (spec §10). */
       herstartToets: string;
       /**
-       * Het hoeveelste opnameattempt dit is binnen dit gesprek (0 = de
-       * eerste opname, 1/2/... na elke '*'-herstart) — spec §10/§12/§18: de
-       * adapter gebruikt dit om zowel command_id (nooit onterecht
+       * Het hoeveelste opnameattempt dit wordt (0 = de eerste opname, 1/2/...
+       * na elke '*'-herstart) — meegegeven in het speak-commando se
+       * client_state, zodat verwerkSpreekAfgerond() na afloop weet welke
+       * opname te starten.
+       */
+      poging: number;
+    }
+  | {
+      /**
+       * De daadwerkelijke record_start + de parallelle opname_toets-gather
+       * (spec §9/§10/§18) — uitsluitend uitgevoerd NADAT Telnyx bevestigde
+       * dat de bijbehorende zeg_en_neem_op-tekst volledig is uitgesproken.
+       */
+      soort: "opname_starten";
+      maxDuurSeconden: number;
+      stilteTimeoutSeconden: number;
+      stopToets: string;
+      herstartToets: string;
+      /**
+       * Zelfde poging-nummer als de voorafgaande zeg_en_neem_op — de
+       * adapter gebruikt dit voor zowel command_id (nooit onterecht
        * gededupliceerd door Telnyx' eigen "zelfde command_id"-regel, zie
        * telnyx-provider.ts se telnyxCommando) als client_state (om een
        * afgewezen poging later herkenbaar te NEGEREN) uniek per poging te
@@ -101,7 +144,49 @@ export type VoiceInstructie =
    * command_id moet per '*'-herstart uniek blijven, anders dedupliceert
    * Telnyx' eigen "zelfde command_id"-regel elke volgende stop-poging weg).
    */
-  | { soort: "stop_opname"; poging: number };
+  | { soort: "stop_opname"; poging: number }
+  | {
+      /**
+       * Productieblocker-ronde (2026-08-26, spec §11 "een 4e '*' mag # nooit
+       * breken") — de herstartlimiet is bereikt: de HUIDIGE opname blijft
+       * gewoon geldig/lopend, NOOIT gestopt. Pauzeert 'm eerst (zodat de
+       * waarschuwing zelf nooit in het verslag terechtkomt, spec §9
+       * dataminimalisatie), spreekt dan de tekst uit, en hervat pas NA
+       * call.speak.ended (zie "opname_hervatten" hieronder) — wijzigt NOOIT
+       * `poging`, want er start geen nieuwe opname.
+       */
+      soort: "zeg_en_hervat_opname";
+      tekst: string;
+      poging: number;
+      /**
+       * Puur een uniek getal (Math.random() over een groot bereik — GEEN
+       * Date.now(): twee sequentiële keren op de limiet bleken in de
+       * praktijk soms binnen dezelfde milliseconde te vallen, wat het
+       * command_id opnieuw liet botsen) om het command_id van de
+       * bijbehorende pauzeer/spreek/hervat/her-bewapen-reeks te
+       * onderscheiden van een EERDERE keer dat de limiet al bereikt was
+       * (dezelfde `poging` blijft immers ongewijzigd bij herhaalde '*'-
+       * drukken op de limiet) — zonder dit zou Telnyx' eigen "zelfde
+       * command_id"-deduplicatie de her-bewapening van de gather bij een
+       * TWEEDE keer op de limiet ten onrechte overslaan, waardoor '#'
+       * daarna alsnog niet meer opgevangen zou worden.
+       */
+      nonce: number;
+    }
+  | {
+      /**
+       * De daadwerkelijke record_resume + de parallelle opname_toets-gather
+       * — uitsluitend uitgevoerd NADAT Telnyx bevestigde dat de
+       * bijbehorende zeg_en_hervat_opname-tekst volledig is uitgesproken.
+       * Raakt de opname zelf verder niet aan (geen nieuwe poging).
+       */
+      soort: "opname_hervatten";
+      maxDuurSeconden: number;
+      stopToets: string;
+      herstartToets: string;
+      poging: number;
+      nonce: number;
+    };
 
 /** Wat de webhookroute zelf als HTTP-antwoord aan de provider moet sturen — zie voerVoiceInstructiesUit. */
 export interface VoiceWebhookRespons {
@@ -139,6 +224,8 @@ export interface TelefonieProvider {
   ontleedInkomendeCall(vormVelden: Record<string, string>): InkomendeCallGegevens;
   ontleedGatherResultaat(vormVelden: Record<string, string>): GatherResultaat;
   ontleedOpnameStatus(vormVelden: Record<string, string>): OpnameStatusGegevens;
+  /** Productieblocker-ronde (2026-08-26) — het call.speak.ended-event: dé deterministische bevestiging dat een eerder speak-commando volledig is afgespeeld. */
+  ontleedSpreekAfgerond(vormVelden: Record<string, string>): SpreekAfgerondGegevens;
 
   /**
    * Voert de instructies uit en geeft terug wat de webhookroute zelf als

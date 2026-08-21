@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkOpnameAfgerond, verwerkOpnameStatus, verwerkTelefonieOnderhoud, verwerkTelefonieHandmatigeRetry } from "./gesprek";
+import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkSpreekAfgerond, verwerkOpnameAfgerond, verwerkOpnameStatus, verwerkTelefonieOnderhoud, verwerkTelefonieHandmatigeRetry } from "./gesprek";
 import { claimOpnameVerwerking } from "./oproep-state";
 import { haalRecenteTrainingenVoorTelefonie, haalTrainingVoorMutatie, haalSchoolDetail, vandaagIsoAmsterdam } from "../monday-links";
 import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde, wijzigKolomWaardeJson, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
@@ -147,6 +147,7 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
           clientState: Buffer.from("0", "utf8").toString("base64"), // poging 0 — matcht de default heropnamePogingen van een verse oproep
         }) as OpnameStatusGegevens
     ),
+    ontleedSpreekAfgerond: vi.fn(() => ({ providerCallId: "CA1", clientState: null })),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
@@ -443,7 +444,7 @@ describe("verwerkTrainingKeuze", () => {
     expect(instructies[0]).toEqual({ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." });
   });
 
-  it("scenario 5 vervolg: cijfer 1 (ja) bij één kandidaat -> bevestigd, status opname_verwacht, Record-instructie met de juiste callback-URL's", async () => {
+  it("scenario 5 vervolg: cijfer 1 (ja) bij één kandidaat -> bevestigd, status opname_verwacht, spreekt EERST de instructie (start dus zelf nog GEEN opname)", async () => {
     const oproepId = await herkendeOproep([training()]);
     const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) });
 
@@ -455,8 +456,12 @@ describe("verwerkTrainingKeuze", () => {
     if (instructie.soort !== "zeg_en_neem_op") return;
     expect(instructie.actieUrl).toContain(`opname-afgerond?oproepId=${oproepId}`);
     expect(instructie.statusCallbackUrl).toContain(`opname-status?oproepId=${oproepId}`);
-    expect(instructie.maxDuurSeconden).toBe(900);
     expect(instructie.stopToets).toBe("#");
+    expect(instructie.poging).toBe(0);
+    // Deze instructie bevat GEEN maxDuurSeconden/stilteTimeoutSeconden meer —
+    // die zijn uitsluitend nodig voor de latere opname_starten-instructie,
+    // pas geleverd ná call.speak.ended (zie verwerkSpreekAfgerond hieronder).
+    expect(instructie).not.toHaveProperty("maxDuurSeconden");
 
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.status).toBe("opname_verwacht");
@@ -715,7 +720,7 @@ describe("verwerkOpnameToets", () => {
     expect(laatste.poging).toBe(3);
   });
 
-  it("spec §11: de limiet is bereikt (MAX_HEROPNAME_POGINGEN) -> een volgende '*' wordt genegeerd, de lopende opname loopt door, geen orphaned recording", async () => {
+  it("spec §11 (productieblocker): de limiet is bereikt (MAX_HEROPNAME_POGINGEN) -> de HUIDIGE opname blijft geldig/lopend (NOOIT gestopt), trainer krijgt de exacte waarschuwing, heropnamePogingen ongewijzigd", async () => {
     const oproepId = await oproepMetOpnameVerwacht();
     const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
     await verwerkOpnameToets(payload, provider, oproepId, {});
@@ -726,10 +731,32 @@ describe("verwerkOpnameToets", () => {
 
     const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
 
-    expect(instructies).toEqual([]);
+    expect(instructies).toHaveLength(1);
+    const instructie = instructies[0]!;
+    expect(instructie.soort).toBe("zeg_en_hervat_opname");
+    if (instructie.soort !== "zeg_en_hervat_opname") return;
+    expect(instructie.tekst).toBe("Je kunt niet nog een keer opnieuw beginnen. Ga verder met je huidige opname en sluit af met een hekje.");
+    expect(instructie.poging).toBe(3); // zelfde poging — GEEN nieuwe opname, de 3e blijft gewoon lopen
+    expect(typeof instructie.nonce).toBe("number");
+
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.heropnamePogingen).toBe(3); // ongewijzigd — geen 4e poging gestart
     expect(rij.status).toBe("opname_verwacht"); // de lopende (3e) opname loopt gewoon door
+  });
+
+  it("spec §11 (productieblocker): twee ACHTEREENVOLGENDE keren op de limiet krijgen elk hun EIGEN nonce (zodat de her-bewapening van de gather niet ten onrechte gededupliceerd wordt)", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
+    await verwerkOpnameToets(payload, provider, oproepId, {});
+    await verwerkOpnameToets(payload, provider, oproepId, {});
+    await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    const eersteInstructie = (await verwerkOpnameToets(payload, provider, oproepId, {}))[0]!;
+    const tweedeInstructie = (await verwerkOpnameToets(payload, provider, oproepId, {}))[0]!;
+
+    const eersteNonce = eersteInstructie.soort === "zeg_en_hervat_opname" ? eersteInstructie.nonce : undefined;
+    const tweedeNonce = tweedeInstructie.soort === "zeg_en_hervat_opname" ? tweedeInstructie.nonce : undefined;
+    expect(eersteNonce).not.toBe(tweedeNonce);
   });
 
   it("een ongeldig/onverwacht digit -> geen actie, opname loopt door", async () => {
@@ -758,6 +785,157 @@ describe("verwerkOpnameToets", () => {
 
     expect(instructies).toEqual([]);
     expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("concept_klaar");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// verwerkSpreekAfgerond — call.speak.ended (productieblocker-ronde 2026-08-26,
+// spec "instructie moet volledig zijn uitgesproken vóór opname start")
+// ---------------------------------------------------------------------------
+
+/** Zelfde encoding als telnyx-provider.ts se coderenClientState() — hier bewust apart nagebouwd om de provider-adapter niet in gesprek.test.ts te hoeven importeren. */
+function clientStateVoor(actie: string, poging: number, nonce?: number): string {
+  const ruw = nonce !== undefined ? `${actie}:${poging}:${nonce}` : `${actie}:${poging}`;
+  return Buffer.from(ruw, "utf8").toString("base64");
+}
+
+describe("verwerkSpreekAfgerond", () => {
+  async function oproepMetOpnameVerwacht() {
+    mockHaalRecenteTrainingen.mockResolvedValue([training()]);
+    const provider = maakFakeProvider();
+    await verwerkInkomendeCall(payload, provider, {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    return oproepId;
+  }
+
+  it("TRAINER_TELEFONIE_ENABLED uit -> niet beschikbaar", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 0) }) });
+    expect(await verwerkSpreekAfgerond(payload, provider, oproepId, {})).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." }]);
+  });
+
+  it("ontbrekend client_state (bv. het gewone afscheidsbericht) -> stil genegeerd", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: null }) });
+    expect(await verwerkSpreekAfgerond(payload, provider, oproepId, {})).toEqual([]);
+  });
+
+  it("actie=start_opname, poging matcht heropnamePogingen -> levert de opname_starten-instructie", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 0) }) });
+
+    const instructies = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([{ soort: "opname_starten", maxDuurSeconden: 900, stilteTimeoutSeconden: 5, stopToets: "#", herstartToets: "*", poging: 0 }]);
+  });
+
+  it("actie=start_opname met een NIET-matchende poging (defensief, structureel onmogelijk) -> genegeerd", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 5) }) });
+    expect(await verwerkSpreekAfgerond(payload, provider, oproepId, {})).toEqual([]);
+  });
+
+  it("actie=hervat_opname -> levert de opname_hervatten-instructie, laat poging ongewijzigd, geeft het nonce door", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("hervat_opname", 3, 999) }) });
+
+    const instructies = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([{ soort: "opname_hervatten", maxDuurSeconden: 900, stopToets: "#", herstartToets: "*", poging: 3, nonce: 999 }]);
+  });
+
+  it("de oproep wacht niet (meer) op een opname -> stil genegeerd", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    rij.status = "concept_klaar";
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 0) }) });
+    expect(await verwerkSpreekAfgerond(payload, provider, oproepId, {})).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// END-TO-END: het exacte, expliciet gevraagde productieblocker-scenario —
+// drie herstarts, dan nogmaals '*' op de limiet, dan '#' — de call moet
+// correct afronden en EXACT ÉÉN geldige opname verwerken.
+// ---------------------------------------------------------------------------
+
+describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, dan '#'", () => {
+  it("de volledige keten rondt netjes af met precies één training-verslagen-rij, gebaseerd op de LAATSTE (na de 3 herstarts) ingesproken tekst", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([training()]);
+    const inkomendeProvider = maakFakeProvider();
+    await verwerkInkomendeCall(payload, inkomendeProvider, {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+
+    // poging 0 spreken -> starten.
+    let instructies = await verwerkSpreekAfgerond(payload, maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 0) }) }), oproepId, {});
+    expect(instructies[0]).toMatchObject({ soort: "opname_starten", poging: 0 });
+
+    // Drie '*'-herstarts: elke keer stop+zeg_en_neem_op, dan speak.ended -> opname_starten voor de volgende poging.
+    for (let poging = 1; poging <= 3; poging += 1) {
+      const toetsInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) }), oproepId, {});
+      expect(toetsInstructies).toEqual([
+        { soort: "stop_opname", poging: poging - 1 },
+        {
+          soort: "zeg_en_neem_op",
+          tekst: "Geen probleem. We beginnen opnieuw. Spreek je verslag in na de piep en sluit af met een hekje.",
+          actieUrl: expect.stringContaining("opname-afgerond"),
+          statusCallbackUrl: expect.stringContaining("opname-status"),
+          stopToets: "#",
+          herstartToets: "*",
+          poging,
+        },
+      ]);
+      instructies = await verwerkSpreekAfgerond(payload, maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", poging) }) }), oproepId, {});
+      expect(instructies[0]).toMatchObject({ soort: "opname_starten", poging });
+    }
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.heropnamePogingen).toBe(3);
+
+    // Een 4e '*' (op de limiet): GEEN nieuwe opname, de exacte waarschuwing, poging blijft 3.
+    const opLimietInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) }), oproepId, {});
+    expect(opLimietInstructies).toHaveLength(1);
+    const waarschuwing = opLimietInstructies[0]!;
+    if (waarschuwing.soort !== "zeg_en_hervat_opname") throw new Error("verwacht zeg_en_hervat_opname");
+    expect(waarschuwing.tekst).toBe("Je kunt niet nog een keer opnieuw beginnen. Ga verder met je huidige opname en sluit af met een hekje.");
+    expect(waarschuwing.poging).toBe(3);
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.heropnamePogingen).toBe(3); // ongewijzigd
+
+    // De waarschuwing is "uitgesproken" -> hervatten + gather herbewapenen.
+    const hervatInstructies = await verwerkSpreekAfgerond(
+      payload,
+      maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("hervat_opname", waarschuwing.poging, waarschuwing.nonce) }) }),
+      oproepId,
+      {}
+    );
+    expect(hervatInstructies).toEqual([{ soort: "opname_hervatten", maxDuurSeconden: 900, stopToets: "#", herstartToets: "*", poging: 3, nonce: waarschuwing.nonce }]);
+
+    // DE KERN VAN DIT SCENARIO: '#' moet nu nog altijd werken (de gather is herbewapend).
+    const stopInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+    expect(stopInstructies).toEqual([
+      { soort: "stop_opname", poging: 3 },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren." },
+    ]);
+
+    // De uiteindelijke opname (poging 3, client_state="3") wordt normaal verwerkt -> precies één concept.
+    mockTranscribeAudio.mockResolvedValue("De vierde/laatste, geldige opname.");
+    const opnameProvider = maakFakeProvider({
+      ontleedOpnameStatus: () => ({
+        providerCallId: "CA1",
+        providerRecordingId: "RE-FINAL",
+        status: "voltooid",
+        duurSeconden: 45,
+        ophaalReferentie: "https://provider.example/RE-FINAL",
+        clientState: Buffer.from("3", "utf8").toString("base64"),
+      }),
+    });
+    await verwerkOpnameStatus(payload, opnameProvider, oproepId, {});
+
+    expect(collection("training-verslagen")).toHaveLength(1);
+    expect(collection("training-verslagen")[0]!.trainerInvoer).toBe("De vierde/laatste, geldige opname.");
+    const finaleRij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(finaleRij.status).toBe("concept_klaar");
   });
 });
 
