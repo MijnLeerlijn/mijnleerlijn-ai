@@ -220,6 +220,88 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
   }
 }
 
+// Foutdiagnostiek voor /v2/recordings (2026-08-25, na een live HTTP 422 op
+// de eerste testoproep — oproep-ID 5, foutmelding "Opnamelijst ophalen bij
+// Telnyx mislukt: HTTP 422" was te weinig om de daadwerkelijke oorzaak te
+// diagnosticeren). Onderzoek tegen de officiële SDK-broncode (telnyx@7.16.0,
+// zelfde offline-referentiemethode als eerder — WebFetch blijft geblokkeerd
+// voor developers.telnyx.com):
+//  - filter[call_leg_id] IS een echt, door Telnyx gedocumenteerd
+//    queryparameter van GET /v2/recordings — bevestigd via
+//    RecordingListParams.Filter in src/resources/recordings/recordings.ts
+//    ("If present, recordings will be filtered to those with a matching
+//    call_leg_id."). Het volledige ondersteunde filteroppervlak van dit
+//    endpoint (zelfde bron): call_control_id, call_leg_id, call_session_id,
+//    conference_id, conference_region, connection_id, created_at{gte,lte},
+//    end_time{gte,lte}, from, sip_call_id, start_time{gte,lte}, to.
+//  - call.recording.saved se webhookpayload (CallRecordingSaved.Payload,
+//    src/resources/webhooks.ts) bevat: call_leg_id, call_session_id,
+//    channels, client_state, connection_id, recording_started_at,
+//    recording_ended_at, recording_urls, public_recording_urls — GEEN
+//    call_control_id (bevestigt de eerdere bevinding opnieuw, deze keer in
+//    een verse install). Van deze velden zijn zowel call_leg_id ALS
+//    call_session_id (en connection_id) geldige filters op /v2/recordings —
+//    er is dus geen "betere" identifier nodig/beschikbaar; de huidige keuze
+//    (call_leg_id) is een van twee geldige opties, niet de enige of een
+//    onjuiste.
+//  - Onze query-serialisatie (URLSearchParams({"filter[call_leg_id]":...}))
+//    is BYTE-VOOR-BYTE identiek bevestigd aan Telnyx' eigen
+//    stringifyQuery({filter:{call_leg_id}}) (src/internal/utils/query.ts,
+//    qs.stringify met arrayFormat:'comma') — geen serialisatiefout.
+//  - Basis-URL (https://api.telnyx.com/v2) en enige benodigde header
+//    (Authorization: Bearer <key>) kloppen — bevestigd via src/client.ts se
+//    eigen defaultBaseURL/authHeaders.
+// Conclusie: veld, waarde-opbouw, serialisatie en basisconfiguratie zijn
+// stuk voor stuk tegen de officiële broncode geverifieerd en kloppen. De
+// exacte trigger van DEZE 422 is daarmee NIET af te leiden uit statische
+// SDK-broncode alleen (die beschrijft de API-vorm, niet elke
+// runtime-validatieregel van Telnyx' backend) — vandaar onderstaande
+// telnyxFoutdetail(), die Telnyx' eigen gedocumenteerde JSON:API-foutvorm
+// (Shared.APIError in shared.ts: {code, title, description?, meta?,
+// source?: {parameter?, pointer?}}, in de praktijk verpakt als
+// {errors:[...]}）veilig en begrensd uitleest, zodat een volgende 4xx
+// zichzelf direct diagnosticeert i.p.v. alleen "HTTP 422" te tonen.
+//
+// Bewust NIET toegepast op telnyxCommando() (POST .../actions/*, bv.
+// speak/gather_using_speak): die foutmelding is elders in dit bestand al
+// EXPLICIET zonder bodytekst gehouden, omdat een 422 daar (bv. op een
+// ongeldige TTS-payload) de daadwerkelijk ingesproken tekst — vaak een
+// trainernaam/schoolnaam, spec §9 — in Telnyx' eigen foutdetail zou kunnen
+// terugkrijgen. /v2/recordings kent dat risico niet (uitsluitend
+// call_leg_id/parameter-namen in de respons, nooit gespreksinhoud), dus
+// alleen hier toegepast.
+const TELNYX_FOUTDETAIL_MAX_LENGTE = 300;
+
+interface TelnyxAPIFoutItem {
+  code?: string;
+  title?: string;
+  detail?: string;
+  description?: string;
+  source?: { parameter?: string; pointer?: string };
+}
+
+async function telnyxFoutdetail(response: Response): Promise<string> {
+  let ruweTekst: string;
+  try {
+    ruweTekst = await response.text();
+  } catch {
+    return "(responsbody niet leesbaar)";
+  }
+  try {
+    const body = JSON.parse(ruweTekst) as { errors?: TelnyxAPIFoutItem[] };
+    if (Array.isArray(body.errors) && body.errors.length > 0) {
+      const samenvatting = body.errors
+        .map((fout) => [fout.code, fout.title ?? fout.detail ?? fout.description, fout.source?.parameter ? `parameter=${fout.source.parameter}` : null].filter(Boolean).join(" | "))
+        .filter(Boolean)
+        .join("; ");
+      if (samenvatting) return samenvatting.slice(0, TELNYX_FOUTDETAIL_MAX_LENGTE);
+    }
+  } catch {
+    // Geen (geldige) JSON -> val hieronder terug op de rauwe (begrensde) tekst.
+  }
+  return ruweTekst.slice(0, TELNYX_FOUTDETAIL_MAX_LENGTE) || "(lege responsbody)";
+}
+
 interface TelnyxOpnameResource {
   id?: string;
   download_urls?: { mp3?: string | null; wav?: string | null };
@@ -247,7 +329,7 @@ async function haalOpnames(callLegId: string): Promise<TelnyxOpnameResource[]> {
   const query = new URLSearchParams({ "filter[call_leg_id]": callLegId }).toString();
   const response = await fetch(`${TELNYX_API_BASIS}/recordings?${query}`, { headers: { Authorization: `Bearer ${apiKey()}` } });
   if (!response.ok) {
-    throw new Error(`Opnamelijst ophalen bij Telnyx mislukt: HTTP ${response.status}`);
+    throw new Error(`Opnamelijst ophalen bij Telnyx mislukt: HTTP ${response.status} — ${await telnyxFoutdetail(response)}`);
   }
   const body = (await response.json()) as { data?: TelnyxOpnameResource[] };
   return (body.data ?? []).filter((opname) => opname.id);

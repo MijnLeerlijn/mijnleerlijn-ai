@@ -354,9 +354,62 @@ describe("haalOpnameOp (spec §9: provider-geauthenticeerde download, geen publi
     expect(fetchMock).toHaveBeenNthCalledWith(2, "https://signed.example/rec.mp3?X-Amz-Signature=abc");
   });
 
+  // Live HTTP 422 (2026-08-25, oproep-ID 5) — onderzocht tegen de officiële
+  // telnyx-npm-broncode (RecordingListParams.Filter in
+  // src/resources/recordings/recordings.ts): filter[call_leg_id] IS een
+  // echt, gedocumenteerd queryparameter van GET /v2/recordings. Deze test
+  // legt de EXACTE, tegen Telnyx' eigen qs.stringify({filter:{call_leg_id}},
+  // {arrayFormat:'comma'}) byte-voor-byte geverifieerde queryvorm vast: op
+  // het basispad precies één filterparameter, met exact de meegegeven
+  // waarde — geen paginering/sortering/overige parameters die niet expliciet
+  // gevraagd zijn.
+  it("de exacte queryvorm naar GET /v2/recordings — precies één filter[call_leg_id]-parameter, geen overige/overbodige parameters", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "rec_1", download_urls: { mp3: "https://signed.example/rec.mp3" } }] }) })
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().haalOpnameOp("leg_abc123");
+
+    const [url] = fetchMock.mock.calls[0]!;
+    const geparsed = new URL(url as string);
+    expect(geparsed.origin + geparsed.pathname).toBe("https://api.telnyx.com/v2/recordings");
+    expect([...geparsed.searchParams.keys()]).toEqual(["filter[call_leg_id]"]);
+    expect(geparsed.searchParams.get("filter[call_leg_id]")).toBe("leg_abc123");
+  });
+
   it("een niet-ok status bij het ophalen van de opnamelijst -> gooit", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => "" }));
     await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow();
+  });
+
+  // Live HTTP 422 vervolg: "HTTP 422" alleen was te weinig om de eerste live
+  // integratie te diagnosticeren (foutmelding uit de database bevatte
+  // uitsluitend de statuscode). telnyxFoutdetail() leest Telnyx' eigen
+  // gedocumenteerde JSON:API-foutvorm (Shared.APIError in shared.ts:
+  // {code, title, description?, source?: {parameter, pointer}}, verpakt als
+  // {errors:[...]}) veilig en begrensd uit, zodat een volgende 4xx zichzelf
+  // direct diagnosticeert.
+  it("een 422 met Telnyx' eigen JSON:API-foutvorm -> de foutmelding bevat code/title/source.parameter, begrensd en zonder de rauwe responsbody klakkeloos over te nemen", async () => {
+    const telnyxFoutBody = {
+      errors: [{ code: "10007", title: "Invalid query parameter value", detail: "The value provided for filter[call_leg_id] is not valid.", source: { parameter: "filter[call_leg_id]" } }],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422, text: async () => JSON.stringify(telnyxFoutBody) }));
+
+    await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow(/HTTP 422[\s\S]*10007[\s\S]*filter\[call_leg_id\]/);
+  });
+
+  it("de foutmelding bij een 4xx bevat nooit de Authorization-header/API-key en blijft begrensd, ook bij een extreem lange/onverwachte (niet-JSON) responsbody", async () => {
+    const onverwachteTekst = "x".repeat(2000); // geen geldige JSON -> valt terug op de rauwe (begrensde) tekst
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422, text: async () => onverwachteTekst }));
+
+    const foutmelding = await telnyxProvider()
+      .haalOpnameOp("cc_leg_1")
+      .catch((error: unknown) => (error instanceof Error ? error.message : String(error)));
+
+    expect(foutmelding).not.toContain("test-telnyx-api-key");
+    expect((foutmelding as string).length).toBeLessThan(400);
   });
 
   it("lege opnamelijst (nog niet geïndexeerd bij Telnyx) -> gooit met een herkenbare, specifieke foutmelding", async () => {
