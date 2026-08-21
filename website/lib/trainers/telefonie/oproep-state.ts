@@ -199,12 +199,19 @@ export async function zetOpnameVerwacht(payload: Payload, oproepId: number): Pro
  * retry de opname nooit meer had kunnen terugvinden.
  */
 export async function claimOpnameVerwerking(payload: Payload, oproepId: number, recordingProviderId: string, ophaalReferentie: string | null): Promise<boolean> {
+  // Live root cause (2026-08-25, gevonden via Vercel-log bij call.recording.saved):
+  // een ";" ná de WHERE-clausule beëindigde het UPDATE-statement vóórdat
+  // RETURNING werd bereikt -> "syntax error at or near RETURNING" bij ELKE
+  // aanroep, dus nooit een geclaimde rij, dus nooit een concept. RETURNING
+  // hoort bij hetzelfde statement als UPDATE/WHERE — geen ";" ertussen, zie
+  // het al langer bewezen patroon in lib/trainers/verslag.ts se
+  // claimUpdateSlot (de enige ";" staat daar pas ná "RETURNING id").
   const resultaat = await payload.db.drizzle.execute(sql`
     UPDATE trainer_telefonie_oproepen
     SET status = 'opname_ontvangen', recording_provider_id = ${recordingProviderId}, opname_ophaal_referentie = ${ophaalReferentie}, updated_at = now()
     WHERE id = ${oproepId}
       AND status IN ('training_gekozen', 'opname_verwacht')
-      AND (recording_provider_id IS NULL OR recording_provider_id = ${recordingProviderId});
+      AND (recording_provider_id IS NULL OR recording_provider_id = ${recordingProviderId})
     RETURNING id;
   `);
   return resultaat.rows.length > 0;
@@ -270,6 +277,8 @@ export async function zetOpnameVerwijderd(payload: Payload, oproepId: number): P
  * laat-binnenkomende providerwebhook dezelfde rij dubbel oppakt.
  */
 export async function claimTranscriptieRetry(payload: Payload, oproepId: number, vastgelopenVoorTijdstip: string): Promise<boolean> {
+  // Zelfde ";"-vóór-RETURNING-fout als claimOpnameVerwerking hierboven —
+  // ook hier gefixt: RETURNING blijft onderdeel van hetzelfde UPDATE-statement.
   const resultaat = await payload.db.drizzle.execute(sql`
     UPDATE trainer_telefonie_oproepen
     SET status = 'transcriptie_bezig', updated_at = now()
@@ -277,7 +286,7 @@ export async function claimTranscriptieRetry(payload: Payload, oproepId: number,
       AND (
         (status = 'transcriptie_mislukt_herstelbaar' AND volgende_transcriptiepoging <= now())
         OR (status IN ('opname_ontvangen', 'transcriptie_bezig') AND updated_at < ${vastgelopenVoorTijdstip})
-      );
+      )
     RETURNING id;
   `);
   return resultaat.rows.length > 0;
