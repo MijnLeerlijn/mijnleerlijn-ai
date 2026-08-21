@@ -98,15 +98,15 @@ describe("zetMislukt", () => {
 });
 
 describe("zetKandidatenAangeboden / zetTrainingGekozen — jsonb-rondgang", () => {
-  it("kandidaatTrainingen komt er als een echte array uit, niet als JSON-string (jsonb-kolom rondt automatisch)", async () => {
+  it("kandidaatTrainingen komt er als een echt object (fase + array) uit, niet als JSON-string (jsonb-kolom rondt automatisch)", async () => {
     const { payload } = maakFakePayload({});
     const oproep = await maakOfHaalOproep(payload, "CA1");
     const kandidaten = [
       { id: "111", naam: "Training A", schoolNaam: "School A", datum: "2026-08-20" },
       { id: "222", naam: "Training B", schoolNaam: "School B", datum: "2026-08-19" },
     ];
-    const bijgewerkt = await zetKandidatenAangeboden(payload, oproep.id, kandidaten);
-    expect(bijgewerkt.kandidaatTrainingen).toEqual(kandidaten);
+    const bijgewerkt = await zetKandidatenAangeboden(payload, oproep.id, "vandaag", kandidaten);
+    expect(bijgewerkt.kandidaatTrainingen).toEqual({ fase: "vandaag", kandidaten });
   });
 
   it("zetTrainingGekozen legt de definitief-gekozen server-side geresolveerde IDs vast en zet status", async () => {

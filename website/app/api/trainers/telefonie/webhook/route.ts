@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { telnyxProvider } from "@/lib/trainers/telefonie/telnyx-provider";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameAfgerond, verwerkOpnameStatus, OPNAME_STOP_TOETS } from "@/lib/trainers/telefonie/gesprek";
+import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkOpnameAfgerond, verwerkOpnameStatus } from "@/lib/trainers/telefonie/gesprek";
 import { maakOfHaalOproep } from "@/lib/trainers/telefonie/oproep-state";
 import { ontleedTelnyxWebhookJson, vlakTelnyxEventAf } from "@/lib/trainers/telefonie/webhook-helpers";
 import { maakRateLimiter } from "@/lib/contact/validate";
@@ -28,25 +28,28 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 //  call.answered     -> HIER pas verwerkInkomendeCall (trainerherkenning +
 //                       eerste gesproken menu) — functioneel de vervanger
 //                       van de oude inbound-route.
-//  call.gather.ended -> verwerkTrainingKeuze (de enige gather die dit hele
-//                       flow ooit uitgeeft: de trainingkeuze/ja-nee-
-//                       bevestiging) — vervanger van kies-training.
-//  call.dtmf.received-> BEKENDE BEPERKING (vastgesteld via Telnyx' eigen
-//                       SDK-broncode, niet langer een aanname): dit event is
-//                       door Telnyx uitsluitend gedocumenteerd als
-//                       bijbehorend bij gather/gather_using_speak-commando's,
-//                       NIET bij record_start. Deze tak (stopt de opname
-//                       vroegtijdig op '#' zolang status='opname_verwacht')
-//                       vuurt in de praktijk dus vermoedelijk nooit tijdens
-//                       het inspreken van het verslag — bewust toch
-//                       aangehouden als onschadelijk vangnet (kost niets als
-//                       hij nooit triggert) i.p.v. een architectuurwijziging
-//                       (bv. een parallelle gather-opdracht ernaast starten)
-//                       vlak vóór een productiebeslissing. GEEN functionele
-//                       afhankelijkheid: de opname stopt hoe dan ook altijd
-//                       via stilte-timeout/max-duur (ongewijzigde waarden,
-//                       zie gesprek.ts) — zie het opleverrapport se
-//                       beperkingen-sectie.
+//  call.gather.ended -> TWEE verschillende gathers monden hier uit, sinds
+//                       trainertelefonie V1-afronding (2026-08-26)
+//                       onderscheiden via het gather_id-veld dat elk
+//                       commando zelf meegeeft (zie telnyx-provider.ts):
+//                       gather_id="opname_toets" -> verwerkOpnameToets
+//                       ('#'/'*' tijdens het opnemen — zie hieronder); alle
+//                       andere gathers (de trainingkeuze/ja-nee-bevestiging,
+//                       zonder expliciete gather_id) -> verwerkTrainingKeuze,
+//                       ongewijzigd — vervanger van kies-training.
+//                       Vroeger (call.dtmf.received, nu VERWIJDERD): BEWEZEN
+//                       via Telnyx' eigen SDK-broncode (Expected Webhooks op
+//                       startRecording: uitsluitend call.recording.saved/
+//                       .transcription.saved/.error, NOOIT call.dtmf.received)
+//                       dat DTMF tijdens een kale record_start-opname niet
+//                       wordt afgeleverd — de oude '#'-tak hierboven was dus
+//                       feitelijk altijd dode code. Vervangen door een
+//                       PARALLELLE, stille gather-opdracht die naast elke
+//                       opname meeloopt (telnyx-provider.ts se
+//                       voerInstructieUit, zeg_en_neem_op-tak) — dit IS nu de
+//                       daadwerkelijke, geverifieerd werkende mechaniek achter
+//                       zowel '#' (stoppen+verwerken) als '*' (afwijzen+
+//                       opnieuw beginnen, spec §9/§10), geen vangnet meer.
 //  call.recording.saved/.error -> verwerkOpnameStatus (ongewijzigd, inclusief
 //                       de bestaande idempotentieclaim/transcriptieherstel/
 //                       audiobewaartermijn uit gate 1) — vervanger van
@@ -57,7 +60,7 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 //                       niet vooraf. voerVoiceInstructiesUit faalt bij Telnyx
 //                       bewust nooit door (zie provider.ts) — onschadelijk
 //                       als het gesprek dan al beëindigd is (bv. via de
-//                       '#'-route hierboven, of de beller hing zelf al op).
+//                       '#'-afhandeling hierboven, of de beller hing zelf al op).
 //  alles anders      -> stil genegeerd (bv. call.hangup, call.speak.ended,
 //                       call.answered voor een niet-inkomend/onverwacht
 //                       been) — Telnyx stuurt veel meer event_types dan deze
@@ -122,18 +125,15 @@ export async function POST(request: NextRequest) {
       case "call.gather.ended": {
         if (!beperkPerGesprek.magVerder(callControlId)) break;
         const oproep = await maakOfHaalOproep(payload, callControlId);
-        const instructies = await verwerkTrainingKeuze(payload, provider, oproep.id, vormVelden);
+        // gather_id="opname_toets" (telnyx-provider.ts se voerInstructieUit,
+        // zeg_en_neem_op-tak) onderscheidt de parallelle '#'/'*'-gather
+        // tijdens het opnemen van de trainingkeuze-gather (die geen expliciete
+        // gather_id meekrijgt) — zie de toelichting bovenaan dit bestand.
+        const instructies =
+          vormVelden.gather_id === "opname_toets"
+            ? await verwerkOpnameToets(payload, provider, oproep.id, vormVelden)
+            : await verwerkTrainingKeuze(payload, provider, oproep.id, vormVelden);
         await provider.voerVoiceInstructiesUit(callControlId, instructies);
-        break;
-      }
-
-      case "call.dtmf.received": {
-        if (vormVelden.digit !== OPNAME_STOP_TOETS) break;
-        const oproep = await maakOfHaalOproep(payload, callControlId);
-        if (oproep.status !== "opname_verwacht") break; // alleen relevant tijdens een daadwerkelijk lopende opname
-        if (!beperkPerGesprek.magVerder(callControlId)) break;
-        await provider.stopOpname(callControlId);
-        await provider.voerVoiceInstructiesUit(callControlId, verwerkOpnameAfgerond());
         break;
       }
 

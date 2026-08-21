@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { telnyxProvider } from "@/lib/trainers/telefonie/telnyx-provider";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameAfgerond, verwerkOpnameStatus, OPNAME_STOP_TOETS } from "@/lib/trainers/telefonie/gesprek";
+import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkOpnameAfgerond, verwerkOpnameStatus } from "@/lib/trainers/telefonie/gesprek";
 import { maakOfHaalOproep } from "@/lib/trainers/telefonie/oproep-state";
 import type { TelefonieProvider } from "@/lib/trainers/telefonie/provider";
 
@@ -21,13 +21,14 @@ vi.mock("@/payload.config", () => ({ default: {} }));
 vi.mock("@/lib/trainers/telefonie/telnyx-provider", () => ({ telnyxProvider: vi.fn() }));
 vi.mock("@/lib/trainers/telefonie/gesprek", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/trainers/telefonie/gesprek")>();
-  return { ...echt, verwerkInkomendeCall: vi.fn(), verwerkTrainingKeuze: vi.fn(), verwerkOpnameAfgerond: vi.fn(), verwerkOpnameStatus: vi.fn() };
+  return { ...echt, verwerkInkomendeCall: vi.fn(), verwerkTrainingKeuze: vi.fn(), verwerkOpnameToets: vi.fn(), verwerkOpnameAfgerond: vi.fn(), verwerkOpnameStatus: vi.fn() };
 });
 vi.mock("@/lib/trainers/telefonie/oproep-state", () => ({ maakOfHaalOproep: vi.fn() }));
 
 const mockTelnyxProvider = vi.mocked(telnyxProvider);
 const mockVerwerkInkomendeCall = vi.mocked(verwerkInkomendeCall);
 const mockVerwerkTrainingKeuze = vi.mocked(verwerkTrainingKeuze);
+const mockVerwerkOpnameToets = vi.mocked(verwerkOpnameToets);
 const mockVerwerkOpnameAfgerond = vi.mocked(verwerkOpnameAfgerond);
 const mockVerwerkOpnameStatus = vi.mocked(verwerkOpnameStatus);
 const mockMaakOfHaalOproep = vi.mocked(maakOfHaalOproep);
@@ -41,7 +42,6 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
     ontleedOpnameStatus: vi.fn(),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
-    stopOpname: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn(),
     verwijderOpname: vi.fn(),
     ...overrides,
@@ -63,6 +63,7 @@ function callInitiated(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   mockVerwerkInkomendeCall.mockReset().mockResolvedValue([]);
   mockVerwerkTrainingKeuze.mockReset().mockResolvedValue([]);
+  mockVerwerkOpnameToets.mockReset().mockResolvedValue([]);
   mockVerwerkOpnameAfgerond.mockReset().mockReturnValue([{ soort: "zeg_en_ophangen", tekst: "Dank je." }]);
   mockVerwerkOpnameStatus.mockReset().mockResolvedValue(undefined);
   mockMaakOfHaalOproep.mockReset().mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
@@ -133,36 +134,29 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", instructies);
   });
 
-  it("call.dtmf.received met de stop-toets tijdens een lopende opname (status=opname_verwacht) -> stopOpname + afsluitend bericht", async () => {
+  it("call.gather.ended MET gather_id='opname_toets' -> dispatcht naar verwerkOpnameToets, NIET verwerkTrainingKeuze (spec §9/§10)", async () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
     mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
+    const instructies = [{ soort: "stop_opname" as const, poging: 0 }, { soort: "zeg_en_ophangen" as const, tekst: "Bedankt." }];
+    mockVerwerkOpnameToets.mockResolvedValue(instructies);
 
-    await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: OPNAME_STOP_TOETS } } }));
+    await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_1", digits: "#", gather_id: "opname_toets" } } }));
 
-    expect(provider.stopOpname).toHaveBeenCalledWith("cc_1");
-    expect(mockVerwerkOpnameAfgerond).toHaveBeenCalledTimes(1);
-    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", [{ soort: "zeg_en_ophangen", tekst: "Dank je." }]);
+    expect(mockVerwerkOpnameToets).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ digits: "#", gather_id: "opname_toets" }));
+    expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
+    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", instructies);
   });
 
-  it("call.dtmf.received met de stop-toets BUITEN een lopende opname (bv. status=training_gekozen) -> genegeerd, geen stopOpname", async () => {
+  it("call.gather.ended ZONDER gather_id='opname_toets' (de trainingkeuze-gather) -> dispatcht naar verwerkTrainingKeuze, NIET verwerkOpnameToets", async () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
-    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "training_gekozen" } as never);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "trainer_herkend" } as never);
 
-    await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: OPNAME_STOP_TOETS } } }));
+    await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_1", digits: "1" } } }));
 
-    expect(provider.stopOpname).not.toHaveBeenCalled();
-  });
-
-  it("call.dtmf.received met een ANDER cijfer dan de stop-toets -> genegeerd", async () => {
-    const provider = maakFakeProvider();
-    mockTelnyxProvider.mockReturnValue(provider);
-    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
-
-    await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "5" } } }));
-
-    expect(provider.stopOpname).not.toHaveBeenCalled();
+    expect(mockVerwerkTrainingKeuze).toHaveBeenCalledTimes(1);
+    expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
   });
 
   it("call.recording.saved -> verwerkOpnameStatus aangeroepen mét de opgeloste oproepId, daarna best-effort afsluitend bericht", async () => {

@@ -177,6 +177,7 @@ describe("ontleedOpnameStatus", () => {
       status: "voltooid",
       duurSeconden: 95,
       ophaalReferentie: "v3:abc",
+      clientState: null,
     });
   });
 
@@ -191,6 +192,15 @@ describe("ontleedOpnameStatus", () => {
     expect(
       telnyxProvider().ontleedOpnameStatus({ event_type: "call.recording.saved", recording_started_at: "niet-een-datum", recording_ended_at: "ook-niet" }).duurSeconden
     ).toBeNull();
+  });
+
+  it("spec §10/§12/§18: client_state uit het webhookevent wordt letterlijk doorgegeven (gesprek.ts decodeert 'm zelf)", () => {
+    const uitkomst = telnyxProvider().ontleedOpnameStatus({ event_type: "call.recording.saved", call_control_id: "v3:abc", client_state: "MQ==" });
+    expect(uitkomst.clientState).toBe("MQ==");
+  });
+
+  it("ontbrekend client_state -> null, geen fout", () => {
+    expect(telnyxProvider().ontleedOpnameStatus({ event_type: "call.recording.saved", call_control_id: "v3:abc" }).clientState).toBeNull();
   });
 });
 
@@ -237,32 +247,8 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     });
   });
 
-  it("zeg_en_neem_op -> record_start met max_length/timeout_secs uit de instructie", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [
-      {
-        soort: "zeg_en_neem_op",
-        tekst: "Vertel je verslag.",
-        actieUrl: "https://ongebruikt.example",
-        statusCallbackUrl: "https://ongebruikt.example",
-        maxDuurSeconden: 900,
-        stilteTimeoutSeconden: 5,
-        stopToets: "#",
-      },
-    ]);
-
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/record_start");
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body).toMatchObject({ format: "mp3", channels: "single", max_length: 900, timeout_secs: 5, command_id: "record_start:cc_1" });
-  });
-
-  it("command_id (spec: Telnyx' eigen commando-deduplicatie) is deterministisch per actiesoort+gesprek — dezelfde instructie tweemaal uitgevoerd (bv. door een dubbele webhookaflevering) levert dus TWEEMAAL exact hetzelfde command_id op, zodat Telnyx zelf de herhaling negeert i.p.v. een tweede opname te starten", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal("fetch", fetchMock);
-    const instructie = {
+  function opnameInstructie(overrides: Partial<{ poging: number }> = {}) {
+    return {
       soort: "zeg_en_neem_op" as const,
       tekst: "Vertel je verslag.",
       actieUrl: "https://ongebruikt.example",
@@ -270,15 +256,71 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
       maxDuurSeconden: 900,
       stilteTimeoutSeconden: 5,
       stopToets: "#",
+      herstartToets: "*",
+      poging: 0,
+      ...overrides,
     };
+  }
+
+  it("zeg_en_neem_op -> spreekt eerst de tekst (fix 2026-08-26: werd voorheen NOOIT uitgesproken), dan record_start, dan een parallelle stille gather", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [opnameInstructie()]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const [speakUrl, speakInit] = fetchMock.mock.calls[0]!;
+    expect(speakUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/speak");
+    expect(JSON.parse((speakInit as { body: string }).body)).toMatchObject({ payload: "Vertel je verslag.", payload_type: "text" });
+
+    const [recordUrl, recordInit] = fetchMock.mock.calls[1]!;
+    expect(recordUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/record_start");
+    const recordBody = JSON.parse((recordInit as { body: string }).body);
+    expect(recordBody).toMatchObject({ format: "mp3", channels: "single", max_length: 900, timeout_secs: 5, command_id: "record_start:cc_1:poging0" });
+    // client_state draagt het pogingnummer (spec §10/§12/§18) — base64("0").
+    expect(recordBody.client_state).toBe(Buffer.from("0", "utf8").toString("base64"));
+
+    const [gatherUrl, gatherInit] = fetchMock.mock.calls[2]!;
+    expect(gatherUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/gather");
+    const gatherBody = JSON.parse((gatherInit as { body: string }).body);
+    expect(gatherBody).toMatchObject({ gather_id: "opname_toets", valid_digits: "#*", minimum_digits: 1, maximum_digits: 1, command_id: "gather:cc_1:poging0" });
+  });
+
+  it("spec §10/§11: een hogere poging (na een '*'-herstart) krijgt een eigen command_id/client_state — nooit gededupliceerd tegen de vorige poging", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [opnameInstructie({ poging: 1 })]);
+
+    const recordBody = JSON.parse((fetchMock.mock.calls[1]![1] as { body: string }).body);
+    expect(recordBody.command_id).toBe("record_start:cc_1:poging1");
+    expect(recordBody.client_state).toBe(Buffer.from("1", "utf8").toString("base64"));
+    const gatherBody = JSON.parse((fetchMock.mock.calls[2]![1] as { body: string }).body);
+    expect(gatherBody.command_id).toBe("gather:cc_1:poging1");
+  });
+
+  it("command_id (spec: Telnyx' eigen commando-deduplicatie) is deterministisch per actiesoort+gesprek+poging — dezelfde instructie tweemaal uitgevoerd (bv. door een dubbele webhookaflevering) levert dus TWEEMAAL exact hetzelfde command_id op, zodat Telnyx zelf de herhaling negeert i.p.v. een tweede opname te starten", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    const instructie = opnameInstructie();
 
     await telnyxProvider().voerVoiceInstructiesUit("cc_1", [instructie]);
     await telnyxProvider().voerVoiceInstructiesUit("cc_1", [instructie]); // simuleert een herhaalde aanroep voor hetzelfde gesprek
 
-    const eersteBody = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body);
-    const tweedeBody = JSON.parse((fetchMock.mock.calls[1]![1] as { body: string }).body);
-    expect(eersteBody.command_id).toBe("record_start:cc_1");
+    const eersteBody = JSON.parse((fetchMock.mock.calls[1]![1] as { body: string }).body); // [1] = record_start, [0] is speak
+    const tweedeBody = JSON.parse((fetchMock.mock.calls[4]![1] as { body: string }).body); // 3 aanroepen per uitvoering (speak,record_start,gather)
+    expect(eersteBody.command_id).toBe("record_start:cc_1:poging0");
     expect(tweedeBody.command_id).toBe(eersteBody.command_id);
+  });
+
+  it("stop_opname -> POST .../actions/record_stop met een per-poging command_id (spec §9/§10)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "stop_opname", poging: 2 }]);
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.telnyx.com/v2/calls/cc_1/actions/record_stop", expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body)).toMatchObject({ command_id: "record_stop:cc_1:poging2" });
   });
 
   it("command_id verschilt tussen verschillende gesprekken (call_control_id) én tussen verschillende actiesoorten binnen hetzelfde gesprek — nooit een botsing die een legitieme, andere actie zou laten negeren", async () => {
@@ -315,7 +357,7 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
   });
 });
 
-describe("beantwoordOproep / stopOpname", () => {
+describe("beantwoordOproep", () => {
   it("beantwoordOproep -> POST .../actions/answer met command_id", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
@@ -323,15 +365,10 @@ describe("beantwoordOproep / stopOpname", () => {
     expect(fetchMock).toHaveBeenCalledWith("https://api.telnyx.com/v2/calls/cc_1/actions/answer", expect.objectContaining({ method: "POST" }));
     expect(JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body)).toMatchObject({ command_id: "answer:cc_1" });
   });
-
-  it("stopOpname -> POST .../actions/record_stop met command_id", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal("fetch", fetchMock);
-    await telnyxProvider().stopOpname("cc_1");
-    expect(fetchMock).toHaveBeenCalledWith("https://api.telnyx.com/v2/calls/cc_1/actions/record_stop", expect.objectContaining({ method: "POST" }));
-    expect(JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body)).toMatchObject({ command_id: "record_stop:cc_1" });
-  });
 });
+// stop_opname (voorheen een losse stopOpname()-providermethode, 2026-08-26
+// vervangen door de VoiceInstructie-variant — zie het opleverrapport) heeft
+// zijn eigen dekking in de "voerVoiceInstructiesUit"-describe hierboven.
 
 // call.recording.saved bevat geen recording_id (hard bevestigd via Telnyx'
 // eigen SDK-broncode) — haalOpnameOp/verwijderOpname zoeken de opname daarom

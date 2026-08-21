@@ -585,6 +585,7 @@ export interface TrainerTelefonieOproepen {
     | 'transcriptie_bezig'
     | 'transcriptie_mislukt_herstelbaar'
     | 'concept_klaar'
+    | 'verslag_bestaat_al'
     | 'mislukt';
   foutcode?:
     | (
@@ -637,6 +638,10 @@ export interface TrainerTelefonieOproepen {
    * Aantal keer dat ophalen+transcriberen geprobeerd is (initiële poging + automatische retries). Begrensd, zie MAX_TRANSCRIPTIE_POGINGEN in gesprek.ts.
    */
   transcriptiePogingen?: number | null;
+  /**
+   * Aantal keer dat de trainer de opname via '*' heeft afgewezen en opnieuw is begonnen. Begrensd, zie MAX_HEROPNAME_POGINGEN in gesprek.ts.
+   */
+  heropnamePogingen?: number | null;
   /**
    * Leeg zodra de zaak is afgerond (concept klaar) of definitief is opgegeven. Alleen gezet terwijl status 'Transcriptie mislukt (herstelbaar)' is.
    */
@@ -2534,6 +2539,7 @@ export interface TrainerTelefonieOproepenSelect<T extends boolean = true> {
   recordingDuurSeconden?: T;
   transcriptieLengte?: T;
   transcriptiePogingen?: T;
+  heropnamePogingen?: T;
   volgendeTranscriptiepoging?: T;
   opnameVerwijderdOp?: T;
   verslag?: T;

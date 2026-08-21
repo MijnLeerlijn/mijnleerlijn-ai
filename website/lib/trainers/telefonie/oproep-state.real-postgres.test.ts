@@ -140,11 +140,11 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
           status: "voltooid",
           duurSeconden: 60,
           ophaalReferentie: "https://provider.example/recordings/RE1",
+          clientState: null,
         }) as OpnameStatusGegevens
     ),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
-    stopOpname: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     verwijderOpname: vi.fn().mockResolvedValue(undefined),
     ...overrides,

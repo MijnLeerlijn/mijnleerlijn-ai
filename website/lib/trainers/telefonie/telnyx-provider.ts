@@ -131,7 +131,7 @@ function berekenDuurSeconden(start: string | undefined, eind: string | undefined
   return Number.isFinite(ms) && ms >= 0 ? Math.round(ms / 1000) : null;
 }
 
-async function telnyxCommando(callControlId: string, actie: string, body: Record<string, unknown>): Promise<void> {
+async function telnyxCommando(callControlId: string, actie: string, body: Record<string, unknown>, commandIdSuffix?: string): Promise<void> {
   const response = await fetch(`${TELNYX_API_BASIS}/calls/${encodeURIComponent(callControlId)}/actions/${actie}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey()}`, "Content-Type": "application/json" },
@@ -151,7 +151,17 @@ async function telnyxCommando(callControlId: string, actie: string, body: Record
     // kiesOpname hieronder). Dit voorkomt de klasse fout die live is
     // waargenomen: twee losse opnameresources bij Telnyx voor hetzelfde
     // gesprek (bevestigd via Telnyx Reporting → Call Recordings).
-    body: JSON.stringify({ ...body, command_id: `${actie}:${callControlId}` }),
+    //
+    // commandIdSuffix (2026-08-26, trainertelefonie V1-afronding, spec §10):
+    // record_start/record_stop/gather komen nu LEGITIEM meerdere keren voor
+    // per gesprek (elke '*'-herstart) — zonder een per-poging-suffix zou
+    // Telnyx de TWEEDE/DERDE poging ten onrechte als duplicaat van de eerste
+    // negeren. gesprek.ts/telnyx-provider.ts geven hier daarom de
+    // heropnamePogingen-waarde aan mee, zodat elke legitieme nieuwe poging
+    // een eigen command_id krijgt terwijl een échte herhaalde
+    // webhookaflevering van DEZELFDE poging nog altijd hetzelfde command_id
+    // oplevert (dus nog altijd correct gededupliceerd wordt).
+    body: JSON.stringify({ ...body, command_id: `${actie}:${callControlId}${commandIdSuffix ? `:${commandIdSuffix}` : ""}` }),
   });
   if (!response.ok) {
     // Statuscode + actienaam in de foutmelding (geen bodytekst — kan
@@ -193,29 +203,73 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
         inter_digit_timeout_millis: instructie.timeoutSeconden * 1000,
       });
       return;
-    case "zeg_en_neem_op":
-      // Geen aparte "zeg eerst de tekst"-stap nodig: record_start begint
-      // direct (de dispatcher-route sprak de instructietekst zelf al uit via
-      // een voorafgaand gather_using_speak-/speak-commando in verwerkTrainingKeuze
-      // se eigen VoiceInstructie — hier komt uitsluitend de opnamestap zelf
-      // aan de beurt). Bewust GEEN `transcription`-parameter (default false,
-      // spec §11: eigen Whisper-infrastructuur, nooit Telnyx' eigen
-      // transcriptiedienst — die kost bovendien apart, óók impliciet via
-      // timeout_secs se eigen stilte-detectie, zie Telnyx' documentatie
-      // daarvan). stopToets wordt hier NIET doorgegeven: record_start kent
-      // geen "stop-op-toets"-parameter; vroegtijdig stoppen op '#' wordt door
-      // de dispatcher-route apart geprobeerd via het onafhankelijke
-      // call.dtmf.received-event (zie de route se doc-comment voor de nu
-      // bekende beperking daarvan) — de opname stopt hoe dan ook altijd via
-      // stilte-timeout of maxDuurSeconden hieronder, dus dit is een
-      // UX-vangnet, geen functionele afhankelijkheid.
-      await telnyxCommando(callControlId, "record_start", {
-        format: "mp3",
-        channels: "single",
-        max_length: instructie.maxDuurSeconden,
-        timeout_secs: instructie.stilteTimeoutSeconden,
-        play_beep: true,
+    case "zeg_en_neem_op": {
+      // Fix 2026-08-26 (trainertelefonie V1-afronding) — de vorige versie
+      // van dit commando negeerde instructie.tekst volledig (de doc-comment
+      // hierboven claimde een "voorafgaand speak-commando" vanuit de route,
+      // maar verwerkTrainingKeuze gaf altijd precies ÉÉN instructie terug —
+      // er was dus NOOIT een voorafgaande speak-stap; de prompttekst werd
+      // hierdoor in productie nooit daadwerkelijk uitgesproken, zie het
+      // opleverrapport). Spec §8 vereist nu een exacte, letterlijke
+      // spreektekst vlak vóór opnemen, dus alsnog eerst spreken.
+      await telnyxCommando(callControlId, "speak", {
+        payload: instructie.tekst,
+        payload_type: "text",
+        voice: TELNYX_TTS_VOICE,
+        language: TELNYX_TTS_TAAL,
+        service_level: TELNYX_TTS_SERVICE_LEVEL,
       });
+      // Bewust GEEN `transcription`-parameter (default false, spec §11:
+      // eigen Whisper-infrastructuur, nooit Telnyx' eigen transcriptiedienst
+      // — die kost bovendien apart, óók impliciet via timeout_secs se eigen
+      // stilte-detectie, zie Telnyx' documentatie daarvan).
+      //
+      // client_state (spec §10/§12/§18) — draagt instructie.poging mee op
+      // ELK vervolgwebhook van DEZE opnamepoging (call.recording.saved/
+      // .error), zodat gesprek.ts een inmiddels via '*' afgewezen eerdere
+      // poging herkent en NOOIT alsnog verwerkt, ook niet bij een trage/
+      // vertraagd afgeleverde webhook. Poging-nummer, geen persoonsgegeven —
+      // veilig om zo mee te sturen (spec §9).
+      await telnyxCommando(
+        callControlId,
+        "record_start",
+        {
+          format: "mp3",
+          channels: "single",
+          max_length: instructie.maxDuurSeconden,
+          timeout_secs: instructie.stilteTimeoutSeconden,
+          play_beep: true,
+          client_state: Buffer.from(String(instructie.poging), "utf8").toString("base64"),
+        },
+        `poging${instructie.poging}`
+      );
+      // Parallelle, stille DTMF-gather (spec §9/§10) — hard bevestigd tegen
+      // Telnyx' eigen SDK-broncode (zie het opleverrapport): record_start
+      // kent zelf geen stop-op-toets-parameter, en call.dtmf.received hoort
+      // uitsluitend bij gather-commando's, NOOIT bij record_start. Dit is
+      // dus niet langer een vangnet maar de daadwerkelijke, geverifieerde
+      // mechaniek achter zowel '#' (stoppen+verwerken) als '*' (herstarten).
+      // ActionGatherParams kent geen audio/tekst-veld (i.t.t.
+      // gather_using_speak hierboven) — loopt dus volledig onhoorbaar naast
+      // de opname. gather_id="opname_toets" laat de webhookroute dit event
+      // onderscheiden van de trainingkeuze-gather (zie route se dispatch).
+      await telnyxCommando(
+        callControlId,
+        "gather",
+        {
+          gather_id: "opname_toets",
+          valid_digits: `${instructie.stopToets}${instructie.herstartToets}`,
+          minimum_digits: 1,
+          maximum_digits: 1,
+          timeout_millis: (instructie.maxDuurSeconden + 30) * 1000,
+          initial_timeout_millis: (instructie.maxDuurSeconden + 30) * 1000,
+        },
+        `poging${instructie.poging}`
+      );
+      return;
+    }
+    case "stop_opname":
+      await telnyxCommando(callControlId, "record_stop", {}, `poging${instructie.poging}`);
       return;
   }
 }
@@ -449,16 +503,23 @@ async function haalOpnames(callLegId: string): Promise<TelnyxOpnameResource[]> {
  * afleverwachting, wat een herhaalde aflevering van hetzelfde
  * call.gather.ended-event (en dus een tweede, ongededupliceerde
  * record_start) plausibel maakt. telnyxCommando se nieuwe command_id
- * voorkomt dit voortaan bij de bron. Deze functie blijft er daarnaast
- * defensief tegen (bv. voor al vóór die fix ontstane dubbele opnames, zoals
- * de testoproep): bij meer dan één kandidaat wordt expliciet gesorteerd op
- * de LANGSTE opnameduur (recording_ended_at minus recording_started_at) —
- * bij twee vrijwel gelijktijdig gestarte dubbele opnames is duur een
- * sterker, inhoudelijk onderbouwd signaal voor "de opname die het volledige
- * verslag heeft vastgelegd" dan starttijd alleen — met recording_started_at
- * (meest recent) als tiebreaker. Elk geval met meer dan één kandidaat wordt
- * expliciet gelogd (uitsluitend id's/tijden/duur, nooit audio-inhoud, spec
- * §9) zodat dit zichtbaar blijft.
+ * voorkomt dit voortaan bij de bron.
+ *
+ * Selectiecriterium herzien (2026-08-26, trainertelefonie V1-afronding,
+ * spec §10): sinds '*' een LEGITIEME herstart toestaat, bestaan er nu vaak
+ * daadwerkelijk meerdere, INHOUDELIJK VERSCHILLENDE opnames voor dezelfde
+ * call_leg_id (elke afgewezen poging + de uiteindelijk geaccepteerde) — "de
+ * langste duur" zou dan fout kunnen kiezen (een afgewezen, lang uitgesponnen
+ * eerste poging zou een korte, doelgerichte herkansing kunnen verdringen).
+ * Attempts zijn per constructie strikt sequentieel (elke '*' stopt de
+ * huidige opname VOORDAT de volgende start, zie gesprek.ts/telnyx-provider.ts
+ * se stop_opname-afhandeling) — de meest recent GESTARTE opname is daarom
+ * altijd de laatst geaccepteerde poging, ongeacht duur. Bij meer dan één
+ * kandidaat wordt dit dus voortaan het primaire criterium, met de langste
+ * duur uitsluitend als tiebreaker (bv. twee vrijwel identiek gestarte
+ * dubbele opnames, het oorspronkelijke scenario hierboven). Elk geval met
+ * meer dan één kandidaat wordt nog altijd expliciet gelogd (uitsluitend
+ * id's/tijden/duur, nooit audio-inhoud, spec §9).
  */
 function kiesOpname(opnames: TelnyxOpnameResource[], callLegId: string): TelnyxOpnameResource {
   if (opnames.length === 0) {
@@ -472,13 +533,13 @@ function kiesOpname(opnames: TelnyxOpnameResource[], callLegId: string): TelnyxO
     console.error(
       `[telefonie/telnyx] meerdere opnames gevonden voor één gesprek (call_leg_id=${callLegId}): ${opnames
         .map((opname) => `${opname.id}(duur=${opnameDuurMs(opname)}ms,start=${opname.recording_started_at ?? "onbekend"})`)
-        .join(", ")} — langste duur gekozen.`
+        .join(", ")} — meest recent gestarte gekozen.`
     );
   }
   return [...opnames].sort((a, b) => {
-    const duurVerschil = opnameDuurMs(b) - opnameDuurMs(a);
-    if (duurVerschil !== 0) return duurVerschil;
-    return (b.recording_started_at ?? "").localeCompare(a.recording_started_at ?? "");
+    const startVerschil = (b.recording_started_at ?? "").localeCompare(a.recording_started_at ?? "");
+    if (startVerschil !== 0) return startVerschil;
+    return opnameDuurMs(b) - opnameDuurMs(a);
   })[0]!;
 }
 
@@ -530,6 +591,12 @@ export function telnyxProvider(): TelefonieProvider {
         status,
         duurSeconden: berekenDuurSeconden(vormVelden.recording_started_at, vormVelden.recording_ended_at),
         ophaalReferentie: status === "voltooid" ? (callLegId || null) : null,
+        // spec §10/§12/§18 — de client_state die bij het bijbehorende
+        // record_start-commando is meegegeven (zie voerInstructieUit se
+        // zeg_en_neem_op-tak), letterlijk teruggegeven op dit event.
+        // vlakTelnyxEventAf (webhook-helpers.ts) slaat elk top-level
+        // payloadveld al plat op — geen aparte parsing hier nodig.
+        clientState: vormVelden.client_state ?? null,
       };
     },
 
@@ -554,10 +621,6 @@ export function telnyxProvider(): TelefonieProvider {
 
     async beantwoordOproep(providerCallId): Promise<void> {
       await telnyxCommando(providerCallId, "answer", {});
-    },
-
-    async stopOpname(providerCallId): Promise<void> {
-      await telnyxCommando(providerCallId, "record_stop", {});
     },
 
     async haalOpnameOp(ophaalReferentie): Promise<ArrayBuffer> {
@@ -585,13 +648,22 @@ export function telnyxProvider(): TelefonieProvider {
       if (!response.ok) {
         throw new Error(`Opname ${primair.id} verwijderen bij Telnyx mislukt: HTTP ${response.status}`);
       }
-      // Spec §9/gate 1: nooit audio onbeperkt laten staan. Was er (bv. door
-      // een vóór de command_id-fix hierboven al ontstane dubbele opname,
-      // zie kiesOpname) meer dan één kandidaat, dan ook de overige(n)
-      // best-effort opruimen — een falende extra verwijdering blokkeert
-      // nooit de hierboven al geslaagde hoofdverwijdering (de aanroeper
-      // behandelt verwijderOpname zelf ook al als best-effort, zie
+      // Spec §9/gate 1: nooit audio onbeperkt laten staan. Was er meer dan
+      // één kandidaat — sinds trainertelefonie V1-afronding (2026-08-26) de
+      // NORMALE situatie na een of meer '*'-herstarts (elke afgewezen
+      // poging laat een eigen opnameresource achter, spec §10/§18: "verwijder
+      // de audio van een afgewezen opname zo snel mogelijk"), en daarnaast
+      // nog altijd mogelijk door de vóór de command_id-fix hierboven al
+      // ontstane dubbele-opname-klasse (zie kiesOpname) — dan ook de
+      // overige(n) best-effort opruimen — een falende extra verwijdering
+      // blokkeert nooit de hierboven al geslaagde hoofdverwijdering (de
+      // aanroeper behandelt verwijderOpname zelf ook al als best-effort, zie
       // gesprek.ts se verwerkTranscriptiepoging/verwerkTranscriptieMislukking).
+      // Dit is dus bewust ÉÉN aanroep die ALLE opnames van dit gesprek
+      // opruimt, ongeacht welke van de N pogingen uiteindelijk geaccepteerd
+      // werd — geroepen pas nadat de geaccepteerde poging al veilig
+      // getranscribeerd is (zie gesprek.ts), dus nooit vóórdat de nog
+      // benodigde opname al gedownload is.
       for (const overig of opnames) {
         if (overig.id === primair.id) continue;
         try {

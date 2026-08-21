@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameAfgerond, verwerkOpnameStatus, verwerkTelefonieOnderhoud, verwerkTelefonieHandmatigeRetry } from "./gesprek";
+import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkOpnameAfgerond, verwerkOpnameStatus, verwerkTelefonieOnderhoud, verwerkTelefonieHandmatigeRetry } from "./gesprek";
 import { claimOpnameVerwerking } from "./oproep-state";
 import { haalRecenteTrainingenVoorTelefonie, haalTrainingVoorMutatie, haalSchoolDetail, vandaagIsoAmsterdam } from "../monday-links";
 import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde, wijzigKolomWaardeJson, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
@@ -84,6 +84,12 @@ function trainerRij(trainer: AuthTrainer, overrides: Record<string, unknown> = {
   };
 }
 
+function dagenGeleden(n: number): string {
+  const d = new Date(`${vandaagIsoAmsterdam()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 function training(overrides: Partial<TrainingMetSchool> = {}): TrainingMetSchool {
   return {
     id: TRAINING_ID,
@@ -138,11 +144,11 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
           status: "voltooid",
           duurSeconden: 60,
           ophaalReferentie: "https://provider.example/recordings/RE1",
+          clientState: Buffer.from("0", "utf8").toString("base64"), // poging 0 — matcht de default heropnamePogingen van een verse oproep
         }) as OpnameStatusGegevens
     ),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
-    stopOpname: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     verwijderOpname: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -255,19 +261,32 @@ describe("verwerkInkomendeCall", () => {
     expect(mockHaalRecenteTrainingen).not.toHaveBeenCalled();
   });
 
-  it("scenario 8/20: geen recente training gevonden -> boodschap met voornaam, verwijzing naar de traineromgeving", async () => {
+  it("spec §14: geen recente trainingen -> vaste 'geen beschikbare training'-boodschap, verwijzing naar de traineromgeving, geen lege DTMF-gather gestart", async () => {
     mockHaalRecenteTrainingen.mockResolvedValue([]);
     const provider = maakFakeProvider();
     const instructies = await verwerkInkomendeCall(payload, provider, {});
     expect(instructies).toEqual([
-      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik kan geen recente training vinden die bij dit telefoonnummer hoort. Open de traineromgeving om je trainingen te controleren." },
+      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
     ]);
     const rij = collection("trainer-telefonie-oproepen")[0]!;
     expect(rij.status).toBe("mislukt");
     expect(rij.foutcode).toBe("geen_training_gevonden");
   });
 
-  it("scenario 5: precies één training -> ja/nee-bevestiging via DTMF, oproeprij op trainer_herkend met de kandidaat opgeslagen", async () => {
+  it("spec §6/§14: alle recente trainingen hebben al een verslag -> zelfde 'geen beschikbare training'-boodschap als structureel niets recents (geen tweede statuslaag/apart pad)", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([training({ datum: vandaagIsoAmsterdam() })]);
+    const { payload: payloadMetVerslag } = maakFakePayload({
+      "trainer-accounts": [trainerRij(TRAINER)],
+      "training-verslagen": [{ id: 1, trainer: TRAINER.id, mondayTrainingId: TRAINING_ID, status: "concept", bron: "telefoon" }],
+    });
+    const provider = maakFakeProvider();
+    const instructies = await verwerkInkomendeCall(payloadMetVerslag, provider, {});
+    expect(instructies).toEqual([
+      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+    ]);
+  });
+
+  it("spec §1/§2: precies één training VANDAAG -> ja/nee-bevestiging met 'druk'-formulering, oproeprij op trainer_herkend met de kandidaat opgeslagen", async () => {
     mockHaalRecenteTrainingen.mockResolvedValue([training({ naam: "Training", schoolNaam: "Montessorischool Merlijn", datum: vandaagIsoAmsterdam() })]);
     const provider = maakFakeProvider();
     const instructies = await verwerkInkomendeCall(payload, provider, {});
@@ -279,16 +298,19 @@ describe("verwerkInkomendeCall", () => {
     expect(instructie.tekst).toContain("Hallo Wessel.");
     expect(instructie.tekst).toContain("Montessorischool Merlijn");
     expect(instructie.tekst).toContain("vandaag");
+    expect(instructie.tekst).toContain("Druk 1 voor ja, druk 2 voor nee.");
+    expect(instructie.tekst).not.toMatch(/zeg \d/i);
     expect(instructie.maxCijfers).toBe(1);
     expect(instructie.actieUrl).toContain("kies-training?oproepId=");
 
     const rij = collection("trainer-telefonie-oproepen")[0]!;
     expect(rij.status).toBe("trainer_herkend");
     expect(rij.trainer).toBe(TRAINER.id);
-    expect(rij.kandidaatTrainingen).toHaveLength(1);
+    expect((rij.kandidaatTrainingen as { fase: string; kandidaten: unknown[] }).fase).toBe("vandaag");
+    expect((rij.kandidaatTrainingen as { fase: string; kandidaten: unknown[] }).kandidaten).toHaveLength(1);
   });
 
-  it("scenario 6: meerdere trainingen -> genummerde keuzelijst, elke optie herkenbaar via schoolnaam", async () => {
+  it("spec §3: meerdere trainingen VANDAAG -> genummerde keuzelijst met 'druk'-formulering, elke optie herkenbaar via schoolnaam", async () => {
     mockHaalRecenteTrainingen.mockResolvedValue([
       training({ id: "111", schoolNaam: "Montessorischool Merlijn", datum: vandaagIsoAmsterdam() }),
       training({ id: "222", schoolNaam: "CBS de Wereld", datum: vandaagIsoAmsterdam() }),
@@ -298,8 +320,90 @@ describe("verwerkInkomendeCall", () => {
     const instructie = instructies[0]!;
     expect(instructie.soort).toBe("zeg_en_kies_cijfers");
     if (instructie.soort !== "zeg_en_kies_cijfers") return;
-    expect(instructie.tekst).toContain("Zeg 1 voor Montessorischool Merlijn");
-    expect(instructie.tekst).toContain("Zeg 2 voor CBS de Wereld");
+    expect(instructie.tekst).toContain("Druk 1 voor Montessorischool Merlijn");
+    expect(instructie.tekst).toContain("Druk 2 voor CBS de Wereld");
+    // Geen oudere trainingen aanwezig -> geen escapecijfer 9 aangeboden (spec §3).
+    expect(instructie.tekst).not.toContain("Druk 9");
+  });
+
+  it("spec §1/§3: trainingen vandaag ÉN ouder -> vandaag wordt eerst aangeboden (nooit meteen de volledige lijst); bij precies één vandaag-kandidaat loopt 'nee' vanzelf door naar ouder (geen apart escapecijfer nodig)", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([
+      training({ id: "111", schoolNaam: "Vandaag School", datum: vandaagIsoAmsterdam() }),
+      training({ id: "222", schoolNaam: "Gisteren School", datum: dagenGeleden(1) }),
+    ]);
+    const provider = maakFakeProvider();
+    const instructies = await verwerkInkomendeCall(payload, provider, {});
+    const instructie = instructies[0]!;
+    if (instructie.soort !== "zeg_en_kies_cijfers") throw new Error("verwacht zeg_en_kies_cijfers");
+    expect(instructie.tekst).toContain("Vandaag School");
+    expect(instructie.tekst).not.toContain("Gisteren School");
+    expect(instructie.tekst).toContain("Druk 1 voor ja, druk 2 voor nee.");
+  });
+
+  it("spec §3: meerdere trainingen vandaag ÉN een oudere laag -> het escapecijfer 9 wordt aangeboden (uitsluitend dan)", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([
+      training({ id: "111", schoolNaam: "Vandaag School A", datum: vandaagIsoAmsterdam() }),
+      training({ id: "222", schoolNaam: "Vandaag School B", datum: vandaagIsoAmsterdam() }),
+      training({ id: "333", schoolNaam: "Gisteren School", datum: dagenGeleden(1) }),
+    ]);
+    const provider = maakFakeProvider();
+    const instructies = await verwerkInkomendeCall(payload, provider, {});
+    const instructie = instructies[0]!;
+    if (instructie.soort !== "zeg_en_kies_cijfers") throw new Error("verwacht zeg_en_kies_cijfers");
+    expect(instructie.tekst).toContain("Vandaag School A");
+    expect(instructie.tekst).toContain("Vandaag School B");
+    expect(instructie.tekst).not.toContain("Gisteren School");
+    expect(instructie.tekst).toContain("Druk 9 voor andere trainingen.");
+  });
+
+  it("spec §4: GEEN training vandaag maar wel ouder -> meteen door naar de oudere laag, zonder tussenliggende 'niets vandaag'-melding", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([training({ id: "222", schoolNaam: "Gisteren School", datum: dagenGeleden(1) })]);
+    const provider = maakFakeProvider();
+    const instructies = await verwerkInkomendeCall(payload, provider, {});
+    const instructie = instructies[0]!;
+    if (instructie.soort !== "zeg_en_kies_cijfers") throw new Error("verwacht zeg_en_kies_cijfers");
+    expect(instructie.tekst).toContain("Gisteren School");
+    expect(instructie.tekst).toContain("gisteren");
+    const rij = collection("trainer-telefonie-oproepen")[0]!;
+    expect((rij.kandidaatTrainingen as { fase: string }).fase).toBe("ouder");
+  });
+
+  it("spec §5: datumformulering gebruikt vandaag/gisteren/eergisteren/een concrete datum, nooit interne ID's", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([
+      training({ id: "1", schoolNaam: "A", datum: dagenGeleden(1) }),
+      training({ id: "2", schoolNaam: "B", datum: dagenGeleden(2) }),
+      training({ id: "3", schoolNaam: "C", datum: dagenGeleden(3) }),
+    ]);
+    const provider = maakFakeProvider();
+    const instructies = await verwerkInkomendeCall(payload, provider, {});
+    const instructie = instructies[0]!;
+    if (instructie.soort !== "zeg_en_kies_cijfers") throw new Error("verwacht zeg_en_kies_cijfers");
+    expect(instructie.tekst).toContain("gisteren");
+    expect(instructie.tekst).toContain("eergisteren");
+    expect(instructie.tekst).not.toContain(TRAINING_ID);
+    expect(instructie.tekst).not.toMatch(/\b1\d{2,}\b/); // geen kale Monday-achtige ID's uitgesproken
+  });
+
+  it("spec §2/§3: schoolnaam is leidend; trainingnaam alleen erbij als twee kandidaten in DEZELFDE laag dezelfde school delen", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([
+      training({ id: "1", schoolNaam: "Dezelfde School", naam: "Ochtend", datum: vandaagIsoAmsterdam() }),
+      training({ id: "2", schoolNaam: "Dezelfde School", naam: "Middag", datum: vandaagIsoAmsterdam() }),
+    ]);
+    const provider = maakFakeProvider();
+    const instructies = await verwerkInkomendeCall(payload, provider, {});
+    const instructie = instructies[0]!;
+    if (instructie.soort !== "zeg_en_kies_cijfers") throw new Error("verwacht zeg_en_kies_cijfers");
+    expect(instructie.tekst).toContain("Dezelfde School — Ochtend");
+    expect(instructie.tekst).toContain("Dezelfde School — Middag");
+  });
+
+  it("spec §1: begroet ALTIJD eerst met de echte voornaam, vóór elke vraag over trainingen", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([training({ datum: vandaagIsoAmsterdam() })]);
+    const provider = maakFakeProvider();
+    const instructies = await verwerkInkomendeCall(payload, provider, {});
+    const instructie = instructies[0]!;
+    if (instructie.soort !== "zeg_en_kies_cijfers") throw new Error("verwacht zeg_en_kies_cijfers");
+    expect(instructie.tekst.startsWith("Hallo Wessel.")).toBe(true);
   });
 
   it("scenario 1: geldig, genormaliseerd nummer van een pilot-trainer wordt correct herkend, ook in een andere notatie", async () => {
@@ -361,14 +465,93 @@ describe("verwerkTrainingKeuze", () => {
     expect(rij.gekozenMondayTrainerboardItemId).toBe(TRAINERBOARD_ITEM_ID);
   });
 
-  it("cijfer 2 (nee) bij één kandidaat -> afgewezen, geen training gekozen", async () => {
-    const oproepId = await herkendeOproep([training()]);
+  it("spec §3/§15: cijfer 2 (nee) op de enige VANDAAG-kandidaat, met een oudere training beschikbaar -> gaat door naar de oudere laag (nooit meteen ophangen)", async () => {
+    const oproepId = await herkendeOproep([training({ id: "111", datum: vandaagIsoAmsterdam() })]);
+    // Verse her-fetch op keuzemoment (gaNaarOudereLaag) ziet nu ook de oudere training.
+    mockHaalRecenteTrainingen.mockResolvedValue([training({ id: "111", datum: vandaagIsoAmsterdam() }), training({ id: "222", schoolNaam: "Oudere School", datum: dagenGeleden(1) })]);
     const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2" }) });
+
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
-    expect(instructies[0]!.soort).toBe("zeg_en_ophangen");
+
+    const instructie = instructies[0]!;
+    if (instructie.soort !== "zeg_en_kies_cijfers") throw new Error("verwacht zeg_en_kies_cijfers (de oudere laag)");
+    expect(instructie.tekst).toContain("Oudere School");
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("trainer_herkend"); // nog geen keuze gemaakt, alleen doorgeschoven naar de volgende laag
+    expect((rij.kandidaatTrainingen as { fase: string }).fase).toBe("ouder");
+  });
+
+  it("spec §14: cijfer 2 (nee) op de enige VANDAAG-kandidaat, GEEN oudere training beschikbaar -> vaste 'geen kandidaten meer'-boodschap, nette afsluiting", async () => {
+    const oproepId = await herkendeOproep([training({ datum: vandaagIsoAmsterdam() })]);
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2" }) });
+
+    const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([
+      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+    ]);
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.status).toBe("mislukt");
-    expect(rij.foutcode).toBe("geen_keuze_gemaakt");
+    expect(rij.foutcode).toBe("geen_training_gevonden");
+  });
+
+  it("spec §3: cijfer 9 (escape) bij meerdere VANDAAG-kandidaten -> toont de oudere laag", async () => {
+    const oproepId = await herkendeOproep([training({ id: "111", datum: vandaagIsoAmsterdam() }), training({ id: "222", datum: vandaagIsoAmsterdam() })]);
+    // Verse her-fetch op keuzemoment (gaNaarOudereLaag) ziet nu ook de oudere training.
+    mockHaalRecenteTrainingen.mockResolvedValue([
+      training({ id: "111", datum: vandaagIsoAmsterdam() }),
+      training({ id: "222", datum: vandaagIsoAmsterdam() }),
+      training({ id: "333", schoolNaam: "Oudere School", datum: dagenGeleden(1) }),
+    ]);
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "9" }) });
+
+    const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
+
+    const instructie = instructies[0]!;
+    if (instructie.soort !== "zeg_en_kies_cijfers") throw new Error("verwacht zeg_en_kies_cijfers (de oudere laag)");
+    expect(instructie.tekst).toContain("Oudere School");
+  });
+
+  it("spec §15: cijfer 1 (ja) op de enige OUDERE-kandidaat -> bevestigd en opname gestart, net als bij vandaag", async () => {
+    // herkendeOproep krijgt uitsluitend een ouder-gedateerde training -> verwerkInkomendeCall
+    // presenteert meteen de ouder-laag (spec §4), cijfer 1 kiest 'm.
+    const oproepId = await herkendeOproep([training({ id: "222", schoolNaam: "Oudere School", datum: dagenGeleden(1) })]);
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) });
+
+    const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
+
+    expect(instructies[0]!.soort).toBe("zeg_en_neem_op");
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("opname_verwacht");
+    expect(rij.gekozenMondayTrainingId).toBe("222");
+  });
+
+  it("spec §14: cijfer 2 (nee) op de enige OUDERE-kandidaat -> dit WAS al de laatste laag, vaste 'geen kandidaten meer'-boodschap", async () => {
+    const oproepId = await herkendeOproep([training({ id: "222", datum: dagenGeleden(1) })]);
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2" }) });
+
+    const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([
+      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+    ]);
+  });
+
+  it("spec §7: race — tussen aanbieden en kiezen is er al een verslag voor deze training ontstaan -> geen technische fout, vaste 'verslag bestaat al'-boodschap, geen overschrijving", async () => {
+    const oproepId = await herkendeOproep([training()]);
+    // Simuleert een net gewonnen ander gesprek: er bestaat nu al een verslag voor TRAINING_ID, van een ANDERE oproep.
+    collection("training-verslagen").push({ id: 777, trainer: TRAINER.id, mondayTrainingId: TRAINING_ID, status: "concept", bron: "telefoon", telefonieOproep: 999999 });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) });
+
+    const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([
+      { soort: "zeg_en_ophangen", tekst: "Voor deze training staat al een verslag klaar. Kies een andere training in de traineromgeving of bel opnieuw voor een andere training." },
+    ]);
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("verslag_bestaat_al");
+    expect(rij.foutcode ?? null).toBeNull(); // NOOIT als technische fout gelabeld (spec §7/§17)
+    expect(collection("training-verslagen")).toHaveLength(1); // ongewijzigd — nooit overschreven
   });
 
   it("scenario 6 vervolg: bij meerdere kandidaten kiest cijfer 2 daadwerkelijk de TWEEDE training, nooit de eerste", async () => {
@@ -385,15 +568,27 @@ describe("verwerkTrainingKeuze", () => {
     expect(rij.gekozenTrainingNaam).toBe("Tweede");
   });
 
-  it("ongeldig cijfer (buiten bereik) -> geen keuze gemaakt, geen training vastgelegd", async () => {
+  it("ongeldig cijfer (buiten bereik, geen escapecijfer) -> geen keuze gemaakt, geen training vastgelegd", async () => {
     const kandidaten = [training({ id: "111" }), training({ id: "222" })];
     const oproepId = await herkendeOproep(kandidaten);
     mockHaalRecenteTrainingen.mockResolvedValue(kandidaten);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "9" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "7" }) });
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
     expect(instructies[0]!.soort).toBe("zeg_en_ophangen");
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.status).toBe("mislukt");
+    expect(rij.foutcode).toBe("geen_keuze_gemaakt");
+  });
+
+  it("spec §3: cijfer 9 zonder aangeboden ouder-laag (geen oudere trainingen bestaan) -> degradeert veilig naar 'geen kandidaten meer', geen crash/verkeerde keuze", async () => {
+    const kandidaten = [training({ id: "111" }), training({ id: "222" })];
+    const oproepId = await herkendeOproep(kandidaten);
+    mockHaalRecenteTrainingen.mockResolvedValue(kandidaten); // geen enkele training buiten vandaag
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "9" }) });
+    const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
+    expect(instructies).toEqual([
+      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+    ]);
   });
 
   it("geen enkele invoer (timeout) -> geen keuze gemaakt", async () => {
@@ -446,10 +641,123 @@ describe("verwerkOpnameAfgerond", () => {
     expect(verwerkOpnameAfgerond()).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." }]);
   });
 
-  it("vaste afsluitende boodschap — benadrukt expliciet dat er nog niets definitief in Monday staat (spec §1/§7)", () => {
+  it("spec §9: vaste, exacte afsluitende boodschap na '#' of een reguliere afronding — trainer hoeft niets te bevestigen", () => {
     const instructies = verwerkOpnameAfgerond();
-    expect(instructies).toHaveLength(1);
-    expect(instructies[0]!.tekst).toContain("Er is nog niets definitief opgeslagen in Monday.");
+    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren." }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// verwerkOpnameToets — '#'/'*' tijdens het opnemen (spec §9/§10/§11/§12/§18)
+// ---------------------------------------------------------------------------
+
+describe("verwerkOpnameToets", () => {
+  async function oproepMetOpnameVerwacht() {
+    mockHaalRecenteTrainingen.mockResolvedValue([training()]);
+    const provider = maakFakeProvider();
+    await verwerkInkomendeCall(payload, provider, {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    return oproepId;
+  }
+
+  it("TRAINER_TELEFONIE_ENABLED uit -> niet beschikbaar", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
+    const instructies = await verwerkOpnameToets(payload, maakFakeProvider(), oproepId, {});
+    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." }]);
+  });
+
+  it("spec §9: '#' -> stopt de opname en verwerkt hem, met de vaste afsluitende boodschap", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) });
+
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([
+      { soort: "stop_opname", poging: 0 },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren." },
+    ]);
+  });
+
+  it("spec §10: '*' -> stopt de HUIDIGE opname, behoudt dezelfde gekozen training, start een NIEUWE opname met de exacte herstarttekst", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const trainingIdVoor = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.gekozenMondayTrainingId;
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
+
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(instructies[0]).toEqual({ soort: "stop_opname", poging: 0 });
+    const tweede = instructies[1]!;
+    expect(tweede.soort).toBe("zeg_en_neem_op");
+    if (tweede.soort !== "zeg_en_neem_op") return;
+    expect(tweede.tekst).toBe("Geen probleem. We beginnen opnieuw. Spreek je verslag in na de piep en sluit af met een hekje.");
+    expect(tweede.poging).toBe(1);
+
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("opname_verwacht"); // blijft opname_verwacht — keert nooit terug naar trainingkeuze
+    expect(rij.gekozenMondayTrainingId).toBe(trainingIdVoor); // zelfde training
+    expect(rij.heropnamePogingen).toBe(1);
+  });
+
+  it("spec §11: meerdere '*'-herstarts na elkaar tellen op, tot de expliciete limiet", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
+
+    await verwerkOpnameToets(payload, provider, oproepId, {});
+    await verwerkOpnameToets(payload, provider, oproepId, {});
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.heropnamePogingen).toBe(3);
+    const laatste = instructies[1]!;
+    if (laatste.soort !== "zeg_en_neem_op") throw new Error("verwacht zeg_en_neem_op");
+    expect(laatste.poging).toBe(3);
+  });
+
+  it("spec §11: de limiet is bereikt (MAX_HEROPNAME_POGINGEN) -> een volgende '*' wordt genegeerd, de lopende opname loopt door, geen orphaned recording", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
+    await verwerkOpnameToets(payload, provider, oproepId, {});
+    await verwerkOpnameToets(payload, provider, oproepId, {});
+    await verwerkOpnameToets(payload, provider, oproepId, {});
+    const rijNaDrie = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rijNaDrie.heropnamePogingen).toBe(3);
+
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([]);
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.heropnamePogingen).toBe(3); // ongewijzigd — geen 4e poging gestart
+    expect(rij.status).toBe("opname_verwacht"); // de lopende (3e) opname loopt gewoon door
+  });
+
+  it("een ongeldig/onverwacht digit -> geen actie, opname loopt door", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "5" }) });
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+    expect(instructies).toEqual([]);
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("opname_verwacht");
+  });
+
+  it("geen digit (timeout op de opname_toets-gather) -> geen actie", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: null }) });
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+    expect(instructies).toEqual([]);
+  });
+
+  it("een oproep die niet (meer) op een opname wacht (bv. al concept_klaar) -> stil genegeerd, geen fout, geen statuswijziging", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    rij.status = "concept_klaar";
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) });
+
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([]);
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("concept_klaar");
   });
 });
 
@@ -479,7 +787,7 @@ describe("verwerkOpnameStatus", () => {
   it("scenario 10: mislukte/lege opname -> mislukt met foutcode opname_mislukt, geen transcriptiepoging", async () => {
     const oproepId = await oproepKlaarVoorOpname();
     const provider = maakFakeProvider({
-      ontleedOpnameStatus: () => ({ providerCallId: "CA1", providerRecordingId: "RE1", status: "mislukt", duurSeconden: null, ophaalReferentie: null }),
+      ontleedOpnameStatus: () => ({ providerCallId: "CA1", providerRecordingId: "RE1", status: "mislukt", duurSeconden: null, ophaalReferentie: null, clientState: null }),
     });
     await verwerkOpnameStatus(payload, provider, oproepId, {});
     expect(mockTranscribeAudio).not.toHaveBeenCalled();

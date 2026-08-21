@@ -139,19 +139,57 @@ export async function zetMislukt(
   });
 }
 
+export interface OpgeslagenKandidaat {
+  id: string;
+  naam: string;
+  schoolNaam: string;
+  datum: string | null;
+}
+
+/** Welke menu-laag momenteel is aangeboden (spec §1-§5) — vandaag altijd eerst, ouder uitsluitend bereikbaar via "nee"/het escapecijfer. */
+export type KandidatenFase = "vandaag" | "ouder";
+
+export interface OpgeslagenKandidatenState {
+  fase: KandidatenFase;
+  kandidaten: OpgeslagenKandidaat[];
+}
+
 /**
  * Slaat de aan de trainer voorgelegde kandidaten op VÓÓR diens keuze bekend
  * is (status blijft "trainer_herkend") — de kies-training-webhook krijgt van
- * Twilio uitsluitend de ingedrukte cijfer(s) terug, geen kopie van de
+ * de provider uitsluitend de ingedrukte cijfer(s) terug, geen kopie van de
  * kandidatenlijst, dus die moet hier al staan om de keuze straks tegen te
  * kunnen valideren.
+ *
+ * `fase` (2026-08-26, trainertelefonie V1-afronding, spec §1-§5) — naast de
+ * kandidatenlijst zelf ook WELKE laag (vandaag/ouder) is aangeboden: dezelfde
+ * cijfers betekenen iets anders per laag (bv. cijfer "2" is "nee, ga naar
+ * oudere trainingen" bij fase="vandaag" met 1 kandidaat, maar "nee, ik zie
+ * geen trainingen meer" bij fase="ouder" met 1 kandidaat) — gesprek.ts se
+ * verwerkTrainingKeuze kan dit onderscheid niet uit de kandidatenlijst alleen
+ * afleiden.
  */
-export async function zetKandidatenAangeboden(
-  payload: Payload,
-  oproepId: number,
-  kandidaten: { id: string; naam: string; schoolNaam: string; datum: string | null }[]
-): Promise<TrainerTelefonieOproepen> {
-  return schrijfOproepVelden(payload, oproepId, { kandidaat_trainingen: JSON.stringify(kandidaten) });
+export async function zetKandidatenAangeboden(payload: Payload, oproepId: number, fase: KandidatenFase, kandidaten: OpgeslagenKandidaat[]): Promise<TrainerTelefonieOproepen> {
+  const state: OpgeslagenKandidatenState = { fase, kandidaten };
+  return schrijfOproepVelden(payload, oproepId, { kandidaat_trainingen: JSON.stringify(state) });
+}
+
+/**
+ * Veilig, defensief ontleden van het kandidaat_trainingen-JSON-veld
+ * (verwerkTrainingKeuze se enige lezer) — valt terug op fase="vandaag" met
+ * een lege lijst bij ontbrekende/onherkenbare/verouderde data (bv. een oude
+ * rij van vóór deze uitbreiding, die nog de kale-array-vorm had) i.p.v. te
+ * crashen; een lege kandidatenlijst leidt vanzelf tot de bestaande
+ * "geen geldige keuze"-afwijzing in verwerkTrainingKeuze, nooit een 500.
+ */
+export function ontleedOpgeslagenKandidaten(ruw: unknown): OpgeslagenKandidatenState {
+  if (ruw && typeof ruw === "object" && !Array.isArray(ruw) && "kandidaten" in ruw) {
+    const state = ruw as { fase?: unknown; kandidaten?: unknown };
+    if (Array.isArray(state.kandidaten)) {
+      return { fase: state.fase === "ouder" ? "ouder" : "vandaag", kandidaten: state.kandidaten as OpgeslagenKandidaat[] };
+    }
+  }
+  return { fase: "vandaag", kandidaten: [] };
 }
 
 export async function zetTrainingGekozen(
@@ -177,8 +215,35 @@ export async function zetTrainingGekozen(
   });
 }
 
-export async function zetOpnameVerwacht(payload: Payload, oproepId: number): Promise<TrainerTelefonieOproepen> {
-  return schrijfOproepVelden(payload, oproepId, { status: "opname_verwacht" });
+/**
+ * `poging` (2026-08-26, trainertelefonie V1-afronding, spec §10/§11) — het
+ * hoeveelste opnameattempt dit is: 0 bij de EERSTE keer (rechtstreeks vanuit
+ * verwerkTrainingKeuze), hoger na elke '*'-herstart (verwerkOpnameToets in
+ * gesprek.ts roept dit dan opnieuw aan, status blijft 'opname_verwacht' —
+ * functioneel identiek aan de eerste keer, dus geen aparte status nodig,
+ * zelfde precedent als transcriptiePogingen hieronder: een teller, geen
+ * eigen statuswaarde). heropname_pogingen is tegelijk de admin-
+ * zichtbaarheidseis (spec §17 "opnieuw inspreken" moet zichtbaar zijn) én de
+ * waarde die telnyx-provider.ts als client_state meegeeft op record_start,
+ * zodat een later, inmiddels afgewezen opname-webhook herkenbaar is
+ * (gesprek.ts se verwerkOpnameStatus).
+ */
+export async function zetOpnameVerwacht(payload: Payload, oproepId: number, poging: number = 0): Promise<TrainerTelefonieOproepen> {
+  return schrijfOproepVelden(payload, oproepId, { status: "opname_verwacht", heropname_pogingen: poging });
+}
+
+/**
+ * Spec §7 (2026-08-26) — de "verliezende" oproep in een race tussen twee
+ * gelijktijdige gesprekken die dezelfde training claimen: GEEN technische
+ * fout (dus bewust een eigen status, niet 'mislukt'/foutcode — spec §17
+ * "houd 'verslag bestaat al' gescheiden van technische 'transcriptie
+ * mislukt'"). `bestaandVerslagId` is uitsluitend ter admin-diagnostiek (welk
+ * verslag won de race) — koppelt NOOIT deze oproep als eigenaar van dat
+ * verslag (training-verslagen.telefonieOproep blijft gezet op de WINNENDE
+ * oproep, hier ongewijzigd).
+ */
+export async function zetVerslagBestaatAl(payload: Payload, oproepId: number, bestaandVerslagId: number): Promise<TrainerTelefonieOproepen> {
+  return schrijfOproepVelden(payload, oproepId, { status: "verslag_bestaat_al", verslag_id: bestaandVerslagId, afgerond_op: new Date().toISOString() });
 }
 
 /**

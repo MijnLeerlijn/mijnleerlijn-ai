@@ -44,6 +44,19 @@ export interface OpnameStatusGegevens {
   duurSeconden: number | null;
   /** Alleen aanwezig bij status "voltooid" — een providerspecifieke referentie, NOOIT een kale publieke URL (spec §9: "geen opname-URL publiek toegankelijk"). Uitsluitend te gebruiken via haalOpnameOp() hieronder. */
   ophaalReferentie: string | null;
+  /**
+   * Trainertelefonie V1-afronding (2026-08-26, spec §10/§12/§18) — de
+   * client_state die bij het BIJBEHORENDE record_start-commando is
+   * meegegeven (bij Telnyx letterlijk teruggegeven op elk vervolg-webhook,
+   * zie telnyx-provider.ts). Draagt bij Telnyx de heropnamePogingen-waarde
+   * van het moment van opnemen, zodat gesprek.ts kan vaststellen of dit
+   * event bij de HUIDIGE (geaccepteerde) opnamepoging hoort, of bij een
+   * inmiddels via '*' AFGEWEZEN eerdere poging (die mag nooit alsnog
+   * verwerkt worden — spec §12/§18, "een expliciet afgewezen opname mag
+   * nooit later alsnog verwerkt worden"). Null als de provider geen
+   * client_state teruggaf (bv. een oud/ongebruikelijk event).
+   */
+  clientState: string | null;
 }
 
 /**
@@ -63,8 +76,32 @@ export type VoiceInstructie =
       statusCallbackUrl: string;
       maxDuurSeconden: number;
       stilteTimeoutSeconden: number;
+      /** '#' — direct stoppen en verwerken (spec §9). */
       stopToets: string;
-    };
+      /** '*' — huidige opname afwijzen en opnieuw beginnen, ZELFDE gekozen training (spec §10). */
+      herstartToets: string;
+      /**
+       * Het hoeveelste opnameattempt dit is binnen dit gesprek (0 = de
+       * eerste opname, 1/2/... na elke '*'-herstart) — spec §10/§12/§18: de
+       * adapter gebruikt dit om zowel command_id (nooit onterecht
+       * gededupliceerd door Telnyx' eigen "zelfde command_id"-regel, zie
+       * telnyx-provider.ts se telnyxCommando) als client_state (om een
+       * afgewezen poging later herkenbaar te NEGEREN) uniek per poging te
+       * maken.
+       */
+      poging: number;
+    }
+  /**
+   * Stopt een lopende opname zonder verder iets te zeggen — spec §9 (vóór
+   * het afscheidsbericht) en spec §10 (vóór een '*'-herstart, zodat er nooit
+   * twee opnames tegelijk lopen op dezelfde call). Bij Twilio bestaat dit
+   * concept niet los van de opname-instructie zelf — daar dus een no-op,
+   * zelfde patroon als stopOpname()/beantwoordOproep() hieronder.
+   * `poging` = het attempt dat gestopt wordt (zelfde reden als hierboven:
+   * command_id moet per '*'-herstart uniek blijven, anders dedupliceert
+   * Telnyx' eigen "zelfde command_id"-regel elke volgende stop-poging weg).
+   */
+  | { soort: "stop_opname"; poging: number };
 
 /** Wat de webhookroute zelf als HTTP-antwoord aan de provider moet sturen — zie voerVoiceInstructiesUit. */
 export interface VoiceWebhookRespons {
@@ -127,15 +164,6 @@ export interface TelefonieProvider {
    * geldig is — zie telnyx-provider.ts.
    */
   beantwoordOproep(providerCallId: string): Promise<void>;
-
-  /**
-   * Een lopende opname vroegtijdig stoppen (bv. de beller drukt de
-   * stop-toets). Bij Twilio bestaat dit concept niet los van de opname-
-   * instructie zelf (finishOnKey zit al IN de <Record>-instructie) — daar dus
-   * een no-op. Bij Telnyx een apart "record_stop"-commando — zie
-   * telnyx-provider.ts.
-   */
-  stopOpname(providerCallId: string): Promise<void>;
 
   /** Providerauthenticatie geregeld door de adapter zelf (spec §9: "provider-authenticated downloads") — geeft de ruwe audiobytes terug, nooit een tussenliggende publieke URL. */
   haalOpnameOp(ophaalReferentie: string): Promise<ArrayBuffer>;

@@ -206,7 +206,7 @@ export async function structureerVerslag(
     overrideAccess: true,
     data: { trainerInvoer: begrensdeInvoer, definitieveTekst: voorstelTekst, aiGegenereerd: true },
   });
-  return { soort: "voorstel", verslag: bijgewerkt, structuur, voorstelTekst };
+  return { soort: "voorstel", verslag: bijgewerkt as VerslagRecord, structuur, voorstelTekst };
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +261,17 @@ export interface VerslagRecord {
    * reden om die typingcomplexiteit hier te importeren.
    */
   bron?: "portal" | "telefoon" | null;
+  /**
+   * Trainertelefonie V1-afronding (2026-08-26) — spec §7: race tussen twee
+   * gelijktijdige gesprekken die dezelfde training claimen mag nooit
+   * stilzwijgend overschrijven. upsertConcept() hieronder gebruikt dit veld
+   * om "hoort dit bestaande concept bij DEZE oproep (legitieme eigen
+   * retry/autosave) of bij een ANDERE oproep (race — nooit overschrijven)"
+   * te onderscheiden. Uitsluitend betrouwbaar bij depth:0 (anders een
+   * gepopuleerd object i.p.v. een kaal getal) — haalVerslagVoorTraining
+   * hieronder zet dit daarom nu expliciet.
+   */
+  telefonieOproep?: number | null;
 }
 
 /**
@@ -279,8 +290,12 @@ export async function haalVerslagVoorTraining(payload: Payload, trainer: AuthTra
     where: { and: [{ trainer: { equals: trainer.id } }, { mondayTrainingId: { equals: mondayTrainingId } }] },
     overrideAccess: true,
     limit: 1,
+    // depth:0 (2026-08-26) — telefonieOproep moet een kaal getal blijven,
+    // zie VerslagRecord se doc-comment bij dat veld; geen bestaande aanroeper
+    // hierboven las ooit een relatieveld via dit type, dus dit versmalt niets.
+    depth: 0,
   });
-  return resultaat.docs[0] ?? null;
+  return (resultaat.docs[0] as VerslagRecord | undefined) ?? null;
 }
 
 /** Gebatcht (spec §16/§17: dashboard/schooldetail tonen lijsten trainingen) — voorkomt N losse queries bij het renderen van een lijst. */
@@ -295,7 +310,19 @@ export async function haalVerslagenPerTraining(payload: Payload, trainer: AuthTr
   return new Map(resultaat.docs.map((rij) => [rij.mondayTrainingId, rij as VerslagRecord]));
 }
 
-export type VerslagConceptUitkomst = { soort: "niet_gevonden" } | { soort: "niet_bewerkbaar"; boodschap: string } | { soort: "ok"; verslag: VerslagRecord };
+export type VerslagConceptUitkomst =
+  | { soort: "niet_gevonden" }
+  | { soort: "niet_bewerkbaar"; boodschap: string }
+  | { soort: "ok"; verslag: VerslagRecord }
+  /**
+   * Trainertelefonie V1-afronding (2026-08-26, spec §7) — uitsluitend
+   * bereikbaar wanneer invoer.telefonieOproepId is meegegeven (dus nooit
+   * vanuit de portal, zie upsertConcept se doc-comment): een ANDER gesprek
+   * (of de portal) heeft deze training al vastgelegd. Nooit overschreven —
+   * de meegeleverde tekst van DEZE aanroep is genegeerd/verloren, precies
+   * zoals spec §7 vraagt ("nooit stilzwijgend overschrijven").
+   */
+  | { soort: "bestaat_al"; verslag: VerslagRecord };
 
 /**
  * Autosave/concept bewaren (spec §14) — vindt-of-maakt de conceptrij voor
@@ -357,6 +384,15 @@ export async function upsertConcept(
 
   const bestaand = await haalVerslagVoorTraining(payload, trainer, trainingId);
   if (bestaand) {
+    // Spec §7 — race-bescherming, UITSLUITEND op het telefoniepad (portal-
+    // autosave geeft telefonieOproepId nooit mee, zie deze functie se eigen
+    // doc-comment hierboven): een bestaande rij die bij een ANDERE oproep
+    // hoort (of via de portal ontstond) wordt nooit overschreven, ongeacht
+    // status — ook niet als hij toevallig nog "concept" is (dat zou anders
+    // exact de stilzwijgende overschrijving zijn die spec §7 verbiedt).
+    if (invoer.telefonieOproepId !== undefined && bestaand.telefonieOproep !== invoer.telefonieOproepId) {
+      return { soort: "bestaat_al", verslag: bestaand };
+    }
     if (bestaand.status !== "concept") return { soort: "ok", verslag: bestaand };
     const bijgewerkt = await payload.update({
       collection: "training-verslagen",
@@ -364,7 +400,7 @@ export async function upsertConcept(
       overrideAccess: true,
       data: { trainerInvoer, definitieveTekst, schoolNaam, trainingNaam },
     });
-    return { soort: "ok", verslag: bijgewerkt };
+    return { soort: "ok", verslag: bijgewerkt as VerslagRecord };
   }
 
   try {
@@ -392,10 +428,19 @@ export async function upsertConcept(
         bron: bron ?? "portal",
       },
     });
-    return { soort: "ok", verslag: nieuw };
+    return { soort: "ok", verslag: nieuw as VerslagRecord };
   } catch {
+    // Spec §7 — DE daadwerkelijke race (twee bijna-gelijktijdige eerste
+    // aanmaakpogingen voor dezelfde [trainer, mondayTrainingId]): de
+    // unique-constraint-violation hierboven is de enige plek waar Postgres
+    // dit onvoorwaardelijk atomisch beslecht (zie payload/collections/
+    // TrainingVerslagen.ts se unique index) — de verliezer komt hier terecht
+    // en moet dezelfde "nooit overschrijven"-regel toepassen als hierboven.
     const herhaald = await haalVerslagVoorTraining(payload, trainer, trainingId);
     if (!herhaald) throw new Error("Concept aanmaken mislukt en geen bestaande rij gevonden bij herstelpoging.");
+    if (invoer.telefonieOproepId !== undefined && herhaald.telefonieOproep !== invoer.telefonieOproepId) {
+      return { soort: "bestaat_al", verslag: herhaald };
+    }
     if (herhaald.status !== "concept") return { soort: "ok", verslag: herhaald };
     const bijgewerkt = await payload.update({
       collection: "training-verslagen",
@@ -403,7 +448,7 @@ export async function upsertConcept(
       overrideAccess: true,
       data: { trainerInvoer, definitieveTekst, schoolNaam, trainingNaam },
     });
-    return { soort: "ok", verslag: bijgewerkt };
+    return { soort: "ok", verslag: bijgewerkt as VerslagRecord };
   }
 }
 

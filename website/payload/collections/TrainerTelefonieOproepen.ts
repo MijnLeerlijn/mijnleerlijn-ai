@@ -29,7 +29,19 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
     // (was al wel op de rij aanwezig, maar niet in de standaardlijst): "in
     // het overzicht wil ik zien... foutcode/foutmelding als er iets misgaat...
     // of er uiteindelijk een conceptverslag is aangemaakt".
-    defaultColumns: ["trainer", "ontvangenOp", "gekozenSchoolNaam", "gekozenTrainingNaam", "status", "transcriptiePogingen", "foutcode", "foutmelding", "opnameVerwijderdOp", "verslag"],
+    defaultColumns: [
+      "trainer",
+      "ontvangenOp",
+      "gekozenSchoolNaam",
+      "gekozenTrainingNaam",
+      "status",
+      "heropnamePogingen",
+      "transcriptiePogingen",
+      "foutcode",
+      "foutmelding",
+      "opnameVerwijderdOp",
+      "verslag",
+    ],
     group: "Basis — Technisch beheer",
     description:
       "Call-state en diagnostiek voor telefonisch ingesproken trainingsverslagen (Ronde 3.5). Bevat nooit de volledige transcriptietekst of audio — die staat (indien geslaagd) in het gekoppelde trainingsverslag. Nooit rechtstreeks bewerken.",
@@ -88,6 +100,12 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
           value: "transcriptie_mislukt_herstelbaar",
         },
         { label: "Concept klaar", value: "concept_klaar" },
+        // V1-afronding (2026-08-26, spec §7/§17) — expliciet GEEN technische
+        // fout: een ANDER gesprek (of de portal) had deze training al vast.
+        // Bewust een eigen status i.p.v. foutcode="transcriptie_mislukt" of
+        // status="mislukt" — zie het opleverrapport voor de volledige
+        // race-afhandeling (lib/trainers/verslag.ts se upsertConcept).
+        { label: "Verslag bestaat al (geen technische fout)", value: "verslag_bestaat_al" },
         { label: "Mislukt", value: "mislukt" },
       ],
     },
@@ -165,6 +183,21 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
       defaultValue: 0,
       label: "Transcriptiepogingen",
       admin: { description: "Aantal keer dat ophalen+transcriberen geprobeerd is (initiële poging + automatische retries). Begrensd, zie MAX_TRANSCRIPTIE_POGINGEN in gesprek.ts." },
+    },
+    {
+      // V1-afronding (2026-08-26, spec §10/§11/§17) — hoe vaak de trainer de
+      // opname via '*' heeft afgewezen en opnieuw is begonnen ("opnieuw
+      // inspreken" uit spec §17 — bewust een teller, geen eigen status, zelfde
+      // precedent als transcriptiePogingen hierboven: functioneel blijft de
+      // oproep gewoon 'opname_verwacht'). Begrensd, zie MAX_HEROPNAME_POGINGEN
+      // in gesprek.ts. Ook de client_state-waarde die telnyx-provider.ts op
+      // elk record_start meegeeft, zodat een inmiddels afgewezen opname-
+      // webhook herkenbaar/negeerbaar is (spec §12/§18).
+      name: "heropnamePogingen",
+      type: "number",
+      defaultValue: 0,
+      label: "Heropnamepogingen (via *)",
+      admin: { description: "Aantal keer dat de trainer de opname via '*' heeft afgewezen en opnieuw is begonnen. Begrensd, zie MAX_HEROPNAME_POGINGEN in gesprek.ts." },
     },
     {
       name: "volgendeTranscriptiepoging",
