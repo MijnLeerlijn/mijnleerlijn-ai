@@ -391,13 +391,56 @@ describe("haalOpnameOp (spec §9: provider-geauthenticeerde download, geen publi
   // {code, title, description?, source?: {parameter, pointer}}, verpakt als
   // {errors:[...]}) veilig en begrensd uit, zodat een volgende 4xx zichzelf
   // direct diagnosticeert.
-  it("een 422 met Telnyx' eigen JSON:API-foutvorm -> de foutmelding bevat code/title/source.parameter, begrensd en zonder de rauwe responsbody klakkeloos over te nemen", async () => {
+  it("een 422 met Telnyx' eigen JSON:API-foutvorm (alle vijf velden gevuld) -> elk veld verschijnt EXPLICIET gelabeld in de foutmelding", async () => {
     const telnyxFoutBody = {
-      errors: [{ code: "10007", title: "Invalid query parameter value", detail: "The value provided for filter[call_leg_id] is not valid.", source: { parameter: "filter[call_leg_id]" } }],
+      errors: [
+        {
+          code: "10007",
+          title: "Invalid query parameter value",
+          description: "The value provided for filter[call_leg_id] is not valid.",
+          source: { parameter: "filter[call_leg_id]", pointer: "/data/attributes/filter" },
+        },
+      ],
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422, text: async () => JSON.stringify(telnyxFoutBody) }));
 
-    await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow(/HTTP 422[\s\S]*10007[\s\S]*filter\[call_leg_id\]/);
+    const foutmelding = await telnyxProvider()
+      .haalOpnameOp("cc_leg_1")
+      .catch((error: unknown) => (error instanceof Error ? error.message : String(error)));
+
+    expect(foutmelding).toContain("code=10007");
+    expect(foutmelding).toContain('title="Invalid query parameter value"');
+    expect(foutmelding).toContain('description="The value provided for filter[call_leg_id] is not valid."');
+    expect(foutmelding).toContain("source.parameter=filter[call_leg_id]");
+    expect(foutmelding).toContain("source.pointer=/data/attributes/filter");
+  });
+
+  // Live bevestigd (2026-08-25, oproep-ID 6, ná de eerste 422-fix): Telnyx'
+  // eigen respons had UITSLUITEND description gevuld ("is invalid") — code/
+  // title/source waren allemaal leeg. De oude parser gaf daardoor kaal "is
+  // invalid" terug, niet te herleiden tot welk veld dat was. Deze test
+  // reproduceert die exacte live situatie en bevestigt de fix: het veld
+  // verschijnt nu WEL gelabeld, en de afwezigheid van de andere velden is
+  // zelf ook geen gok meer (ze staan er simpelweg niet bij, i.p.v. een
+  // ambigue lege string ertussen).
+  it("een 422 met UITSLUITEND description gevuld (live oproep-ID 6: 'is invalid') -> de foutmelding toont description= gelabeld, niet kaal", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422, text: async () => JSON.stringify({ errors: [{ description: "is invalid" }] }) }));
+
+    const foutmelding = await telnyxProvider()
+      .haalOpnameOp("cc_leg_1")
+      .catch((error: unknown) => (error instanceof Error ? error.message : String(error)));
+
+    expect(foutmelding).toContain('description="is invalid"');
+    expect(foutmelding).not.toMatch(/HTTP 422 — is invalid$/); // niet meer de oude, ongelabelde vorm
+  });
+
+  it("meerdere foutitems in de errors-array -> alleen het eerste volledig getoond, met een expliciete '+N meer'-aanduiding (nooit stilzwijgend afgekapt)", async () => {
+    const telnyxFoutBody = {
+      errors: [{ code: "10007", title: "Invalid query parameter value" }, { code: "10008", title: "Another issue" }],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422, text: async () => JSON.stringify(telnyxFoutBody) }));
+
+    await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow(/code=10007[\s\S]*\(\+1 meer\)/);
   });
 
   it("de foutmelding bij een 4xx bevat nooit de Authorization-header/API-key en blijft begrensd, ook bij een extreem lange/onverwachte (niet-JSON) responsbody", async () => {

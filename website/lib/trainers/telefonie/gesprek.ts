@@ -483,6 +483,34 @@ async function verwerkTranscriptieMislukking(payload: Payload, provider: Telefon
  * dubbele callbacks"), en verwerkt daarna via DEZELFDE
  * verwerkTranscriptiepoging() als de webhook-route.
  */
+/**
+ * Claimt en verwerkt precies één onderhoudskandidaat — de gedeelde kern
+ * achter zowel de cron-onderhoudsronde (verwerkTelefonieOnderhoud) als een
+ * door een beheerder handmatig getriggerde retry (verwerkTelefonieHandmatigeRetry
+ * hieronder, 2026-08-25: admin-detailscherm, RetryTelefonieButton.tsx).
+ * Geëxtraheerd uit wat voorheen de lus-body van verwerkTelefonieOnderhoud
+ * was — GEEN gedragswijziging, uitsluitend herbruikbaar gemaakt zodat de
+ * beheerder-actie nooit een eigen/tweede claim-of-verwerklogica krijgt.
+ */
+async function claimEnVerwerkOnderhoudsKandidaat(payload: Payload, provider: TelefonieProvider, oproepId: number, vastgelopenVoorTijdstip: string): Promise<boolean> {
+  const gewonnen = await claimTranscriptieRetry(payload, oproepId, vastgelopenVoorTijdstip);
+  if (!gewonnen) return false; // verloren aan een gelijktijdige aanroep, of inmiddels elders afgerond — stil, geen fout
+
+  const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
+  if (!oproep || !oproep.trainer || !oproep.gekozenMondayTrainingId) {
+    await zetMislukt(payload, oproepId, "onbekende_fout", "Onderhoudsronde: geclaimde oproep zonder trainer/training.");
+    return true;
+  }
+  const trainer = await haalAuthTrainerVoorId(payload, oproep.trainer as number);
+  if (!trainer) {
+    await zetMislukt(payload, oproepId, "onbekende_fout", "Onderhoudsronde: trainer niet meer vindbaar.");
+    return true;
+  }
+
+  await verwerkTranscriptiepoging(payload, provider, oproep, trainer);
+  return true;
+}
+
 export async function verwerkTelefonieOnderhoud(payload: Payload, provider: TelefonieProvider): Promise<{ geclaimd: number }> {
   if (!telefonieIsActief()) return { geclaimd: 0 };
 
@@ -491,23 +519,58 @@ export async function verwerkTelefonieOnderhoud(payload: Payload, provider: Tele
 
   let geclaimd = 0;
   for (const oproepId of kandidaten) {
-    const gewonnen = await claimTranscriptieRetry(payload, oproepId, vastgelopenVoorTijdstip);
-    if (!gewonnen) continue; // verloren aan een gelijktijdige aanroep, of inmiddels elders afgerond — stil, geen fout
-
-    const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
-    if (!oproep || !oproep.trainer || !oproep.gekozenMondayTrainingId) {
-      await zetMislukt(payload, oproepId, "onbekende_fout", "Onderhoudsronde: geclaimde oproep zonder trainer/training.");
-      continue;
-    }
-    const trainer = await haalAuthTrainerVoorId(payload, oproep.trainer as number);
-    if (!trainer) {
-      await zetMislukt(payload, oproepId, "onbekende_fout", "Onderhoudsronde: trainer niet meer vindbaar.");
-      continue;
-    }
-
-    await verwerkTranscriptiepoging(payload, provider, oproep, trainer);
-    geclaimd += 1;
+    if (await claimEnVerwerkOnderhoudsKandidaat(payload, provider, oproepId, vastgelopenVoorTijdstip)) geclaimd += 1;
   }
 
   return { geclaimd };
+}
+
+export type HandmatigeRetryUitkomst = "geclaimd" | "niet_van_toepassing" | "nog_niet_zover";
+
+/**
+ * Admin-getriggerde retry (2026-08-25) voor PRECIES één oproep —
+ * RetryTelefonieButton.tsx op het telefonie-oproep-detailscherm in Payload
+ * Admin, via app/api/trainers/telefonie/oproepen/[id]/retry. Hergebruikt
+ * claimEnVerwerkOnderhoudsKandidaat (dus claimTranscriptieRetry) VOLLEDIG
+ * ONGEWIJZIGD — geen tweede/parallelle claim- of verwerklogica, dezelfde
+ * atomaire garantie als de cron-onderhoudsronde.
+ *
+ * Bewust beperkt tot uitsluitend de geplande-herstelretry-categorie
+ * (status='transcriptie_mislukt_herstelbaar', met een verstreken
+ * volgende_transcriptiepoging — de voorcontrole hieronder is een snelle,
+ * duidelijke UX-afwijzing; claimEnVerwerkOnderhoudsKandidaat herbevestigt
+ * de conditie zelf atomisch, dus geen verzwakking van de garantie). NIET de
+ * vastgelopen/crashherstel-categorie: die is bedoeld voor een écht
+ * gecrashte serverless-aanroep, en een beheerder die op een willekeurig
+ * moment op "probeer nu opnieuw" klikt zou anders een mogelijk nog
+ * daadwerkelijk lopende poging kunnen kruisen.
+ *
+ * Voor 'mislukt' (terminale rijen, pogingenbudget op of bewaartermijn
+ * verstreken) is BEWUST GEEN retrypad gebouwd — zie het opleverrapport voor
+ * wat daarvoor nodig zou zijn (unaniem: een aparte, expliciet-beheerder-
+ * geïnitieerde claimvariant + een besluit over het transcriptiePogingen-
+ * budget bij een handmatige retry + een garantie dat de audio bij Telnyx
+ * nog bestaat — bij een terminale rij is opnameVerwijderdOp vaak al gezet).
+ */
+export async function verwerkTelefonieHandmatigeRetry(payload: Payload, provider: TelefonieProvider, oproepId: number): Promise<HandmatigeRetryUitkomst> {
+  if (!telefonieIsActief()) return "niet_van_toepassing";
+
+  // disableErrors: true — anders dan de overige findByID-aanroepen in dit
+  // bestand (die pas ná een geslaagde claim lezen, dus de rij per definitie
+  // bestaat) kan dit ID hier een willekeurige, mogelijk niet-bestaande
+  // waarde zijn (rechtstreeks van de URL-parameter in de admin-route).
+  const oproep = (await payload.findByID({
+    collection: "trainer-telefonie-oproepen",
+    id: oproepId,
+    overrideAccess: true,
+    depth: 0,
+    disableErrors: true,
+  })) as unknown as TrainerTelefonieOproepen | null;
+  if (!oproep || oproep.status !== "transcriptie_mislukt_herstelbaar") return "niet_van_toepassing";
+  if (typeof oproep.volgendeTranscriptiepoging === "string" && oproep.volgendeTranscriptiepoging > new Date().toISOString()) {
+    return "nog_niet_zover";
+  }
+
+  const gewonnen = await claimEnVerwerkOnderhoudsKandidaat(payload, provider, oproepId, new Date(Date.now() - STUCK_TIMEOUT_MS).toISOString());
+  return gewonnen ? "geclaimd" : "niet_van_toepassing";
 }

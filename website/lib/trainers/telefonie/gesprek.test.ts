@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameAfgerond, verwerkOpnameStatus, verwerkTelefonieOnderhoud } from "./gesprek";
+import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameAfgerond, verwerkOpnameStatus, verwerkTelefonieOnderhoud, verwerkTelefonieHandmatigeRetry } from "./gesprek";
 import { claimOpnameVerwerking } from "./oproep-state";
 import { haalRecenteTrainingenVoorTelefonie, haalTrainingVoorMutatie, haalSchoolDetail, vandaagIsoAmsterdam } from "../monday-links";
 import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde, wijzigKolomWaardeJson, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
@@ -708,5 +708,131 @@ describe("verwerkOpnameStatus", () => {
     } as unknown as typeof payload;
 
     await expect(verwerkOpnameStatus(kapotPayload, maakFakeProvider(), oproepId, {})).rejects.toThrow("database tijdelijk onbereikbaar");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// verwerkTelefonieHandmatigeRetry — admin-getriggerde "probeer nu opnieuw"
+// (2026-08-25, admin-detailscherm, RetryTelefonieButton.tsx). Hergebruikt
+// dezelfde claimEnVerwerkOnderhoudsKandidaat als verwerkTelefonieOnderhoud
+// hierboven — deze tests bewijzen vooral de BEPERKING (alleen
+// transcriptie_mislukt_herstelbaar, nooit de vastgelopen-categorie) en de
+// zelfstandige idempotentie/statuscontrole, niet nogmaals de onderliggende
+// claim-atomiciteit (die heeft oproep-state.test.ts/oproep-state.real-postgres.test.ts
+// al).
+// ---------------------------------------------------------------------------
+
+describe("verwerkTelefonieHandmatigeRetry", () => {
+  async function oproepKlaarVoorOpname() {
+    mockHaalRecenteTrainingen.mockResolvedValue([training()]);
+    const provider = maakFakeProvider();
+    await verwerkInkomendeCall(payload, provider, {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    return oproepId;
+  }
+
+  async function oproepHerstelbaarMislukt(volgendePogingOffsetMs: number) {
+    const oproepId = await oproepKlaarVoorOpname();
+    mockTranscribeAudio.mockRejectedValueOnce(new Error("Whisper tijdelijk onbereikbaar"));
+    await verwerkOpnameStatus(payload, maakFakeProvider(), oproepId, {});
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("transcriptie_mislukt_herstelbaar"); // sanity check op de test-fixture zelf
+    rij.volgendeTranscriptiepoging = new Date(Date.now() + volgendePogingOffsetMs).toISOString();
+    return oproepId;
+  }
+
+  it("herstelbare rij met verstreken volgende-poging-tijdstip -> 'geclaimd', doorloopt exact hetzelfde verwerkingspad als de cron (concept_klaar + training-verslagen-rij)", async () => {
+    const oproepId = await oproepHerstelbaarMislukt(-1000);
+    mockTranscribeAudio.mockResolvedValue("Vandaag rekenen gedaan, fijne sfeer.");
+
+    const uitkomst = await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), oproepId);
+
+    expect(uitkomst).toBe("geclaimd");
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("concept_klaar");
+    expect(collection("training-verslagen")).toHaveLength(1);
+  });
+
+  it("herstelbare rij met een nog toekomstig geplande volgende-poging -> 'nog_niet_zover', geen enkele wijziging (geen bypass van de geplande wachttijd)", async () => {
+    const oproepId = await oproepHerstelbaarMislukt(10 * 60 * 1000);
+
+    const uitkomst = await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), oproepId);
+
+    expect(uitkomst).toBe("nog_niet_zover");
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("transcriptie_mislukt_herstelbaar"); // ongewijzigd
+    expect(mockTranscribeAudio).toHaveBeenCalledTimes(1); // alleen de oorspronkelijke, mislukte poging — geen nieuwe
+  });
+
+  it("een oproep die nog niet gefaald is (bv. 'opname_verwacht') -> 'niet_van_toepassing', geen wijziging", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const rijVoor = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rijVoor.status).toBe("opname_verwacht");
+
+    const uitkomst = await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), oproepId);
+
+    expect(uitkomst).toBe("niet_van_toepassing");
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("opname_verwacht");
+  });
+
+  it("een terminaal 'mislukte' oproep -> 'niet_van_toepassing' — bewust geen retrypad voor de terminale status (zie het opleverrapport)", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    rij.status = "mislukt";
+    rij.foutcode = "transcriptie_mislukt";
+    rij.opnameVerwijderdOp = new Date().toISOString();
+
+    const uitkomst = await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), oproepId);
+
+    expect(uitkomst).toBe("niet_van_toepassing");
+    expect(mockTranscribeAudio).not.toHaveBeenCalled();
+  });
+
+  // De vastgelopen/crashherstel-categorie (status IN opname_ontvangen/
+  // transcriptie_bezig + oud updatedAt) is BEWUST uitgesloten van het
+  // handmatige pad — zie verwerkTelefonieHandmatigeRetry se doc-comment.
+  // Deze test bewijst dat expliciet: een rij die de cron wél zou claimen,
+  // claimt de beheerderknop NIET.
+  it("een 'vastgelopen' rij (status='opname_ontvangen', oud updatedAt) -> 'niet_van_toepassing' via het handmatige pad, ook al zou de cron 'm wel claimen", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const gewonnen = await claimOpnameVerwerking(payload, oproepId, "RE1", "https://provider.example/recordings/RE1");
+    expect(gewonnen).toBe(true);
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("opname_ontvangen");
+    rij.updatedAt = new Date(Date.now() - 30 * 60 * 1000).toISOString(); // > STUCK_TIMEOUT_MS
+
+    const handmatig = await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), oproepId);
+    expect(handmatig).toBe("niet_van_toepassing");
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("opname_ontvangen"); // ongewijzigd
+
+    // Ter vergelijking, in dezelfde testcontext: de cron ZOU deze rij wel claimen.
+    const cronResultaat = await verwerkTelefonieOnderhoud(payload, maakFakeProvider());
+    expect(cronResultaat.geclaimd).toBe(1);
+  });
+
+  it("idempotent: een tweede aanroep op dezelfde, inmiddels al geclaimde rij -> 'niet_van_toepassing', geen dubbele verwerking/tweede concept", async () => {
+    const oproepId = await oproepHerstelbaarMislukt(-1000);
+    mockTranscribeAudio.mockResolvedValue("Vandaag rekenen gedaan, fijne sfeer.");
+
+    expect(await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), oproepId)).toBe("geclaimd");
+    expect(await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), oproepId)).toBe("niet_van_toepassing");
+
+    expect(collection("training-verslagen")).toHaveLength(1);
+    expect(mockTranscribeAudio).toHaveBeenCalledTimes(2); // 1e mislukte poging + 1 geslaagde handmatige retry, nooit een derde
+  });
+
+  it("TRAINER_TELEFONIE_ENABLED uit -> 'niet_van_toepassing', geen verwerking", async () => {
+    const oproepId = await oproepHerstelbaarMislukt(-1000);
+    vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
+
+    const uitkomst = await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), oproepId);
+
+    expect(uitkomst).toBe("niet_van_toepassing");
+  });
+
+  it("een niet-bestaand oproep-ID -> 'niet_van_toepassing', geen fout", async () => {
+    const uitkomst = await verwerkTelefonieHandmatigeRetry(payload, maakFakeProvider(), 999999);
+    expect(uitkomst).toBe("niet_van_toepassing");
   });
 });

@@ -32,16 +32,19 @@ function maakEditorPermissions(): SanitizedPermissions {
       target[item.permission.slug] = { read: true };
     }
   }
-  // De acht bevestigd adminOnly-items (zie payload/access/roles.ts se
+  // De negen bevestigd adminOnly-items (zie payload/access/roles.ts se
   // adminOnly-gebruik) krijgen hier GEEN leestoegang — zelfde als een echte
   // redacteur vandaag al niet in Payload's eigen automatisch gegenereerde
-  // nav zou zien.
+  // nav zou zien. trainer-telefonie-oproepen (2026-08-25, admin-zichtbaarheid)
+  // toegevoegd: read: adminOnly op die collectie, zie
+  // payload/collections/TrainerTelefonieOproepen.ts.
   for (const slug of [
     "knowledge-sources",
     "knowledge-drafts",
     "support-threads",
     "assistant-eval-questions",
     "assistant-eval-runs",
+    "trainer-telefonie-oproepen",
   ]) {
     delete collections[slug];
   }
@@ -104,6 +107,11 @@ describe("nav-groups", () => {
     expect(alleZichtbareLabels).not.toContain("Gmail-koppeling");
     expect(alleZichtbareLabels).not.toContain("Knowledge Search");
     expect(alleZichtbareLabels).not.toContain("AI-evaluatie");
+    // Telefoniebeheer (2026-08-25): read: adminOnly op de onderliggende
+    // collectie (TrainerTelefonieOproepen.ts) — een redacteur mag dit item
+    // dus niet zien, exact zoals de opdracht vereist ("moet niet ineens voor
+    // onbevoegde gebruikers zichtbaar worden").
+    expect(alleZichtbareLabels).not.toContain("Telefonie");
 
     // Custom views (geen permission-veld) blijven altijd zichtbaar.
     expect(alleZichtbareLabels).toContain("Varianten");
@@ -112,6 +120,25 @@ describe("nav-groups", () => {
     // Gewone, niet-adminOnly collecties blijven ook zichtbaar.
     expect(alleZichtbareLabels).toContain("Artikelen");
     expect(alleZichtbareLabels).toContain("AI-gesprekken");
+  });
+
+  it("getVisibleNavGroups: een admin ziet het Telefonie-item, in de 'algemeen'-groep, met een geldige permission-koppeling naar de bestaande collectie", () => {
+    const zichtbaar = getVisibleNavGroups(maakVolledigeToegang());
+    const algemeen = zichtbaar.find((g) => g.id === "algemeen");
+    const telefonie = algemeen?.items.find((i) => i.label === "Telefonie");
+    expect(telefonie).toBeDefined();
+    expect(telefonie?.href).toBe("/admin/collections/trainer-telefonie-oproepen");
+    expect(telefonie?.permission).toEqual({ type: "collection", slug: "trainer-telefonie-oproepen" });
+  });
+
+  it("findNavItemByPath: het Telefonie-item matcht zowel de lijst zelf als een individueel oproep-detailscherm", () => {
+    const lijst = findNavItemByPath("/admin/collections/trainer-telefonie-oproepen");
+    expect(lijst?.item.label).toBe("Telefonie");
+    expect(lijst?.exact).toBe(true);
+
+    const detail = findNavItemByPath("/admin/collections/trainer-telefonie-oproepen/6");
+    expect(detail?.item.label).toBe("Telefonie");
+    expect(detail?.exact).toBe(false);
   });
 
   it("getVisibleNavGroups: een groep waarvan het enige item geen permission-veld heeft (custom view) blijft altijd zichtbaar, ook zonder enige toegang", () => {

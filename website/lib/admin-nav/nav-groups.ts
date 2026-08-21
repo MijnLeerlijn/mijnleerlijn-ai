@@ -23,6 +23,7 @@ import {
   Megaphone,
   MessageSquare,
   PenTool,
+  Phone,
   School,
   Search,
   Settings,
@@ -116,6 +117,17 @@ export const NAV_GROUPS: NavGroupDef[] = [
       { label: "Downloadcategorieën", href: "/admin/download-categorieen", icon: FolderTree, color: "orange", description: "Indeling van de downloads-bibliotheek." },
       { label: "Gebruikers", href: "/admin/collections/users", icon: Users, color: "green", description: "Beheerders en redacteuren.", permission: { type: "collection", slug: "users" } },
       { label: "Trainers", href: "/admin/collections/trainer-accounts", icon: GraduationCap, color: "teal", description: "Accounts voor trainers.mijnleerlijn.chat.", permission: { type: "collection", slug: "trainer-accounts" } },
+      // Telefoniebeheer (2026-08-25) — bestond al als collectie
+      // (trainer-telefonie-oproepen, Ronde 3.5/Telnyx-migratie) maar had nog
+      // geen menu-item: admin.group "Basis — Technisch beheer" wordt via
+      // admin-shell.css verborgen (zie de toelichting bovenaan dit bestand),
+      // dus zonder een item hier was de collectie voor een beheerder
+      // onbereikbaar ondanks dat de data al werd opgeslagen. Zelfde
+      // permission-patroon als "Trainers" hierboven — automatisch verborgen
+      // voor een niet-admin (zie isNavItemVisible), geen aparte rolcontrole
+      // nodig. Opent Payload's eigen, al bestaande collectielijst/-detailscherm
+      // — geen tweede beheeromgeving.
+      { label: "Telefonie", href: "/admin/collections/trainer-telefonie-oproepen", icon: Phone, color: "teal", description: "Telefonisch ingesproken trainingsverslagen — status, foutdiagnose, transcriptiepogingen.", permission: { type: "collection", slug: "trainer-telefonie-oproepen" } },
       { label: "Helpdesk Instellingen", href: "/admin/globals/helpdesk-instellingen", icon: Settings, color: "slate", description: "Algemene instellingen van de Helpdesk.", permission: { type: "global", slug: "helpdesk-instellingen" } },
     ],
   },

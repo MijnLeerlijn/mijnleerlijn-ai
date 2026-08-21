@@ -25,7 +25,11 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
   labels: { singular: "Telefonie-oproep", plural: "Telefonie-oproepen" },
   admin: {
     useAsTitle: "providerCallId",
-    defaultColumns: ["trainer", "status", "gekozenSchoolNaam", "gekozenTrainingNaam", "ontvangenOp", "foutcode", "transcriptiePogingen", "opnameVerwijderdOp"],
+    // Admin-zichtbaarheid (2026-08-25) — uitgebreid met foutmelding + verslag
+    // (was al wel op de rij aanwezig, maar niet in de standaardlijst): "in
+    // het overzicht wil ik zien... foutcode/foutmelding als er iets misgaat...
+    // of er uiteindelijk een conceptverslag is aangemaakt".
+    defaultColumns: ["trainer", "ontvangenOp", "gekozenSchoolNaam", "gekozenTrainingNaam", "status", "transcriptiePogingen", "foutcode", "foutmelding", "opnameVerwijderdOp", "verslag"],
     group: "Basis — Technisch beheer",
     description:
       "Call-state en diagnostiek voor telefonisch ingesproken trainingsverslagen (Ronde 3.5). Bevat nooit de volledige transcriptietekst of audio — die staat (indien geslaagd) in het gekoppelde trainingsverslag. Nooit rechtstreeks bewerken.",
@@ -107,6 +111,22 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
       ],
     },
     { name: "foutmelding", type: "text", label: "Foutmelding (technisch, alleen voor beheer)" },
+    {
+      // Admin-zichtbaarheid (2026-08-25) — zie
+      // payload/components/RetryTelefonieButton.tsx en
+      // lib/trainers/telefonie/gesprek.ts se verwerkTelefonieHandmatigeRetry.
+      // Puur presentationeel `type: "ui"`-veld (zelfde patroon als
+      // GmailConnection.ts se syncAction/analyzeAction), geen eigen
+      // dataveld/migratie nodig.
+      name: "retryAction",
+      type: "ui",
+      label: "Handmatige retry",
+      admin: {
+        components: {
+          Field: "@/payload/components/RetryTelefonieButton#RetryTelefonieButton",
+        },
+      },
+    },
     {
       name: "kandidaatTrainingen",
       type: "json",

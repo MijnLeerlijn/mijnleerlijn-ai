@@ -262,6 +262,24 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
 // {errors:[...]}）veilig en begrensd uitleest, zodat een volgende 4xx
 // zichzelf direct diagnosticeert i.p.v. alleen "HTTP 422" te tonen.
 //
+// Vervolg (2026-08-25, live oproep-ID 6, ná deze fix): de foutmelding werd
+// "HTTP 422 — is invalid" — de parser werkte dus deels, maar gaf een kale,
+// ongelabelde tekstflard terug. Root cause: de vorige versie voegde
+// code/title(??detail??description)/source.parameter stilzwijgend samen met
+// `.filter(Boolean).join(...)` — als alleen description gevuld was (hier het
+// geval) verdween elk spoor van WELK veld dat was, en "detail" was boven-
+// dien een zelf verzonnen veldnaam (Telnyx' eigen Shared.APIError-type kent
+// uitsluitend description, geen detail — hierboven al correct
+// gedocumenteerd, maar niet consistent doorgevoerd in de implementatie).
+// Fix: elk van de vijf officiële velden (code, title, description,
+// source.parameter, source.pointer) krijgt nu een EIGEN, altijd zichtbaar
+// label en verschijnt alleen als het daadwerkelijk gevuld is — "description=
+// is invalid" i.p.v. kaal "is invalid" maakt meteen duidelijk dat code/
+// title/source op déze respons leeg waren, in plaats van dat te laten
+// raden. De daadwerkelijke /v2/recordings-aanroep zelf blijft ONGEWIJZIGD
+// (geen bewijs voor de oorzaak van de 422 zelf, dus geen wijziging daaraan,
+// zoals gevraagd) — dit is uitsluitend een verbetering van de foutextractie.
+//
 // Bewust NIET toegepast op telnyxCommando() (POST .../actions/*, bv.
 // speak/gather_using_speak): die foutmelding is elders in dit bestand al
 // EXPLICIET zonder bodytekst gehouden, omdat een 422 daar (bv. op een
@@ -275,9 +293,19 @@ const TELNYX_FOUTDETAIL_MAX_LENGTE = 300;
 interface TelnyxAPIFoutItem {
   code?: string;
   title?: string;
-  detail?: string;
   description?: string;
   source?: { parameter?: string; pointer?: string };
+}
+
+/** Labelt elk van Telnyx' vijf gedocumenteerde foutvelden afzonderlijk — nooit stilzwijgend samenvoegen (zie toelichting hierboven, live bevestigd bij oproep-ID 6). */
+function labelTelnyxFoutItem(fout: TelnyxAPIFoutItem): string {
+  const labels: string[] = [];
+  if (fout.code) labels.push(`code=${fout.code}`);
+  if (fout.title) labels.push(`title="${fout.title}"`);
+  if (fout.description) labels.push(`description="${fout.description}"`);
+  if (fout.source?.parameter) labels.push(`source.parameter=${fout.source.parameter}`);
+  if (fout.source?.pointer) labels.push(`source.pointer=${fout.source.pointer}`);
+  return labels.length > 0 ? labels.join(" ") : "(foutitem zonder herkende velden)";
 }
 
 async function telnyxFoutdetail(response: Response): Promise<string> {
@@ -290,11 +318,9 @@ async function telnyxFoutdetail(response: Response): Promise<string> {
   try {
     const body = JSON.parse(ruweTekst) as { errors?: TelnyxAPIFoutItem[] };
     if (Array.isArray(body.errors) && body.errors.length > 0) {
-      const samenvatting = body.errors
-        .map((fout) => [fout.code, fout.title ?? fout.detail ?? fout.description, fout.source?.parameter ? `parameter=${fout.source.parameter}` : null].filter(Boolean).join(" | "))
-        .filter(Boolean)
-        .join("; ");
-      if (samenvatting) return samenvatting.slice(0, TELNYX_FOUTDETAIL_MAX_LENGTE);
+      const eerste = labelTelnyxFoutItem(body.errors[0]!);
+      const extra = body.errors.length > 1 ? ` (+${body.errors.length - 1} meer)` : "";
+      return `${eerste}${extra}`.slice(0, TELNYX_FOUTDETAIL_MAX_LENGTE);
     }
   } catch {
     // Geen (geldige) JSON -> val hieronder terug op de rauwe (begrensde) tekst.
