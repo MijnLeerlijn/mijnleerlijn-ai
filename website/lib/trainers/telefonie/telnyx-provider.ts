@@ -135,7 +135,23 @@ async function telnyxCommando(callControlId: string, actie: string, body: Record
   const response = await fetch(`${TELNYX_API_BASIS}/calls/${encodeURIComponent(callControlId)}/actions/${actie}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey()}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    // command_id (2026-08-25, na een live testoproep) — Telnyx' eigen
+    // commando-deduplicatie: "Telnyx will ignore any command with the same
+    // command_id for the same call_control_id" (letterlijk bevestigd via
+    // Telnyx' SDK-broncode, op ELK actie-Params-type). Deterministisch per
+    // actiesoort+gesprek — BEWUST NIET per aanroep uniek (bv. geen
+    // tijdstip/random deel), juist om een herhaalde aanroep vanuit ONS
+    // (bv. Telnyx' eigen webhook-redelivery bij een trage respons —
+    // verwerkTrainingKeuze doet zelf een synchrone Monday-leesaanroep vlak
+    // vóór het commando dat hieruit volgt) te laten samenvallen met de
+    // oorspronkelijke, en dus door Telnyx zelf te laten negeren i.p.v. een
+    // tweede, echte actie uit te voeren. Veilig voor dit gesloten
+    // gespreksscript (gesprek.ts): elke actiesoort komt hooguit één keer
+    // legitiem voor per gesprek (zie de toelichting bij haalOpnames/
+    // kiesOpname hieronder). Dit voorkomt de klasse fout die live is
+    // waargenomen: twee losse opnameresources bij Telnyx voor hetzelfde
+    // gesprek (bevestigd via Telnyx Reporting → Call Recordings).
+    body: JSON.stringify({ ...body, command_id: `${actie}:${callControlId}` }),
   });
   if (!response.ok) {
     // Statuscode + actienaam in de foutmelding (geen bodytekst — kan
@@ -207,33 +223,85 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
 interface TelnyxOpnameResource {
   id?: string;
   download_urls?: { mp3?: string | null; wav?: string | null };
+  recording_started_at?: string;
+  recording_ended_at?: string;
+}
+
+function opnameDuurMs(opname: TelnyxOpnameResource): number {
+  if (!opname.recording_started_at || !opname.recording_ended_at) return 0;
+  const ms = new Date(opname.recording_ended_at).getTime() - new Date(opname.recording_started_at).getTime();
+  return Number.isFinite(ms) && ms >= 0 ? ms : 0;
 }
 
 /**
- * Zoekt de (enige) opname van dit gesprek op via call_leg_id — spec §9:
+ * Haalt ALLE opnames van dit gesprek op via call_leg_id — spec §9:
  * ophaalReferentie/providerRecordingId zijn bij Telnyx het call_leg_id zelf
  * (call.recording.saved bevat geen apart recording_id, zie de toelichting
- * bovenaan dit bestand), dus elke daadwerkelijke ophaal-/verwijderactie moet
- * eerst deze opzoekstap doen. Gescheiden foutmeldingen per stap (lege lijst
- * vs. ontbrekende downloadlink vs. HTTP-fout) — spec-eis "direct
- * diagnosticeren zonder onduidelijke 500's".
+ * bovenaan dit bestand). GEEN aanname over lijstvolgorde: de recordings-
+ * lijst-API (RecordingListParams in Telnyx' eigen SDK-broncode) documenteert
+ * geen sorteervolgorde, dus haalt hier bewust de volledige lijst op i.p.v.
+ * blind het eerste element te gebruiken — kiesOpname hieronder doet de
+ * daadwerkelijke, verantwoorde selectie.
  */
-async function haalMeestRecenteOpname(callLegId: string): Promise<TelnyxOpnameResource> {
+async function haalOpnames(callLegId: string): Promise<TelnyxOpnameResource[]> {
   const query = new URLSearchParams({ "filter[call_leg_id]": callLegId }).toString();
   const response = await fetch(`${TELNYX_API_BASIS}/recordings?${query}`, { headers: { Authorization: `Bearer ${apiKey()}` } });
   if (!response.ok) {
     throw new Error(`Opnamelijst ophalen bij Telnyx mislukt: HTTP ${response.status}`);
   }
   const body = (await response.json()) as { data?: TelnyxOpnameResource[] };
-  const opname = body.data?.[0];
-  if (!opname?.id) {
+  return (body.data ?? []).filter((opname) => opname.id);
+}
+
+/**
+ * Kiest deterministisch de juiste opname uit haalOpnames se resultaat — NOOIT
+ * blind "eerste" of "laatste" in de lijstvolgorde (die is niet
+ * gedocumenteerd/gegarandeerd).
+ *
+ * Live bevestigd (2026-08-25, na een echte testoproep, via Telnyx Reporting
+ * → Call Recordings): voor één testgesprek stonden twee losse
+ * opnameresources bij Telnyx. Meest aannemelijke oorzaak, afgeleid uit
+ * bevestigde broncodefeiten (niet zelf live geverifieerd via Vercel-logs —
+ * zie het opleverrapport): record_start werd vóór deze wijziging zonder
+ * command_id aangeroepen, dus zonder Telnyx' eigen deduplicatie (zie
+ * telnyxCommando hierboven); verwerkTrainingKeuze (gesprek.ts, ONGEWIJZIGD)
+ * doet vlak vóór de zeg_en_neem_op-instructie een synchrone, live
+ * Monday.com-leesaanroep (haalRecenteTrainingenVoorTelefonie) — een reële
+ * kandidaat om de webhookrespons trager te maken dan Telnyx' eigen
+ * afleverwachting, wat een herhaalde aflevering van hetzelfde
+ * call.gather.ended-event (en dus een tweede, ongededupliceerde
+ * record_start) plausibel maakt. telnyxCommando se nieuwe command_id
+ * voorkomt dit voortaan bij de bron. Deze functie blijft er daarnaast
+ * defensief tegen (bv. voor al vóór die fix ontstane dubbele opnames, zoals
+ * de testoproep): bij meer dan één kandidaat wordt expliciet gesorteerd op
+ * de LANGSTE opnameduur (recording_ended_at minus recording_started_at) —
+ * bij twee vrijwel gelijktijdig gestarte dubbele opnames is duur een
+ * sterker, inhoudelijk onderbouwd signaal voor "de opname die het volledige
+ * verslag heeft vastgelegd" dan starttijd alleen — met recording_started_at
+ * (meest recent) als tiebreaker. Elk geval met meer dan één kandidaat wordt
+ * expliciet gelogd (uitsluitend id's/tijden/duur, nooit audio-inhoud, spec
+ * §9) zodat dit zichtbaar blijft.
+ */
+function kiesOpname(opnames: TelnyxOpnameResource[], callLegId: string): TelnyxOpnameResource {
+  if (opnames.length === 0) {
     // Kan structureel voorkomen zolang Telnyx de opname nog niet volledig
     // heeft verwerkt (call.recording.saved kan iets vóór de lijst-indexering
     // vuren) — de bestaande transcriptieretry (gate 1, ongewijzigd) probeert
     // dit vanzelf een volgende ronde opnieuw.
     throw new Error(`Geen opname gevonden bij Telnyx voor call_leg_id=${callLegId}.`);
   }
-  return opname;
+  if (opnames.length > 1) {
+    console.error(
+      `[telefonie/telnyx] meerdere opnames gevonden voor één gesprek (call_leg_id=${callLegId}): ${opnames
+        .map((opname) => `${opname.id}(duur=${opnameDuurMs(opname)}ms,start=${opname.recording_started_at ?? "onbekend"})`)
+        .join(", ")} — langste duur gekozen.`
+    );
+  }
+  return [...opnames].sort((a, b) => {
+    const duurVerschil = opnameDuurMs(b) - opnameDuurMs(a);
+    if (duurVerschil !== 0) return duurVerschil;
+    return (b.recording_started_at ?? "").localeCompare(a.recording_started_at ?? "");
+  })[0]!;
 }
 
 export function telnyxProvider(): TelefonieProvider {
@@ -315,7 +383,7 @@ export function telnyxProvider(): TelefonieProvider {
     },
 
     async haalOpnameOp(ophaalReferentie): Promise<ArrayBuffer> {
-      const opname = await haalMeestRecenteOpname(ophaalReferentie);
+      const opname = kiesOpname(await haalOpnames(ophaalReferentie), ophaalReferentie);
       const mp3Url = opname.download_urls?.mp3;
       if (!mp3Url) {
         throw new Error(`Opname ${opname.id} heeft geen mp3-downloadlink (download_urls.mp3 ontbreekt).`);
@@ -330,13 +398,33 @@ export function telnyxProvider(): TelefonieProvider {
     },
 
     async verwijderOpname(providerRecordingId): Promise<void> {
-      const opname = await haalMeestRecenteOpname(providerRecordingId);
-      const response = await fetch(`${TELNYX_API_BASIS}/recordings/${encodeURIComponent(opname.id!)}`, {
+      const opnames = await haalOpnames(providerRecordingId);
+      const primair = kiesOpname(opnames, providerRecordingId);
+      const response = await fetch(`${TELNYX_API_BASIS}/recordings/${encodeURIComponent(primair.id!)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${apiKey()}` },
       });
       if (!response.ok) {
-        throw new Error(`Opname ${opname.id} verwijderen bij Telnyx mislukt: HTTP ${response.status}`);
+        throw new Error(`Opname ${primair.id} verwijderen bij Telnyx mislukt: HTTP ${response.status}`);
+      }
+      // Spec §9/gate 1: nooit audio onbeperkt laten staan. Was er (bv. door
+      // een vóór de command_id-fix hierboven al ontstane dubbele opname,
+      // zie kiesOpname) meer dan één kandidaat, dan ook de overige(n)
+      // best-effort opruimen — een falende extra verwijdering blokkeert
+      // nooit de hierboven al geslaagde hoofdverwijdering (de aanroeper
+      // behandelt verwijderOpname zelf ook al als best-effort, zie
+      // gesprek.ts se verwerkTranscriptiepoging/verwerkTranscriptieMislukking).
+      for (const overig of opnames) {
+        if (overig.id === primair.id) continue;
+        try {
+          const extraResponse = await fetch(`${TELNYX_API_BASIS}/recordings/${encodeURIComponent(overig.id!)}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${apiKey()}` },
+          });
+          if (!extraResponse.ok) throw new Error(`HTTP ${extraResponse.status}`);
+        } catch (error) {
+          console.error(`[telefonie/telnyx] extra dubbele opname verwijderen mislukt (recording_id=${overig.id}):`, error instanceof Error ? error.message : error);
+        }
       }
     },
   };

@@ -206,9 +206,10 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     const [speakUrl, speakInit] = fetchMock.mock.calls[0]!;
     expect(speakUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/speak");
     expect((speakInit as { headers: Record<string, string> }).headers.Authorization).toBe("Bearer test-telnyx-api-key");
-    expect(JSON.parse((speakInit as { body: string }).body)).toMatchObject({ payload: "Tot ziens." });
-    const [hangupUrl] = fetchMock.mock.calls[1]!;
+    expect(JSON.parse((speakInit as { body: string }).body)).toMatchObject({ payload: "Tot ziens.", command_id: "speak:cc_1" });
+    const [hangupUrl, hangupInit] = fetchMock.mock.calls[1]!;
     expect(hangupUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/hangup");
+    expect(JSON.parse((hangupInit as { body: string }).body)).toMatchObject({ command_id: "hangup:cc_1" });
   });
 
   it("zeg_en_kies_cijfers -> gather_using_speak met de opgegeven tekst/cijferaantal/timeout", async () => {
@@ -225,7 +226,15 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     // minimum_digits/maximum_digits (niet min_digits/max_digits) + service_level:"premium"
     // (vereist voor nl-NL, "basic" staat alleen en-US toe) — bevestigd via
     // Telnyx' eigen SDK-broncode (src/resources/calls/actions.ts).
-    expect(body).toMatchObject({ payload: "Kies een optie.", maximum_digits: 1, minimum_digits: 1, inter_digit_timeout_millis: 8000, service_level: "premium", language: "nl-NL" });
+    expect(body).toMatchObject({
+      payload: "Kies een optie.",
+      maximum_digits: 1,
+      minimum_digits: 1,
+      inter_digit_timeout_millis: 8000,
+      service_level: "premium",
+      language: "nl-NL",
+      command_id: "gather_using_speak:cc_1",
+    });
   });
 
   it("zeg_en_neem_op -> record_start met max_length/timeout_secs uit de instructie", async () => {
@@ -247,7 +256,40 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/record_start");
     const body = JSON.parse((init as { body: string }).body);
-    expect(body).toMatchObject({ format: "mp3", channels: "single", max_length: 900, timeout_secs: 5 });
+    expect(body).toMatchObject({ format: "mp3", channels: "single", max_length: 900, timeout_secs: 5, command_id: "record_start:cc_1" });
+  });
+
+  it("command_id (spec: Telnyx' eigen commando-deduplicatie) is deterministisch per actiesoort+gesprek — dezelfde instructie tweemaal uitgevoerd (bv. door een dubbele webhookaflevering) levert dus TWEEMAAL exact hetzelfde command_id op, zodat Telnyx zelf de herhaling negeert i.p.v. een tweede opname te starten", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    const instructie = {
+      soort: "zeg_en_neem_op" as const,
+      tekst: "Vertel je verslag.",
+      actieUrl: "https://ongebruikt.example",
+      statusCallbackUrl: "https://ongebruikt.example",
+      maxDuurSeconden: 900,
+      stilteTimeoutSeconden: 5,
+      stopToets: "#",
+    };
+
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [instructie]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [instructie]); // simuleert een herhaalde aanroep voor hetzelfde gesprek
+
+    const eersteBody = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body);
+    const tweedeBody = JSON.parse((fetchMock.mock.calls[1]![1] as { body: string }).body);
+    expect(eersteBody.command_id).toBe("record_start:cc_1");
+    expect(tweedeBody.command_id).toBe(eersteBody.command_id);
+  });
+
+  it("command_id verschilt tussen verschillende gesprekken (call_control_id) én tussen verschillende actiesoorten binnen hetzelfde gesprek — nooit een botsing die een legitieme, andere actie zou laten negeren", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "zeg_en_ophangen", tekst: "Tot ziens." }]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_2", [{ soort: "zeg_en_ophangen", tekst: "Tot ziens." }]);
+
+    const commandIds = fetchMock.mock.calls.map((call) => JSON.parse((call[1] as { body: string }).body).command_id);
+    expect(new Set(commandIds).size).toBe(commandIds.length); // speak:cc_1, hangup:cc_1, speak:cc_2, hangup:cc_2 — allemaal uniek
   });
 
   it("meerdere instructies worden na elkaar uitgevoerd, in volgorde", async () => {
@@ -274,18 +316,20 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
 });
 
 describe("beantwoordOproep / stopOpname", () => {
-  it("beantwoordOproep -> POST .../actions/answer", async () => {
+  it("beantwoordOproep -> POST .../actions/answer met command_id", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
     await telnyxProvider().beantwoordOproep("cc_1");
     expect(fetchMock).toHaveBeenCalledWith("https://api.telnyx.com/v2/calls/cc_1/actions/answer", expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body)).toMatchObject({ command_id: "answer:cc_1" });
   });
 
-  it("stopOpname -> POST .../actions/record_stop", async () => {
+  it("stopOpname -> POST .../actions/record_stop met command_id", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
     await telnyxProvider().stopOpname("cc_1");
     expect(fetchMock).toHaveBeenCalledWith("https://api.telnyx.com/v2/calls/cc_1/actions/record_stop", expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body)).toMatchObject({ command_id: "record_stop:cc_1" });
   });
 });
 
@@ -333,6 +377,77 @@ describe("haalOpnameOp (spec §9: provider-geauthenticeerde download, geen publi
     vi.stubGlobal("fetch", fetchMock);
     await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow();
   });
+
+  // Live bevestigd (2026-08-25): één testgesprek leverde twee losse opnames
+  // op bij Telnyx (zie telnyx-provider.ts se kiesOpname voor de volledige
+  // toelichting/oorzaakanalyse). De recordings-lijst-API documenteert geen
+  // sorteervolgorde (RecordingListParams heeft, anders dan bv.
+  // CallControlApplicationListParams, geen `sort`-parameter) — deze tests
+  // bewijzen dat de keuze NOOIT op lijstpositie leunt, uitsluitend op de
+  // expliciete, inhoudelijk onderbouwde opnameduur (recording_ended_at minus
+  // recording_started_at).
+  it("meerdere opnames voor hetzelfde gesprek -> kiest de opname met de LANGSTE duur, ook als die NIET het eerste lijstelement is", async () => {
+    const kort = { id: "rec_kort", download_urls: { mp3: "https://signed.example/kort.mp3" }, recording_started_at: "2026-08-25T10:00:00.000Z", recording_ended_at: "2026-08-25T10:00:05.000Z" };
+    const lang = { id: "rec_lang", download_urls: { mp3: "https://signed.example/lang.mp3" }, recording_started_at: "2026-08-25T10:00:01.000Z", recording_ended_at: "2026-08-25T10:02:30.000Z" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [kort, lang] }) }) // kort staat EERST in de lijst
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().haalOpnameOp("cc_leg_1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://signed.example/lang.mp3"); // de langere opname, niet de eerste in de lijst
+  });
+
+  it("gelijke opnameduur -> kiest de opname met de meest recente recording_started_at als tiebreaker", async () => {
+    const eerder = { id: "rec_eerder", download_urls: { mp3: "https://signed.example/eerder.mp3" }, recording_started_at: "2026-08-25T10:00:00.000Z", recording_ended_at: "2026-08-25T10:01:00.000Z" };
+    const later = { id: "rec_later", download_urls: { mp3: "https://signed.example/later.mp3" }, recording_started_at: "2026-08-25T10:05:00.000Z", recording_ended_at: "2026-08-25T10:06:00.000Z" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [eerder, later] }) })
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().haalOpnameOp("cc_leg_1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://signed.example/later.mp3");
+  });
+
+  it("meerdere opnames voor hetzelfde gesprek -> logt een diagnostische waarschuwing (uitsluitend id's/tijden, nooit audio-inhoud)", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const a = { id: "rec_a", download_urls: { mp3: "https://signed.example/a.mp3" }, recording_started_at: "2026-08-25T10:00:00.000Z", recording_ended_at: "2026-08-25T10:00:10.000Z" };
+    const b = { id: "rec_b", download_urls: { mp3: "https://signed.example/b.mp3" }, recording_started_at: "2026-08-25T10:00:00.000Z", recording_ended_at: "2026-08-25T10:00:05.000Z" };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [a, b] }) })
+        .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })
+    );
+
+    await telnyxProvider().haalOpnameOp("cc_leg_1");
+
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("meerdere opnames gevonden"));
+    expect(consoleSpy.mock.calls[0]![0]).not.toMatch(/mp3|http/i); // geen URL's/downloadlinks in de logregel
+    consoleSpy.mockRestore();
+  });
+
+  it("precies één opname -> GEEN waarschuwing gelogd (alleen bij meer dan één kandidaat)", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "rec_1", download_urls: { mp3: "https://signed.example/rec.mp3" } }] }) })
+        .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })
+    );
+
+    await telnyxProvider().haalOpnameOp("cc_leg_1");
+
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
 });
 
 describe("verwijderOpname (spec §9: audio actief opruimen bij de provider)", () => {
@@ -361,5 +476,41 @@ describe("verwijderOpname (spec §9: audio actief opruimen bij de provider)", ()
       .mockResolvedValueOnce({ ok: false, status: 500 });
     vi.stubGlobal("fetch", fetchMock);
     await expect(telnyxProvider().verwijderOpname("cc_leg_1")).rejects.toThrow();
+  });
+
+  // Spec §9/gate 1: nooit audio onbeperkt laten staan. Was er (bv. door een
+  // vóór de command_id-fix al ontstane dubbele opname) meer dan één
+  // kandidaat, dan mag GEEN ervan achterblijven — anders zou de niet-
+  // gekozen dubbele opname voor altijd bij Telnyx blijven staan.
+  it("meerdere opnames voor hetzelfde gesprek -> verwijdert ZOWEL de gekozen (langste duur) ALS de overige(n), nooit een dubbele opname laten staan", async () => {
+    const kort = { id: "rec_kort", recording_started_at: "2026-08-25T10:00:00.000Z", recording_ended_at: "2026-08-25T10:00:05.000Z" };
+    const lang = { id: "rec_lang", recording_started_at: "2026-08-25T10:00:01.000Z", recording_ended_at: "2026-08-25T10:02:30.000Z" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [kort, lang] }) })
+      .mockResolvedValueOnce({ ok: true }) // DELETE rec_lang (primair, langste duur)
+      .mockResolvedValueOnce({ ok: true }); // DELETE rec_kort (overige)
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().verwijderOpname("cc_leg_1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://api.telnyx.com/v2/recordings/rec_lang", expect.objectContaining({ method: "DELETE" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "https://api.telnyx.com/v2/recordings/rec_kort", expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("een falende verwijdering van een EXTRA (niet-gekozen) dubbele opname blokkeert niet de al-geslaagde hoofdverwijdering — best-effort, gooit niet door", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const kort = { id: "rec_kort", recording_started_at: "2026-08-25T10:00:00.000Z", recording_ended_at: "2026-08-25T10:00:05.000Z" };
+    const lang = { id: "rec_lang", recording_started_at: "2026-08-25T10:00:01.000Z", recording_ended_at: "2026-08-25T10:02:30.000Z" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [kort, lang] }) })
+      .mockResolvedValueOnce({ ok: true }) // DELETE rec_lang (primair) — slaagt
+      .mockResolvedValueOnce({ ok: false, status: 500 }); // DELETE rec_kort (extra) — faalt
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(telnyxProvider().verwijderOpname("cc_leg_1")).resolves.toBeUndefined(); // gooit niet door
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("extra dubbele opname verwijderen mislukt"), expect.anything());
+    consoleSpy.mockRestore();
   });
 });
