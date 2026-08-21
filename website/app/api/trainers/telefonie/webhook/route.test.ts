@@ -49,7 +49,7 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
 }
 
 function maakRequest(event: unknown, headers: Record<string, string> = { "telnyx-signature-ed25519": "sig", "telnyx-timestamp": "123" }) {
-  return new NextRequest(new URL("https://trainers.mijnleerlijn.nl/api/trainers/telefonie/webhook"), {
+  return new NextRequest(new URL("https://trainers.mijnleerlijn.chat/api/trainers/telefonie/webhook"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(event),

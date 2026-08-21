@@ -24,7 +24,7 @@ const mockTelnyxProvider = vi.mocked(telnyxProvider);
 const mockVerwerkTelefonieOnderhoud = vi.mocked(verwerkTelefonieOnderhoud);
 
 function maakRequest(headers: Record<string, string> = {}) {
-  return new NextRequest(new URL("https://trainers.mijnleerlijn.nl/api/trainers/telefonie/onderhoud"), {
+  return new NextRequest(new URL("https://trainers.mijnleerlijn.chat/api/trainers/telefonie/onderhoud"), {
     method: "GET",
     headers,
   });
