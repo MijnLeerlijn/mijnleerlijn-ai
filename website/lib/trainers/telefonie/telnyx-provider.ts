@@ -342,23 +342,93 @@ function opnameDuurMs(opname: TelnyxOpnameResource): number {
 }
 
 /**
- * Haalt ALLE opnames van dit gesprek op via call_leg_id — spec §9:
- * ophaalReferentie/providerRecordingId zijn bij Telnyx het call_leg_id zelf
- * (call.recording.saved bevat geen apart recording_id, zie de toelichting
- * bovenaan dit bestand). GEEN aanname over lijstvolgorde: de recordings-
- * lijst-API (RecordingListParams in Telnyx' eigen SDK-broncode) documenteert
- * geen sorteervolgorde, dus haalt hier bewust de volledige lijst op i.p.v.
- * blind het eerste element te gebruiken — kiesOpname hieronder doet de
- * daadwerkelijke, verantwoorde selectie.
+ * Live HTTP 422 op de call_leg_id-gebaseerde opzoeking (2026-08-25,
+ * oproep-ID 6): `source.pointer=/call_id`. Onderzoek tegen een verse
+ * telnyx-npm-install (v7.16.0) plus CHANGELOG.md (bevat een eerdere,
+ * relevante commit "call-recordings: align OpenAPI spec with
+ * implementation", v6.10.2 — al opgenomen in onze 7.16.0):
+ *  - call_id komt NERGENS voor als publiek veld in Telnyx' Call
+ *    Control/Recordings-oppervlak — driedubbel gecontroleerd:
+ *    RecordingListParams.Filter/RecordingResponseData (recordings.ts),
+ *    CallRecordingSaved.Payload (webhooks.ts), CallRetrieveStatusResponse.Data
+ *    (calls.ts). De enige plek in de hele SDK waar een veld letterlijk
+ *    "call_id" heet is voice-sdk-call-reports.ts — een volledig ander
+ *    product (WebRTC/Voice SDK-clientrapportage), niet Call
+ *    Control/telefonie.
+ *  - call_leg_id blijft dus een ECHT, gedocumenteerd queryparameter (geen
+ *    naamfout in onze request) — "/call_id" is hoogstwaarschijnlijk Telnyx'
+ *    eigen INTERNE naam voor het gevalideerde veld, gelekt in de
+ *    foutrespons, geen aanwijzing om een ANDERE publieke veldnaam te
+ *    gebruiken voor DEZELFDE waarde.
+ *  - recording_provider_id/opname_ophaal_referentie zelf kloppen: dezelfde
+ *    v3:...-waarde als providerCallId (call_control_id) is exact wat
+ *    Telnyx' eigen call.initiated-voorbeeld documenteert voor een simpel,
+ *    nooit-doorverbonden gesprek — geen fout ID opgeslagen.
+ * Conclusie: dit wijst op een waarde-/backend-validatieprobleem specifiek
+ * voor call_leg_id, niet op een verkeerde veldnaam of verkeerd opgeslagen
+ * ID. Om toch deterministisch (nooit tijdstip-gok, nooit "haal alles op")
+ * verder te kunnen: call_session_id is een ANDER, eveneens officieel
+ * gedocumenteerd filterveld op ditzelfde endpoint (RecordingListParams.Filter),
+ * en staat als VERPLICHT (niet optioneel) veld op
+ * CallRetrieveStatusResponse.Data — op te halen via GET
+ * /v2/calls/{call_control_id}, met exact het call_control_id dat we al
+ * hebben (geen nieuwe opslag/migratie nodig: bestaande, ongewijzigde
+ * recordingProviderId/opnameOphaalReferentie-waarde volstaat als invoer).
+ * Bij een 4xx op de call_leg_id-poging wordt dit ÉÉN keer als tweede,
+ * met naam genoemde, deterministische poging geprobeerd — nooit een
+ * blinde/tijdgebaseerde fallback. Faalt ook deze (of is call_session_id
+ * niet op te halen), dan bevat de uiteindelijke foutmelding de foutdetails
+ * van BEIDE pogingen (spec §9: nooit audio/gespreksinhoud, uitsluitend
+ * technische velden — telnyxFoutdetail blijft ongewijzigd).
  */
-async function haalOpnames(callLegId: string): Promise<TelnyxOpnameResource[]> {
-  const query = new URLSearchParams({ "filter[call_leg_id]": callLegId }).toString();
+async function haalCallSessionId(callControlId: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${TELNYX_API_BASIS}/calls/${encodeURIComponent(callControlId)}`, { headers: { Authorization: `Bearer ${apiKey()}` } });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { data?: { call_session_id?: string } };
+    return body.data?.call_session_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+type OpnamesFilterUitkomst = { ok: true; opnames: TelnyxOpnameResource[] } | { ok: false; foutmelding: string };
+
+async function haalOpnamesMetFilter(filterVeld: "call_leg_id" | "call_session_id", waarde: string): Promise<OpnamesFilterUitkomst> {
+  const query = new URLSearchParams({ [`filter[${filterVeld}]`]: waarde }).toString();
   const response = await fetch(`${TELNYX_API_BASIS}/recordings?${query}`, { headers: { Authorization: `Bearer ${apiKey()}` } });
   if (!response.ok) {
-    throw new Error(`Opnamelijst ophalen bij Telnyx mislukt: HTTP ${response.status} — ${await telnyxFoutdetail(response)}`);
+    return { ok: false, foutmelding: `HTTP ${response.status} — ${await telnyxFoutdetail(response)}` };
   }
   const body = (await response.json()) as { data?: TelnyxOpnameResource[] };
-  return (body.data ?? []).filter((opname) => opname.id);
+  return { ok: true, opnames: (body.data ?? []).filter((opname) => opname.id) };
+}
+
+/**
+ * Haalt ALLE opnames van dit gesprek op — spec §9: ophaalReferentie/
+ * providerRecordingId zijn bij Telnyx het call_leg_id/call_control_id zelf
+ * (call.recording.saved bevat geen apart recording_id, zie de toelichting
+ * bovenaan dit bestand). Primair via call_leg_id; bij een 4xx daarop een
+ * tweede, expliciet benoemde poging via call_session_id (zie de
+ * uitgebreide toelichting hierboven). GEEN aanname over lijstvolgorde: de
+ * recordings-lijst-API (RecordingListParams in Telnyx' eigen SDK-broncode)
+ * documenteert geen sorteervolgorde, dus haalt hier bewust de volledige
+ * lijst op i.p.v. blind het eerste element te gebruiken — kiesOpname
+ * hieronder doet de daadwerkelijke, verantwoorde selectie.
+ */
+async function haalOpnames(callLegId: string): Promise<TelnyxOpnameResource[]> {
+  const primair = await haalOpnamesMetFilter("call_leg_id", callLegId);
+  if (primair.ok) return primair.opnames;
+
+  const callSessionId = await haalCallSessionId(callLegId);
+  if (!callSessionId) {
+    throw new Error(`Opnamelijst ophalen bij Telnyx mislukt via call_leg_id (${primair.foutmelding}); call_session_id kon niet worden opgehaald voor een tweede poging.`);
+  }
+  const secundair = await haalOpnamesMetFilter("call_session_id", callSessionId);
+  if (!secundair.ok) {
+    throw new Error(`Opnamelijst ophalen bij Telnyx mislukt — call_leg_id: ${primair.foutmelding}; call_session_id: ${secundair.foutmelding}`);
+  }
+  return secundair.opnames;
 }
 
 /**

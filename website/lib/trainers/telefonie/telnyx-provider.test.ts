@@ -445,6 +445,11 @@ describe("haalOpnameOp (spec §9: provider-geauthenticeerde download, geen publi
 
   it("de foutmelding bij een 4xx bevat nooit de Authorization-header/API-key en blijft begrensd, ook bij een extreem lange/onverwachte (niet-JSON) responsbody", async () => {
     const onverwachteTekst = "x".repeat(2000); // geen geldige JSON -> valt terug op de rauwe (begrensde) tekst
+    // Elke aanroep (ook de call_session_id-terugvalpoging, zie
+    // haalCallSessionId/haalOpnames) faalt hier op dezelfde manier — bewijst
+    // dat zelfs bij BEIDE mislukte pogingen de gecombineerde foutmelding nog
+    // altijd begrensd blijft (nooit de rauwe 2000-tekens-body onbegrensd
+    // doorgeeft), niet dat er maar één aanroep gebeurt.
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422, text: async () => onverwachteTekst }));
 
     const foutmelding = await telnyxProvider()
@@ -452,7 +457,77 @@ describe("haalOpnameOp (spec §9: provider-geauthenticeerde download, geen publi
       .catch((error: unknown) => (error instanceof Error ? error.message : String(error)));
 
     expect(foutmelding).not.toContain("test-telnyx-api-key");
-    expect((foutmelding as string).length).toBeLessThan(400);
+    // Ruimer dan bij één enkele poging (TELNYX_FOUTDETAIL_MAX_LENGTE=300):
+    // de call_leg_id-poging faalt hier al vóór de call_session_id-terugval
+    // ooit kan starten (haalCallSessionId ziet zelf ook ok:false -> geeft
+    // null terug), dus de foutmelding bevat alleen de eerste 300 tekens plus
+    // een korte, vaste omlijstende tekst — nooit de volledige 2000 tekens.
+    expect((foutmelding as string).length).toBeLessThan(600);
+  });
+
+  // Live HTTP 422 vervolg (2026-08-25, oproep-ID 6, transcriptiePogingen
+  // 4/5): "HTTP 422 — source.pointer=/call_id" op de call_leg_id-gebaseerde
+  // opzoeking. Onderzoek (zie telnyx-provider.ts se uitgebreide toelichting
+  // bij haalCallSessionId/haalOpnames): "call_id" komt nergens voor als
+  // publiek veld in Telnyx' Call Control/Recordings-oppervlak — call_leg_id
+  // blijft dus een geldig, gedocumenteerd queryparameter, geen naamfout. De
+  // deterministische, eveneens officieel gedocumenteerde terugvalpoging is
+  // call_session_id (GET /v2/calls/{call_control_id} -> verplicht veld
+  // call_session_id -> GET /v2/recordings?filter[call_session_id]=...).
+  describe("call_session_id-terugval bij een 4xx op de call_leg_id-opzoeking", () => {
+    it("call_leg_id geeft 422 -> haalt call_session_id op via GET /v2/calls/{id} -> vindt de opname via filter[call_session_id] (exacte queryvorm/volgorde van alle vier aanroepen)", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 422, text: async () => JSON.stringify({ errors: [{ code: "10007", source: { pointer: "/call_id" } }] }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { call_session_id: "sess_abc" } }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "rec_1", download_urls: { mp3: "https://signed.example/rec.mp3" } }] }) })
+        .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await telnyxProvider().haalOpnameOp("cc_leg_1");
+
+      expect(fetchMock).toHaveBeenNthCalledWith(1, "https://api.telnyx.com/v2/recordings?filter%5Bcall_leg_id%5D=cc_leg_1", { headers: { Authorization: "Bearer test-telnyx-api-key" } });
+      expect(fetchMock).toHaveBeenNthCalledWith(2, "https://api.telnyx.com/v2/calls/cc_leg_1", { headers: { Authorization: "Bearer test-telnyx-api-key" } });
+      expect(fetchMock).toHaveBeenNthCalledWith(3, "https://api.telnyx.com/v2/recordings?filter%5Bcall_session_id%5D=sess_abc", { headers: { Authorization: "Bearer test-telnyx-api-key" } });
+      expect(fetchMock).toHaveBeenNthCalledWith(4, "https://signed.example/rec.mp3");
+    });
+
+    it("call_leg_id geeft 4xx EN GET /v2/calls/{id} mislukt ook -> gooit een gecombineerde foutmelding, GEEN derde aanroep (geen tijdstip-gok/fallback zonder een echte call_session_id)", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 422, text: async () => JSON.stringify({ errors: [{ code: "10007", source: { pointer: "/call_id" } }] }) })
+        .mockResolvedValueOnce({ ok: false, status: 404, text: async () => "" });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow(/call_leg_id[\s\S]*code=10007[\s\S]*call_session_id kon niet worden opgehaald/);
+      expect(fetchMock).toHaveBeenCalledTimes(2); // nooit een derde, "blinde" poging zonder geldig call_session_id
+    });
+
+    it("call_leg_id geeft 4xx, call_session_id wordt gevonden, maar de terugvalopzoeking zelf geeft ook een 4xx -> gecombineerde foutmelding met BEIDE foutdetails", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 422, text: async () => JSON.stringify({ errors: [{ code: "10007", title: "eerste poging" }] }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { call_session_id: "sess_abc" } }) })
+        .mockResolvedValueOnce({ ok: false, status: 422, text: async () => JSON.stringify({ errors: [{ code: "20099", title: "tweede poging" }] }) });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow(/code=10007[\s\S]*code=20099/);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("verwijderOpname profiteert van dezelfde terugval (gedeelde haalOpnames-functie) — DELETE't de via call_session_id gevonden opname", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 422, text: async () => JSON.stringify({ errors: [{ code: "10007" }] }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { call_session_id: "sess_abc" } }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "rec_1" }] }) })
+        .mockResolvedValueOnce({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await telnyxProvider().verwijderOpname("cc_leg_1");
+
+      expect(fetchMock).toHaveBeenNthCalledWith(4, "https://api.telnyx.com/v2/recordings/rec_1", { method: "DELETE", headers: { Authorization: "Bearer test-telnyx-api-key" } });
+    });
   });
 
   it("lege opnamelijst (nog niet geïndexeerd bij Telnyx) -> gooit met een herkenbare, specifieke foutmelding", async () => {
