@@ -621,11 +621,11 @@ export interface TrainerTelefonieOproepen {
   gekozenSchoolNaam?: string | null;
   gekozenTrainingNaam?: string | null;
   /**
-   * Twilio RecordingSid — tweede idempotentiesleutel, specifiek voor de opnameverwerkingsstap.
+   * Bij Telnyx: het call_leg_id (niet een los recording_id — dat ontbreekt op het call.recording.saved-webhookevent zelf, hard bevestigd via Telnyx' eigen SDK-broncode). Wordt gebruikt om de bijbehorende opname op te zoeken via GET /v2/recordings?filter[call_leg_id]=... vlak vóór ophalen/verwijderen (lib/trainers/telefonie/telnyx-provider.ts).
    */
   recordingProviderId?: string | null;
   /**
-   * De providerreferentie om de opname opnieuw op te halen bij een automatische retry (spec: transcriptieherstel) — bij Telnyx het recording_id, nooit een kale/publiek bruikbare URL op zichzelf (download vereist nog altijd providerauthenticatie, bij Telnyx een Bearer-API-key). Uitsluitend gebruikt door de onderhoudsronde (lib/trainers/telefonie/gesprek.ts se verwerkTelefonieOnderhoud).
+   * De providerreferentie om de opname opnieuw op te halen bij een automatische retry (spec: transcriptieherstel) — bij Telnyx hetzelfde call_leg_id als recordingProviderId hierboven, nooit een kale/publiek bruikbare URL op zichzelf (download vereist nog altijd providerauthenticatie, bij Telnyx een Bearer-API-key). Uitsluitend gebruikt door de onderhoudsronde (lib/trainers/telefonie/gesprek.ts se verwerkTelefonieOnderhoud).
    */
   opnameOphaalReferentie?: string | null;
   recordingDuurSeconden?: number | null;

@@ -158,25 +158,30 @@ describe("ontleedGatherResultaat", () => {
 });
 
 describe("ontleedOpnameStatus", () => {
-  it("event_type=call.recording.saved -> voltooid, ophaalReferentie=recording_id, duur berekend uit start/eind", () => {
+  // providerRecordingId/ophaalReferentie = call_control_id (bij dit event al
+  // op call_leg_id genormaliseerd door vlakTelnyxEventAf, webhook-helpers.ts)
+  // — GEEN los recording_id: dat veld ontbreekt op call.recording.saved,
+  // hard bevestigd via Telnyx' eigen SDK-broncode (zie telnyx-provider.ts se
+  // toelichting bovenaan het bestand). haalOpnameOp/verwijderOpname zoeken de
+  // daadwerkelijke opname hiermee op via GET /recordings?filter[call_leg_id].
+  it("event_type=call.recording.saved -> voltooid, ophaalReferentie/providerRecordingId=call_control_id, duur berekend uit start/eind", () => {
     const uitkomst = telnyxProvider().ontleedOpnameStatus({
       event_type: "call.recording.saved",
       call_control_id: "v3:abc",
-      recording_id: "rec_1",
       recording_started_at: "2026-08-25T10:00:00.000Z",
       recording_ended_at: "2026-08-25T10:01:35.000Z",
     });
     expect(uitkomst).toEqual({
       providerCallId: "v3:abc",
-      providerRecordingId: "rec_1",
+      providerRecordingId: "v3:abc",
       status: "voltooid",
       duurSeconden: 95,
-      ophaalReferentie: "rec_1",
+      ophaalReferentie: "v3:abc",
     });
   });
 
-  it.each(["call.recording.error", "call.hangup", "iets_onbekends"])("event_type=%s -> mislukt, GEEN ophaalReferentie ook al is recording_id toevallig aanwezig", (eventType) => {
-    const uitkomst = telnyxProvider().ontleedOpnameStatus({ event_type: eventType, call_control_id: "v3:abc", recording_id: "rec_1" });
+  it.each(["call.recording.error", "call.hangup", "iets_onbekends"])("event_type=%s -> mislukt, GEEN ophaalReferentie ook al is call_control_id aanwezig", (eventType) => {
+    const uitkomst = telnyxProvider().ontleedOpnameStatus({ event_type: eventType, call_control_id: "v3:abc" });
     expect(uitkomst.status).toBe("mislukt");
     expect(uitkomst.ophaalReferentie).toBeNull();
   });
@@ -217,7 +222,10 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/gather_using_speak");
     const body = JSON.parse((init as { body: string }).body);
-    expect(body).toMatchObject({ payload: "Kies een optie.", max_digits: 1, min_digits: 1, inter_digit_timeout_millis: 8000 });
+    // minimum_digits/maximum_digits (niet min_digits/max_digits) + service_level:"premium"
+    // (vereist voor nl-NL, "basic" staat alleen en-US toe) — bevestigd via
+    // Telnyx' eigen SDK-broncode (src/resources/calls/actions.ts).
+    expect(body).toMatchObject({ payload: "Kies een optie.", maximum_digits: 1, minimum_digits: 1, inter_digit_timeout_millis: 8000, service_level: "premium", language: "nl-NL" });
   });
 
   it("zeg_en_neem_op -> record_start met max_length/timeout_secs uit de instructie", async () => {
@@ -281,50 +289,77 @@ describe("beantwoordOproep / stopOpname", () => {
   });
 });
 
+// call.recording.saved bevat geen recording_id (hard bevestigd via Telnyx'
+// eigen SDK-broncode) — haalOpnameOp/verwijderOpname zoeken de opname daarom
+// eerst op via GET /recordings?filter[call_leg_id]=... (waarbij
+// ophaalReferentie/providerRecordingId het call_leg_id zelf is, zie
+// ontleedOpnameStatus hierboven), en lezen daar `download_urls.mp3` (NIET
+// recording_urls.mp3 — dat bestaat alleen op het webhookpayload zelf, een
+// andere resource-representatie dan de REST-respons).
 describe("haalOpnameOp (spec §9: provider-geauthenticeerde download, geen publieke URL)", () => {
-  it("haalt eerst verse opnamemetadata op (Bearer-auth) en downloadt vervolgens de meegegeven signed mp3-URL", async () => {
+  it("zoekt eerst de opname op via GET /recordings?filter[call_leg_id]=... en downloadt vervolgens download_urls.mp3", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { recording_urls: { mp3: "https://signed.example/rec.mp3?X-Amz-Signature=abc" } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "rec_1", download_urls: { mp3: "https://signed.example/rec.mp3?X-Amz-Signature=abc" } }] }) })
       .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
     vi.stubGlobal("fetch", fetchMock);
 
-    await telnyxProvider().haalOpnameOp("rec_1");
+    await telnyxProvider().haalOpnameOp("cc_leg_1");
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://api.telnyx.com/v2/recordings/rec_1", { headers: { Authorization: "Bearer test-telnyx-api-key" } });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://api.telnyx.com/v2/recordings?filter%5Bcall_leg_id%5D=cc_leg_1", { headers: { Authorization: "Bearer test-telnyx-api-key" } });
     expect(fetchMock).toHaveBeenNthCalledWith(2, "https://signed.example/rec.mp3?X-Amz-Signature=abc");
   });
 
-  it("een niet-ok status bij het ophalen van de metadata -> gooit", async () => {
+  it("een niet-ok status bij het ophalen van de opnamelijst -> gooit", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
-    await expect(telnyxProvider().haalOpnameOp("rec_1")).rejects.toThrow();
+    await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow();
   });
 
-  it("metadata zonder mp3-URL -> gooit (aanroeper markeert dit als transcriptie_mislukt)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { recording_urls: {} } }) }));
-    await expect(telnyxProvider().haalOpnameOp("rec_1")).rejects.toThrow();
+  it("lege opnamelijst (nog niet geïndexeerd bij Telnyx) -> gooit met een herkenbare, specifieke foutmelding", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) }));
+    await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow(/geen opname gevonden/i);
+  });
+
+  it("gevonden opname zonder mp3-downloadlink -> gooit (aanroeper markeert dit als transcriptie_mislukt)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "rec_1", download_urls: {} }] }) }));
+    await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow();
   });
 
   it("een niet-ok status bij de daadwerkelijke audiodownload -> gooit", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { recording_urls: { mp3: "https://signed.example/rec.mp3" } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "rec_1", download_urls: { mp3: "https://signed.example/rec.mp3" } }] }) })
       .mockResolvedValueOnce({ ok: false, status: 410 });
     vi.stubGlobal("fetch", fetchMock);
-    await expect(telnyxProvider().haalOpnameOp("rec_1")).rejects.toThrow();
+    await expect(telnyxProvider().haalOpnameOp("cc_leg_1")).rejects.toThrow();
   });
 });
 
 describe("verwijderOpname (spec §9: audio actief opruimen bij de provider)", () => {
-  it("DELETE .../v2/recordings/:id met Bearer-auth", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+  it("zoekt eerst de opname op via het call_leg_id, DELETE't vervolgens het gevonden recording_id", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "rec_1" }] }) })
+      .mockResolvedValueOnce({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
-    await telnyxProvider().verwijderOpname("rec_1");
-    expect(fetchMock).toHaveBeenCalledWith("https://api.telnyx.com/v2/recordings/rec_1", { method: "DELETE", headers: { Authorization: "Bearer test-telnyx-api-key" } });
+
+    await telnyxProvider().verwijderOpname("cc_leg_1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://api.telnyx.com/v2/recordings?filter%5Bcall_leg_id%5D=cc_leg_1", { headers: { Authorization: "Bearer test-telnyx-api-key" } });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://api.telnyx.com/v2/recordings/rec_1", { method: "DELETE", headers: { Authorization: "Bearer test-telnyx-api-key" } });
   });
 
-  it("een niet-ok status -> gooit (aanroeper vangt dit al af als best-effort, zie gesprek.ts)", async () => {
+  it("een niet-ok status bij het opzoeken -> gooit (aanroeper vangt dit al af als best-effort, zie gesprek.ts)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
-    await expect(telnyxProvider().verwijderOpname("rec_1")).rejects.toThrow();
+    await expect(telnyxProvider().verwijderOpname("cc_leg_1")).rejects.toThrow();
+  });
+
+  it("een niet-ok status bij de daadwerkelijke DELETE -> gooit", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "rec_1" }] }) })
+      .mockResolvedValueOnce({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(telnyxProvider().verwijderOpname("cc_leg_1")).rejects.toThrow();
   });
 });

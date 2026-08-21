@@ -23,21 +23,30 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 // Callflow-mapping Twilio -> Telnyx (zie ook telnyx-provider.ts se eigen
 // doc-comment voor de onderzoeksbasis):
 //  call.initiated   -> uitsluitend beantwoordOproep() (spreken mag pas ná
-//                       een bevestigd "answer", spec/WebSearch-bevestigd).
+//                       een bevestigd "answer" — hard bevestigd via Telnyx'
+//                       eigen SDK-broncode, zie telnyx-provider.ts).
 //  call.answered     -> HIER pas verwerkInkomendeCall (trainerherkenning +
 //                       eerste gesproken menu) — functioneel de vervanger
 //                       van de oude inbound-route.
 //  call.gather.ended -> verwerkTrainingKeuze (de enige gather die dit hele
 //                       flow ooit uitgeeft: de trainingkeuze/ja-nee-
 //                       bevestiging) — vervanger van kies-training.
-//  call.dtmf.received-> alleen relevant tijdens een lopende opname
-//                       (status='opname_verwacht'): '#' stopt de opname
-//                       vroegtijdig — Telnyx kent geen finishOnKey-parameter
-//                       op record_start zelf, dit is het losstaande
-//                       equivalent. Bewust een UX-vangnet, geen functionele
-//                       afhankelijkheid: de opname stopt sowieso via
-//                       stilte-timeout/max-duur (ongewijzigde waarden, zie
-//                       gesprek.ts).
+//  call.dtmf.received-> BEKENDE BEPERKING (vastgesteld via Telnyx' eigen
+//                       SDK-broncode, niet langer een aanname): dit event is
+//                       door Telnyx uitsluitend gedocumenteerd als
+//                       bijbehorend bij gather/gather_using_speak-commando's,
+//                       NIET bij record_start. Deze tak (stopt de opname
+//                       vroegtijdig op '#' zolang status='opname_verwacht')
+//                       vuurt in de praktijk dus vermoedelijk nooit tijdens
+//                       het inspreken van het verslag — bewust toch
+//                       aangehouden als onschadelijk vangnet (kost niets als
+//                       hij nooit triggert) i.p.v. een architectuurwijziging
+//                       (bv. een parallelle gather-opdracht ernaast starten)
+//                       vlak vóór een productiebeslissing. GEEN functionele
+//                       afhankelijkheid: de opname stopt hoe dan ook altijd
+//                       via stilte-timeout/max-duur (ongewijzigde waarden,
+//                       zie gesprek.ts) — zie het opleverrapport se
+//                       beperkingen-sectie.
 //  call.recording.saved/.error -> verwerkOpnameStatus (ongewijzigd, inclusief
 //                       de bestaande idempotentieclaim/transcriptieherstel/
 //                       audiobewaartermijn uit gate 1) — vervanger van
@@ -130,7 +139,11 @@ export async function POST(request: NextRequest) {
 
       case "call.recording.saved":
       case "call.recording.error": {
-        if (!beperkPerGesprek.magVerder(vormVelden.recording_id || callControlId)) break;
+        // Sleutel op callControlId (bij dit event al op call_leg_id
+        // genormaliseerd, zie vlakTelnyxEventAf) — geen apart recording_id
+        // beschikbaar op call.recording.saved (zie telnyx-provider.ts se
+        // toelichting), dus geen zinvolle fijnere sleutel voorhanden.
+        if (!beperkPerGesprek.magVerder(callControlId)) break;
         const oproep = await maakOfHaalOproep(payload, callControlId);
         await verwerkOpnameStatus(payload, provider, oproep.id, vormVelden);
         await provider.voerVoiceInstructiesUit(callControlId, verwerkOpnameAfgerond());

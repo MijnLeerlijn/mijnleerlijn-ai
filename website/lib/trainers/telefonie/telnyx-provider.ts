@@ -9,60 +9,104 @@ import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameS
 // twilio-provider.ts eerder). gesprek.ts en de webhookroute praten
 // uitsluitend tegen de generieke TelefonieProvider-interface (./provider.ts).
 //
-// Onderzoeksbasis (2026-08-25, WebFetch was in deze sandbox geblokkeerd voor
-// developers.telnyx.com — onderstaande komt dus uit WebSearch-samenvattingen
-// van de officiële Telnyx-documentatie, NIET uit een zelf geopende
-// primaire bron; zie het opleverrapport se beperkingen-sectie voor de
-// volledige toelichting):
-//  - Call Control v2-webhooks zijn JSON, event-gedreven, altijd naar ÉÉN
-//    vooraf in de Telnyx Console geconfigureerde webhook-URL (in
-//    tegenstelling tot Twilio's per-stap action-URL's) — vandaar de ENE
-//    dispatcher-route (zie app/api/trainers/telefonie/telnyx-webhook/route.ts)
-//    i.p.v. de 4 aparte Twilio-routes.
-//  - Telnyx beantwoordt zijn eigen webhook nooit met call-control-instructies
-//    in de HTTP-respons (in tegenstelling tot TwiML) — instructies MOETEN als
-//    aparte, Bearer-geauthenticeerde POST-commando's naar
-//    api.telnyx.com/v2/calls/{call_control_id}/actions/... verstuurd worden.
-//  - Signatuurverificatie: asymmetrische Ed25519 over `{telnyx-timestamp}|
-//    {rauwe body}`, geverifieerd met het ACCOUNT-publieke-sleutel (Console:
-//    Account Settings > Keys & Credentials > Public Key), headers
-//    telnyx-signature-ed25519 (base64 signature) + telnyx-timestamp
-//    (unix-seconden, met een replaytolerantie — hier 5 minuten, zelfde
-//    default als Telnyx' eigen SDK).
+// Onderzoeksbasis (bijgewerkt 2026-08-25, vervolgronde) — WebFetch bleef
+// geblokkeerd voor developers.telnyx.com, MAAR: de officiële `telnyx`
+// npm-package (v7.16.0, gepubliceerd door Telnyx zelf, auto-gegenereerd uit
+// hun eigen OpenAPI-spec) is via de npm-registry wél bereikbaar in deze
+// sandbox. De volgende feiten zijn dus NIET langer WebSearch-samenvattingen
+// maar rechtstreeks afgelezen uit Telnyx' eigen gepubliceerde TypeScript-
+// broncode (src/resources/calls/actions.ts, src/resources/webhooks.ts,
+// src/resources/recordings/recordings.ts, src/lib/webhooks.ts, src/client.ts):
+//  - Basis-URL https://api.telnyx.com/v2, Authorization: Bearer <API-key>.
+//  - Commando-paden: POST /calls/{call_control_id}/actions/{answer|speak|
+//    gather_using_speak|record_start|record_stop|hangup}.
+//  - Webhook-headers telnyx-signature-ed25519 (base64, 64 bytes) +
+//    telnyx-timestamp (unix-seconden, 5 min. replaytolerantie) over het
+//    LETTERLIJKE bericht `{timestamp}|{rauwe body}`, Ed25519, publieke
+//    sleutel base64 (32 bytes) — Telnyx' eigen webhookverificatiecode is
+//    functioneel IDENTIEK aan wat hieronder staat.
+//  - Event_types die deze dispatcher gebruikt (exacte strings uit Telnyx'
+//    eigen discriminated union, resources/webhooks.ts): call.initiated,
+//    call.answered, call.gather.ended, call.dtmf.received,
+//    call.recording.saved, call.recording.error, call.hangup.
+//  - BELANGRIJKE CORRECTIE t.o.v. de vorige ronde: het `call.recording.saved`-
+//    webhookpayload bevat GEEN call_control_id én GEEN recording_id (wel
+//    aanwezig op call.recording.error, inconsistent tussen de twee) —
+//    uitsluitend call_leg_id + kortlevende (10 min.) recording_urls. Voor een
+//    eenvoudig, nooit-doorverbonden/nooit-geconfereerd gesprek (exact onze
+//    flow) is call_leg_id altijd gelijk aan call_control_id (zie Telnyx' eigen
+//    call.initiated-voorbeeldpayload, waar beide identiek zijn) — vandaar de
+//    call_leg_id-fallback in vlakTelnyxEventAf (webhook-helpers.ts) en het
+//    gebruik van call_leg_id als opzoeksleutel in haalOpnameOp/verwijderOpname
+//    hieronder (via GET /recordings?filter[call_leg_id]=..., de door Telnyx'
+//    eigen qs-serialisatie bevestigde bracket-notatie).
+//  - De REST-respons van GET/DELETE /recordings/{id} gebruikt het veld
+//    `download_urls.mp3`, NIET `recording_urls.mp3` (dat laatste bestaat
+//    alleen op het `call.recording.saved`-webhookpayload zelf, een ANDERE
+//    resource-representatie) — een eerdere versie van dit bestand las het
+//    verkeerde veld en zou daardoor élke transcriptiepoging hebben laten
+//    mislukken.
+//  - gather_using_speak se digitaantal-parameters heten minimum_digits/
+//    maximum_digits (niet min_digits/max_digits).
+//  - service_level moet expliciet "premium" zijn: bij "basic" staat Telnyx
+//    uitsluitend en-US toe, wat nl-NL zou blokkeren/negeren.
 //  - EU-opslag: Telnyx' "Data Locality"-instelling (Console: Account
 //    Settings > Profile > Data Storage Location, EENMALIG, onomkeerbaar)
 //    dekt expliciet "Media Storage (recordings)" naast CDR's/MDR's, met
 //    "Germany (EU)" als optie — bij die keuze draait alle Voice API-
-//    verwerking + opnameopslag via Telnyx' Frankfurt-datacenter. Dit is de
-//    Console-instelling die in het opleverrapport als vereiste stap staat.
+//    verwerking + opnameopslag via Telnyx' Frankfurt-datacenter. Dit komt
+//    uit WebSearch (niet uit de SDK-broncode, die gaat niet over
+//    accountinstellingen) — zie het opleverrapport se beperkingen-sectie.
 //
-// Bewust GEEN telnyx-npm-package als afhankelijkheid: de hele benodigde
-// oppervlakte (Ed25519-verificatie, een paar REST-POST/GET/DELETE-aanroepen)
-// is met Node's ingebouwde crypto + fetch() exact na te bouwen, met volledige
-// controle over precies welke bytes ondertekend/verstuurd worden — bij een
-// ongeverifieerde SDK-versie (geen WebFetch-toegang om de exacte
-// pakket-API te controleren) is dat een kleinere onzekerheidsmarge dan een
-// derde package vertrouwen op basis van uitsluitend zoekresultaat-samenvattingen.
+// Bewust GEEN telnyx-npm-package als RUNTIME-afhankelijkheid: de package is
+// uitsluitend gebruikt als eenmalige, offline referentiebron tijdens het
+// bouwen van dit bestand (npm install in een scratchmap, broncode gelezen,
+// weer weggegooid) — de daadwerkelijke runtime-oppervlakte (Ed25519-
+// verificatie, een paar REST-aanroepen) blijft met Node's ingebouwde crypto +
+// fetch() na te bouwen, met volledige controle over precies welke bytes
+// ondertekend/verstuurd worden, zonder een extra productieafhankelijkheid.
+//
+// Resterende, NIET uit de SDK-broncode af te leiden onzekerheid (SDK-code
+// gaat over de API, niet over Console-schermen of accountconfiguratie) —
+// zie het opleverrapport se beperkingen-sectie voor de volledige toelichting:
+//  - Of "Germany" bij Data Locality specifiek en volledig Voice-opnameopslag
+//    dekt (WebSearch-bevestigd, niet SDK-bevestigd).
+//  - Of de gekozen stem-ID (TELNYX_TTS_VOICE) nog exact bestaat in Telnyx'
+//    doorgezette AWS Polly-catalogus op het moment van de eerste testoproep.
+//  - Of call_leg_id in de praktijk altijd exact gelijk is aan call_control_id
+//    voor déze specifieke flow (zeer aannemelijk gegeven Telnyx' eigen
+//    voorbeeldpayload + dat dit gesprek nooit bridget/doorverbindt, maar niet
+//    zelf tegen een live gesprek getest).
+// Voor elk van deze drie is hieronder gerichte diagnostiek toegevoegd (zie de
+// foutmeldingen in haalMeestRecenteOpname/voerInstructieUit) zodat de eerste
+// testoproep, mocht een aanname toch niet kloppen, een exact aanwijsbare
+// Vercel-logregel oplevert in plaats van een ondoorzichtige 500.
 
 const TELNYX_API_BASIS = "https://api.telnyx.com/v2";
-const REPLAY_TOLERANTIE_SECONDEN = 300; // 5 minuten — zelfde default als Telnyx' eigen SDK (WebSearch-bevestigd)
+const REPLAY_TOLERANTIE_SECONDEN = 300; // 5 minuten — bevestigd identiek aan Telnyx' eigen SDK (src/lib/webhooks.ts)
 
-// LET OP (verifieer vóór/tijdens de eerste testoproep, zie het
-// opleverrapport se teststappen): dit is de best-gedocumenteerde aanname
-// voor een Nederlandse neurale stem die ik zonder WebFetch-toegang tot de
-// Telnyx Console/API-referentie kon vaststellen. Als de eerste testoproep
-// geen gesproken tekst oplevert (wel een verbinding, geen audio, of een
-// 4xx op de speak/gather_using_speak-commando's in de Vercel-logs), is dit
-// de eerste plek om te controleren — kies de exacte, actuele voice-ID in de
-// Telnyx Console (Voice > Programmable Voice) en pas uitsluitend deze
-// constante aan.
-const TELNYX_TTS_VOICE = "AWS.Polly.Lotte-Neural";
+// AWS Polly's standaard (NIET neurale) Nederlandse stem — bewust zonder
+// "-Neural"-suffix: Telnyx' eigen documentatie zegt expliciet dat niet elke
+// Polly-stem een neurale variant heeft ("Check the available voices for
+// compatibility") en dat kon ik niet verifiëren; de standaardstem "Lotte"
+// bestaat bij AWS Polly al sinds de introductie van Nederlands en is daarmee
+// het laagste-risico gekozen ID. service_level MOET "premium" zijn (spec
+// hieronder) — bij "basic" staat Telnyx alleen en-US toe. Verifieer dit bij
+// de eerste testoproep: geen gesproken audio + een 4xx op speak/
+// gather_using_speak in de Vercel-logs (zie voerInstructieUit) wijst hier
+// naartoe; pas dan uitsluitend deze constante aan (Telnyx Console -> Voice ->
+// Programmable Voice heeft geen eigen "stem"-instelling, dit is puur een
+// per-commando parameter).
+const TELNYX_TTS_VOICE = "AWS.Polly.Lotte";
 const TELNYX_TTS_TAAL = "nl-NL";
+const TELNYX_TTS_SERVICE_LEVEL = "premium";
 
-// Zelfde defensieve aanpak/velden als twilio-provider.ts se
-// VERBORGEN_NUMMER_WAARDEN — algemene SIP/telefonieplatformkennis, NIET in
-// deze sessie live tegen een echt Telnyx-gesprek geverifieerd (zie het
-// opleverrapport se beperkingen-sectie).
+// Algemene SIP/telefonieplatformkennis (zelfde aanpak als twilio-provider.ts
+// eerder se VERBORGEN_NUMMER_WAARDEN) — Telnyx' call.initiated-payload heeft
+// geen los "is verborgen"-boolean-veld (bevestigd via de SDK-broncode, dus
+// dit ontbreken zelf is hard vastgesteld), uitsluitend een kaal `from`-veld.
+// Sentinel-waarden hieronder blijven daarom de best beschikbare aanpak, niet
+// zelf tegen een live gesprek met verborgen nummer getest.
 const VERBORGEN_NUMMER_WAARDEN = new Set(["anonymous", "restricted", "unavailable", "private", ""]);
 
 function apiKey(): string {
@@ -94,6 +138,10 @@ async function telnyxCommando(callControlId: string, actie: string, body: Record
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    // Statuscode + actienaam in de foutmelding (geen bodytekst — kan
+    // providerresponstekst met adres-/telefoonnummerinhoud bevatten, spec
+    // §9) — bedoeld om bv. een 422 op een ongeldige voice-ID (zie
+    // TELNYX_TTS_VOICE hierboven) direct herkenbaar te maken in de logs.
     throw new Error(`Telnyx-commando "${actie}" mislukt: HTTP ${response.status}`);
   }
 }
@@ -102,7 +150,13 @@ async function telnyxCommando(callControlId: string, actie: string, body: Record
 async function voerInstructieUit(callControlId: string, instructie: VoiceInstructie): Promise<void> {
   switch (instructie.soort) {
     case "zeg_en_ophangen":
-      await telnyxCommando(callControlId, "speak", { payload: instructie.tekst, payload_type: "text", voice: TELNYX_TTS_VOICE, language: TELNYX_TTS_TAAL });
+      await telnyxCommando(callControlId, "speak", {
+        payload: instructie.tekst,
+        payload_type: "text",
+        voice: TELNYX_TTS_VOICE,
+        language: TELNYX_TTS_TAAL,
+        service_level: TELNYX_TTS_SERVICE_LEVEL,
+      });
       await telnyxCommando(callControlId, "hangup", {});
       return;
     case "zeg_en_kies_cijfers":
@@ -116,9 +170,10 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
         payload_type: "text",
         voice: TELNYX_TTS_VOICE,
         language: TELNYX_TTS_TAAL,
+        service_level: TELNYX_TTS_SERVICE_LEVEL,
         valid_digits: "0123456789",
-        min_digits: instructie.maxCijfers,
-        max_digits: instructie.maxCijfers,
+        minimum_digits: instructie.maxCijfers,
+        maximum_digits: instructie.maxCijfers,
         inter_digit_timeout_millis: instructie.timeoutSeconden * 1000,
       });
       return;
@@ -127,13 +182,17 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
       // direct (de dispatcher-route sprak de instructietekst zelf al uit via
       // een voorafgaand gather_using_speak-/speak-commando in verwerkTrainingKeuze
       // se eigen VoiceInstructie — hier komt uitsluitend de opnamestap zelf
-      // aan de beurt). stopToets wordt hier NIET doorgegeven: Telnyx' eigen
-      // record_start kent geen "stop-op-toets"-parameter; vroegtijdig
-      // stoppen op '#' wordt door de dispatcher-route apart afgehandeld via
-      // het onafhankelijke call.dtmf.received-event (zie de route se
-      // doc-comment) — de opname stopt sowieso altijd via stilte-timeout of
-      // maxDuurSeconden hieronder, dus dit is een UX-vangnet, geen
-      // functionele afhankelijkheid.
+      // aan de beurt). Bewust GEEN `transcription`-parameter (default false,
+      // spec §11: eigen Whisper-infrastructuur, nooit Telnyx' eigen
+      // transcriptiedienst — die kost bovendien apart, óók impliciet via
+      // timeout_secs se eigen stilte-detectie, zie Telnyx' documentatie
+      // daarvan). stopToets wordt hier NIET doorgegeven: record_start kent
+      // geen "stop-op-toets"-parameter; vroegtijdig stoppen op '#' wordt door
+      // de dispatcher-route apart geprobeerd via het onafhankelijke
+      // call.dtmf.received-event (zie de route se doc-comment voor de nu
+      // bekende beperking daarvan) — de opname stopt hoe dan ook altijd via
+      // stilte-timeout of maxDuurSeconden hieronder, dus dit is een
+      // UX-vangnet, geen functionele afhankelijkheid.
       await telnyxCommando(callControlId, "record_start", {
         format: "mp3",
         channels: "single",
@@ -143,6 +202,38 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
       });
       return;
   }
+}
+
+interface TelnyxOpnameResource {
+  id?: string;
+  download_urls?: { mp3?: string | null; wav?: string | null };
+}
+
+/**
+ * Zoekt de (enige) opname van dit gesprek op via call_leg_id — spec §9:
+ * ophaalReferentie/providerRecordingId zijn bij Telnyx het call_leg_id zelf
+ * (call.recording.saved bevat geen apart recording_id, zie de toelichting
+ * bovenaan dit bestand), dus elke daadwerkelijke ophaal-/verwijderactie moet
+ * eerst deze opzoekstap doen. Gescheiden foutmeldingen per stap (lege lijst
+ * vs. ontbrekende downloadlink vs. HTTP-fout) — spec-eis "direct
+ * diagnosticeren zonder onduidelijke 500's".
+ */
+async function haalMeestRecenteOpname(callLegId: string): Promise<TelnyxOpnameResource> {
+  const query = new URLSearchParams({ "filter[call_leg_id]": callLegId }).toString();
+  const response = await fetch(`${TELNYX_API_BASIS}/recordings?${query}`, { headers: { Authorization: `Bearer ${apiKey()}` } });
+  if (!response.ok) {
+    throw new Error(`Opnamelijst ophalen bij Telnyx mislukt: HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as { data?: TelnyxOpnameResource[] };
+  const opname = body.data?.[0];
+  if (!opname?.id) {
+    // Kan structureel voorkomen zolang Telnyx de opname nog niet volledig
+    // heeft verwerkt (call.recording.saved kan iets vóór de lijst-indexering
+    // vuren) — de bestaande transcriptieretry (gate 1, ongewijzigd) probeert
+    // dit vanzelf een volgende ronde opnieuw.
+    throw new Error(`Geen opname gevonden bij Telnyx voor call_leg_id=${callLegId}.`);
+  }
+  return opname;
 }
 
 export function telnyxProvider(): TelefonieProvider {
@@ -180,20 +271,19 @@ export function telnyxProvider(): TelefonieProvider {
 
     ontleedOpnameStatus(vormVelden): OpnameStatusGegevens {
       const status = vormVelden.event_type === "call.recording.saved" ? "voltooid" : "mislukt";
+      // providerRecordingId/ophaalReferentie = call_control_id (bij dit event
+      // door vlakTelnyxEventAf al op call_leg_id genormaliseerd, zie
+      // webhook-helpers.ts) — GEEN apart recording_id: dat veld ontbreekt op
+      // call.recording.saved (hard bevestigd via Telnyx' eigen SDK-broncode,
+      // zie de toelichting bovenaan dit bestand). haalOpnameOp/verwijderOpname
+      // zoeken de daadwerkelijke opname hiermee op via call_leg_id.
+      const callLegId = vormVelden.call_control_id ?? "";
       return {
-        providerCallId: vormVelden.call_control_id ?? "",
-        providerRecordingId: vormVelden.recording_id ?? "",
+        providerCallId: callLegId,
+        providerRecordingId: callLegId,
         status,
         duurSeconden: berekenDuurSeconden(vormVelden.recording_started_at, vormVelden.recording_ended_at),
-        // Bewust het recording_id zelf, GEEN URL (spec §9: nooit een kale
-        // publieke URL als ophaalReferentie opslaan) — Telnyx' eigen
-        // recording_urls uit de webhook-payload zijn S3-signed-URL's met
-        // slechts ~10 minuten geldigheid, te kort voor onze eigen
-        // transcriptieretry-bewaartermijn van 24 uur (zie gesprek.ts).
-        // haalOpnameOp hieronder haalt daarom bij ELKE poging een VERSE
-        // signed URL op via het recording_id, i.p.v. een verlopen URL te
-        // hergebruiken.
-        ophaalReferentie: status === "voltooid" ? (vormVelden.recording_id ?? null) : null,
+        ophaalReferentie: status === "voltooid" ? (callLegId || null) : null,
       };
     },
 
@@ -206,9 +296,11 @@ export function telnyxProvider(): TelefonieProvider {
           // gefaald vervolgcommando (bv. de beller heeft net zelf al
           // opgehangen, of het call_control_id is inmiddels verlopen) mag de
           // webhookafhandeling zelf nooit laten crashen; Telnyx krijgt hoe
-          // dan ook een 200-ack. Generieke regel, geen providerresponstekst
-          // (kan in theorie geadresseerde/telefonienummerinhoud bevatten).
-          console.error(`[telefonie/telnyx] call-control-commando mislukt (call_control_id=${providerCallId}, soort=${instructie.soort}).`);
+          // dan ook een 200-ack. De foutmelding zelf (nooit de bodytekst, zie
+          // telnyxCommando) wordt wél gelogd, mét het instructiesoort erbij —
+          // dit is de eerste plek om te kijken als de eerste testoproep geen
+          // geluid/gedrag laat zien.
+          console.error(`[telefonie/telnyx] call-control-commando mislukt (call_control_id=${providerCallId}, soort=${instructie.soort}):`, error instanceof Error ? error.message : error);
         }
       }
       return { status: 200, contentType: null, body: null };
@@ -223,36 +315,28 @@ export function telnyxProvider(): TelefonieProvider {
     },
 
     async haalOpnameOp(ophaalReferentie): Promise<ArrayBuffer> {
-      // ophaalReferentie = Telnyx' recording_id (spec §9: providerspecifieke
-      // referentie, nooit een kale URL) — verse GET per poging levert een
-      // nieuwe, kortlevende signed URL (zie ontleedOpnameStatus hierboven).
-      const metaResponse = await fetch(`${TELNYX_API_BASIS}/recordings/${encodeURIComponent(ophaalReferentie)}`, {
-        headers: { Authorization: `Bearer ${apiKey()}` },
-      });
-      if (!metaResponse.ok) {
-        throw new Error(`Opnamemetadata ophalen mislukt: HTTP ${metaResponse.status}`);
-      }
-      const meta = (await metaResponse.json()) as { data?: { recording_urls?: { mp3?: string } } };
-      const mp3Url = meta.data?.recording_urls?.mp3;
+      const opname = await haalMeestRecenteOpname(ophaalReferentie);
+      const mp3Url = opname.download_urls?.mp3;
       if (!mp3Url) {
-        throw new Error("Geen mp3-ophaal-URL aanwezig in de Telnyx-opnamemetadata.");
+        throw new Error(`Opname ${opname.id} heeft geen mp3-downloadlink (download_urls.mp3 ontbreekt).`);
       }
       // De signed URL zelf bevat al zijn eigen (kortlevende) autorisatie in
       // de querystring — geen extra Authorization-header nodig/gewenst hier.
       const audioResponse = await fetch(mp3Url);
       if (!audioResponse.ok) {
-        throw new Error(`Opname downloaden mislukt: HTTP ${audioResponse.status}`);
+        throw new Error(`Opname ${opname.id} downloaden mislukt: HTTP ${audioResponse.status}`);
       }
       return audioResponse.arrayBuffer();
     },
 
     async verwijderOpname(providerRecordingId): Promise<void> {
-      const response = await fetch(`${TELNYX_API_BASIS}/recordings/${encodeURIComponent(providerRecordingId)}`, {
+      const opname = await haalMeestRecenteOpname(providerRecordingId);
+      const response = await fetch(`${TELNYX_API_BASIS}/recordings/${encodeURIComponent(opname.id!)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${apiKey()}` },
       });
       if (!response.ok) {
-        throw new Error(`Opname verwijderen bij Telnyx mislukt: HTTP ${response.status}`);
+        throw new Error(`Opname ${opname.id} verwijderen bij Telnyx mislukt: HTTP ${response.status}`);
       }
     },
   };

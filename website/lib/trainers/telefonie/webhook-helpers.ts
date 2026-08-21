@@ -45,8 +45,19 @@ export async function ontleedTelnyxWebhookJson(request: NextRequest): Promise<{ 
  * vormvelden verwachtten — event_type erbij als eigen sleutel zodat de
  * dispatcher-route erop kan routeren. Geneste velden (bv. recording_urls)
  * worden bewust NIET platgeslagen/meegenomen: telnyx-provider.ts se
- * haalOpnameOp haalt die zelf vers op via het recording_id, nooit via een
- * (mogelijk allang verlopen) URL uit de oorspronkelijke webhook-payload.
+ * haalOpnameOp/verwijderOpname zoeken de daadwerkelijke opname zelf vers op
+ * via call_leg_id, nooit via een (mogelijk al verlopen) URL uit de
+ * oorspronkelijke webhook-payload.
+ *
+ * call_control_id-normalisatie (vastgesteld via Telnyx' eigen SDK-broncode,
+ * zie telnyx-provider.ts se uitgebreide toelichting): het
+ * `call.recording.saved`-event bevat GEEN call_control_id-veld — uitsluitend
+ * call_leg_id. Voor een eenvoudig, nooit-doorverbonden/nooit-geconfereerd
+ * gesprek (exact onze flow) is call_leg_id altijd gelijk aan call_control_id
+ * (bevestigd in Telnyx' eigen call.initiated-voorbeeldpayload). Om
+ * gesprek.ts/de dispatcher-route ÉÉN uniform veld te laten lezen, wordt
+ * call_control_id hier daarom altijd expliciet met call_leg_id als
+ * terugvalwaarde gevuld — dit is de ENE plek waar die terugval gebeurt.
  */
 export function vlakTelnyxEventAf(event: unknown): Record<string, string> {
   const data = (event && typeof event === "object" ? (event as Record<string, unknown>).data : undefined) as Record<string, unknown> | undefined;
@@ -56,6 +67,7 @@ export function vlakTelnyxEventAf(event: unknown): Record<string, string> {
     if (waarde === null || waarde === undefined || typeof waarde === "object") continue;
     vlak[sleutel] = String(waarde);
   }
+  if (!vlak.call_control_id && vlak.call_leg_id) vlak.call_control_id = vlak.call_leg_id;
   return vlak;
 }
 
