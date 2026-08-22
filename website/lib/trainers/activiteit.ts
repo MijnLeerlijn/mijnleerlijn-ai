@@ -1,6 +1,6 @@
 import type { Payload } from "payload";
 import { haalRecenteVerslagenVoorTrainer } from "./verslag";
-import { haalLogboekVoorTrainer, LOGBOEK_TYPE_LABEL, type LogboekType } from "./logboek";
+import { haalLogboekVoorTrainer, type LogboekType } from "./logboek";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V2, Fase 1 (2026-08-28) — gedeelde, chronologische
@@ -23,7 +23,14 @@ export interface ActiviteitItem {
   soort: ActiviteitSoort;
   schoolId: string;
   schoolNaam: string;
-  /** Trainingnaam (bij soort "training") of een korte typeomschrijving (bij een handmatig logboekitem). */
+  /**
+   * Trainingnaam (bij soort "training", of bij een handmatig logboekitem MET
+   * een gekoppelde training). Bij een handmatig logboekitem ZONDER training
+   * een korte, begrensde preview van de notitietekst zelf (kortePreview
+   * hieronder) — bewust niet nogmaals het typelabel: `soort` hierboven
+   * bepaalt al de badge, dezelfde tekst zou daar dubbelop staan (bv.
+   * "Helpdesk · Helpdesk").
+   */
   titel: string;
   wanneer: string;
   /** Waar deze kaart naartoe moet linken. */
@@ -32,6 +39,31 @@ export interface ActiviteitItem {
 
 function labelVoorVerslagActiviteit(bron: "portal" | "telefoon"): ActiviteitSoort {
   return bron === "telefoon" ? "telefonisch" : "training";
+}
+
+const MAX_PREVIEW_LENGTE = 80;
+
+/**
+ * UX-correctie (2026-08-28, na visuele preview) — een handmatig logboekitem
+ * zonder gekoppelde training toonde hier voorheen het typelabel nogmaals als
+ * titel (bv. "Helpdesk · Helpdesk"), want de badge (ActiviteitSoort, zie de
+ * kaartcomponenten) draagt dat al. Deze functie geeft in plaats daarvan een
+ * korte, veilige preview van de trainerinvoer zelf als tweede titelregel.
+ *
+ * "Veilig": platte tekst, nooit HTML/markdown — `tekst` is en blijft een
+ * gewoon stringveld (TrainerLogboekItems.ts se "tekst"-textarea, nooit
+ * geïnterpreteerd als opmaak) en wordt hier, net als overal elders in de
+ * traineromgeving, als gewone JSX-tekstchild gerenderd — React ontsnapt dat
+ * altijd zelf al (geen dangerouslySetInnerHTML in dit hele project); er is
+ * dus geen aparte sanitatiestap nodig, uitsluitend lengte-/witruimtebeheer.
+ * Witregels/dubbele spaties worden hier wél tot één regel platgeslagen —
+ * anders zou een meerregelige aantekening deze compacte, ÉÉN-regel titelplek
+ * onvoorspelbaar laten afbreken.
+ */
+export function kortePreview(tekst: string): string {
+  const eenRegel = tekst.replace(/\s+/g, " ").trim();
+  if (eenRegel.length === 0) return "Logboekitem";
+  return eenRegel.length > MAX_PREVIEW_LENGTE ? `${eenRegel.slice(0, MAX_PREVIEW_LENGTE)}…` : eenRegel;
 }
 
 /**
@@ -56,7 +88,7 @@ export async function haalActiviteitVoorTrainer(payload: Payload, trainer: AuthT
       soort: item.type,
       schoolId: item.mondaySchoolId,
       schoolNaam: item.schoolNaam ?? "Onbekende school",
-      titel: item.trainingNaam ?? LOGBOEK_TYPE_LABEL[item.type],
+      titel: item.trainingNaam ?? kortePreview(item.tekst),
       wanneer: item.occurredAt,
       href: `/scholen/${item.mondaySchoolId}`,
     })),

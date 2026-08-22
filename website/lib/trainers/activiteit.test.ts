@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { haalActiviteitVoorTrainer } from "./activiteit";
+import { haalActiviteitVoorTrainer, kortePreview } from "./activiteit";
 import { haalRecenteVerslagenVoorTrainer, type VerslagActiviteit } from "./verslag";
 import { haalLogboekVoorTrainer, type LogboekItemRecord } from "./logboek";
 import type { Payload } from "payload";
@@ -46,7 +46,7 @@ describe("haalActiviteitVoorTrainer", () => {
 
     expect(items).toHaveLength(2);
     expect(items[0]!.soort).toBe("notitie");
-    expect(items[0]!.titel).toBe("Notitie"); // geen trainingNaam gezet -> valt terug op het typelabel (zie de laatste test hieronder)
+    expect(items[0]!.titel).toBe("Nieuwste (logboek)"); // geen trainingNaam gezet -> valt terug op een preview van de tekst zelf (zie de kortePreview-tests hieronder)
     expect(items[1]!.soort).toBe("training");
     expect(items[1]!.titel).toBe("Oudste (verslag)");
   });
@@ -86,16 +86,44 @@ describe("haalActiviteitVoorTrainer", () => {
     expect(items).toEqual([]);
   });
 
-  it("een logboekitem gekoppeld aan een training toont de trainingnaam als titel, anders het typelabel", async () => {
+  it("titel: logboekitem MET gekoppelde training toont de trainingnaam, ZONDER training een preview van de notitietekst", async () => {
     mockHaalRecenteVerslagenVoorTrainer.mockResolvedValue([]);
     mockHaalLogboekVoorTrainer.mockResolvedValue([
       logboekItem({ id: 1, type: "helpdesk", trainingNaam: "Gekoppelde training", occurredAt: "2026-08-20T10:00:00.000Z" }),
-      logboekItem({ id: 2, type: "overleg", trainingNaam: null, occurredAt: "2026-08-19T10:00:00.000Z" }),
+      logboekItem({ id: 2, type: "overleg", trainingNaam: null, tekst: "Kort telefonisch contact over de planning van volgende week.", occurredAt: "2026-08-19T10:00:00.000Z" }),
     ]);
 
     const items = await haalActiviteitVoorTrainer(FAKE_PAYLOAD, TRAINER, 10);
 
+    // Mét training: trainingnaam wint. De badge (items[x].soort) blijft in beide
+    // gevallen gewoon het type tonen — alleen deze tweede titelregel verandert.
     expect(items[0]!.titel).toBe("Gekoppelde training");
-    expect(items[1]!.titel).toBe("Overleg");
+    // Zonder training: geen dubbel typelabel meer ("Overleg · Overleg"), maar een
+    // preview van de eigen tekst.
+    expect(items[1]!.titel).toBe("Kort telefonisch contact over de planning van volgende week.");
+  });
+});
+
+describe("kortePreview", () => {
+  it("geeft korte tekst ongewijzigd terug (op witruimte-normalisatie na)", () => {
+    expect(kortePreview("Kort telefonisch contact gehad.")).toBe("Kort telefonisch contact gehad.");
+  });
+
+  it("valt terug op de neutrale titel 'Logboekitem' bij lege of alleen-witruimte tekst", () => {
+    expect(kortePreview("")).toBe("Logboekitem");
+    expect(kortePreview("   \n\t  ")).toBe("Logboekitem");
+  });
+
+  it("begrenst lange tekst tot 80 tekens met een ellipsis", () => {
+    const langeTekst = "a".repeat(120);
+
+    const preview = kortePreview(langeTekst);
+
+    expect(preview).toBe(`${"a".repeat(80)}…`);
+    expect(preview.length).toBe(81);
+  });
+
+  it("slaat witregels en dubbele spaties plat tot één regel", () => {
+    expect(kortePreview("Eerste regel\n\nTweede   regel")).toBe("Eerste regel Tweede regel");
   });
 });
