@@ -131,7 +131,7 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
     naam: "fake",
     verifieerWebhookSignature: () => true,
     ontleedInkomendeCall: vi.fn(() => ({ providerCallId: "CA1", vanNummerRuw: "+31612345678", nummerVerborgen: false }) as InkomendeCallGegevens),
-    ontleedGatherResultaat: vi.fn(() => ({ cijfers: null }) as GatherResultaat),
+    ontleedGatherResultaat: vi.fn(() => ({ cijfers: null, clientState: null }) as GatherResultaat),
     ontleedOpnameStatus: vi.fn(
       () =>
         ({
@@ -401,7 +401,7 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
       const oproepNaInkomend = await maakOfHaalOproep(payload, callId); // idempotente find, geen tweede rij
       const oproepId = oproepNaInkomend.id;
 
-      await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+      await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
       expect((await herlees(oproepId)).status).toBe("opname_verwacht");
 
       const opnameProvider = maakFakeProvider({
@@ -433,7 +433,7 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
 
       await verwerkInkomendeCall(payload, inkomendeProvider, {});
       const oproepId = (await maakOfHaalOproep(payload, callId)).id;
-      await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+      await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
 
       const opnameProvider = maakFakeProvider({
         ontleedOpnameStatus: () =>

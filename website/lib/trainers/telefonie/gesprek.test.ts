@@ -135,7 +135,7 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
     naam: "fake",
     verifieerWebhookSignature: () => true,
     ontleedInkomendeCall: vi.fn(() => ({ providerCallId: "CA1", vanNummerRuw: "+31612345678", nummerVerborgen: false }) as InkomendeCallGegevens),
-    ontleedGatherResultaat: vi.fn(() => ({ cijfers: null }) as GatherResultaat),
+    ontleedGatherResultaat: vi.fn(() => ({ cijfers: null, clientState: null }) as GatherResultaat),
     ontleedOpnameStatus: vi.fn(
       () =>
         ({
@@ -447,7 +447,7 @@ describe("verwerkTrainingKeuze", () => {
 
   it("scenario 5 vervolg: cijfer 1 (ja) bij één kandidaat -> bevestigd, status opname_verwacht, spreekt EERST de instructie (start dus zelf nog GEEN opname)", async () => {
     const oproepId = await herkendeOproep([training()]);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) });
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -475,7 +475,7 @@ describe("verwerkTrainingKeuze", () => {
     const oproepId = await herkendeOproep([training({ id: "111", datum: vandaagIsoAmsterdam() })]);
     // Verse her-fetch op keuzemoment (gaNaarOudereLaag) ziet nu ook de oudere training.
     mockHaalRecenteTrainingen.mockResolvedValue([training({ id: "111", datum: vandaagIsoAmsterdam() }), training({ id: "222", schoolNaam: "Oudere School", datum: dagenGeleden(1) })]);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2", clientState: null }) });
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -489,7 +489,7 @@ describe("verwerkTrainingKeuze", () => {
 
   it("spec §14: cijfer 2 (nee) op de enige VANDAAG-kandidaat, GEEN oudere training beschikbaar -> vaste 'geen kandidaten meer'-boodschap, nette afsluiting", async () => {
     const oproepId = await herkendeOproep([training({ datum: vandaagIsoAmsterdam() })]);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2", clientState: null }) });
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -509,7 +509,7 @@ describe("verwerkTrainingKeuze", () => {
       training({ id: "222", datum: vandaagIsoAmsterdam() }),
       training({ id: "333", schoolNaam: "Oudere School", datum: dagenGeleden(1) }),
     ]);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "9" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "9", clientState: null }) });
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -522,7 +522,7 @@ describe("verwerkTrainingKeuze", () => {
     // herkendeOproep krijgt uitsluitend een ouder-gedateerde training -> verwerkInkomendeCall
     // presenteert meteen de ouder-laag (spec §4), cijfer 1 kiest 'm.
     const oproepId = await herkendeOproep([training({ id: "222", schoolNaam: "Oudere School", datum: dagenGeleden(1) })]);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) });
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -534,7 +534,7 @@ describe("verwerkTrainingKeuze", () => {
 
   it("spec §14: cijfer 2 (nee) op de enige OUDERE-kandidaat -> dit WAS al de laatste laag, vaste 'geen kandidaten meer'-boodschap", async () => {
     const oproepId = await herkendeOproep([training({ id: "222", datum: dagenGeleden(1) })]);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2", clientState: null }) });
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -547,7 +547,7 @@ describe("verwerkTrainingKeuze", () => {
     const oproepId = await herkendeOproep([training()]);
     // Simuleert een net gewonnen ander gesprek: er bestaat nu al een verslag voor TRAINING_ID, van een ANDERE oproep.
     collection("training-verslagen").push({ id: 777, trainer: TRAINER.id, mondayTrainingId: TRAINING_ID, status: "concept", bron: "telefoon", telefonieOproep: 999999 });
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) });
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -565,7 +565,7 @@ describe("verwerkTrainingKeuze", () => {
     const oproepId = await herkendeOproep(kandidaten);
     // Her-resolutie op keuzemoment moet dezelfde twee kandidaten opnieuw vinden.
     mockHaalRecenteTrainingen.mockResolvedValue(kandidaten);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "2", clientState: null }) });
 
     await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -578,7 +578,7 @@ describe("verwerkTrainingKeuze", () => {
     const kandidaten = [training({ id: "111" }), training({ id: "222" })];
     const oproepId = await herkendeOproep(kandidaten);
     mockHaalRecenteTrainingen.mockResolvedValue(kandidaten);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "7" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "7", clientState: null }) });
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
     expect(instructies[0]!.soort).toBe("zeg_en_ophangen");
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
@@ -590,7 +590,7 @@ describe("verwerkTrainingKeuze", () => {
     const kandidaten = [training({ id: "111" }), training({ id: "222" })];
     const oproepId = await herkendeOproep(kandidaten);
     mockHaalRecenteTrainingen.mockResolvedValue(kandidaten); // geen enkele training buiten vandaag
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "9" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "9", clientState: null }) });
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
     expect(instructies).toEqual([
       { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
@@ -599,7 +599,7 @@ describe("verwerkTrainingKeuze", () => {
 
   it("geen enkele invoer (timeout) -> geen keuze gemaakt", async () => {
     const oproepId = await herkendeOproep([training()]);
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: null }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: null, clientState: null }) });
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
     expect(instructies[0]!.soort).toBe("zeg_en_ophangen");
   });
@@ -607,7 +607,7 @@ describe("verwerkTrainingKeuze", () => {
   it("VEILIGHEID (spec §6): de gekozen training wordt ALTIJD vers her-geresolveerd — als hij tussen aanbieden en kiezen wegvalt (bv. geannuleerd), wordt de eerder-gesnapshotte kandidaat NOOIT blind vertrouwd", async () => {
     const oproepId = await herkendeOproep([training()]);
     mockHaalRecenteTrainingen.mockResolvedValue([]); // op keuzemoment niet meer aanwezig
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) });
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
@@ -628,7 +628,7 @@ describe("verwerkTrainingKeuze", () => {
 
     mockHaalRecenteTrainingen.mockClear();
     mockHaalRecenteTrainingen.mockResolvedValue([training({ id: "111" })]);
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepIdA, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepIdA, {});
 
     // De her-resolutie-aanroep vanuit oproepIdA moet TRAINER (id 101), nooit TRAINER_B, hebben gebruikt.
     const gebruikteTrainer = mockHaalRecenteTrainingen.mock.calls.at(-1)![0];
@@ -677,7 +677,7 @@ describe("verwerkOpnameToets", () => {
     const provider = maakFakeProvider();
     await verwerkInkomendeCall(payload, provider, {});
     const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
     return oproepId;
   }
 
@@ -690,7 +690,7 @@ describe("verwerkOpnameToets", () => {
 
   it("spec §9: '#' -> stopt de opname en verwerkt hem, met de vaste afsluitende boodschap", async () => {
     const oproepId = await oproepMetOpnameVerwacht();
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) });
 
     const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
 
@@ -703,7 +703,7 @@ describe("verwerkOpnameToets", () => {
   it("spec §10: '*' -> stopt de HUIDIGE opname, behoudt dezelfde gekozen training, start een NIEUWE opname met de exacte herstarttekst", async () => {
     const oproepId = await oproepMetOpnameVerwacht();
     const trainingIdVoor = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.gekozenMondayTrainingId;
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) });
 
     const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
 
@@ -722,7 +722,7 @@ describe("verwerkOpnameToets", () => {
 
   it("spec §11: meerdere '*'-herstarts na elkaar tellen op, tot de expliciete limiet", async () => {
     const oproepId = await oproepMetOpnameVerwacht();
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) });
 
     await verwerkOpnameToets(payload, provider, oproepId, {});
     await verwerkOpnameToets(payload, provider, oproepId, {});
@@ -737,7 +737,7 @@ describe("verwerkOpnameToets", () => {
 
   it("spec §11 (productieblocker): de limiet is bereikt (MAX_HEROPNAME_POGINGEN) -> de HUIDIGE opname blijft geldig/lopend (NOOIT gestopt), trainer krijgt de exacte waarschuwing, heropnamePogingen ongewijzigd", async () => {
     const oproepId = await oproepMetOpnameVerwacht();
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) });
     await verwerkOpnameToets(payload, provider, oproepId, {});
     await verwerkOpnameToets(payload, provider, oproepId, {});
     await verwerkOpnameToets(payload, provider, oproepId, {});
@@ -761,7 +761,7 @@ describe("verwerkOpnameToets", () => {
 
   it("spec §11 (productieblocker): twee ACHTEREENVOLGENDE keren op de limiet krijgen elk hun EIGEN nonce (zodat de her-bewapening van de gather niet ten onrechte gededupliceerd wordt)", async () => {
     const oproepId = await oproepMetOpnameVerwacht();
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) });
     await verwerkOpnameToets(payload, provider, oproepId, {});
     await verwerkOpnameToets(payload, provider, oproepId, {});
     await verwerkOpnameToets(payload, provider, oproepId, {});
@@ -776,7 +776,7 @@ describe("verwerkOpnameToets", () => {
 
   it("een ongeldig/onverwacht digit -> geen actie, opname loopt door", async () => {
     const oproepId = await oproepMetOpnameVerwacht();
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "5" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "5", clientState: null }) });
     const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
     expect(instructies).toEqual([]);
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
@@ -785,7 +785,7 @@ describe("verwerkOpnameToets", () => {
 
   it("geen digit (timeout op de opname_toets-gather) -> geen actie", async () => {
     const oproepId = await oproepMetOpnameVerwacht();
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: null }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: null, clientState: null }) });
     const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
     expect(instructies).toEqual([]);
   });
@@ -794,12 +794,143 @@ describe("verwerkOpnameToets", () => {
     const oproepId = await oproepMetOpnameVerwacht();
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     rij.status = "concept_klaar";
-    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) });
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) });
 
     const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
 
     expect(instructies).toEqual([]);
     expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("concept_klaar");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live regressie-vervolgronde (2026-08-27/28) — call.dtmf.received is nu de
+// PRIMAIRE trigger voor verwerkOpnameToets (call.gather.ended blijft
+// fallback, route.ts). Beide leveren dezelfde providerneutrale
+// GatherResultaat (incl. clientState) aan verwerkOpnameToets — dit blok
+// bewijst de dedup-claim (claimOpnameToetsVerwerking) rechtstreeks op dat
+// gedeelde niveau, ONGEACHT welk webhookeventtype 'm triggerde: een tweede
+// aanroep met DEZELFDE clientState (zoals Telnyx die voor DEZELFDE fysieke
+// toetsdruk op zowel call.dtmf.received als het latere call.gather.ended
+// teruggeeft) mag nooit een tweede keer verwerken.
+// ---------------------------------------------------------------------------
+
+describe("verwerkOpnameToets — dedup tegen dubbele levering van dezelfde toetsdruk (call.dtmf.received + call.gather.ended)", () => {
+  async function oproepMetOpnameVerwacht() {
+    mockHaalRecenteTrainingen.mockResolvedValue([training()]);
+    const provider = maakFakeProvider();
+    await verwerkInkomendeCall(payload, provider, {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
+    return oproepId;
+  }
+
+  // Testpunt 1 (opdracht): actieve opname + call.dtmf.received digit="*" -> herstartflow.
+  it("1: '*' met een echte (niet-null) client_state -> herstartflow werkt normaal, exact als vóór deze ronde", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: clientStateVoor("opname_toets", 0) }) });
+
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(instructies[0]).toEqual({ soort: "stop_opname", poging: 0 });
+    const tweede = instructies[1]!;
+    expect(tweede.soort).toBe("zeg_en_neem_op");
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.heropnamePogingen).toBe(1);
+    expect(rij.opnameToetsClaimClientState).toBe(clientStateVoor("opname_toets", 0));
+  });
+
+  // Testpunt 2: actieve opname + call.dtmf.received digit="#" -> afrondflow.
+  it("2: '#' met een echte (niet-null) client_state -> afrondflow werkt normaal, exact als vóór deze ronde", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: clientStateVoor("opname_toets", 0) }) });
+
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([
+      { soort: "stop_opname", poging: 0 },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" },
+    ]);
+  });
+
+  // Testpunt 3: daarna call.gather.ended voor dezelfde toets -> geen tweede verwerking.
+  it("3a: '*' — een tweede aanroep met DEZELFDE client_state (zoals een later call.gather.ended voor dezelfde toetsdruk) -> [] , GEEN tweede herstart", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: clientStateVoor("opname_toets", 0) }) });
+
+    const eerste = await verwerkOpnameToets(payload, provider, oproepId, {});
+    const tweede = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(eerste.length).toBeGreaterThan(0);
+    expect(tweede).toEqual([]); // duplicaat — geen tweede stop_opname/zeg_en_neem_op
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.heropnamePogingen).toBe(1); // NIET 2 — de duplicaataanroep mocht niet nogmaals herstarten
+  });
+
+  it("3b: '#' — een tweede aanroep met DEZELFDE client_state -> [] , GEEN tweede record_stop/afsluitboodschap/hangup", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: clientStateVoor("opname_toets", 0) }) });
+
+    const eerste = await verwerkOpnameToets(payload, provider, oproepId, {});
+    const tweede = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(eerste).toEqual([
+      { soort: "stop_opname", poging: 0 },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" },
+    ]);
+    expect(tweede).toEqual([]); // duplicaat — geen tweede stop_opname, geen tweede afsluitboodschap, geen tweede hangup
+  });
+
+  // Testpunt 4: call.gather.ended zonder voorafgaande call.dtmf.received blijft als fallback functioneren.
+  it("4: een enkele aanroep met een client_state (ongeacht of dit 'de eerste' of 'de enige' aflevering is) verwerkt normaal — de claim vereist geen voorafgaande tweede aanroep", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    // Andere client_state dan test 1/2 hierboven — bewijst dat elke NIEUWE
+    // toetsdruk (nieuwe poging, dus nieuwe client_state) gewoon zelfstandig
+    // werkt, ongeacht of dit via call.dtmf.received of (als enige/fallback)
+    // call.gather.ended binnenkomt: verwerkOpnameToets kent het verschil niet.
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: clientStateVoor("opname_toets", 0) }) });
+
+    const instructies = await verwerkOpnameToets(payload, provider, oproepId, {});
+
+    expect(instructies.length).toBeGreaterThan(0);
+  });
+
+  // Testpunt 5: cijfer '1' tijdens opname -> geen trainingkeuze (en geen claimverbruik).
+  it("5: cijfer '1' tijdens actieve opname -> geen actie (nooit trainingkeuze), en verbruikt geen claim voor een latere, echte */# -toetsdruk", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const negenProvider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: clientStateVoor("opname_toets", 0) }) });
+    const negenInstructies = await verwerkOpnameToets(payload, negenProvider, oproepId, {});
+    expect(negenInstructies).toEqual([]);
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("opname_verwacht");
+
+    // Dezelfde client_state, nu met een geldig cijfer -> moet nog gewoon kunnen claimen/verwerken.
+    const sterProvider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: clientStateVoor("opname_toets", 0) }) });
+    const sterInstructies = await verwerkOpnameToets(payload, sterProvider, oproepId, {});
+    expect(sterInstructies.length).toBeGreaterThan(0);
+  });
+
+  // Testpunt 9: een verworpen opname (via '*') kan nooit alsnog een concept worden — nu bereikt via de NIEUWE primaire trigger.
+  it("9: '*' via de nieuwe primaire trigger wijst de opname af; een late call.recording.saved voor DIE (inmiddels afgewezen) poging wordt genegeerd, kan nooit een concept worden", async () => {
+    const oproepId = await oproepMetOpnameVerwacht();
+    const herstartProvider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: clientStateVoor("opname_toets", 0) }) });
+    await verwerkOpnameToets(payload, herstartProvider, oproepId, {});
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.heropnamePogingen).toBe(1);
+
+    // De AFGEWEZEN (poging 0) opname komt alsnog laat binnen bij verwerkOpnameStatus — client_state draagt nog steeds poging 0.
+    const opnameProvider = maakFakeProvider({
+      ontleedOpnameStatus: () => ({
+        providerCallId: "CA1",
+        providerRecordingId: "RE-AFGEWEZEN",
+        status: "voltooid",
+        duurSeconden: 12,
+        ophaalReferentie: "https://provider.example/RE-AFGEWEZEN",
+        clientState: Buffer.from("0", "utf8").toString("base64"),
+      }),
+    });
+    await verwerkOpnameStatus(payload, opnameProvider, oproepId, {});
+
+    expect(collection("training-verslagen")).toHaveLength(0); // nooit een concept van de afgewezen opname
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("opname_verwacht"); // ongewijzigd, wacht nog op de nieuwe (poging 1) opname
   });
 });
 
@@ -820,7 +951,7 @@ describe("verwerkSpreekAfgerond", () => {
     const provider = maakFakeProvider();
     await verwerkInkomendeCall(payload, provider, {});
     const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
     return oproepId;
   }
 
@@ -882,7 +1013,7 @@ describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, da
     const inkomendeProvider = maakFakeProvider();
     await verwerkInkomendeCall(payload, inkomendeProvider, {});
     const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
 
     // poging 0 spreken -> starten.
     let instructies = await verwerkSpreekAfgerond(payload, maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 0) }) }), oproepId, {});
@@ -890,7 +1021,7 @@ describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, da
 
     // Drie '*'-herstarts: elke keer stop+zeg_en_neem_op, dan speak.ended -> opname_starten voor de volgende poging.
     for (let poging = 1; poging <= 3; poging += 1) {
-      const toetsInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) }), oproepId, {});
+      const toetsInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) }), oproepId, {});
       expect(toetsInstructies).toEqual([
         { soort: "stop_opname", poging: poging - 1 },
         {
@@ -909,7 +1040,7 @@ describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, da
     expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.heropnamePogingen).toBe(3);
 
     // Een 4e '*' (op de limiet): GEEN nieuwe opname, de exacte waarschuwing, poging blijft 3.
-    const opLimietInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) }), oproepId, {});
+    const opLimietInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) }), oproepId, {});
     expect(opLimietInstructies).toHaveLength(1);
     const waarschuwing = opLimietInstructies[0]!;
     if (waarschuwing.soort !== "zeg_en_hervat_opname") throw new Error("verwacht zeg_en_hervat_opname");
@@ -927,7 +1058,7 @@ describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, da
     expect(hervatInstructies).toEqual([{ soort: "opname_hervatten", maxDuurSeconden: 900, stopToets: "#", herstartToets: "*", poging: 3, nonce: waarschuwing.nonce }]);
 
     // DE KERN VAN DIT SCENARIO: '#' moet nu nog altijd werken (de gather is herbewapend).
-    const stopInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+    const stopInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) }), oproepId, {});
     expect(stopInstructies).toEqual([
       { soort: "stop_opname", poging: 3 },
       { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" },
@@ -1033,7 +1164,7 @@ describe("productieregressie: spreek-dan-ophangen sequencing (2026-08-27)", () =
     const oproepId = await herkendeOproep([training()]);
     collection("training-verslagen").push({ id: 777, trainer: TRAINER.id, mondayTrainingId: TRAINING_ID, status: "concept", bron: "telefoon", telefonieOproep: 999999 });
 
-    const spreekInstructies = await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    const spreekInstructies = await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
     expect(spreekInstructies).toEqual([
       {
         soort: "zeg_en_ophangen",
@@ -1048,7 +1179,7 @@ describe("productieregressie: spreek-dan-ophangen sequencing (2026-08-27)", () =
 
   it("7: de normale spreek->opname-flow blijft ongewijzigd werken (start_opname via verwerkSpreekAfgerond, raakt het hangup-pad niet)", async () => {
     const oproepId = await herkendeOproep([training()]);
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
     const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 0) }) });
 
     const instructies = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
@@ -1058,9 +1189,9 @@ describe("productieregressie: spreek-dan-ophangen sequencing (2026-08-27)", () =
 
   it("8: de '*'-herstartflow blijft werken (heropnamePogingen hoogt op, nieuwe zeg_en_neem_op, geen hangup)", async () => {
     const oproepId = await herkendeOproep([training()]);
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
 
-    const instructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) }), oproepId, {});
+    const instructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) }), oproepId, {});
 
     expect(instructies).toEqual([
       { soort: "stop_opname", poging: 0 },
@@ -1079,9 +1210,9 @@ describe("productieregressie: spreek-dan-ophangen sequencing (2026-08-27)", () =
 
   it("9: de '#'-afrondflow blijft werken (stop_opname + het speak-only afscheidsbericht, GEEN voortijdige hangup_uitvoeren)", async () => {
     const oproepId = await herkendeOproep([training()]);
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
 
-    const instructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+    const instructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) }), oproepId, {});
 
     expect(instructies).toEqual([
       { soort: "stop_opname", poging: 0 },
@@ -1124,9 +1255,9 @@ describe("productieregressie-vervolgronde: afsluitboodschap na '#' (2026-08-27)"
 
   it("opname actief -> # -> record_stop + afsluit-speak (GEEN hangup_uitvoeren erbij) -> pas ná call.speak.ended volgt exact één hangup_uitvoeren", async () => {
     const oproepId = await herkendeOproep([training()]);
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
 
-    const toetsInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+    const toetsInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) }), oproepId, {});
 
     expect(toetsInstructies).toEqual([
       { soort: "stop_opname", poging: 0 },
@@ -1141,8 +1272,8 @@ describe("productieregressie-vervolgronde: afsluitboodschap na '#' (2026-08-27)"
 
   it("de call.recording.saved-fallback ná een al via '#' gestarte afsluiting spreekt de boodschap NIET nogmaals uit — voorkomt exact de dubbele-speak-poging die de root cause van deze regressie was", async () => {
     const oproepId = await herkendeOproep([training()]);
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
-    await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
+    await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) }), oproepId, {});
 
     // Simuleert de onafhankelijke call.recording.saved-fallback die normaal
     // óók na een expliciete '#'-afronding volgt — route.ts roept hiervoor
@@ -1154,8 +1285,8 @@ describe("productieregressie-vervolgronde: afsluitboodschap na '#' (2026-08-27)"
 
   it("het concept-/verwerkingspad blijft ongewijzigd: ná # wordt de opname alsnog correct getranscribeerd en als concept vastgelegd", async () => {
     const oproepId = await herkendeOproep([training()]);
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
-    await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
+    await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) }), oproepId, {});
 
     mockTranscribeAudio.mockResolvedValue("Verslag na hekje, ongewijzigd verwerkingspad.");
     const opnameProvider = maakFakeProvider({
@@ -1186,7 +1317,7 @@ describe("verwerkOpnameStatus", () => {
     const provider = maakFakeProvider();
     await verwerkInkomendeCall(payload, provider, {});
     const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
     return oproepId;
   }
 
@@ -1451,7 +1582,7 @@ describe("verwerkTelefonieHandmatigeRetry", () => {
     const provider = maakFakeProvider();
     await verwerkInkomendeCall(payload, provider, {});
     const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
     return oproepId;
   }
 

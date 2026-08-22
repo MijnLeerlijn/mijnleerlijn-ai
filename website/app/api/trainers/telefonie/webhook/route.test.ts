@@ -184,17 +184,75 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
   });
 
-  it("call.dtmf.received -> uitsluitend diagnostiek (tijdelijk, productieregressie-ronde 2026-08-27) — GEEN dispatch naar enige handler, toch 200", async () => {
+  // Live regressie-vervolgronde (2026-08-27/28, spec "dispatch op
+  // call.gather.ended is live nog steeds niet voldoende") — call.dtmf.received
+  // is nu de PRIMAIRE trigger voor verwerkOpnameToets tijdens een actieve
+  // opname (call.gather.ended hierboven blijft fallback). Vervangt de
+  // eerdere "uitsluitend diagnostiek, geen dispatch"-test uit de vorige
+  // ronde: dat gedrag is bewust veranderd.
+  it("testpunt 1/2: call.dtmf.received met oproep.status='opname_verwacht' -> dispatcht DIRECT naar verwerkOpnameToets (NIET verwerkTrainingKeuze), resultaat wordt uitgevoerd", async () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
     mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
+    const instructies = [{ soort: "stop_opname" as const, poging: 0 }, { soort: "zeg_en_neem_op" as const, tekst: "Geen probleem...", actieUrl: "x", statusCallbackUrl: "y", stopToets: "#", herstartToets: "*", poging: 1 }];
+    mockVerwerkOpnameToets.mockResolvedValue(instructies);
 
-    const response = await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "#" } } }));
+    const response = await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "*" } } }));
+
+    expect(response.status).toBe(200);
+    expect(mockVerwerkOpnameToets).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ digit: "*" }));
+    expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
+    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", instructies);
+  });
+
+  it("testpunt 5: digit '1' tijdens opname_verwacht -> dispatcht nog altijd (uitsluitend) naar verwerkOpnameToets, NOOIT naar verwerkTrainingKeuze — de route zelf beoordeelt het cijfer niet, dat doet verwerkOpnameToets", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
+    mockVerwerkOpnameToets.mockResolvedValue([]); // verwerkOpnameToets zelf negeert cijfer "1" (zie gesprek.test.ts)
+
+    await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "1" } } }));
+
+    expect(mockVerwerkOpnameToets).toHaveBeenCalledTimes(1);
+    expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
+  });
+
+  it("testpunt 6: call.dtmf.received BUITEN opname_verwacht (bv. de trainingkeuze-gather) -> GEEN dispatch naar enige handler, geen voerVoiceInstructiesUit, toch 200 — trainingkeuze blijft uitsluitend via call.gather.ended lopen", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "trainer_herkend" } as never);
+
+    const response = await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "1" } } }));
 
     expect(response.status).toBe(200);
     expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
     expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
     expect(provider.voerVoiceInstructiesUit).not.toHaveBeenCalled();
+  });
+
+  it("testpunt 7: '*'/'#' via call.dtmf.received BUITEN opname_verwacht -> ook dan geen actie", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "concept_klaar" } as never);
+
+    await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "*" } } }));
+    await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "#" } } }));
+
+    expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
+    expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
+  });
+
+  it("testpunt 3/4: call.dtmf.received gevolgd door call.gather.ended voor dezelfde toetsdruk -> BEIDE dispatchen naar verwerkOpnameToets (de dedup zelf loopt in verwerkOpnameToets se eigen claim, niet in de dispatchlaag — zie gesprek.test.ts)", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
+    mockVerwerkOpnameToets.mockResolvedValueOnce([{ soort: "stop_opname", poging: 0 }]).mockResolvedValueOnce([]); // 2e aanroep: duplicaat, claim verloren -> []
+
+    await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "#" } } }));
+    await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_1", digits: "#" } } }));
+
+    expect(mockVerwerkOpnameToets).toHaveBeenCalledTimes(2);
+    expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
   });
 
   it("call.speak.ended -> dispatcht naar verwerkSpreekAfgerond met de opgeloste oproepId (spec: deterministische speak->opname-sequencing)", async () => {

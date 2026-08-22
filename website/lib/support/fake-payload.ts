@@ -278,6 +278,23 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
             return { rows: [{ id }] };
           }
 
+          // Live regressie-vervolgronde (2026-08-27/28) —
+          // claimOpnameToetsVerwerking se atomische conditionele UPDATE:
+          // claimbaar zolang de opgegeven client_state nog niet de laatst
+          // geclaimde waarde is — zie de doc-comment bij die functie
+          // (oproep-state.ts) voor de volledige dedup-redenering.
+          if (tekst.includes("SET opname_toets_claim_client_state")) {
+            const [clientState, id] = params as [string, number, string];
+            const oproepen = arr("trainer-telefonie-oproepen");
+            const doc = oproepen.find((d) => d.id === id);
+            if (!doc) return { rows: [] };
+            if (doc.status !== "opname_verwacht") return { rows: [] };
+            if (doc.opnameToetsClaimClientState != null && doc.opnameToetsClaimClientState === clientState) return { rows: [] };
+            const nu = new Date().toISOString();
+            Object.assign(doc, { opnameToetsClaimClientState: clientState, updatedAt: nu });
+            return { rows: [{ id }] };
+          }
+
           // schrijfVerslagVelden/schrijfOproepVelden — dynamische,
           // willekeurige kolomcombinatie via sql.identifier(), hier dus ook
           // generiek nagebootst i.p.v. per-combinatie: kolomnamen staan al

@@ -657,6 +657,10 @@ export interface TrainerTelefonieOproepen {
    * Leeg zolang de afsluitboodschap ('Bedankt...') nog niet is gestart. Zodra gezet, geldt dit als de atomaire claim: een eventuele tweede trigger (bv. de call.recording.saved-fallback ná een al via '#' gestarte afsluiting) spreekt de boodschap dan bewust NIET nogmaals uit.
    */
   afsluitboodschapGestartOp?: string | null;
+  /**
+   * De client_state van de laatst geclaimde #/*-toetsdruk tijdens een actieve opname — atomaire dedup-garantie tegen dubbele verwerking van dezelfde toetsdruk via zowel call.dtmf.received als call.gather.ended. Leeg = nog geen toetsdruk geclaimd voor de huidige opnamepoging.
+   */
+  opnameToetsClaimClientState?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2550,6 +2554,7 @@ export interface TrainerTelefonieOproepenSelect<T extends boolean = true> {
   ontvangenOp?: T;
   afgerondOp?: T;
   afsluitboodschapGestartOp?: T;
+  opnameToetsClaimClientState?: T;
   updatedAt?: T;
   createdAt?: T;
 }

@@ -80,13 +80,30 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 //                       may receive many of these webhooks)" én
 //                       "call.gather.ended" — DTMF tijdens een actieve
 //                       parallelle gather wordt door Telnyx dus wél degelijk
-//                       verwacht/afgeleverd. call.dtmf.received zelf wordt nog
-//                       niet gedispatcht (zie hieronder — bewust nog niet, bij
-//                       maximum_digits:1 hoort het bijbehorende
-//                       call.gather.ended zelf al voldoende te zijn), maar
-//                       wordt deze ronde wél tijdelijk gelogd (puur
-//                       diagnostiek) om dat op de eerstvolgende live call
-//                       hard te bevestigen.
+//                       verwacht/afgeleverd.
+//                       LIVE REGRESSIE-VERVOLGRONDE (2026-08-27/28, spec
+//                       "dispatch op call.gather.ended is live nog steeds
+//                       niet voldoende") — ook ná de fix hierboven bleef
+//                       '*'/'#' tijdens een actieve opname live zonder
+//                       hoorbaar effect. call.gather.ended blijkt dus niet
+//                       (voldoende) betrouwbaar tijdens de parallelle gather
+//                       — call.dtmf.received (hieronder) is daarom de nieuwe
+//                       PRIMAIRE trigger voor verwerkOpnameToets;
+//                       call.gather.ended hierboven blijft als FALLBACK
+//                       functioneren (bv. als call.dtmf.received onverhoopt
+//                       ooit uitblijft). Omdat Telnyx voor DEZELFDE fysieke
+//                       toetsdruk soms BEIDE events aflevert, claimt
+//                       verwerkOpnameToets zelf atomisch (oproep-state.ts se
+//                       claimOpnameToetsVerwerking, PostgreSQL — spec-eis
+//                       "geen dedupe uitsluitend in memory, dit draait
+//                       serverless") vóór het uitvoeren van de bijbehorende
+//                       actie, dus geen aparte dedup-laag hier in de
+//                       dispatcher nodig.
+//  call.dtmf.received -> zie call.gather.ended hierboven — PRIMAIRE trigger
+//                       voor verwerkOpnameToets zolang oproep.status ===
+//                       "opname_verwacht"; daarbuiten bewust genegeerd (geen
+//                       trainingkeuze via dit event, dat blijft uitsluitend
+//                       via call.gather.ended lopen).
 //  call.speak.ended -> productieblocker-ronde (2026-08-26, spec "instructie
 //                       moet volledig zijn uitgesproken vóór opname start")
 //                       -> verwerkSpreekAfgerond: DE deterministische
@@ -182,38 +199,50 @@ export async function POST(request: NextRequest) {
       case "call.gather.ended": {
         if (!beperkPerGesprek.magVerder(callControlId)) break;
         const oproep = await maakOfHaalOproep(payload, callControlId);
-        // TIJDELIJKE DIAGNOSTIEK (productieregressie-ronde 2026-08-27, spec
-        // "*/# doen niets tijdens de opname") — uitsluitend niet-herleidbare
-        // technische velden (geen audio/transcriptie/telefoonnummer/API-key/
-        // persoonsgegevens): bevestigt op de eerstvolgende live call of
-        // gather_id daadwerkelijk afwezig is (zie de root-cause-toelichting
-        // bovenaan dit bestand) en wat digits/status/oproep op dat moment zijn.
-        // Verwijderen zodra dit hard bevestigd is.
+        const isOpnameToets = oproep.status === "opname_verwacht";
+        const instructies = isOpnameToets
+          ? await verwerkOpnameToets(payload, provider, oproep.id, vormVelden)
+          : await verwerkTrainingKeuze(payload, provider, oproep.id, vormVelden);
+        // TIJDELIJKE DIAGNOSTIEK (live regressie-vervolgronde 2026-08-27/28,
+        // spec "*/# doen niets tijdens de opname") — uitsluitend
+        // niet-herleidbare technische velden (geen audio/transcriptie/
+        // telefoonnummer/API-key/persoonsgegevens). call.gather.ended is nu
+        // de FALLBACK-trigger voor verwerkOpnameToets (call.dtmf.received
+        // hieronder is primair) — "genegeerd_of_duplicate" bij een lege
+        // instructielijst dekt zowel "geen geldig cijfer" als "duplicaat van
+        // een al via call.dtmf.received verwerkte toetsdruk" (zie
+        // claimOpnameToetsVerwerking, oproep-state.ts). Verwijderen zodra
+        // dit dubbeltriggerpad hard bevestigd stabiel is op live verkeer.
         console.log(
-          `[telefonie/diag] event_type=call.gather.ended gather_id=${vormVelden.gather_id ?? "(geen)"} digits=${vormVelden.digits ?? "(geen)"} oproepStatus=${oproep.status} oproepId=${oproep.id} gekozenTrainingId=${oproep.gekozenMondayTrainingId ?? "(geen)"}`
+          `[telefonie/diag] event_type=call.gather.ended digits=${vormVelden.digits ?? "(geen)"} oproepStatus=${oproep.status} oproepId=${oproep.id} handler=${isOpnameToets ? "verwerkOpnameToets" : "verwerkTrainingKeuze"} uitkomst=${isOpnameToets ? (instructies.length > 0 ? "verwerkt" : "genegeerd_of_duplicate") : "verwerkt"}`
         );
-        const instructies =
-          oproep.status === "opname_verwacht"
-            ? await verwerkOpnameToets(payload, provider, oproep.id, vormVelden)
-            : await verwerkTrainingKeuze(payload, provider, oproep.id, vormVelden);
         await provider.voerVoiceInstructiesUit(callControlId, instructies);
         break;
       }
 
       case "call.dtmf.received": {
-        // TIJDELIJKE DIAGNOSTIEK (productieregressie-ronde 2026-08-27) —
-        // uitsluitend loggen, GEEN dispatch: Telnyx' eigen "Expected
-        // Webhooks" op de gather-opdracht noemen dit event expliciet naast
-        // call.gather.ended (zie de toelichting bovenaan dit bestand). Bij
-        // maximum_digits:1 hoort het bijbehorende call.gather.ended-event
-        // zelf al voldoende te zijn om '#'/'*' te verwerken — dit event
-        // bevestigt uitsluitend of/wanneer Telnyx het daadwerkelijk stuurt.
-        // Verwijderen zodra dat hard bevestigd is.
+        // Live regressie-vervolgronde (2026-08-27/28, spec "dispatch op
+        // call.gather.ended is live nog steeds niet voldoende") —
+        // call.dtmf.received is nu de PRIMAIRE trigger voor verwerkOpnameToets
+        // tijdens een actieve opname (zie de toelichting bovenaan dit
+        // bestand). Buiten "opname_verwacht" blijft dit event bewust
+        // ongebruikt voor trainingkeuze — die blijft uitsluitend via
+        // call.gather.ended lopen (ongewijzigd). Dedup tegen een later
+        // call.gather.ended-event voor dezelfde toetsdruk loopt via
+        // verwerkOpnameToets se eigen atomaire claim (claimOpnameToetsVerwerking),
+        // niet hier in de dispatchlaag.
         if (!beperkPerGesprek.magVerder(callControlId)) break;
         const oproep = await maakOfHaalOproep(payload, callControlId);
+        const magVerwerken = oproep.status === "opname_verwacht";
+        const instructies = magVerwerken ? await verwerkOpnameToets(payload, provider, oproep.id, vormVelden) : [];
+        // TIJDELIJKE DIAGNOSTIEK (zie call.gather.ended hierboven voor de
+        // volledige toelichting/verwijdercriterium) — "genegeerd (buiten
+        // opname_verwacht)" dekt zowel trainingkeuze-gathers als elk ander
+        // moment waarop DTMF hier structureel niet relevant is.
         console.log(
-          `[telefonie/diag] event_type=call.dtmf.received digit=${vormVelden.digit ?? "(geen)"} oproepStatus=${oproep.status} oproepId=${oproep.id} gekozenTrainingId=${oproep.gekozenMondayTrainingId ?? "(geen)"}`
+          `[telefonie/diag] event_type=call.dtmf.received digit=${vormVelden.digit ?? "(geen)"} oproepStatus=${oproep.status} oproepId=${oproep.id} handler=${magVerwerken ? "verwerkOpnameToets" : "(geen)"} uitkomst=${!magVerwerken ? "genegeerd (buiten opname_verwacht)" : instructies.length > 0 ? "verwerkt" : "genegeerd_of_duplicate"}`
         );
+        if (magVerwerken) await provider.voerVoiceInstructiesUit(callControlId, instructies);
         break;
       }
 

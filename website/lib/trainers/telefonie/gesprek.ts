@@ -23,6 +23,7 @@ import {
   zetOpnameVerwijderd,
   claimTranscriptieRetry,
   claimAfsluitboodschap,
+  claimOpnameToetsVerwerking,
   vindOnderhoudsKandidaten,
   ontleedOpgeslagenKandidaten,
   type OproepFoutcode,
@@ -460,6 +461,17 @@ export async function verwerkTrainingKeuze(
  * Alleen relevant zolang de oproep daadwerkelijk op een opname wacht — een
  * laat/dubbel afgeleverd event voor een inmiddels al afgeronde/mislukte
  * oproep wordt stil genegeerd (spec §12/§24, geen fout).
+ *
+ * Live regressie-vervolgronde (2026-08-27/28) — inmiddels aangeroepen vanuit
+ * TWEE onafhankelijke webhookeventtypes voor dezelfde fysieke toetsdruk
+ * (call.dtmf.received, nu de primaire trigger, én call.gather.ended, dat als
+ * fallback blijft functioneren — zie route.ts). Vóór de eigenlijke '#'/
+ * '*'-afhandeling wordt daarom eerst atomisch geclaimd
+ * (claimOpnameToetsVerwerking, oproep-state.ts) — een tweede aflevering van
+ * DEZELFDE toetsdruk verliest die claim en krijgt stil `[]` terug, geen
+ * tweede herstart/stop/afsluitboodschap. Zie de doc-comment bij
+ * claimOpnameToetsVerwerking voor waarom dit NIET op heropnamePogingen zelf
+ * kan steunen.
  */
 export async function verwerkOpnameToets(
   payload: Payload,
@@ -472,8 +484,24 @@ export async function verwerkOpnameToets(
   const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
   if (!oproep || oproep.status !== "opname_verwacht") return [];
 
-  const { cijfers } = provider.ontleedGatherResultaat(vormVelden);
+  const { cijfers, clientState } = provider.ontleedGatherResultaat(vormVelden);
   const huidigePoging = oproep.heropnamePogingen ?? 0;
+
+  if (cijfers !== OPNAME_STOP_TOETS && cijfers !== OPNAME_HERSTART_TOETS) {
+    // Ongeldig digit (kan structureel niet via valid_digits, defensief) of
+    // een lege/timeout-gather — geen actie, geen claim nodig.
+    return [];
+  }
+
+  // Zie de doc-comment hierboven — clientState ontbreekt uitsluitend bij een
+  // gather van vóór deze ronde of een oproep zonder client_state (defensief,
+  // zou bij deze provider niet moeten voorkomen): dan liever ongeclaimd
+  // doorgaan (ongewijzigd t.o.v. vóór deze ronde) dan een legitieme
+  // toetsdruk stil laten verdwijnen.
+  if (clientState) {
+    const gewonnen = await claimOpnameToetsVerwerking(payload, oproepId, clientState);
+    if (!gewonnen) return []; // duplicaat van een al verwerkte toetsdruk — spec-eis "nooit dubbel verwerken"
+  }
 
   if (cijfers === OPNAME_STOP_TOETS) {
     return [{ soort: "stop_opname", poging: huidigePoging }, ...(await verwerkOpnameAfgerond(payload, oproepId))];
@@ -523,9 +551,7 @@ export async function verwerkOpnameToets(
     ];
   }
 
-  // Ongeldig digit (kan structureel niet via valid_digits, defensief) of een
-  // lege/timeout-gather — geen actie, de opname loopt gewoon door.
-  return [];
+  return []; // onbereikbaar (cijfers is hier altijd '#' of '*', zie de guard bovenaan) — TypeScript kan dat hier niet afleiden, dus toch een expliciete afsluitende return.
 }
 
 /**

@@ -242,5 +242,29 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
           "Leeg zolang de afsluitboodschap ('Bedankt...') nog niet is gestart. Zodra gezet, geldt dit als de atomaire claim: een eventuele tweede trigger (bv. de call.recording.saved-fallback ná een al via '#' gestarte afsluiting) spreekt de boodschap dan bewust NIET nogmaals uit.",
       },
     },
+    {
+      // Live regressie-vervolgronde (2026-08-27, spec "*/# doen nog steeds
+      // niets tijdens actieve opname, ook ná dispatch op oproep.status") —
+      // call.gather.ended bleek live niet (voldoende) betrouwbaar tijdens een
+      // actieve parallelle gather; call.dtmf.received is nu de primaire
+      // trigger voor verwerkOpnameToets (call.gather.ended blijft fallback).
+      // Omdat Telnyx voor DEZELFDE fysieke toetsdruk soms BEIDE events
+      // aflevert, is een atomaire dedup-claim nodig (spec-eis: "geen dedupe
+      // uitsluitend in memory, dit draait serverless"). Sleutel is de
+      // client_state van de opname_toets-gather zelf (telnyx-provider.ts),
+      // NIET heropnamePogingen: die teller wordt door '*' zelf al
+      // bijgewerkt vóórdat de nieuwe opname daadwerkelijk herbewapend is,
+      // dus een tweede/latere aflevering van dezelfde toetsdruk zou bij een
+      // verse lezing de al-bijgewerkte stand zien en zichzelf ten onrechte
+      // als een nieuwe, geldige toetsdruk beschouwen — zie oproep-state.ts
+      // se claimOpnameToetsVerwerking voor de volledige redenering.
+      name: "opnameToetsClaimClientState",
+      type: "text",
+      label: "Opname-toets — laatst geclaimde client_state",
+      admin: {
+        description:
+          "De client_state van de laatst geclaimde #/*-toetsdruk tijdens een actieve opname — atomaire dedup-garantie tegen dubbele verwerking van dezelfde toetsdruk via zowel call.dtmf.received als call.gather.ended. Leeg = nog geen toetsdruk geclaimd voor de huidige opnamepoging.",
+      },
+    },
   ],
 };

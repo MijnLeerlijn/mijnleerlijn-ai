@@ -308,7 +308,21 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
       // ActionGatherParams kent geen audio/tekst-veld (i.t.t.
       // gather_using_speak hierboven) — loopt dus volledig onhoorbaar naast
       // de opname. gather_id="opname_toets" laat de webhookroute dit event
-      // onderscheiden van de trainingkeuze-gather (zie route se dispatch).
+      // onderscheiden van de trainingkeuze-gather (zie route se dispatch) —
+      // BLIJFT staan als documentatie/intentie, ook al bleek gather_id zelf
+      // nooit op enig webhookevent terug te komen (zie route.ts se
+      // toelichting); dispatch loopt inmiddels op oproep.status.
+      //
+      // client_state (live regressie-vervolgronde 2026-08-27/28) — NIEUW:
+      // draagt de poging mee op ELK vervolgevent van DEZE specifieke
+      // gather-opdracht (call.dtmf.received/call.gather.ended), zodat
+      // gesprek.ts se claimOpnameToetsVerwerking een tweede, latere
+      // aflevering van DEZELFDE fysieke toetsdruk herkent — ONAFHANKELIJK
+      // van de (mutabele) heropname_pogingen-stand op dat latere moment, zie
+      // provider.ts se GatherResultaat.clientState-doc-comment voor de
+      // volledige redenering. Bare poging-encoding (geen coderenClientState-
+      // actie-prefix nodig) — zelfde stijl als record_start se eigen
+      // client_state hierboven.
       await telnyxCommando(
         callControlId,
         "gather",
@@ -319,6 +333,7 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
           maximum_digits: 1,
           timeout_millis: (instructie.maxDuurSeconden + 30) * 1000,
           initial_timeout_millis: (instructie.maxDuurSeconden + 30) * 1000,
+          client_state: coderenClientState("opname_toets", instructie.poging),
         },
         `poging${instructie.poging}`
       );
@@ -362,6 +377,14 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
       // vorige (die de '*'-druk op de limiet zelf ving) is inmiddels
       // verbruikt (maximum_digits:1), dus zonder deze her-bewapening zou
       // een daaropvolgende '#' niet meer opgevangen worden.
+      //
+      // client_state draagt hier BEWUST ook de nonce mee (i.t.t. de
+      // opname_starten-tak hierboven, waar de kale poging al uniek genoeg
+      // is): meerdere ACHTEREENVOLGENDE keren op de limiet delen dezelfde
+      // poging (er start immers geen nieuwe opname), dus zonder de nonce zou
+      // een tweede, echte '*'-druk op de limiet dezelfde client_state
+      // hebben als de EERSTE en zichzelf bij claimOpnameToetsVerwerking ten
+      // onrechte als duplicaat van die eerdere druk zien.
       await telnyxCommando(
         callControlId,
         "gather",
@@ -372,6 +395,7 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
           maximum_digits: 1,
           timeout_millis: (instructie.maxDuurSeconden + 30) * 1000,
           initial_timeout_millis: (instructie.maxDuurSeconden + 30) * 1000,
+          client_state: coderenClientState("opname_toets", instructie.poging, instructie.nonce),
         },
         `hervat-poging${instructie.poging}-${instructie.nonce}`
       );
@@ -681,8 +705,15 @@ export function telnyxProvider(): TelefonieProvider {
     },
 
     ontleedGatherResultaat(vormVelden): GatherResultaat {
-      const cijfers = vormVelden.digits;
-      return { cijfers: cijfers && cijfers.length > 0 ? cijfers : null };
+      // Live regressie-vervolgronde (2026-08-27/28) — vormVelden.digits
+      // (meervoud) is call.gather.ended se eigen veld; call.dtmf.received
+      // (nu de PRIMAIRE trigger tijdens een actieve opname, zie route.ts)
+      // heeft in plaats daarvan een ENKELVOUDIG `digit`-veld (hard bevestigd
+      // tegen Telnyx' eigen SDK-broncode, CallDtmfReceived.Payload) — vandaar
+      // de terugval. clientState hieronder: zie GatherResultaat se
+      // doc-comment (provider.ts) voor de volledige dedup-redenering.
+      const cijfers = vormVelden.digits ?? vormVelden.digit;
+      return { cijfers: cijfers && cijfers.length > 0 ? cijfers : null, clientState: vormVelden.client_state ?? null };
     },
 
     ontleedOpnameStatus(vormVelden): OpnameStatusGegevens {

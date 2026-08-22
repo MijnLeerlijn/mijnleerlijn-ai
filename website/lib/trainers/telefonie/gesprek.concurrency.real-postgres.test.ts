@@ -113,7 +113,7 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
     naam: "fake",
     verifieerWebhookSignature: () => true,
     ontleedInkomendeCall: vi.fn(() => ({ providerCallId: "CA1", vanNummerRuw: "+31612345678", nummerVerborgen: false }) as InkomendeCallGegevens),
-    ontleedGatherResultaat: vi.fn(() => ({ cijfers: null }) as GatherResultaat),
+    ontleedGatherResultaat: vi.fn(() => ({ cijfers: null, clientState: null }) as GatherResultaat),
     ontleedOpnameStatus: vi.fn(
       () => ({ providerCallId: "CA1", providerRecordingId: "RE1", status: "voltooid", duurSeconden: 30, ophaalReferentie: "https://provider.example/RE1", clientState: null }) as OpnameStatusGegevens
     ),
@@ -303,8 +303,8 @@ describe.skipIf(!beschikbaar)("Trainertelefonie — ECHTE concurrency tegen echt
     const oproepA = await maakOfHaalOproep(payload, "CA-RACE-A");
     const oproepB = await maakOfHaalOproep(payload, "CA-RACE-B");
 
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepA.id, {});
-    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepB.id, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepA.id, {});
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepB.id, {});
 
     // Beide gesprekken hebben nu ONAFHANKELIJK dezelfde training vastgelegd
     // (spec §7 se écht-gelijktijdige-racevenster) — nu (bijna) gelijktijdig

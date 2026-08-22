@@ -35,6 +35,25 @@ export interface InkomendeCallGegevens {
 export interface GatherResultaat {
   /** Ingedrukte toetsen, of null als er niets binnenkwam (timeout/geen invoer). */
   cijfers: string | null;
+  /**
+   * Live regressie-vervolgronde (2026-08-27/28, spec: '*' en '#' deden nog
+   * steeds niets tijdens een actieve opname) — de client_state die bij het
+   * BIJBEHORENDE opname_toets-gather-commando is meegegeven (bij Telnyx
+   * letterlijk teruggegeven op zowel call.dtmf.received als
+   * call.gather.ended voor datzelfde gather-commando, zie telnyx-provider.ts
+   * se opname_starten/opname_hervatten). Dé sleutel voor gesprek.ts se
+   * claimOpnameToetsVerwerking: bewust NIET heropnamePogingen zelf, want die
+   * teller wordt door een geldige '*'-verwerking al bijgewerkt vóórdat de
+   * nieuwe opname daadwerkelijk herbewapend is — een tweede/latere
+   * aflevering van DEZELFDE fysieke toetsdruk (bv. eerst
+   * call.dtmf.received, later call.gather.ended) zou bij een verse lezing
+   * van heropnamePogingen de al-bijgewerkte stand zien en zichzelf ten
+   * onrechte als een nieuwe, geldige toetsdruk beschouwen. Null als de
+   * provider geen client_state teruggaf (bv. een gather van vóór deze
+   * ronde, of een test zonder client_state) — gesprek.ts valt dan terug op
+   * ongeclaimd (ongewijzigd) gedrag i.p.v. de toetsdruk te blokkeren.
+   */
+  clientState: string | null;
 }
 
 export interface OpnameStatusGegevens {

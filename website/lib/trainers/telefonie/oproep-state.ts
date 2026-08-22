@@ -392,6 +392,48 @@ export async function claimAfsluitboodschap(payload: Payload, oproepId: number):
   return resultaat.rows.length > 0;
 }
 
+/**
+ * Live regressie-vervolgronde (2026-08-27/28, spec: '*' en '#' deden nog
+ * steeds niets tijdens een actieve opname, ook ná dispatch op
+ * oproep.status) — DE
+ * atomaire dedup-garantie voor '#'/'*' tijdens een actieve opname, nu
+ * call.dtmf.received naast call.gather.ended een TWEEDE, onafhankelijke
+ * trigger is voor DEZELFDE fysieke toetsdruk (spec-eis: "geen dedupe
+ * uitsluitend in memory, dit draait serverless").
+ *
+ * Sleutel is `clientState` — de client_state van het opname_toets-gather-
+ * commando dat de toetsdruk ving (telnyx-provider.ts se opname_starten/
+ * opname_hervatten) — BEWUST NIET heropnamePogingen: een geldige
+ * '*'-verwerking schrijft heropnamePogingen namelijk al door VÓÓRDAT de
+ * nieuwe opname daadwerkelijk herbewapend is (gesprek.ts se
+ * verwerkOpnameToets roept zetOpnameVerwacht(volgendePoging) synchroon aan,
+ * ruim vóórdat het bijbehorende call.speak.ended de nieuwe gather ooit
+ * arm). Een tweede/latere aflevering van DEZELFDE toetsdruk (bv. eerst
+ * call.dtmf.received, pas daarna call.gather.ended) zou bij een verse
+ * lezing van heropnamePogingen dus de AL-BIJGEWERKTE stand zien en
+ * zichzelf — vanuit die lezing geredeneerd — ten onrechte als een nieuwe,
+ * geldige toetsdruk beschouwen. client_state daarentegen staat vast zodra
+ * het gather-commando eenmaal is verstuurd, en verandert pas weer zodra een
+ * VOLGENDE gather daadwerkelijk wordt herbewapend — dus elke aflevering die
+ * bij dezelfde fysieke toetsdruk hoort, draagt gegarandeerd dezelfde
+ * waarde.
+ *
+ * Retourneert of DEZE aanroep de claim won — alleen de winnaar mag de
+ * bijbehorende actie (stoppen+verwerken, of herstarten) daadwerkelijk
+ * uitvoeren.
+ */
+export async function claimOpnameToetsVerwerking(payload: Payload, oproepId: number, clientState: string): Promise<boolean> {
+  const resultaat = await payload.db.drizzle.execute(sql`
+    UPDATE trainer_telefonie_oproepen
+    SET opname_toets_claim_client_state = ${clientState}, updated_at = now()
+    WHERE id = ${oproepId}
+      AND status = 'opname_verwacht'
+      AND (opname_toets_claim_client_state IS NULL OR opname_toets_claim_client_state <> ${clientState})
+    RETURNING id;
+  `);
+  return resultaat.rows.length > 0;
+}
+
 export async function vindOnderhoudsKandidaten(payload: Payload, vastgelopenVoorTijdstip: string, limiet: number): Promise<number[]> {
   const [herstelbaar, vastgelopen] = await Promise.all([
     payload.find({

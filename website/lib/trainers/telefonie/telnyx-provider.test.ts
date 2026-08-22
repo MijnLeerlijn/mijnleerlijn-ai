@@ -147,13 +147,33 @@ describe("ontleedInkomendeCall (spec §4: verborgen/anoniem nummer)", () => {
 });
 
 describe("ontleedGatherResultaat", () => {
-  it("digits met inhoud -> cijfers gevuld", () => {
-    expect(telnyxProvider().ontleedGatherResultaat({ digits: "1" })).toEqual({ cijfers: "1" });
+  it("digits (meervoud, call.gather.ended) met inhoud -> cijfers gevuld", () => {
+    expect(telnyxProvider().ontleedGatherResultaat({ digits: "1" })).toEqual({ cijfers: "1", clientState: null });
   });
 
   it("lege/ontbrekende digits (timeout, geen invoer) -> cijfers null", () => {
-    expect(telnyxProvider().ontleedGatherResultaat({ digits: "" })).toEqual({ cijfers: null });
-    expect(telnyxProvider().ontleedGatherResultaat({})).toEqual({ cijfers: null });
+    expect(telnyxProvider().ontleedGatherResultaat({ digits: "" })).toEqual({ cijfers: null, clientState: null });
+    expect(telnyxProvider().ontleedGatherResultaat({})).toEqual({ cijfers: null, clientState: null });
+  });
+
+  // Live regressie-vervolgronde (2026-08-27/28) — digit (enkelvoud) is
+  // call.dtmf.received se eigen veld, nu de PRIMAIRE trigger tijdens een
+  // actieve opname (route.ts). Zonder deze terugval zou elke '#'/'*' via
+  // call.dtmf.received als "geen cijfer" gelezen worden.
+  it("digit (enkelvoud, call.dtmf.received) met inhoud -> cijfers gevuld via de terugval", () => {
+    expect(telnyxProvider().ontleedGatherResultaat({ digit: "*" })).toEqual({ cijfers: "*", clientState: null });
+    expect(telnyxProvider().ontleedGatherResultaat({ digit: "#" })).toEqual({ cijfers: "#", clientState: null });
+  });
+
+  it("digits (meervoud) heeft voorrang op digit (enkelvoud) als beide aanwezig zijn", () => {
+    expect(telnyxProvider().ontleedGatherResultaat({ digits: "1", digit: "2" })).toEqual({ cijfers: "1", clientState: null });
+  });
+
+  it("client_state wordt letterlijk doorgegeven — dé sleutel voor gesprek.ts se claimOpnameToetsVerwerking", () => {
+    expect(telnyxProvider().ontleedGatherResultaat({ digit: "*", client_state: "b3BuYW1lX3RvZXRzOjA=" })).toEqual({
+      cijfers: "*",
+      clientState: "b3BuYW1lX3RvZXRzOjA=",
+    });
   });
 });
 
