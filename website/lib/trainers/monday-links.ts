@@ -600,6 +600,14 @@ export interface TrainerDashboardData {
    * trainingtellingen nodig voor een dropdown.
    */
   bevestigdeScholen: { id: string; naam: string }[];
+  /**
+   * Traineromgeving V2, Fase 1 (2026-08-28) — voor de dashboard-
+   * statistiekensectie ("Totaal trainingen"). Zelfde reden als
+   * bevestigdeScholen hierboven: afgeleid van de data die deze functie toch
+   * al opbouwt (alleTrainingenMetSchool), i.p.v. lib/trainers/dashboard.ts
+   * een tweede, aparte verzamelTrainerContext()-aanroep te laten doen.
+   */
+  totaalTrainingen: number;
 }
 
 /**
@@ -648,6 +656,7 @@ export async function haalDashboardData(trainer: AuthTrainer): Promise<TrainerDa
     aantalScholen: context.scholen.size,
     logboekOpenstaand: groepen.verslag_nog_invullen,
     bevestigdeScholen,
+    totaalTrainingen: alleTrainingenMetSchool.length,
   };
 }
 
@@ -693,6 +702,29 @@ export async function haalRecenteTrainingenVoorTelefonie(trainer: AuthTrainer): 
       return diffDagen >= 0 && diffDagen <= TELEFONIE_RECENTE_DAGEN;
     })
     .sort((a, b) => (b.datum ?? "").localeCompare(a.datum ?? "")); // meest recent eerst — spec §5 se prioriteit vandaag > gisteren > eerder
+}
+
+/**
+ * Traineromgeving V2, Fase 1 (2026-08-28) — platte lijst van ALLE trainingen
+ * van deze trainer, voor de nieuwe /trainingen-pagina ("Bekijk alle
+ * trainingen" vanaf het dashboard). Zelfde iteratiepatroon als
+ * haalDashboardData/haalRecenteTrainingenVoorTelefonie hierboven — geen
+ * nieuwe Monday-aanroep, geen tweede interpretatie van "welke trainingen
+ * horen bij deze trainer". Bewust ONGEFILTERD (i.t.t. beide functies
+ * hierboven, die respectievelijk op datum-aanwezigheid resp. recentheid
+ * filteren): de /trainingen-pagina toont zelf alle 6 weergavestatussen in
+ * eigen secties (groepeerOpWeergaveStatus, training-weergave.ts), dus filteren
+ * hier zou informatie voor die pagina wegnemen.
+ */
+export async function haalAlleTrainingenVoorTrainer(trainer: AuthTrainer): Promise<TrainingMetSchool[]> {
+  const context = await verzamelTrainerContext(trainer);
+  const alle: TrainingMetSchool[] = [];
+  for (const school of context.scholen.values()) {
+    for (const training of context.trainingenPerSchool.get(school.id) ?? []) {
+      alle.push({ ...training, schoolId: school.id, schoolNaam: school.naam });
+    }
+  }
+  return alle;
 }
 
 export interface SchoolDetail extends TrainerSchoolBron {

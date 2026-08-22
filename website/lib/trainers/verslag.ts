@@ -520,6 +520,113 @@ export async function haalTelefonischeConceptenVoorTrainer(payload: Payload, tra
   }));
 }
 
+/**
+ * Traineromgeving V2, Fase 1 (2026-08-28) — dashboard-sectie "Aandacht
+ * nodig": verslagen die halverwege de Monday-writeback zijn blijven steken.
+ * Status "gedeeltelijk" (één kant geschreven, de andere nog niet) of
+ * "bevestigd" (beide Updates geschreven, maar de afronding — status/
+ * logboek-writeback — nog niet gelukt/gedaan) betekenen allebei: de trainer
+ * heeft dit verslag al DEFINITIEF bevestigd, maar de flow is zelf nog niet
+ * volledig afgerond — een betrouwbaar, uit bestaande data afleidbaar
+ * "actie nodig"-signaal (bevestigVerslag, zie hieronder, is zelf al
+ * idempotent/hervatbaar; het enige dat nog moet gebeuren is dat de trainer
+ * de verslagpagina nogmaals opent, wat de resterende stap(pen) automatisch
+ * hervat).
+ *
+ * BEWUST NIET status "concept": een nog niet gestart/bevestigd portalconcept
+ * is geen inbox-achtig "hier moet je iets mee"-signaal zoals een ingesproken
+ * telefonisch concept dat is (dat wordt al apart gedekt door
+ * haalTelefonischeConceptenVoorTrainer) — dat zou deze sectie potentieel
+ * permanent vullen met elke training waarvoor nog geen verslag gestart is,
+ * precies de "grote, altijd-gevulde sectie" die de opdracht wil vermijden.
+ * Die trainingen krijgen hun eigen CTA al via de Vandaag/Komend-secties.
+ */
+export interface VastgelopenVerslag {
+  mondayTrainingId: string;
+  schoolId: string;
+  schoolNaam: string;
+  trainingNaam: string;
+  status: "gedeeltelijk" | "bevestigd";
+  /** updatedAt — voor sortering binnen de "Aandacht nodig"-sectie (lib/trainers/dashboard.ts). */
+  wanneer: string;
+}
+
+export async function haalVerslagenDieAandachtNodigHebben(payload: Payload, trainer: AuthTrainer): Promise<VastgelopenVerslag[]> {
+  const resultaat = await payload.find({
+    collection: "training-verslagen",
+    where: { and: [{ trainer: { equals: trainer.id } }, { status: { in: ["gedeeltelijk", "bevestigd"] } }] },
+    overrideAccess: true,
+    depth: 0,
+    sort: "-updatedAt",
+    limit: 20,
+  });
+  return resultaat.docs.map((doc) => ({
+    mondayTrainingId: doc.mondayTrainingId,
+    schoolId: doc.mondaySchoolId,
+    schoolNaam: doc.schoolNaam ?? "Onbekende school",
+    trainingNaam: doc.trainingNaam ?? "Training",
+    status: doc.status as "gedeeltelijk" | "bevestigd",
+    wanneer: doc.updatedAt,
+  }));
+}
+
+export interface VerslagActiviteit {
+  mondayTrainingId: string;
+  schoolId: string;
+  schoolNaam: string;
+  trainingNaam: string;
+  bron: "portal" | "telefoon";
+  status: VerslagRecord["status"];
+  /** updatedAt — het moment van de laatst relevante wijziging aan dit verslag, gebruikt als sorteersleutel voor de activiteitentijdlijn (lib/trainers/activiteit.ts). */
+  wanneer: string;
+}
+
+/**
+ * Traineromgeving V2, Fase 1 (2026-08-28) — voedt lib/trainers/activiteit.ts
+ * se samengevoegde tijdlijn ("Recente activiteit" op het dashboard, en de
+ * volledige /logboek-tijdlijn): de trainingsverslag-kant van die tijdlijn,
+ * los van de handmatige logboekitems (lib/trainers/logboek.ts se
+ * haalLogboekVoorTrainer). Geen statusfilter (i.t.t.
+ * haalVerslagenDieAandachtNodigHebben hierboven) — een activiteitentijdlijn
+ * toont wat er GEBEURD is, ongeacht of er nog actie nodig is.
+ */
+export async function haalRecenteVerslagenVoorTrainer(payload: Payload, trainer: AuthTrainer, limiet: number): Promise<VerslagActiviteit[]> {
+  const resultaat = await payload.find({
+    collection: "training-verslagen",
+    where: { trainer: { equals: trainer.id } },
+    overrideAccess: true,
+    depth: 0,
+    sort: "-updatedAt",
+    limit: limiet,
+  });
+  return resultaat.docs.map((doc) => ({
+    mondayTrainingId: doc.mondayTrainingId,
+    schoolId: doc.mondaySchoolId,
+    schoolNaam: doc.schoolNaam ?? "Onbekende school",
+    trainingNaam: doc.trainingNaam ?? "Training",
+    bron: (doc.bron as "portal" | "telefoon" | null) ?? "portal",
+    status: doc.status as VerslagRecord["status"],
+    wanneer: doc.updatedAt,
+  }));
+}
+
+/**
+ * Traineromgeving V2, Fase 1 (2026-08-28) — dashboard-statistiek "Verslagen
+ * afgerond". `limit: 1` volstaat: Payload/Postgres berekent totalDocs
+ * ongeacht de opgevraagde paginagrootte, dus dit is een goedkope telling,
+ * geen N-voudige documentophaling.
+ */
+export async function telVoltooideVerslagen(payload: Payload, trainer: AuthTrainer): Promise<number> {
+  const resultaat = await payload.find({
+    collection: "training-verslagen",
+    where: { and: [{ trainer: { equals: trainer.id } }, { status: { equals: "voltooid" } }] },
+    overrideAccess: true,
+    limit: 1,
+    depth: 0,
+  });
+  return resultaat.totalDocs;
+}
+
 // ---------------------------------------------------------------------------
 // Definitief bevestigen — dubbele Monday-Update-write + afronding
 // ---------------------------------------------------------------------------

@@ -133,8 +133,14 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
           (a, b) => new Date(b[veld] as string).getTime() - new Date(a[veld] as string).getTime()
         );
       }
+      // Traineromgeving V2 (2026-08-28) — totalDocs vóór de limit-slice
+      // bepaald, zelfde semantiek als de echte Payload local API (totalDocs
+      // is het volledige aantal matches, ongeacht paginagrootte) — nodig
+      // voor lib/trainers/verslag.ts se telVoltooideVerslagen (een goedkope
+      // telling via limit:1 + totalDocs, geen N-voudige documentophaling).
+      const totalDocs = docs.length;
       if (opts.limit) docs = docs.slice(0, opts.limit);
-      return { docs };
+      return { docs, totalDocs };
     },
     findByID: async (opts: { collection: string; id: number; disableErrors?: boolean }) => {
       const doc = arr(opts.collection).find((d) => d.id === opts.id);

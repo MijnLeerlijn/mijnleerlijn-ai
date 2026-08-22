@@ -74,6 +74,7 @@ export interface Config {
     'trainer-ai-log-events': TrainerAiLogEvent;
     'training-verslagen': TrainingVerslagen;
     'trainer-telefonie-oproepen': TrainerTelefonieOproepen;
+    'trainer-logboek-items': TrainerLogboekItem;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -117,6 +118,7 @@ export interface Config {
     'trainer-ai-log-events': TrainerAiLogEventsSelect<false> | TrainerAiLogEventsSelect<true>;
     'training-verslagen': TrainingVerslagenSelect<false> | TrainingVerslagenSelect<true>;
     'trainer-telefonie-oproepen': TrainerTelefonieOproepenSelect<false> | TrainerTelefonieOproepenSelect<true>;
+    'trainer-logboek-items': TrainerLogboekItemsSelect<false> | TrainerLogboekItemsSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -661,6 +663,34 @@ export interface TrainerTelefonieOproepen {
    * De client_state van de laatst geclaimde #/*-toetsdruk tijdens een actieve opname — atomaire dedup-garantie tegen dubbele verwerking van dezelfde toetsdruk via zowel call.dtmf.received als call.gather.ended. Leeg = nog geen toetsdruk geclaimd voor de huidige opnamepoging.
    */
   opnameToetsClaimClientState?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Handmatige logboekitems (contact/aantekening) van trainers, los van de trainingsverslagflow. Nooit rechtstreeks bewerken — uitsluitend server-side via lib/trainers/logboek.ts.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-logboek-items".
+ */
+export interface TrainerLogboekItem {
+  id: number;
+  trainer: number | TrainerAccount;
+  /**
+   * Server-side afgeleid/geverifieerd via haalSchoolDetail — nooit ongecontroleerd door de client aangeleverd.
+   */
+  mondaySchoolId: string;
+  schoolNaam?: string | null;
+  type: 'telefonisch' | 'helpdesk' | 'overleg' | 'notitie' | 'overig';
+  /**
+   * Wanneer het contact/de aantekening plaatsvond — door de trainer zelf gekozen, kan afwijken van het moment van vastleggen (createdAt).
+   */
+  occurredAt: string;
+  tekst: string;
+  /**
+   * Alleen gevuld als de trainer dit item expliciet aan een training koppelde — server-side geverifieerd via haalTrainingVoorMutatie. Leeg = niet aan een training gekoppeld.
+   */
+  mondayTrainingId?: string | null;
+  trainingNaam?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2240,6 +2270,10 @@ export interface PayloadLockedDocument {
         value: number | TrainerTelefonieOproepen;
       } | null)
     | ({
+        relationTo: 'trainer-logboek-items';
+        value: number | TrainerLogboekItem;
+      } | null)
+    | ({
         relationTo: 'variants';
         value: number | Variant;
       } | null)
@@ -2555,6 +2589,22 @@ export interface TrainerTelefonieOproepenSelect<T extends boolean = true> {
   afgerondOp?: T;
   afsluitboodschapGestartOp?: T;
   opnameToetsClaimClientState?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-logboek-items_select".
+ */
+export interface TrainerLogboekItemsSelect<T extends boolean = true> {
+  trainer?: T;
+  mondaySchoolId?: T;
+  schoolNaam?: T;
+  type?: T;
+  occurredAt?: T;
+  tekst?: T;
+  mondayTrainingId?: T;
+  trainingNaam?: T;
   updatedAt?: T;
   createdAt?: T;
 }

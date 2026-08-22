@@ -11,6 +11,7 @@ import {
   haalDashboardData,
   haalSchoolDetail,
   haalRecenteTrainingenVoorTelefonie,
+  haalAlleTrainingenVoorTrainer,
 } from "./monday-links";
 import type { AuthTrainer } from "./auth";
 
@@ -843,6 +844,59 @@ describe("haalDashboardData", () => {
 
     expect(data.bevestigdeScholen).toEqual([{ id: "500", naam: "Eigen school" }]);
     expect(data.bevestigdeScholen.map((s) => s.naam)).not.toContain("School van andere trainer");
+  });
+
+  it("Traineromgeving V2, Fase 1 — totaalTrainingen telt ALLE trainingen (elke weergavestatus, met én zonder datum), voor de dashboardstatistiek", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          uitvoeringItem({ id: "1", naam: "Zonder datum", schoolIds: ["500"] }),
+          uitvoeringItem({ id: "2", naam: "Toekomst", schoolIds: ["500"], datum: "2099-01-01" }),
+          uitvoeringItem({ id: "3", naam: "Verleden", schoolIds: ["500"], datum: "2020-01-01", logboekIngevuld: true }),
+        ],
+      });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const data = await haalDashboardData(TRAINER);
+    expect(data.totaalTrainingen).toBe(3);
+  });
+});
+
+describe("haalAlleTrainingenVoorTrainer (Traineromgeving V2, Fase 1 — /trainingen-pagina)", () => {
+  it("geeft ALLE trainingen van de trainer terug, ongefilterd — met én zonder datum, verleden én toekomst, geannuleerd inbegrepen", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          uitvoeringItem({ id: "1", naam: "Zonder datum", schoolIds: ["500"] }),
+          uitvoeringItem({ id: "2", naam: "Geannuleerd", schoolIds: ["500"], datum: "2020-01-01", status: "Geannuleerd" }),
+        ],
+      });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const trainingen = await haalAlleTrainingenVoorTrainer(TRAINER);
+    expect(trainingen.map((t) => t.naam).sort()).toEqual(["Geannuleerd", "Zonder datum"]);
+  });
+
+  it("elke training draagt schoolId/schoolNaam (zelfde TrainingMetSchool-vorm als haalDashboardData)", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Mijn School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Training", schoolIds: ["500"] })] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const trainingen = await haalAlleTrainingenVoorTrainer(TRAINER);
+    expect(trainingen[0]!.schoolId).toBe("500");
+    expect(trainingen[0]!.schoolNaam).toBe("Mijn School");
+  });
+
+  it("geen scholen -> lege array, geen fout", async () => {
+    mockScholenPagina.mockResolvedValueOnce({ cursor: null, items: [] }).mockResolvedValueOnce({ cursor: null, items: [] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    expect(await haalAlleTrainingenVoorTrainer(TRAINER)).toEqual([]);
   });
 });
 

@@ -4,14 +4,25 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, School, CircleUserRound, LogOut } from "lucide-react";
+import { LayoutDashboard, GraduationCap, NotebookText, School, CircleUserRound, LogOut } from "lucide-react";
 
 // Alle hrefs hieronder zijn het KALE pad zoals de browser dat ziet (de
 // proxy.ts-rewrite naar /trainers/* is voor de browser onzichtbaar) — zie de
 // toelichting in ../layout.tsx over waarom dit nooit "/trainers/..." mag zijn.
+//
+// Traineromgeving V2, Fase 1 (2026-08-28) — uitgebreid met Trainingen/
+// Logboek (opdrachtseis: "minimaal Dashboard | Trainingen | Logboek").
+// "Scholen" (voorheen "Mijn scholen") blijft staan: die sectie bestaat al
+// als volwaardig, zelfstandig concept (eigen lijst-, detail-, tabs- en
+// verslagpagina's — zie app/(trainers)/trainers/(portal)/scholen/) en zou
+// een regressie in navigeerbaarheid zijn om nu te verwijderen — opdrachtseis
+// "onderzoek of Scholen al voldoende bestaat" beantwoord: ja. "Kennis" komt
+// pas in fase 2 (opdrachtseis) en wordt hier bewust nog niet toegevoegd.
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/scholen", label: "Mijn scholen", icon: School, exact: false },
+  { href: "/trainingen", label: "Trainingen", icon: GraduationCap, exact: false },
+  { href: "/logboek", label: "Logboek", icon: NotebookText, exact: false },
+  { href: "/scholen", label: "Scholen", icon: School, exact: false },
   { href: "/profiel", label: "Profiel", icon: CircleUserRound, exact: false },
 ] as const;
 

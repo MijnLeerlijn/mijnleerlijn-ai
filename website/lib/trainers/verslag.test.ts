@@ -9,6 +9,9 @@ import {
   haalVerslagenPerTraining,
   verwijderConcept,
   haalTelefonischeConceptenVoorTrainer,
+  haalVerslagenDieAandachtNodigHebben,
+  haalRecenteVerslagenVoorTrainer,
+  telVoltooideVerslagen,
   type VerslagStructuur,
 } from "./verslag";
 import { haalTrainingVoorMutatie, haalSchoolDetail, parseCheckboxIngevuld } from "./monday-links";
@@ -1184,5 +1187,82 @@ describe("haalTelefonischeConceptenVoorTrainer (Ronde 3.5, telefonie — spec §
     });
     const concepten = await haalTelefonischeConceptenVoorTrainer(payload, TRAINER);
     expect(concepten[0]!.ontvangenOp).toBeNull();
+  });
+});
+
+describe("haalVerslagenDieAandachtNodigHebben (Traineromgeving V2, Fase 1 — dashboard-sectie 'Aandacht nodig')", () => {
+  it("vindt verslagen met status 'gedeeltelijk' of 'bevestigd' van déze trainer", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [
+        { id: 1, trainer: TRAINER.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, schoolNaam: "School A", trainingNaam: "Training 1", status: "gedeeltelijk", updatedAt: "2026-08-27T10:00:00.000Z" },
+        { id: 2, trainer: TRAINER.id, mondayTrainingId: "2", mondaySchoolId: SCHOOL_ID, schoolNaam: "School A", trainingNaam: "Training 2", status: "bevestigd", updatedAt: "2026-08-26T10:00:00.000Z" },
+      ],
+    });
+    const resultaat = await haalVerslagenDieAandachtNodigHebben(payload, TRAINER);
+    expect(resultaat).toHaveLength(2);
+    expect(resultaat.map((r) => r.status).sort()).toEqual(["bevestigd", "gedeeltelijk"]);
+  });
+
+  it("sluit status 'concept' uit — een nog niet gestart/bevestigd verslag is geen inbox-signaal", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [{ id: 1, trainer: TRAINER.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, status: "concept" }],
+    });
+    expect(await haalVerslagenDieAandachtNodigHebben(payload, TRAINER)).toEqual([]);
+  });
+
+  it("sluit status 'voltooid' uit — volledig afgerond, geen actie meer nodig", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [{ id: 1, trainer: TRAINER.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, status: "voltooid" }],
+    });
+    expect(await haalVerslagenDieAandachtNodigHebben(payload, TRAINER)).toEqual([]);
+  });
+
+  it("nooit een vastgelopen verslag van een andere trainer", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [{ id: 1, trainer: TRAINER_B.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, status: "gedeeltelijk" }],
+    });
+    expect(await haalVerslagenDieAandachtNodigHebben(payload, TRAINER)).toEqual([]);
+  });
+});
+
+describe("haalRecenteVerslagenVoorTrainer (Traineromgeving V2, Fase 1 — activiteitentijdlijn)", () => {
+  it("geeft ALLE statussen terug (i.t.t. haalVerslagenDieAandachtNodigHebben), gesorteerd nieuwste eerst op updatedAt", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [
+        { id: 1, trainer: TRAINER.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, schoolNaam: "School A", trainingNaam: "Oudste", status: "concept", bron: "portal", updatedAt: "2026-08-20T10:00:00.000Z" },
+        { id: 2, trainer: TRAINER.id, mondayTrainingId: "2", mondaySchoolId: SCHOOL_ID, schoolNaam: "School A", trainingNaam: "Nieuwste", status: "voltooid", bron: "telefoon", updatedAt: "2026-08-28T10:00:00.000Z" },
+      ],
+    });
+    const resultaat = await haalRecenteVerslagenVoorTrainer(payload, TRAINER, 10);
+    expect(resultaat).toHaveLength(2);
+    expect(resultaat[0]!.trainingNaam).toBe("Nieuwste");
+    expect(resultaat[0]!.bron).toBe("telefoon");
+    expect(resultaat[1]!.trainingNaam).toBe("Oudste");
+  });
+
+  it("nooit een verslag van een andere trainer", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [{ id: 1, trainer: TRAINER_B.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, status: "voltooid" }],
+    });
+    expect(await haalRecenteVerslagenVoorTrainer(payload, TRAINER, 10)).toEqual([]);
+  });
+});
+
+describe("telVoltooideVerslagen (Traineromgeving V2, Fase 1 — dashboardstatistiek)", () => {
+  it("telt uitsluitend status='voltooid' van déze trainer", async () => {
+    const { payload } = maakFakePayload({
+      "training-verslagen": [
+        { id: 1, trainer: TRAINER.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, status: "voltooid" },
+        { id: 2, trainer: TRAINER.id, mondayTrainingId: "2", mondaySchoolId: SCHOOL_ID, status: "voltooid" },
+        { id: 3, trainer: TRAINER.id, mondayTrainingId: "3", mondaySchoolId: SCHOOL_ID, status: "concept" },
+        { id: 4, trainer: TRAINER_B.id, mondayTrainingId: "4", mondaySchoolId: SCHOOL_ID, status: "voltooid" },
+      ],
+    });
+    expect(await telVoltooideVerslagen(payload, TRAINER)).toBe(2);
+  });
+
+  it("geen enkel voltooid verslag -> 0, geen fout", async () => {
+    const { payload } = maakFakePayload({});
+    expect(await telVoltooideVerslagen(payload, TRAINER)).toBe(0);
   });
 });

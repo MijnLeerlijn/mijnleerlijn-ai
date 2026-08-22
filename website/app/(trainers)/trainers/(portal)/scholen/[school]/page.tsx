@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getPayload } from "payload";
-import { ArrowLeft, MapPin, PhoneIncoming } from "lucide-react";
+import { ArrowLeft, MapPin, PhoneIncoming, Plus } from "lucide-react";
 import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalSchoolDetail } from "@/lib/trainers/monday-links";
@@ -80,26 +80,40 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Link href="/scholen" className="inline-flex items-center gap-1.5 text-body-sm text-grijs-600 hover:text-teal-700">
-          <ArrowLeft size={15} />
-          Mijn scholen
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link href="/scholen" className="inline-flex items-center gap-1.5 text-body-sm text-grijs-600 hover:text-teal-700">
+            <ArrowLeft size={15} />
+            Scholen
+          </Link>
+          <h1 className="mt-2 font-display text-h1 font-bold text-donkerblauw">{school.naam}</h1>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body-sm text-grijs-600">
+            {school.onderwijstype && <span>{school.onderwijstype}</span>}
+            {school.locatie && (
+              <span className="flex items-center gap-1">
+                <MapPin size={13} />
+                {school.locatie}
+              </span>
+            )}
+            {school.implementatiefase && (
+              <span className="rounded-full bg-teal-50 px-2 py-0.5 text-label font-medium text-teal-700">
+                {school.implementatiefase}
+              </span>
+            )}
+          </p>
+        </div>
+        {/* Traineromgeving V2, Fase 1 (2026-08-28) — spec: "vanaf een school...
+            een snelle mogelijkheid om een logboekitem voor die school te
+            maken, zodat de trainer niet opnieuw de school hoeft te zoeken."
+            Alleen de school wordt voorgevuld (?school=...) — de daadwerkelijke
+            eigendomscontrole gebeurt hoe dan ook opnieuw server-side. */}
+        <Link
+          href={`/logboek/nieuw?school=${school.id}`}
+          className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-grijs-300 bg-white px-3 py-1.5 text-label font-semibold text-grijs-700 transition-colors hover:border-teal-300 hover:bg-teal-50/40 hover:text-teal-700"
+        >
+          <Plus size={13} />
+          Logboekitem
         </Link>
-        <h1 className="mt-2 font-display text-h1 font-bold text-donkerblauw">{school.naam}</h1>
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body-sm text-grijs-600">
-          {school.onderwijstype && <span>{school.onderwijstype}</span>}
-          {school.locatie && (
-            <span className="flex items-center gap-1">
-              <MapPin size={13} />
-              {school.locatie}
-            </span>
-          )}
-          {school.implementatiefase && (
-            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-label font-medium text-teal-700">
-              {school.implementatiefase}
-            </span>
-          )}
-        </p>
       </div>
 
       {telefonischeConceptenVoorSchool.length > 0 && (
