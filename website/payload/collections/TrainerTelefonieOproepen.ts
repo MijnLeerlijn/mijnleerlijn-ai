@@ -222,5 +222,25 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
     { name: "verslag", type: "relationship", relationTo: "training-verslagen", label: "Resulterend trainingsverslag" },
     { name: "ontvangenOp", type: "date", required: true, label: "Ontvangen op" },
     { name: "afgerondOp", type: "date", label: "Afgerond op (concept klaar of mislukt)" },
+    {
+      // Productieregressie-vervolgronde (2026-08-27, spec "na # hoor ik géén
+      // afsluittekst meer") — root cause: het afsluitende "Bedankt..."-bericht
+      // werd zowel vanuit het expliciete '#'-pad (verwerkOpnameToets) als
+      // vanuit de call.recording.saved-fallback (route.ts, bedoeld voor het
+      // geval '#' NOOIT werd ingedrukt) aangeroepen, met hetzelfde
+      // deterministische command_id — een tweede, near-simultane speak-poging
+      // met identiek command_id kon zo de eerste, daadwerkelijk hoorbare
+      // uitspraak verstoren. Dit veld is de atomaire claim (zie
+      // oproep-state.ts se claimAfsluitboodschap) die garandeert dat de
+      // afsluitboodschap voortaan vanuit precies ÉÉN van de twee triggers
+      // wordt gestart, nooit vanuit beide.
+      name: "afsluitboodschapGestartOp",
+      type: "date",
+      label: "Afsluitboodschap gestart op",
+      admin: {
+        description:
+          "Leeg zolang de afsluitboodschap ('Bedankt...') nog niet is gestart. Zodra gezet, geldt dit als de atomaire claim: een eventuele tweede trigger (bv. de call.recording.saved-fallback ná een al via '#' gestarte afsluiting) spreekt de boodschap dan bewust NIET nogmaals uit.",
+      },
+    },
   ],
 };

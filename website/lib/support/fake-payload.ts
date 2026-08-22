@@ -260,6 +260,24 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
             return { rows: [{ id }] };
           }
 
+          // Productieregressie-vervolgronde (2026-08-27) —
+          // claimAfsluitboodschap se atomische conditionele UPDATE: claimbaar
+          // zolang de afsluitboodschap nog niet eerder gestart is
+          // (afsluitboodschap_gestart_op IS NULL), bewust ONAFHANKELIJK van
+          // het status-veld (zie de doc-comment bij de echte functie,
+          // oproep-state.ts) — vandaar geen statuscontrole hier, in
+          // tegenstelling tot de claims hierboven.
+          if (tekst.includes("SET afsluitboodschap_gestart_op = now()")) {
+            const [id] = params as [number];
+            const oproepen = arr("trainer-telefonie-oproepen");
+            const doc = oproepen.find((d) => d.id === id);
+            if (!doc) return { rows: [] };
+            if (doc.afsluitboodschapGestartOp != null) return { rows: [] };
+            const nu = new Date().toISOString();
+            Object.assign(doc, { afsluitboodschapGestartOp: nu, updatedAt: nu });
+            return { rows: [{ id }] };
+          }
+
           // schrijfVerslagVelden/schrijfOproepVelden — dynamische,
           // willekeurige kolomcombinatie via sql.identifier(), hier dus ook
           // generiek nagebootst i.p.v. per-combinatie: kolomnamen staan al

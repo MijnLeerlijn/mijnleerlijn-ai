@@ -65,14 +65,23 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 //  call.recording.saved/.error -> verwerkOpnameStatus (ongewijzigd, inclusief
 //                       de bestaande idempotentieclaim/transcriptieherstel/
 //                       audiobewaartermijn uit gate 1) — vervanger van
-//                       opname-status. Zegt DAARNA best-effort alsnog gedag +
-//                       hangt op (vervanger van opname-afgerond) — Telnyx
-//                       heeft geen aparte "opname is gestopt"-actie-callback
-//                       zoals Twilio's <Record action>, dus dit gebeurt hier,
-//                       niet vooraf. voerVoiceInstructiesUit faalt bij Telnyx
-//                       bewust nooit door (zie provider.ts) — onschadelijk
-//                       als het gesprek dan al beëindigd is (bv. via de
-//                       '#'-afhandeling hierboven, of de beller hing zelf al op).
+//                       opname-status. Zegt DAARNA best-effort alsnog gedag
+//                       (vervanger van opname-afgerond, zelf weer speak-only
+//                       + deferred hangup via call.speak.ended, zie hierboven)
+//                       — Telnyx heeft geen aparte "opname is gestopt"-actie-
+//                       callback zoals Twilio's <Record action>, dus dit
+//                       gebeurt hier, niet vooraf. Productieregressie-
+//                       vervolgronde (2026-08-27): verwerkOpnameAfgerond is nu
+//                       claim-gated (oproep-state.ts se claimAfsluitboodschap)
+//                       — dit is dus BEWUST ook een geldige, eigen trigger
+//                       voor de afsluitboodschap (niet alleen een fallback bij
+//                       het uitblijven van '#'), maar spreekt 'm alleen
+//                       daadwerkelijk uit als de '#'-afhandeling hierboven dat
+//                       nog niet zelf al deed — nooit allebei. voerVoiceInstructiesUit
+//                       faalt bij Telnyx bewust nooit door (zie provider.ts) —
+//                       onschadelijk als het gesprek dan al beëindigd is (bv.
+//                       via de '#'-afhandeling hierboven, of de beller hing
+//                       zelf al op).
 //  alles anders      -> stil genegeerd (bv. call.hangup, call.speak.started,
 //                       call.answered voor een niet-inkomend/onverwacht
 //                       been) — Telnyx stuurt veel meer event_types dan deze
@@ -166,7 +175,7 @@ export async function POST(request: NextRequest) {
         if (!beperkPerGesprek.magVerder(callControlId)) break;
         const oproep = await maakOfHaalOproep(payload, callControlId);
         await verwerkOpnameStatus(payload, provider, oproep.id, vormVelden);
-        await provider.voerVoiceInstructiesUit(callControlId, verwerkOpnameAfgerond());
+        await provider.voerVoiceInstructiesUit(callControlId, await verwerkOpnameAfgerond(payload, oproep.id));
         break;
       }
 

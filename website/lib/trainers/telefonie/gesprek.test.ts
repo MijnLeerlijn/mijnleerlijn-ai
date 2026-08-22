@@ -642,14 +642,28 @@ describe("verwerkTrainingKeuze", () => {
 // ---------------------------------------------------------------------------
 
 describe("verwerkOpnameAfgerond", () => {
-  it("TRAINER_TELEFONIE_ENABLED uit -> niet beschikbaar", () => {
+  it("TRAINER_TELEFONIE_ENABLED uit -> niet beschikbaar", async () => {
     vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
-    expect(verwerkOpnameAfgerond()).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" }]);
+    expect(await verwerkOpnameAfgerond(payload, 1)).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" }]);
   });
 
-  it("spec §9: vaste, exacte afsluitende boodschap na '#' of een reguliere afronding — trainer hoeft niets te bevestigen", () => {
-    const instructies = verwerkOpnameAfgerond();
+  it("spec §9: vaste, exacte afsluitende boodschap na '#' of een reguliere afronding — trainer hoeft niets te bevestigen", async () => {
+    await verwerkInkomendeCall(payload, maakFakeProvider(), {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    const instructies = await verwerkOpnameAfgerond(payload, oproepId);
     expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" }]);
+  });
+
+  it("productieregressie (2026-08-27): een TWEEDE aanroep voor dezelfde oproep (bv. de call.recording.saved-fallback ná een al via '#' gestarte afsluiting) krijgt de claim NIET meer — stil [], geen tweede speak-poging", async () => {
+    await verwerkInkomendeCall(payload, maakFakeProvider(), {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+
+    const eersteKeer = await verwerkOpnameAfgerond(payload, oproepId);
+    const tweedeKeer = await verwerkOpnameAfgerond(payload, oproepId);
+
+    expect(eersteKeer).toEqual([{ soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" }]);
+    expect(tweedeKeer).toEqual([]);
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.afsluitboodschapGestartOp).toBeTruthy();
   });
 });
 
@@ -1085,6 +1099,80 @@ describe("productieregressie: spreek-dan-ophangen sequencing (2026-08-27)", () =
     expect(instructies).toEqual([
       { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PRODUCTIEREGRESSIE-VERVOLGRONDE (2026-08-27) — "na # hoor ik géén
+// afsluittekst meer": de vorige ronde loste "spreek → hangup" voor ALLE
+// terminale flows op, maar het '#'-pad heeft een unieke eigenschap die geen
+// van de andere terminale flows heeft: verwerkOpnameAfgerond() wordt zowel
+// vanuit dit expliciete pad áls vanuit de onafhankelijke call.recording.saved-
+// fallback in route.ts aangeroepen (record_stop leidt normaal ook tot een
+// eigen call.recording.saved) — met hetzelfde deterministische command_id op
+// het onderliggende speak-commando. Fix: verwerkOpnameAfgerond is nu
+// claim-gated (claimAfsluitboodschap, oproep-state.ts) — uitsluitend de
+// trigger die de atomaire claim wint, spreekt de boodschap daadwerkelijk uit.
+// ---------------------------------------------------------------------------
+
+describe("productieregressie-vervolgronde: afsluitboodschap na '#' (2026-08-27)", () => {
+  async function herkendeOproep(kandidaten: TrainingMetSchool[] = [training()]) {
+    mockHaalRecenteTrainingen.mockResolvedValue(kandidaten);
+    await verwerkInkomendeCall(payload, maakFakeProvider(), {});
+    return collection("trainer-telefonie-oproepen")[0]!.id as number;
+  }
+
+  it("opname actief -> # -> record_stop + afsluit-speak (GEEN hangup_uitvoeren erbij) -> pas ná call.speak.ended volgt exact één hangup_uitvoeren", async () => {
+    const oproepId = await herkendeOproep([training()]);
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+
+    const toetsInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+
+    expect(toetsInstructies).toEqual([
+      { soort: "stop_opname", poging: 0 },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" },
+    ]);
+    expect(toetsInstructies.some((i) => i.soort === "hangup_uitvoeren")).toBe(false);
+
+    const spreekProvider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: hangupClientStateVoor("opname_afgerond") }) });
+    const hangupInstructies = await verwerkSpreekAfgerond(payload, spreekProvider, oproepId, {});
+    expect(hangupInstructies).toEqual([{ soort: "hangup_uitvoeren", reden: "opname_afgerond" }]);
+  });
+
+  it("de call.recording.saved-fallback ná een al via '#' gestarte afsluiting spreekt de boodschap NIET nogmaals uit — voorkomt exact de dubbele-speak-poging die de root cause van deze regressie was", async () => {
+    const oproepId = await herkendeOproep([training()]);
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+
+    // Simuleert de onafhankelijke call.recording.saved-fallback die normaal
+    // óók na een expliciete '#'-afronding volgt — route.ts roept hiervoor
+    // verwerkOpnameAfgerond() rechtstreeks nogmaals aan.
+    const tweedeTrigger = await verwerkOpnameAfgerond(payload, oproepId);
+
+    expect(tweedeTrigger).toEqual([]);
+  });
+
+  it("het concept-/verwerkingspad blijft ongewijzigd: ná # wordt de opname alsnog correct getranscribeerd en als concept vastgelegd", async () => {
+    const oproepId = await herkendeOproep([training()]);
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+
+    mockTranscribeAudio.mockResolvedValue("Verslag na hekje, ongewijzigd verwerkingspad.");
+    const opnameProvider = maakFakeProvider({
+      ontleedOpnameStatus: () => ({
+        providerCallId: "CA1",
+        providerRecordingId: "RE-HEKJE",
+        status: "voltooid",
+        duurSeconden: 30,
+        ophaalReferentie: "https://provider.example/RE-HEKJE",
+        clientState: Buffer.from("0", "utf8").toString("base64"),
+      }),
+    });
+    await verwerkOpnameStatus(payload, opnameProvider, oproepId, {});
+
+    expect(collection("training-verslagen")).toHaveLength(1);
+    expect(collection("training-verslagen")[0]!.trainerInvoer).toBe("Verslag na hekje, ongewijzigd verwerkingspad.");
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("concept_klaar");
   });
 });
 

@@ -22,6 +22,7 @@ import {
   zetTranscriptieHerstelbaarMislukt,
   zetOpnameVerwijderd,
   claimTranscriptieRetry,
+  claimAfsluitboodschap,
   vindOnderhoudsKandidaten,
   ontleedOpgeslagenKandidaten,
   type OproepFoutcode,
@@ -475,7 +476,7 @@ export async function verwerkOpnameToets(
   const huidigePoging = oproep.heropnamePogingen ?? 0;
 
   if (cijfers === OPNAME_STOP_TOETS) {
-    return [{ soort: "stop_opname", poging: huidigePoging }, ...verwerkOpnameAfgerond()];
+    return [{ soort: "stop_opname", poging: huidigePoging }, ...(await verwerkOpnameAfgerond(payload, oproepId))];
   }
 
   if (cijfers === OPNAME_HERSTART_TOETS) {
@@ -620,15 +621,30 @@ export async function verwerkSpreekAfgerond(
 /**
  * Het afrondende gesproken "dank je"-bericht (spec §9) — puur de tekst, geen
  * verwerking hier (dat gebeurt async via verwerkOpnameStatus).
- * Providerneutraal en zonder args, dus vanuit meerdere triggerpunten
- * herbruikbaar: bij Telnyx zowel vanuit een via '#' vroegtijdig gestopte
- * opname (verwerkOpnameToets hierboven) als vanuit de reguliere
- * recording-saved-afhandeling (zie app/api/trainers/telefonie/webhook/route.ts) —
- * Telnyx kent, anders dan Twilio's <Record action>, geen aparte "opname is
- * zojuist gestopt"-callback.
+ * Providerneutraal, dus vanuit meerdere triggerpunten herbruikbaar: bij
+ * Telnyx zowel vanuit een via '#' vroegtijdig gestopte opname
+ * (verwerkOpnameToets hierboven) als vanuit de reguliere recording-saved-
+ * afhandeling (zie app/api/trainers/telefonie/webhook/route.ts) — Telnyx
+ * kent, anders dan Twilio's <Record action>, geen aparte "opname is zojuist
+ * gestopt"-callback, dus de recording-saved-afhandeling blijft de enige
+ * plek die dit bericht triggert wanneer '#' NOOIT werd ingedrukt (bv. bij
+ * stilte-timeout/max-duur).
+ *
+ * Productieregressie-vervolgronde (2026-08-27, spec "na # hoor ik géén
+ * afsluittekst meer") — root cause: doordat BEIDE triggerpunten hetzelfde
+ * deterministische command_id opleveren op het onderliggende speak-commando
+ * (zie telnyx-provider.ts se zeg_en_ophangen-tak), kon een near-simultane
+ * tweede poging (record_stop via '#' leidt normaal ook tot een eigen
+ * call.recording.saved) de eerste, daadwerkelijk hoorbare uitspraak
+ * verstoren. Nu async + claim-gated via claimAfsluitboodschap
+ * (oproep-state.ts): uitsluitend de trigger die de atomaire claim wint,
+ * spreekt de boodschap daadwerkelijk uit — de andere krijgt stil `[]`, geen
+ * fout, geen tweede speak-poging.
  */
-export function verwerkOpnameAfgerond(): VoiceInstructie[] {
+export async function verwerkOpnameAfgerond(payload: Payload, oproepId: number): Promise<VoiceInstructie[]> {
   if (!telefonieIsActief()) return NIET_BESCHIKBAAR;
+  const gewonnen = await claimAfsluitboodschap(payload, oproepId);
+  if (!gewonnen) return [];
   return [
     {
       soort: "zeg_en_ophangen",

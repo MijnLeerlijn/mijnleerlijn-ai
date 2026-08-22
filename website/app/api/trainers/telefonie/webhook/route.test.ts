@@ -75,7 +75,7 @@ beforeEach(() => {
   mockVerwerkTrainingKeuze.mockReset().mockResolvedValue([]);
   mockVerwerkOpnameToets.mockReset().mockResolvedValue([]);
   mockVerwerkSpreekAfgerond.mockReset().mockResolvedValue([]);
-  mockVerwerkOpnameAfgerond.mockReset().mockReturnValue([{ soort: "zeg_en_ophangen", tekst: "Dank je.", reden: "opname_afgerond" }]);
+  mockVerwerkOpnameAfgerond.mockReset().mockResolvedValue([{ soort: "zeg_en_ophangen", tekst: "Dank je.", reden: "opname_afgerond" }]);
   mockVerwerkOpnameStatus.mockReset().mockResolvedValue(undefined);
   mockMaakOfHaalOproep.mockReset().mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
   mockTelnyxProvider.mockReset();

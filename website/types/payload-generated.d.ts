@@ -653,6 +653,10 @@ export interface TrainerTelefonieOproepen {
   verslag?: (number | null) | TrainingVerslagen;
   ontvangenOp: string;
   afgerondOp?: string | null;
+  /**
+   * Leeg zolang de afsluitboodschap ('Bedankt...') nog niet is gestart. Zodra gezet, geldt dit als de atomaire claim: een eventuele tweede trigger (bv. de call.recording.saved-fallback ná een al via '#' gestarte afsluiting) spreekt de boodschap dan bewust NIET nogmaals uit.
+   */
+  afsluitboodschapGestartOp?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2545,6 +2549,7 @@ export interface TrainerTelefonieOproepenSelect<T extends boolean = true> {
   verslag?: T;
   ontvangenOp?: T;
   afgerondOp?: T;
+  afsluitboodschapGestartOp?: T;
   updatedAt?: T;
   createdAt?: T;
 }

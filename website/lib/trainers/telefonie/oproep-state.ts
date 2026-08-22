@@ -364,6 +364,34 @@ export async function claimTranscriptieRetry(payload: Payload, oproepId: number,
  * bijgewerkt (voorkomt dat twee gelijktijdige onderhoudsrondes elkaars werk
  * dubbel doen).
  */
+/**
+ * Productieregressie-vervolgronde (2026-08-27, spec "na # hoor ik géén
+ * afsluittekst meer") — DE atomaire garantie dat de afsluitboodschap
+ * ("Bedankt. Je verslag wordt verwerkt...") vanuit precies ÉÉN trigger wordt
+ * gestart. Root cause van de regressie: verwerkOpnameAfgerond() kon zowel
+ * vanuit het expliciete '#'-pad (verwerkOpnameToets, gesprek.ts) als vanuit
+ * de call.recording.saved-fallback (route.ts — bedoeld voor het geval '#'
+ * NOOIT werd ingedrukt, bv. bij stilte-timeout) aangeroepen worden, met
+ * hetzelfde deterministische command_id op het onderliggende speak-commando.
+ * Zonder deze claim konden beide triggers (bv. doordat record_stop, dat het
+ * '#'-pad zelf al afvuurt, ook de recording.saved-fallback in gang zet)
+ * near-simultaan een speak-poging met identiek command_id versturen — een
+ * tweede, overbodige poging kon zo de eerste, daadwerkelijk hoorbare
+ * uitspraak verstoren. Zelfde bewezen atomische-conditionele-UPDATE-vorm als
+ * claimOpnameVerwerking hierboven. Retourneert of DEZE aanroep de claim won —
+ * alleen de winnaar mag de afsluitboodschap daadwerkelijk uitspreken.
+ */
+export async function claimAfsluitboodschap(payload: Payload, oproepId: number): Promise<boolean> {
+  const resultaat = await payload.db.drizzle.execute(sql`
+    UPDATE trainer_telefonie_oproepen
+    SET afsluitboodschap_gestart_op = now(), updated_at = now()
+    WHERE id = ${oproepId}
+      AND afsluitboodschap_gestart_op IS NULL
+    RETURNING id;
+  `);
+  return resultaat.rows.length > 0;
+}
+
 export async function vindOnderhoudsKandidaten(payload: Payload, vastgelopenVoorTijdstip: string, limiet: number): Promise<number[]> {
   const [herstelbaar, vastgelopen] = await Promise.all([
     payload.find({
