@@ -652,6 +652,122 @@ describe("bepaalScholenVoorTrainer — resolutieladder", () => {
   });
 });
 
+describe("bepaalScholenVoorTrainer — Vervolgronde (2026-08-22): alle gekoppelde scholen zichtbaar, ongeacht trainingstatus", () => {
+  // Root-cause-fix: de "Scholen"-lijst toonde voorheen niet elke gekoppelde
+  // school. Bron van waarheid is de harde Monday-koppeling (Master Data.
+  // Trainer, tier 1) — training-aanwezigheid/-status mag NOOIT bepalen of een
+  // school zichtbaar is, alleen de tellingen zelf. Deze drie tests dekken
+  // letterlijk de drie in de opdracht genoemde scenario's.
+  it("een school met een harde Trainer-relatie maar ZONDER enige training blijft zichtbaar, met 0 open trainingen", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Nieuwe school zonder trainingen", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [] }); // geen enkele training op het hele Uitvoering-board
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([])); // geen trainerboard-items
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd).toHaveLength(1);
+    const school = resultaat.bevestigd[0]!;
+    expect(school).toMatchObject({ id: "500", naam: "Nieuwe school zonder trainingen" });
+    expect(school.aantalOpen).toBe(0);
+    expect(school.aantalGepland).toBe(0);
+    expect(school.aantalGedaan).toBe(0);
+    expect(school.eerstvolgendeTraining).toBeNull();
+  });
+
+  it("een school waarvan ALLE trainingen zijn afgerond blijft zichtbaar (0 open, wél gedaan)", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School met alleen afgeronde trainingen", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          uitvoeringItem({ id: "1", naam: "Training 1", schoolIds: ["500"], status: "Gedaan" }),
+          uitvoeringItem({ id: "2", naam: "Training 2", schoolIds: ["500"], status: "Afgerond" }),
+        ],
+      });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd).toHaveLength(1);
+    const school = resultaat.bevestigd[0]!;
+    expect(school.aantalOpen).toBe(0);
+    expect(school.aantalGepland).toBe(0);
+    expect(school.aantalGedaan).toBe(2);
+  });
+
+  it("een school die NIET aan déze trainer gekoppeld is (Trainer-kolom bevat een ander trainer-item-ID) blijft onzichtbaar", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          masterDataItem({ id: "500", naam: "Andermans school", trainerLinkedIds: [123456] }), // niet 999001 (TRAINER)
+          masterDataItem({ id: "501", naam: "Wel gekoppeld", trainerLinkedIds: [999001] }),
+        ],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd.map((s) => s.id)).toEqual(["501"]);
+    expect(resultaat.bevestigd.some((s) => s.id === "500")).toBe(false);
+  });
+});
+
+describe("verzamelTrainerContext — meerpagina-doorloop (Vervolgronde 2026-08-22, root-cause-fix)", () => {
+  // Vóór deze fix werd elk van de drie Monday-bevragingen (Master Data/
+  // Uitvoering/eigen trainerboard) met precies ÉÉN pagina bevraagd — de door
+  // Monday teruggegeven cursor werd genegeerd, dus bij méér items dan de
+  // per-pagina-limiet vielen scholen/trainingen stil weg. mockImplementation
+  // (i.p.v. een vaste mockResolvedValueOnce-keten) hier bewust: Master Data-
+  // en Uitvoering-pagina's worden via Promise.all parallel opgehaald, dus de
+  // exacte aanroepvolgorde tussen die twee is een implementatiedetail dat
+  // deze test niet mag aannemen — alleen boardId/cursor bepalen het antwoord.
+  it("Master Data: een school op de TWEEDE pagina wordt niet meer stil weggelaten", async () => {
+    mockScholenPagina.mockImplementation(async ({ columnIds, cursor }) => {
+      const isMasterData = columnIds.includes("board_relation_mm5r2jy1"); // MD_TRAINER_KOLOM, uniek voor Master Data
+      if (!isMasterData) return { cursor: null, items: [] }; // Uitvoering-board: leeg in deze test
+      if (!cursor) return { cursor: "pagina-2", items: [masterDataItem({ id: "500", naam: "School op pagina 1", trainerLinkedIds: [999001] })] };
+      return { cursor: null, items: [masterDataItem({ id: "600", naam: "School op pagina 2", trainerLinkedIds: [999001] })] };
+    });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd.map((s) => s.id).sort()).toEqual(["500", "600"]);
+  });
+
+  it("stopt zodra de cursor null is en vraagt nooit meer pagina's op dan nodig", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School", trainerLinkedIds: [999001] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+    mockQuery.mockResolvedValue(trainerboardBoardsResponse([]));
+
+    await bepaalScholenVoorTrainer(TRAINER);
+
+    // Precies twee aanroepen (Master Data + Uitvoering), elk maar 1 pagina —
+    // geen overbodige vervolgaanroepen zodra de cursor al null is.
+    expect(mockScholenPagina).toHaveBeenCalledTimes(2);
+  });
+
+  it("het eigen trainerboard (mondayQuery, los van haalScholenPagina) doorloopt ook meerdere pagina's", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "School" })] }) // geen directe trainerLinkedIds -> alleen via trainerboard vindbaar
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "700", naam: "Training", schoolIds: ["500"] })] });
+    mockQuery
+      .mockResolvedValueOnce({ boards: [{ items_page: { cursor: "trainerboard-pagina-2", items: [] } }] })
+      .mockResolvedValueOnce({
+        boards: [{ items_page: { cursor: null, items: [{ id: "800", name: "item", group: { title: "School" }, column_values: [{ id: "numeric_mm5vceeq", text: "700", value: null }] }] } }],
+      });
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd).toHaveLength(1);
+    expect(resultaat.bevestigd[0]).toMatchObject({ id: "500", bron: "training-koppeling" });
+  });
+});
+
 describe("trainerboardItemId (Ronde 2) — schrijfdoel-resolutie voor lib/trainers/writeback.ts", () => {
   it("tier 1 (training-koppeling): trainerboardItemId wordt onvoorwaardelijk gevuld, ook al bevestigt dit trainerboard-item de school niet zelf", async () => {
     // vóór Ronde 2 werd tbItem.id (het trainerboard-item-ID) nergens

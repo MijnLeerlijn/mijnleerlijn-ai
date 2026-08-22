@@ -159,6 +159,20 @@ export const Articles: CollectionConfig = {
       admin: { position: "sidebar", readOnly: true, description: "Alleen voor herkomst in Archief, geen functioneel effect." },
     },
     {
+      // Vervolgronde, Kennis fase 1 (2026-08-22) — "Maak trainerversie": zie
+      // MaakTrainerversieButton.tsx + /api/creator/trainer-kennisversie +
+      // payload/collections/TrainerKennisversies.ts. Puur presentationeel
+      // veld (geen eigen dataveld op Articles zelf), zelfde opzet als
+      // RetryTelefonieButton.tsx op TrainerTelefonieOproepen.ts.
+      name: "maakTrainerversieActie",
+      type: "ui",
+      label: "Trainerversie",
+      admin: {
+        position: "sidebar",
+        components: { Field: "@/payload/components/MaakTrainerversieButton#MaakTrainerversieButton" },
+      },
+    },
+    {
       // Sprint 4: dit veld bestond al als voorbereidend Fase 6-systeemveld en
       // wordt nu daadwerkelijk gevuld door lib/embeddings/ (POST
       // /api/knowledge/embed) — alleen voor gepubliceerde artikelen, en voor

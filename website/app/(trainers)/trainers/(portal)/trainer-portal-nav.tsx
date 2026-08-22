@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, GraduationCap, NotebookText, School, CircleUserRound, LogOut } from "lucide-react";
+import { LayoutDashboard, GraduationCap, NotebookText, School, BookOpen, CircleUserRound, LogOut } from "lucide-react";
 
 // Alle hrefs hieronder zijn het KALE pad zoals de browser dat ziet (de
 // proxy.ts-rewrite naar /trainers/* is voor de browser onzichtbaar) — zie de
@@ -16,13 +16,18 @@ import { LayoutDashboard, GraduationCap, NotebookText, School, CircleUserRound, 
 // als volwaardig, zelfstandig concept (eigen lijst-, detail-, tabs- en
 // verslagpagina's — zie app/(trainers)/trainers/(portal)/scholen/) en zou
 // een regressie in navigeerbaarheid zijn om nu te verwijderen — opdrachtseis
-// "onderzoek of Scholen al voldoende bestaat" beantwoord: ja. "Kennis" komt
-// pas in fase 2 (opdrachtseis) en wordt hier bewust nog niet toegevoegd.
+// "onderzoek of Scholen al voldoende bestaat" beantwoord: ja.
+//
+// Vervolgronde (2026-08-22) — "Kennis" toegevoegd (opdrachtseis, fase 1 van
+// die feature): Dashboard | Trainingen | Logboek | Scholen | Kennis.
+// Profiel/Uitloggen bewust ongewijzigd (opdrachtseis: "geen extra
+// navigatierefactor nodig in deze ronde").
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/trainingen", label: "Trainingen", icon: GraduationCap, exact: false },
   { href: "/logboek", label: "Logboek", icon: NotebookText, exact: false },
   { href: "/scholen", label: "Scholen", icon: School, exact: false },
+  { href: "/kennis", label: "Kennis", icon: BookOpen, exact: false },
   { href: "/profiel", label: "Profiel", icon: CircleUserRound, exact: false },
 ] as const;
 

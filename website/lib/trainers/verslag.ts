@@ -570,6 +570,42 @@ export async function haalVerslagenDieAandachtNodigHebben(payload: Payload, trai
   }));
 }
 
+export interface GestartConcept {
+  mondayTrainingId: string;
+  schoolId: string;
+  schoolNaam: string;
+  trainingNaam: string;
+  /** updatedAt — voor sortering binnen de dashboardsectie "To do" (lib/trainers/dashboard.ts). */
+  wanneer: string;
+}
+
+/**
+ * Vervolgronde (2026-08-22) — dashboardsectie "To do", categorie "gestart
+ * conceptverslag nog niet afgemaakt": een portalconcept (bron "portal", dus
+ * bewust NIET "telefoon" — dat heeft al zijn eigen categorie via
+ * haalTelefonischeConceptenVoorTrainer hierboven) dat de trainer zelf is
+ * begonnen maar nog nooit definitief heeft bevestigd. Zelfde vorm/opzet als
+ * de twee leesfuncties hierboven — uitsluitend het status-/bron-filter
+ * verschilt, geen nieuwe statuslaag.
+ */
+export async function haalGestarteConceptenVoorTrainer(payload: Payload, trainer: AuthTrainer): Promise<GestartConcept[]> {
+  const resultaat = await payload.find({
+    collection: "training-verslagen",
+    where: { and: [{ trainer: { equals: trainer.id } }, { status: { equals: "concept" } }, { bron: { equals: "portal" } }] },
+    overrideAccess: true,
+    depth: 0,
+    sort: "-updatedAt",
+    limit: 20,
+  });
+  return resultaat.docs.map((doc) => ({
+    mondayTrainingId: doc.mondayTrainingId,
+    schoolId: doc.mondaySchoolId,
+    schoolNaam: doc.schoolNaam ?? "Onbekende school",
+    trainingNaam: doc.trainingNaam ?? "Training",
+    wanneer: doc.updatedAt,
+  }));
+}
+
 export interface VerslagActiviteit {
   mondayTrainingId: string;
   schoolId: string;

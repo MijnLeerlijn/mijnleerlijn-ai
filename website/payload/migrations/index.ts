@@ -49,6 +49,7 @@ import * as migration_20260826_090000_telefonie_v1_afronding from './20260826_09
 import * as migration_20260827_090000_telefonie_afsluitboodschap_claim from './20260827_090000_telefonie_afsluitboodschap_claim';
 import * as migration_20260828_090000_telefonie_opname_toets_claim from './20260828_090000_telefonie_opname_toets_claim';
 import * as migration_20260828_100000_trainer_logboek_items_v1 from './20260828_100000_trainer_logboek_items_v1';
+import * as migration_20260828_110000_trainer_kennisversies_v1 from './20260828_110000_trainer_kennisversies_v1';
 
 export const migrations = [
   {
@@ -305,5 +306,10 @@ export const migrations = [
     up: migration_20260828_100000_trainer_logboek_items_v1.up,
     down: migration_20260828_100000_trainer_logboek_items_v1.down,
     name: '20260828_100000_trainer_logboek_items_v1',
+  },
+  {
+    up: migration_20260828_110000_trainer_kennisversies_v1.up,
+    down: migration_20260828_110000_trainer_kennisversies_v1.down,
+    name: '20260828_110000_trainer_kennisversies_v1',
   },
 ];

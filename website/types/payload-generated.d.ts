@@ -75,6 +75,7 @@ export interface Config {
     'training-verslagen': TrainingVerslagen;
     'trainer-telefonie-oproepen': TrainerTelefonieOproepen;
     'trainer-logboek-items': TrainerLogboekItem;
+    'trainer-kennisversies': TrainerKennisversy;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -119,6 +120,7 @@ export interface Config {
     'training-verslagen': TrainingVerslagenSelect<false> | TrainingVerslagenSelect<true>;
     'trainer-telefonie-oproepen': TrainerTelefonieOproepenSelect<false> | TrainerTelefonieOproepenSelect<true>;
     'trainer-logboek-items': TrainerLogboekItemsSelect<false> | TrainerLogboekItemsSelect<true>;
+    'trainer-kennisversies': TrainerKennisversiesSelect<false> | TrainerKennisversiesSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -695,23 +697,39 @@ export interface TrainerLogboekItem {
   createdAt: string;
 }
 /**
+ * Trainerversies van kennisartikelen — AI-concept, door een beheerder gecontroleerd/bewerkt, pas zichtbaar voor trainers na 'Publiceren voor trainers'.
+ *
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "categories".
+ * via the `definition` "trainer-kennisversies".
  */
-export interface Category {
+export interface TrainerKennisversy {
   id: number;
-  title: string;
-  slug: string;
+  sourceArticle: number | Article;
+  titel: string;
   /**
-   * Naam van een Lucide-icoon (kebab-case, bijv. 'rocket'). Kies via de Downloadcategorieën-beheerpagina — iedere naam uit de Lucide-iconenbibliotheek is geldig; onbekende namen vallen bij weergave veilig terug op een standaardicoon.
+   * Dezelfde feiten als het bronartikel, geschreven vanuit trainersperspectief. Platte tekst — geen HTML/markdown, wordt als gewone tekst getoond.
    */
-  icon: string;
-  color: 'blue' | 'green' | 'red' | 'orange' | 'yellow' | 'purple' | 'teal' | 'pink' | 'slate';
-  description: string;
+  tekst: string;
+  status: 'concept' | 'gepubliceerd';
+  publishedAt?: string | null;
+  generatedByAi?: boolean | null;
   /**
-   * Bepaalt de volgorde van categorieën op de publieke downloadpagina. Laag = eerder. Leeg = alfabetisch, onderaan. Wordt beheerd via de 'Downloadcategorieën'-pagina in het menu.
+   * Alleen relevant voor de trainer-Q&A-zoekfunctie, geen effect op zichtbaarheid van de tekst zelf.
    */
-  volgorde?: number | null;
+  embeddingStatus?: ('pending' | 'indexed') | null;
+  embeddingTextHash?: string | null;
+  /**
+   * Ruwe vectoropslag voor de trainer-Q&A-zoekfunctie (lib/trainers/kennis.ts) — losstaand van de centrale kennisindex.
+   */
+  embedding?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -849,6 +867,27 @@ export interface Article {
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "categories".
+ */
+export interface Category {
+  id: number;
+  title: string;
+  slug: string;
+  /**
+   * Naam van een Lucide-icoon (kebab-case, bijv. 'rocket'). Kies via de Downloadcategorieën-beheerpagina — iedere naam uit de Lucide-iconenbibliotheek is geldig; onbekende namen vallen bij weergave veilig terug op een standaardicoon.
+   */
+  icon: string;
+  color: 'blue' | 'green' | 'red' | 'orange' | 'yellow' | 'purple' | 'teal' | 'pink' | 'slate';
+  description: string;
+  /**
+   * Bepaalt de volgorde van categorieën op de publieke downloadpagina. Laag = eerder. Leeg = alfabetisch, onderaan. Wordt beheerd via de 'Downloadcategorieën'-pagina in het menu.
+   */
+  volgorde?: number | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -2274,6 +2313,10 @@ export interface PayloadLockedDocument {
         value: number | TrainerLogboekItem;
       } | null)
     | ({
+        relationTo: 'trainer-kennisversies';
+        value: number | TrainerKennisversy;
+      } | null)
+    | ({
         relationTo: 'variants';
         value: number | Variant;
       } | null)
@@ -2605,6 +2648,23 @@ export interface TrainerLogboekItemsSelect<T extends boolean = true> {
   tekst?: T;
   mondayTrainingId?: T;
   trainingNaam?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-kennisversies_select".
+ */
+export interface TrainerKennisversiesSelect<T extends boolean = true> {
+  sourceArticle?: T;
+  titel?: T;
+  tekst?: T;
+  status?: T;
+  publishedAt?: T;
+  generatedByAi?: T;
+  embeddingStatus?: T;
+  embeddingTextHash?: T;
+  embedding?: T;
   updatedAt?: T;
   createdAt?: T;
 }

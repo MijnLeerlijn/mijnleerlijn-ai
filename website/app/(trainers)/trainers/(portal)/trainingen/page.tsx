@@ -1,11 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { GraduationCap } from "lucide-react";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
-import { haalAlleTrainingenVoorTrainer, vandaagIsoAmsterdam, type TrainingMetSchool } from "@/lib/trainers/monday-links";
+import { haalAlleTrainingenVoorTrainer, vandaagIsoAmsterdam } from "@/lib/trainers/monday-links";
 import { groepeerOpWeergaveStatus, type TrainingWeergaveStatus } from "@/lib/trainers/training-weergave";
-import { TRAINING_STATUS_BADGE, TRAINING_STATUS_LABEL } from "@/lib/trainers/status-styles";
-import { formatKorteDatum } from "@/lib/sales/format-datum";
+import { TrainingenSecties } from "./trainingen-secties";
 
 export const metadata = { title: "Trainingen — Trainerportal" };
 
@@ -27,30 +24,22 @@ const SECTIE_VOLGORDE: { status: TrainingWeergaveStatus; titel: string }[] = [
   { status: "geannuleerd", titel: "Geannuleerd" },
 ];
 
-function TrainingRij({ training }: { training: TrainingMetSchool }) {
-  return (
-    <Link
-      href={`/scholen/${training.schoolId}`}
-      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg px-3 py-2.5 transition-colors hover:bg-grijs-50"
-    >
-      <div className="min-w-[10rem] flex-1">
-        <p className="text-body-sm font-medium text-grijs-900">{training.schoolNaam}</p>
-        <p className="text-label text-grijs-600">{training.naam}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="text-body-sm text-grijs-600">{formatKorteDatum(training.datum)}</span>
-        <span className={`rounded-full px-2 py-0.5 text-label font-semibold ${TRAINING_STATUS_BADGE[training.status]}`}>{TRAINING_STATUS_LABEL[training.status]}</span>
-      </div>
-    </Link>
-  );
-}
-
 export default async function TrainerTrainingenPage() {
   const trainer = await haalIngelogdeTrainer();
   if (!trainer) redirect("/login");
 
   const alle = await haalAlleTrainingenVoorTrainer(trainer);
   const groepen = groepeerOpWeergaveStatus(alle, vandaagIsoAmsterdam());
+
+  // Sectie-open/dicht-toestand is puur presentatie en leeft client-side
+  // (trainingen-secties.tsx) — deze server-pagina blijft verantwoordelijk voor
+  // databron, rechten en de gedeelde bucket-indeling, ongewijzigd t.o.v. vóór
+  // de inklapbare koppen.
+  const secties = SECTIE_VOLGORDE.filter(({ status }) => groepen[status].length > 0).map(({ status, titel }) => ({
+    status,
+    titel,
+    trainingen: [...groepen[status]].sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? "")),
+  }));
 
   return (
     <div className="flex flex-col gap-8">
@@ -64,24 +53,7 @@ export default async function TrainerTrainingenPage() {
           Er zijn nog geen trainingen aan je scholen gekoppeld.
         </div>
       ) : (
-        SECTIE_VOLGORDE.filter(({ status }) => groepen[status].length > 0).map(({ status, titel }) => {
-          const trainingen = [...groepen[status]].sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? ""));
-          return (
-            <section key={status} className="rounded-xl border border-grijs-200 bg-white shadow-sm">
-              <div className="flex items-center gap-2 border-b border-grijs-100 px-4 py-3">
-                <GraduationCap size={16} className="text-grijs-600" />
-                <h2 className="text-h3 font-semibold text-grijs-900">
-                  {titel} <span className="font-normal text-grijs-500">({trainingen.length})</span>
-                </h2>
-              </div>
-              <div className="flex flex-col divide-y divide-grijs-100 px-1 py-1">
-                {trainingen.map((training) => (
-                  <TrainingRij key={training.id} training={training} />
-                ))}
-              </div>
-            </section>
-          );
-        })
+        <TrainingenSecties secties={secties} />
       )}
     </div>
   );

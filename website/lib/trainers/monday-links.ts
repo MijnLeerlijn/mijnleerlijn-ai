@@ -1,4 +1,4 @@
-import { mondayQuery, haalScholenPagina, haalUpdatesVoorItem, type MondayColumnValue, type MondayUpdate } from "@/lib/sales/monday-client";
+import { mondayQuery, haalScholenPagina, haalUpdatesVoorItem, type MondayColumnValue, type MondaySchoolItem, type MondayUpdate } from "@/lib/sales/monday-client";
 import type { AuthTrainer } from "./auth";
 import { groepeerOpWeergaveStatus, type TrainingWeergaveStatus } from "./training-weergave";
 import { sorteerTrainingenAlfabetisch } from "./training-sortering";
@@ -60,14 +60,45 @@ export const UV_LOGBOEK_KOLOM = "boolean_mm5tvfc5";
 const TB_MASTER_ID_KOLOM = "numeric_mm5vceeq";
 
 // Begrenzingen — zelfde "nooit onbegrensd tegen het gedeelde Monday-
-// ratebudget"-principe als lib/trainers-diagnose/monday-readonly.ts. Bij
-// overschrijding ontbreken silently scholen/trainingen buiten de eerste
-// pagina — geaccepteerde, expliciet gedocumenteerde V1-beperking (geen
-// meerpagina-doorloop in Ronde 1).
+// ratebudget"-principe als lib/trainers-diagnose/monday-readonly.ts. Elke
+// waarde hieronder is nu een PER-PAGINA-limiet (zie MAX_PAGINAS + haalAllePaginas
+// hieronder) — de effectieve bovengrens is dus limiet × MAX_PAGINAS: nog
+// steeds bewust begrensd (geen oneindige lus tegen het Monday-ratebudget),
+// maar niet langer stil afgekapt bij precies één pagina (was de V1-beperking).
 const MAX_MASTER_DATA_ITEMS = 250;
 const MAX_UITVOERING_ITEMS = 500;
 const MAX_TRAINERBOARD_ITEMS = 100;
 const MAX_SCHOOL_UPDATES = 30;
+
+/**
+ * Root-cause-fix ("Scholen"-lijst toont niet alle gekoppelde scholen,
+ * Vervolgronde 2026-08-22) — verzamelTrainerContext bevroeg Master Data/
+ * Uitvoering/het eigen trainerboard elk met precies ÉÉN pagina (zie
+ * MAX_*_ITEMS hierboven) en negeerde de door Monday teruggegeven cursor
+ * volledig. Bij een board/trainerboard met méér items dan die per-pagina-
+ * limiet vielen scholen/trainingen dus stil weg — Monday's items_page-
+ * volgorde is niet gegarandeerd chronologisch, dus dit kon zowel oudere als
+ * recente scholen raken, afhankelijk van waar de cap toevallig viel. Dit is
+ * een van de twee onderliggende oorzaken van het gerapporteerde symptoon
+ * (naast de datakwaliteitsoorzaken hierboven/hieronder in dit bestand) —
+ * zie het opleverrapport voor de volledige toelichting, inclusief het
+ * overgebleven, NIET in code oplosbare geval (een gekoppelde school zonder
+ * enige trainingshistorie én zonder de harde Master Data.Trainer-relatie).
+ */
+const MAX_PAGINAS = 5;
+
+/** Haalt tot MAX_PAGINAS pagina's op via haalScholenPagina en voegt ze samen — zie MAX_PAGINAS hierboven. */
+async function haalAllePaginas(opties: { boardId: string; columnIds: string[]; limit: number }): Promise<MondaySchoolItem[]> {
+  const alleItems: MondaySchoolItem[] = [];
+  let cursor: string | null = null;
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    const resultaat = await haalScholenPagina({ boardId: opties.boardId, columnIds: opties.columnIds, limit: opties.limit, cursor });
+    alleItems.push(...resultaat.items);
+    if (!resultaat.cursor) break;
+    cursor = resultaat.cursor;
+  }
+  return alleItems;
+}
 
 function naarKolomMap(columnValues: MondayColumnValue[]): Map<string, MondayColumnValue> {
   return new Map(columnValues.map((cv) => [cv.id, cv]));
@@ -292,9 +323,10 @@ interface TrainerboardItemRuw {
 
 async function haalTrainerboardStructuur(boardId: string, itemsLimit: number): Promise<{ items: TrainerboardItemRuw[] }> {
   const query = `
-    query HaalTrainerboardStructuur($boardId: ID!, $itemsLimit: Int, $columnIds: [String!]) {
+    query HaalTrainerboardStructuur($boardId: ID!, $itemsLimit: Int, $cursor: String, $columnIds: [String!]) {
       boards(ids: [$boardId]) {
-        items_page(limit: $itemsLimit) {
+        items_page(limit: $itemsLimit, cursor: $cursor) {
+          cursor
           items {
             id
             name
@@ -305,17 +337,31 @@ async function haalTrainerboardStructuur(boardId: string, itemsLimit: number): P
       }
     }
   `;
-  const data = await mondayQuery<{
-    boards: {
-      items_page: {
-        items: { id: string; name: string; group: { title: string } | null; column_values: MondayColumnValue[] }[];
-      };
-    }[];
-  }>(query, { boardId, itemsLimit, columnIds: [TB_MASTER_ID_KOLOM] });
+  type RuwTrainerboardItem = { id: string; name: string; group: { title: string } | null; column_values: MondayColumnValue[] };
+  type TrainerboardPaginaRespons = { boards: { items_page: { cursor: string | null; items: RuwTrainerboardItem[] } }[] };
 
-  const items = data.boards[0]?.items_page.items ?? [];
+  // Zelfde bounded-meerpagina-doorloop als haalAllePaginas hierboven (Master
+  // Data/Uitvoering) — deze query loopt los omdat hij, i.t.t. die twee, geen
+  // haalScholenPagina hergebruikt (ander veldenschema: group.title erbij).
+  const alleRuweItems: RuwTrainerboardItem[] = [];
+  let volgendeCursor: string | null = null;
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    const data: TrainerboardPaginaRespons = await mondayQuery<TrainerboardPaginaRespons>(query, {
+      boardId,
+      itemsLimit,
+      cursor: volgendeCursor,
+      columnIds: [TB_MASTER_ID_KOLOM],
+    });
+
+    const paginaResultaat: TrainerboardPaginaRespons["boards"][number]["items_page"] | undefined = data.boards[0]?.items_page;
+    if (!paginaResultaat) break;
+    alleRuweItems.push(...paginaResultaat.items);
+    if (!paginaResultaat.cursor) break;
+    volgendeCursor = paginaResultaat.cursor;
+  }
+
   return {
-    items: items.map((item) => {
+    items: alleRuweItems.map((item) => {
       const kolommen = naarKolomMap(item.column_values);
       return {
         id: item.id,
@@ -346,13 +392,13 @@ interface TrainerMondayContext {
  * paginalaad is een live Monday-read.
  */
 async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMondayContext> {
-  const [masterDataPagina, uitvoeringPagina, trainerboardStructuur] = await Promise.all([
-    haalScholenPagina({
+  const [masterDataItems, uitvoeringItems, trainerboardStructuur] = await Promise.all([
+    haalAllePaginas({
       boardId: MASTER_DATA_BOARD_ID,
       columnIds: [MD_TRAINER_KOLOM, MD_HOOFDCONTACTPERSOON_KOLOM, MD_TYPE_SCHOOL_KOLOM, MD_LOCATION_KOLOM, MD_IMPLEMENTATIEFASE_KOLOM],
       limit: MAX_MASTER_DATA_ITEMS,
     }),
-    haalScholenPagina({
+    haalAllePaginas({
       boardId: UITVOERING_BOARD_ID,
       columnIds: [UV_SCHOOL_KOLOM, UV_STATUS_KOLOM, UV_DATUM_KOLOM, UV_LOGBOEK_KOLOM],
       limit: MAX_UITVOERING_ITEMS,
@@ -361,7 +407,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
   ]);
 
   const masterDataById = new Map<string, MasterDataSchoolRuw>();
-  for (const item of masterDataPagina.items) {
+  for (const item of masterDataItems) {
     const kolommen = naarKolomMap(item.column_values);
     masterDataById.set(item.id, {
       id: item.id,
@@ -402,7 +448,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
   // een lege School-kolom zelf nergens herbruikbaar zijn, ook niet via de
   // Master-ID-keten die 'm daar wél uniek aan toewijst.
   const uitvoeringById = new Map<string, { schoolIds: string[]; samenvatting: TrainingSamenvatting }>();
-  for (const item of uitvoeringPagina.items) {
+  for (const item of uitvoeringItems) {
     const kolommen = naarKolomMap(item.column_values);
     const schoolIds = parseLinkedPulseIds(kolommen.get(UV_SCHOOL_KOLOM)?.value);
     const datum = parseMondayDatum(kolommen.get(UV_DATUM_KOLOM)?.text);

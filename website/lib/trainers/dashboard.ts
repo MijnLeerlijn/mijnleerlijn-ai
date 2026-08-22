@@ -1,6 +1,6 @@
 import type { Payload } from "payload";
 import { haalDashboardData, type TrainingMetSchool } from "./monday-links";
-import { haalTelefonischeConceptenVoorTrainer, haalVerslagenDieAandachtNodigHebben, telVoltooideVerslagen } from "./verslag";
+import { haalTelefonischeConceptenVoorTrainer, haalVerslagenDieAandachtNodigHebben, haalGestarteConceptenVoorTrainer, telVoltooideVerslagen } from "./verslag";
 import { haalActiviteitVoorTrainer, type ActiviteitItem } from "./activiteit";
 import type { AuthTrainer } from "./auth";
 
@@ -16,10 +16,21 @@ import type { AuthTrainer } from "./auth";
 // live Monday-aanroep voor deze pagina; alles hieronder erbij (telefonische
 // concepten/vastgelopen verslagen/activiteit/tellingen) zijn allemaal lokale
 // Payload-leesqueries, geen extra Monday-verkeer.
+//
+// Vervolgronde (2026-08-22) — "Aandacht nodig" is vervangen door de bredere
+// sectie "To do" (opdrachtseis): dezelfde twee categorieën als voorheen
+// (telefonisch concept te controleren, vastgelopen afronding) plus twee
+// nieuwe (zelf gestart maar niet afgemaakt conceptverslag; training verlopen
+// zonder enige verslagactiviteit). De nieuwe opdracht noemt "Aandacht nodig"
+// niet meer apart in de gewenste sectievolgorde — bewust NIET beide secties
+// naast elkaar getoond (zou dezelfde telefonische/vastgelopen items
+// dubbel op de pagina zetten), zie het opleverrapport voor de toelichting.
 
-export type AandachtItem =
+export type TodoItem =
   | { soort: "telefonisch_concept"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string | null }
-  | { soort: "verslag_vastgelopen"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string; verslagStatus: "gedeeltelijk" | "bevestigd" };
+  | { soort: "verslag_vastgelopen"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string; verslagStatus: "gedeeltelijk" | "bevestigd" }
+  | { soort: "concept_gestart"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string }
+  | { soort: "verslag_ontbreekt"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string };
 
 export interface DashboardV2Statistieken {
   totaalTrainingen: number;
@@ -37,7 +48,7 @@ export interface DashboardV2Statistieken {
 }
 
 export interface DashboardV2Data {
-  aandachtNodig: AandachtItem[];
+  todo: TodoItem[];
   vandaag: TrainingMetSchool[];
   komendVolgende: TrainingMetSchool[];
   komendTotaal: number;
@@ -49,45 +60,62 @@ export interface DashboardV2Data {
 const KOMEND_LIMIET = 5; // spec: "Chronologisch, bijvoorbeeld eerst de komende 5."
 const ACTIVITEIT_LIMIET = 5; // spec: "Bijvoorbeeld de laatste 5."
 
+/**
+ * Prioriteitsvolgorde binnen "To do" (opdrachtseis "belangrijkste actie
+ * eerst"): telefonisch concept eerst — als enige categorie hier vraagt dit
+ * nog een allereerste blik van de trainer, niets hervat hier automatisch.
+ * Dan een vastgelopen afronding — de trainer heeft zelf al definitief
+ * bevestigd, dit is alleen nog een technische hervatting (verslagpagina
+ * opnieuw openen). Dan een zelf-gestart maar nooit afgemaakt conceptverslag
+ * — vraagt nog echt schrijfwerk. Tot slot een verlopen training zonder
+ * enige verslagactiviteit — hier is nog helemaal niets aan gedaan.
+ *
+ * Eén training kan in meerdere bronlijsten tegelijk voorkomen (bv. een
+ * telefonisch concept van een training die in Monday ook nog als
+ * "verslag nog invullen" telt) — de dedup hieronder houdt per trainingId
+ * alleen de EERSTE (dus belangrijkste) match, zodat "dezelfde training mag
+ * maar één keer in To do voorkomen" (opdrachtseis) altijd klopt, ongeacht
+ * hoeveel categorieën een training tegelijk raakt.
+ */
 export async function haalDashboardV2Data(payload: Payload, trainer: AuthTrainer): Promise<DashboardV2Data> {
   const data = await haalDashboardData(trainer);
 
-  const [telefonischeConcepten, vastgelopenVerslagen, recenteActiviteit, verslagenAfgerond] = await Promise.all([
+  const [telefonischeConcepten, vastgelopenVerslagen, gestarteConcepten, recenteActiviteit, verslagenAfgerond] = await Promise.all([
     haalTelefonischeConceptenVoorTrainer(payload, trainer),
     haalVerslagenDieAandachtNodigHebben(payload, trainer),
+    haalGestarteConceptenVoorTrainer(payload, trainer),
     haalActiviteitVoorTrainer(payload, trainer, ACTIVITEIT_LIMIET),
     telVoltooideVerslagen(payload, trainer),
   ]);
 
-  const aandachtNodig: AandachtItem[] = [
-    ...telefonischeConcepten.map(
-      (c): AandachtItem => ({
-        soort: "telefonisch_concept",
-        schoolId: c.schoolId,
-        schoolNaam: c.schoolNaam,
-        trainingNaam: c.trainingNaam,
-        trainingId: c.mondayTrainingId,
-        wanneer: c.ontvangenOp,
-      })
-    ),
-    ...vastgelopenVerslagen.map(
-      (v): AandachtItem => ({
-        soort: "verslag_vastgelopen",
-        schoolId: v.schoolId,
-        schoolNaam: v.schoolNaam,
-        trainingNaam: v.trainingNaam,
-        trainingId: v.mondayTrainingId,
-        wanneer: v.wanneer,
-        verslagStatus: v.status,
-      })
-    ),
-    // Meest recente activiteit bovenaan — een telefonisch concept is meestal
-    // vers (net gebeld), maar een uniforme tijdsortering i.p.v. een
-    // hardgecodeerde soort-voorrang is eerlijker als beide soorten voorkomen.
-  ].sort((a, b) => (b.wanneer ?? "").localeCompare(a.wanneer ?? ""));
+  // "verslag_ontbreekt" komt uit dezelfde groepeerOpWeergaveStatus-bucket
+  // (verslag_nog_invullen) als de "Vandaag"-sectie zijn data mede vandaan
+  // haalt, maar is daar geen duplicaat van: bepaalWeergaveStatus plaatst een
+  // training met datum === vandaag altijd in "vandaag", nooit in
+  // "verslag_nog_invullen" (zie training-weergave.ts) — dat laatste bevat
+  // dus uitsluitend training van VÓÓR vandaag. Binnen deze categorie is de
+  // OUDSTE training het meest urgent (langst blijven liggen), dus oplopend
+  // gesorteerd — het omgekeerde van de andere drie categorieën, die elk al
+  // aflopend (meest recent eerst) uit hun eigen leesfunctie komen.
+  const verlopenZonderVerslag = [...data.logboekOpenstaand].sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? ""));
+
+  const kandidaten: TodoItem[] = [
+    ...telefonischeConcepten.map((c): TodoItem => ({ soort: "telefonisch_concept", schoolId: c.schoolId, schoolNaam: c.schoolNaam, trainingNaam: c.trainingNaam, trainingId: c.mondayTrainingId, wanneer: c.ontvangenOp })),
+    ...vastgelopenVerslagen.map((v): TodoItem => ({ soort: "verslag_vastgelopen", schoolId: v.schoolId, schoolNaam: v.schoolNaam, trainingNaam: v.trainingNaam, trainingId: v.mondayTrainingId, wanneer: v.wanneer, verslagStatus: v.status })),
+    ...gestarteConcepten.map((c): TodoItem => ({ soort: "concept_gestart", schoolId: c.schoolId, schoolNaam: c.schoolNaam, trainingNaam: c.trainingNaam, trainingId: c.mondayTrainingId, wanneer: c.wanneer })),
+    ...verlopenZonderVerslag.map((t): TodoItem => ({ soort: "verslag_ontbreekt", schoolId: t.schoolId, schoolNaam: t.schoolNaam, trainingNaam: t.naam, trainingId: t.id, wanneer: t.datum ?? "" })),
+  ];
+
+  const gezienTrainingIds = new Set<string>();
+  const todo: TodoItem[] = [];
+  for (const kandidaat of kandidaten) {
+    if (gezienTrainingIds.has(kandidaat.trainingId)) continue;
+    gezienTrainingIds.add(kandidaat.trainingId);
+    todo.push(kandidaat);
+  }
 
   return {
-    aandachtNodig,
+    todo,
     vandaag: data.trainingenVandaag,
     komendVolgende: data.komendeTrainingen.slice(0, KOMEND_LIMIET),
     komendTotaal: data.komendeTrainingen.length,

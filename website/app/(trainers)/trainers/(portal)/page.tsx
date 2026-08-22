@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getPayload } from "payload";
-import { CalendarClock, School, GraduationCap, Sparkles, PhoneIncoming, RotateCcw, ArrowRight, Plus, NotebookText } from "lucide-react";
+import { CalendarClock, School, GraduationCap, Sparkles, PhoneIncoming, ListChecks, ArrowRight, Plus, NotebookText } from "lucide-react";
 import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
-import { haalDashboardV2Data, type AandachtItem } from "@/lib/trainers/dashboard";
+import { haalDashboardV2Data, type TodoItem } from "@/lib/trainers/dashboard";
 import { haalVerslagenPerTraining, type VerslagRecord } from "@/lib/trainers/verslag";
 import type { TrainingMetSchool } from "@/lib/trainers/monday-links";
-import { formatKorteDatum, formatKorteDatumTijd } from "@/lib/sales/format-datum";
+import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { ACTIVITEIT_ICOON, ACTIVITEIT_LABEL, ACTIVITEIT_KLEUR } from "@/lib/trainers/activiteit-styles";
+import { TODO_ICOON, TODO_CTA_LABEL, todoTijdLabel } from "@/lib/trainers/todo-styles";
 import { TrainerVraagBlok } from "./trainer-vraag-blok";
 
 export const metadata = { title: "Dashboard — Trainerportal" };
@@ -16,13 +17,13 @@ export const metadata = { title: "Dashboard — Trainerportal" };
 // Traineromgeving V2, Fase 1 (2026-08-28) — Dashboard V2, herbouwd vanuit
 // "Wat moet ik vandaag doen en wat komt eraan?" (opdrachtseis) i.p.v. het
 // cijfermatige V1-dashboard (git-historie: drie statistiek-tegels bovenaan).
-// Vaste hiërarchie, IDENTIEK op mobiel en desktop (spec: "op mobiel moet de
-// volgorde simpelweg zijn Aandacht nodig → Vandaag → Komende trainingen →
-// Recente activiteit → Statistieken") — bewust ÉÉN kolom op alle
-// breakpoints (net als de V1-pagina al deed), dus geen aparte
-// responsive-herordening nodig: er is maar één volgorde. Geen brede tabellen
-// (spec) — overal kaarten/lijsten, zelfde stijltaal als de rest van de
-// traineromgeving (rounded-xl/border-grijs-200/shadow-sm).
+// Vaste hiërarchie, IDENTIEK op mobiel en desktop (Vervolgronde 2026-08-22,
+// opdrachtseis: "op mobiel moet de volgorde simpelweg zijn Vandaag →
+// Komende trainingen → To do → Recente activiteit → Statistieken") — bewust
+// ÉÉN kolom op alle breakpoints (net als de V1-pagina al deed), dus geen
+// aparte responsive-herordening nodig: er is maar één volgorde. Geen brede
+// tabellen (spec) — overal kaarten/lijsten, zelfde stijltaal als de rest van
+// de traineromgeving (rounded-xl/border-grijs-200/shadow-sm).
 //
 // Statistieken bevat BEWUST GEEN "uren" (opdrachtseis noemt dit als
 // voorbeeld) — trainingsduur zit nergens in het huidige datamodel (zie
@@ -41,23 +42,28 @@ function LegeSectie({ tekst }: { tekst: string }) {
   return <p className="px-3 py-4 text-body-sm text-grijs-600">{tekst}</p>;
 }
 
-function AandachtRij({ item }: { item: AandachtItem }) {
-  const telefonisch = item.soort === "telefonisch_concept";
-  const tijdLabel = telefonisch ? `Ingesproken op ${formatKorteDatumTijd(item.wanneer)}` : "Nog niet volledig verwerkt naar Monday";
+// Vervolgronde (2026-08-22) — "To do" verving "Aandacht nodig": dezelfde
+// twee categorieën als voorheen (telefonisch concept te controleren,
+// vastgelopen afronding) plus twee nieuwe (zelf gestart maar niet afgemaakt
+// conceptverslag; training verlopen zonder enige verslagactiviteit). Icoon/
+// CTA-label/tijdlabel per soort zitten in lib/trainers/todo-styles.ts —
+// zelfde precedent als activiteit-styles.ts hierboven.
+function TodoRij({ item }: { item: TodoItem }) {
+  const Icoon = TODO_ICOON[item.soort];
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg px-3 py-2.5">
       <Link href={`/scholen/${item.schoolId}`} className="min-w-[10rem] flex-1 hover:underline">
         <p className="text-body-sm font-medium text-grijs-900">{item.schoolNaam}</p>
         <p className="text-label text-grijs-600">
-          {item.trainingNaam} · {tijdLabel}
+          {item.trainingNaam} · {todoTijdLabel(item)}
         </p>
       </Link>
       <Link
         href={`/scholen/${item.schoolId}/trainingen/${item.trainingId}/verslag`}
         className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-label font-semibold text-white transition-colors hover:bg-teal-700"
       >
-        {telefonisch ? <PhoneIncoming size={12} /> : <RotateCcw size={12} />}
-        {telefonisch ? "Controleren" : "Verslag afronden"}
+        <Icoon size={12} />
+        {TODO_CTA_LABEL[item.soort]}
       </Link>
     </div>
   );
@@ -130,26 +136,12 @@ export default async function TrainerDashboardPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* 1. Welkom + Aandacht nodig */}
+      {/* 1. Welkom */}
       <div>
         <h1 className="font-display text-h1 font-bold text-donkerblauw">
           {bepaalGroet()}, {voornaam}
         </h1>
       </div>
-
-      {data.aandachtNodig.length > 0 && (
-        <section className="rounded-xl border border-teal-200 bg-teal-50/40 shadow-sm">
-          <div className="flex items-center gap-2 border-b border-teal-100 px-4 py-3">
-            <PhoneIncoming size={16} className="text-teal-700" />
-            <h2 className="text-h3 font-semibold text-grijs-900">Aandacht nodig</h2>
-          </div>
-          <div className="flex flex-col divide-y divide-teal-100 px-1 py-1">
-            {data.aandachtNodig.map((item) => (
-              <AandachtRij key={`${item.soort}-${item.trainingId}`} item={item} />
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* 2. Vandaag */}
       <section className="rounded-xl border border-grijs-200 bg-white shadow-sm">
@@ -189,7 +181,22 @@ export default async function TrainerDashboardPage() {
         </div>
       </section>
 
-      {/* 4. Recente activiteit */}
+      {/* 4. To do — verborgen zodra leeg (opdrachtseis: "als er geen to do's zijn, sectie volledig verbergen") */}
+      {data.todo.length > 0 && (
+        <section className="rounded-xl border border-teal-200 bg-teal-50/40 shadow-sm">
+          <div className="flex items-center gap-2 border-b border-teal-100 px-4 py-3">
+            <ListChecks size={16} className="text-teal-700" />
+            <h2 className="text-h3 font-semibold text-grijs-900">To do</h2>
+          </div>
+          <div className="flex flex-col divide-y divide-teal-100 px-1 py-1">
+            {data.todo.map((item) => (
+              <TodoRij key={`${item.soort}-${item.trainingId}`} item={item} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 5. Recente activiteit */}
       <section className="rounded-xl border border-grijs-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-2 border-b border-grijs-100 px-4 py-3">
           <div className="flex items-center gap-2">
@@ -227,7 +234,7 @@ export default async function TrainerDashboardPage() {
         </div>
       </section>
 
-      {/* 5. Statistieken — bewust klein/onderaan, secundair (opdrachtseis) */}
+      {/* 6. Statistieken — bewust klein/onderaan, secundair (opdrachtseis) */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border border-grijs-200 bg-white p-3 text-center">
           <p className="text-h3 font-bold text-grijs-900">{data.statistieken.totaalTrainingen}</p>
