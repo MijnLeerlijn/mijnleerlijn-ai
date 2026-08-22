@@ -216,21 +216,58 @@ describe("ontleedSpreekAfgerond (productieblocker-ronde 2026-08-26 — spec: det
 });
 
 describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitsluitend hier Telnyx-specifiek)", () => {
-  it("zeg_en_ophangen -> speak gevolgd door hangup, correcte URL's/body", async () => {
+  function zegEnOphangenInstructie(overrides: Partial<{ tekst: string; reden: string }> = {}) {
+    return {
+      soort: "zeg_en_ophangen" as const,
+      tekst: "Tot ziens.",
+      reden: "test_reden",
+      ...overrides,
+    };
+  }
+
+  it("zeg_en_ophangen -> spreekt UITSLUITEND de tekst uit (productieregressie 2026-08-27: werd voorheen GEVOLGD DOOR een onmiddellijke hangup, die de tekst afsneed voordat er iets hoorbaar was) — hangt zelf niet meteen op", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
-    const respons = await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "zeg_en_ophangen", tekst: "Tot ziens." }]);
+    const respons = await telnyxProvider().voerVoiceInstructiesUit("cc_1", [zegEnOphangenInstructie({ reden: "geen_training_gevonden" })]);
 
     expect(respons).toEqual({ status: 200, contentType: null, body: null });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     const [speakUrl, speakInit] = fetchMock.mock.calls[0]!;
     expect(speakUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/speak");
     expect((speakInit as { headers: Record<string, string> }).headers.Authorization).toBe("Bearer test-telnyx-api-key");
-    expect(JSON.parse((speakInit as { body: string }).body)).toMatchObject({ payload: "Tot ziens.", command_id: "speak:cc_1" });
-    const [hangupUrl, hangupInit] = fetchMock.mock.calls[1]!;
+    const speakBody = JSON.parse((speakInit as { body: string }).body);
+    expect(speakBody).toMatchObject({ payload: "Tot ziens.", command_id: "speak:cc_1:speak-hangup-geen_training_gevonden" });
+    // client_state (spec: "nergens meer terminale tekst afspelen waarna de
+    // call onmiddellijk wordt opgehangen") codeert "hangup_na_spraak:<reden>"
+    // — gedecodeerd door gesprek.ts se verwerkSpreekAfgerond ná
+    // call.speak.ended, NOOIT hier al vooruitlopend ophangen.
+    expect(Buffer.from(speakBody.client_state, "base64").toString("utf8")).toBe("hangup_na_spraak:geen_training_gevonden");
+  });
+
+  it("hangup_uitvoeren -> POST .../actions/hangup met een reden-gebaseerd command_id — uitsluitend uitgevoerd NA call.speak.ended (via gesprek.ts se verwerkSpreekAfgerond)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "hangup_uitvoeren", reden: "geen_training_gevonden" }]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [hangupUrl, hangupInit] = fetchMock.mock.calls[0]!;
     expect(hangupUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/hangup");
-    expect(JSON.parse((hangupInit as { body: string }).body)).toMatchObject({ command_id: "hangup:cc_1" });
+    expect(JSON.parse((hangupInit as { body: string }).body)).toMatchObject({ command_id: "hangup:cc_1:hangup-geen_training_gevonden" });
+  });
+
+  it("dubbel afgeleverde hangup_uitvoeren (bv. Telnyx' eigen webhook-redelivery van call.speak.ended) krijgt TWEEMAAL hetzelfde command_id — Telnyx' eigen deduplicatie voorkomt een dubbele hangup, geen apart nonce nodig (deze actie komt legitiem maar één keer per gesprek voor)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    const instructie = { soort: "hangup_uitvoeren" as const, reden: "geen_training_gevonden" };
+
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [instructie]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [instructie]);
+
+    const eersteCommandId = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body).command_id;
+    const tweedeCommandId = JSON.parse((fetchMock.mock.calls[1]![1] as { body: string }).body).command_id;
+    expect(tweedeCommandId).toBe(eersteCommandId);
   });
 
   it("zeg_en_kies_cijfers -> gather_using_speak met de opgegeven tekst/cijferaantal/timeout", async () => {
@@ -406,29 +443,29 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
-    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "zeg_en_ophangen", tekst: "Tot ziens." }]);
-    await telnyxProvider().voerVoiceInstructiesUit("cc_2", [{ soort: "zeg_en_ophangen", tekst: "Tot ziens." }]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [zegEnOphangenInstructie({ reden: "x" })]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "hangup_uitvoeren", reden: "x" }]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_2", [zegEnOphangenInstructie({ reden: "x" })]);
 
     const commandIds = fetchMock.mock.calls.map((call) => JSON.parse((call[1] as { body: string }).body).command_id);
-    expect(new Set(commandIds).size).toBe(commandIds.length); // speak:cc_1, hangup:cc_1, speak:cc_2, hangup:cc_2 — allemaal uniek
+    expect(new Set(commandIds).size).toBe(commandIds.length); // speak:cc_1:..., hangup:cc_1:..., speak:cc_2:... — allemaal uniek
   });
 
   it("meerdere instructies worden na elkaar uitgevoerd, in volgorde", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
-    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [
-      { soort: "zeg_en_ophangen", tekst: "Eén." },
-      { soort: "zeg_en_ophangen", tekst: "Twee." },
-    ]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [zegEnOphangenInstructie({ reden: "een" }), { soort: "hangup_uitvoeren", reden: "twee" }]);
 
-    expect(fetchMock).toHaveBeenCalledTimes(4); // 2x (speak+hangup)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/speak");
+    expect(fetchMock.mock.calls[1]![0]).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/hangup");
   });
 
   it("een falend commando wordt intern gevangen — voerVoiceInstructiesUit gooit NOOIT door (spec: nooit een onnodige 5xx/crash op de webhookhandler)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422 }));
 
-    await expect(telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "zeg_en_ophangen", tekst: "Tot ziens." }])).resolves.toEqual({
+    await expect(telnyxProvider().voerVoiceInstructiesUit("cc_1", [zegEnOphangenInstructie()])).resolves.toEqual({
       status: 200,
       contentType: null,
       body: null,

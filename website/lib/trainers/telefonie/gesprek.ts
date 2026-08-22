@@ -153,7 +153,7 @@ function relatieveDagAanduiding(datumIso: string | null): string {
   return `${datum.getUTCDate()} ${NL_MAANDEN[datum.getUTCMonth()]}`;
 }
 
-const NIET_BESCHIKBAAR: VoiceInstructie[] = [{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." }];
+const NIET_BESCHIKBAAR: VoiceInstructie[] = [{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" }];
 
 async function afwijzenMetMelding(
   payload: Payload,
@@ -164,7 +164,11 @@ async function afwijzenMetMelding(
   extra: Parameters<typeof zetMislukt>[4] = {}
 ): Promise<VoiceInstructie[]> {
   await zetMislukt(payload, oproepId, foutcode, foutmelding, extra);
-  return [{ soort: "zeg_en_ophangen", tekst: gesprokenTekst }];
+  // reden = foutcode (oproep-state.ts se OproepFoutcode) — hergebruikt
+  // bewust hetzelfde vocabulaire, geen los tweede foutcode-systeem voor de
+  // client_state van het afsluitende speak-commando (zie provider.ts se
+  // zeg_en_ophangen-doc-comment).
+  return [{ soort: "zeg_en_ophangen", tekst: gesprokenTekst, reden: foutcode }];
 }
 
 function naarOpgeslagenKandidaat(t: TelefonieKandidaat): OpgeslagenKandidaat {
@@ -352,7 +356,7 @@ async function kiesTrainingEnStartOpname(
     // geannuleerd tussen het aanbieden en de keuze) — nooit blind de
     // eerder-gesnapshotte gegevens vertrouwen.
     await zetMislukt(payload, oproepId, "geen_training_gevonden", "Gekozen training niet meer aanwezig in de verse resolutie op keuzemoment.");
-    return [{ soort: "zeg_en_ophangen", tekst: "Deze training is niet meer beschikbaar. Open de traineromgeving om je verslag daar te maken." }];
+    return [{ soort: "zeg_en_ophangen", tekst: "Deze training is niet meer beschikbaar. Open de traineromgeving om je verslag daar te maken.", reden: "geen_training_gevonden" }];
   }
 
   // Spec §7, laag 1 (best-effort, terwijl de trainer nog aan de lijn is): is
@@ -371,6 +375,7 @@ async function kiesTrainingEnStartOpname(
       {
         soort: "zeg_en_ophangen",
         tekst: "Voor deze training staat al een verslag klaar. Kies een andere training in de traineromgeving of bel opnieuw voor een andere training.",
+        reden: "verslag_bestaat_al",
       },
     ];
   }
@@ -418,7 +423,7 @@ export async function verwerkTrainingKeuze(
 
   const geenGeldigeKeuze = async (): Promise<VoiceInstructie[]> => {
     await zetMislukt(payload, oproepId, "geen_keuze_gemaakt", `Ongeldige/geen DTMF-invoer ontvangen ("${cijfers ?? ""}").`);
-    return [{ soort: "zeg_en_ophangen", tekst: "Ik heb geen geldige keuze ontvangen. Probeer het later opnieuw." }];
+    return [{ soort: "zeg_en_ophangen", tekst: "Ik heb geen geldige keuze ontvangen. Probeer het later opnieuw.", reden: "geen_keuze_gemaakt" }];
   };
 
   // Precies één kandidaat in deze laag -> ja/nee-bevestiging (spec §2/§4).
@@ -526,14 +531,15 @@ export async function verwerkOpnameToets(
  * Productieblocker-ronde (2026-08-26) — spec "instructie moet volledig zijn
  * uitgesproken vóór opname start": de call.speak.ended-webhookafhandeling.
  * DE deterministische garantie (geen timing-gok): elke "zeg_en_neem_op"/
- * "zeg_en_hervat_opname"-instructie hierboven spreekt UITSLUITEND de tekst
- * uit en codeert in client_state welke vervolgstap moet volgen; Telnyx
+ * "zeg_en_hervat_opname"/"zeg_en_ophangen"-instructie spreekt UITSLUITEND de
+ * tekst uit en codeert in client_state welke vervolgstap moet volgen; Telnyx
  * bevestigt via dit event, hard-gedocumenteerd als "Expected Webhooks" van
  * het speak-commando, dat de tekst daadwerkelijk volledig is afgespeeld —
- * pas DAN geeft deze functie de instructie terug die de opname
- * start/hervat. Onherkenbare/ontbrekende client_state (bv. het gewone
- * afscheidsbericht, dat geen client_state meekrijgt) wordt stil genegeerd —
- * dit event hoort dan niet bij een opname-sequencing.
+ * pas DAN geeft deze functie de instructie terug die de opname start/hervat,
+ * of (productie-regressieronde, 2026-08-27) de call daadwerkelijk ophangt.
+ * Onherkenbare/ontbrekende client_state (bv. een speak-commando buiten deze
+ * flow om) wordt stil genegeerd — dit event hoort dan niet bij een
+ * sequencing die dit bestand beheert.
  */
 export async function verwerkSpreekAfgerond(
   payload: Payload,
@@ -547,8 +553,29 @@ export async function verwerkSpreekAfgerond(
   if (!clientState) return [];
 
   const gedecodeerd = Buffer.from(clientState, "base64").toString("utf8");
-  const [actie, pogingRuw, extraRuw] = gedecodeerd.split(":");
-  const poging = Number.parseInt(pogingRuw ?? "", 10);
+  const [actie, tweedeVeld, derdeVeld] = gedecodeerd.split(":");
+
+  if (actie === "hangup_na_spraak") {
+    // Productie-regressieronde (2026-08-27) — de terminale afsluiting: BEWUST
+    // GEEN oproep-statuscontrole hier (in tegenstelling tot start_opname/
+    // hervat_opname hieronder). Elke zeg_en_ophangen-aanroeper heeft de
+    // eindstatus (mislukt/verslag_bestaat_al/...) al synchroon vóór deze
+    // speak-instructie gezet — een check op status==="opname_verwacht" zou
+    // die gevallen hier dus ten onrechte laten verzanden zonder ooit op te
+    // hangen. Zelfs het afsluitende "Bedankt"-bericht (reden=opname_afgerond)
+    // kan op dit moment een allang doorgeschoven status hebben
+    // (transcriptie_bezig/concept_klaar/...), want transcriptie loopt async
+    // parallel aan het uitspreken ervan — dit event levert hoe dan ook
+    // uitsluitend het "nu pas ophangen"-signaal, ongeacht de huidige status.
+    // Bescherming tegen een dubbel afgeleverd call.speak.ended-event loopt
+    // via hetzelfde deterministische command_id-mechanisme als altijd (zie
+    // telnyx-provider.ts se hangup_uitvoeren-tak) — geen aparte
+    // applicatielaag-idempotentie nodig, dit event komt bovendien legitiem
+    // maar één keer per gesprek voor.
+    return [{ soort: "hangup_uitvoeren", reden: tweedeVeld || "onbekend" }];
+  }
+
+  const poging = Number.parseInt(tweedeVeld ?? "", 10);
   if (!Number.isInteger(poging)) return [];
 
   const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
@@ -574,7 +601,7 @@ export async function verwerkSpreekAfgerond(
   }
 
   if (actie === "hervat_opname") {
-    const nonce = Number.parseInt(extraRuw ?? "", 10);
+    const nonce = Number.parseInt(derdeVeld ?? "", 10);
     return [
       {
         soort: "opname_hervatten",
@@ -606,6 +633,7 @@ export function verwerkOpnameAfgerond(): VoiceInstructie[] {
     {
       soort: "zeg_en_ophangen",
       tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.",
+      reden: "opname_afgerond",
     },
   ];
 }

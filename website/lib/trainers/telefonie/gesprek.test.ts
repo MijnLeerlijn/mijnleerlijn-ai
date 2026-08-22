@@ -210,7 +210,7 @@ describe("verwerkInkomendeCall", () => {
     vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
     const provider = maakFakeProvider();
     const instructies = await verwerkInkomendeCall(payload, provider, {});
-    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." }]);
+    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" }]);
     expect(collection("trainer-telefonie-oproepen")).toHaveLength(0);
     expect(provider.ontleedInkomendeCall).not.toHaveBeenCalled();
   });
@@ -218,13 +218,13 @@ describe("verwerkInkomendeCall", () => {
   it("ontbrekend CallSid (structureel onmogelijk via de echte provider) -> niet beschikbaar", async () => {
     const provider = maakFakeProvider({ ontleedInkomendeCall: () => ({ providerCallId: "", vanNummerRuw: "+31612345678", nummerVerborgen: false }) });
     const instructies = await verwerkInkomendeCall(payload, provider, {});
-    expect(instructies[0]).toEqual({ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." });
+    expect(instructies[0]).toEqual({ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" });
   });
 
   it("scenario 3: verborgen/anoniem nummer -> geen enkele trainerherkenning geprobeerd, vaste afwijzingsboodschap", async () => {
     const provider = maakFakeProvider({ ontleedInkomendeCall: () => ({ providerCallId: "CA1", vanNummerRuw: null, nummerVerborgen: true }) });
     const instructies = await verwerkInkomendeCall(payload, provider, {});
-    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Ik kan je telefoonnummer niet zien. Bel met een zichtbaar nummer, of log in op de traineromgeving." }]);
+    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Ik kan je telefoonnummer niet zien. Bel met een zichtbaar nummer, of log in op de traineromgeving.", reden: "nummer_verborgen" }]);
     expect(mockHaalRecenteTrainingen).not.toHaveBeenCalled();
     const rij = collection("trainer-telefonie-oproepen")[0]!;
     expect(rij.status).toBe("mislukt");
@@ -238,6 +238,7 @@ describe("verwerkInkomendeCall", () => {
       {
         soort: "zeg_en_ophangen",
         tekst: "Dit telefoonnummer is niet gekoppeld aan een traineraccount. Log in op de traineromgeving om je telefoonnummer te controleren of neem contact op met MijnLeerlijn.",
+        reden: "onbekend_nummer",
       },
     ]);
     expect(mockHaalRecenteTrainingen).not.toHaveBeenCalled();
@@ -249,7 +250,7 @@ describe("verwerkInkomendeCall", () => {
     });
     const provider = maakFakeProvider({ ontleedInkomendeCall: () => ({ providerCallId: "CA1", vanNummerRuw: "+31611111111", nummerVerborgen: false }) });
     const instructies = await verwerkInkomendeCall(conflictPayload, provider, {});
-    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Er is een probleem met het herkennen van je account. Neem contact op met MijnLeerlijn." }]);
+    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Er is een probleem met het herkennen van je account. Neem contact op met MijnLeerlijn.", reden: "conflict_meerdere_trainers" }]);
     expect(instructies[0]).not.toMatchObject({ tekst: expect.stringContaining("Wessel") });
     expect(mockHaalRecenteTrainingen).not.toHaveBeenCalled();
   });
@@ -258,7 +259,7 @@ describe("verwerkInkomendeCall", () => {
     const { payload: pilotUitPayload } = maakFakePayload({ "trainer-accounts": [trainerRij(TRAINER, { telefonieActief: false })] });
     const provider = maakFakeProvider();
     const instructies = await verwerkInkomendeCall(pilotUitPayload, provider, {});
-    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Telefonische verslaglegging is nog niet beschikbaar voor jouw account." }]);
+    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Telefonische verslaglegging is nog niet beschikbaar voor jouw account.", reden: "trainer_niet_pilot" }]);
     expect(mockHaalRecenteTrainingen).not.toHaveBeenCalled();
   });
 
@@ -267,7 +268,7 @@ describe("verwerkInkomendeCall", () => {
     const provider = maakFakeProvider();
     const instructies = await verwerkInkomendeCall(payload, provider, {});
     expect(instructies).toEqual([
-      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
     ]);
     const rij = collection("trainer-telefonie-oproepen")[0]!;
     expect(rij.status).toBe("mislukt");
@@ -283,7 +284,7 @@ describe("verwerkInkomendeCall", () => {
     const provider = maakFakeProvider();
     const instructies = await verwerkInkomendeCall(payloadMetVerslag, provider, {});
     expect(instructies).toEqual([
-      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
     ]);
   });
 
@@ -441,7 +442,7 @@ describe("verwerkTrainingKeuze", () => {
     vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
     const provider = maakFakeProvider();
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
-    expect(instructies[0]).toEqual({ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." });
+    expect(instructies[0]).toEqual({ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" });
   });
 
   it("scenario 5 vervolg: cijfer 1 (ja) bij één kandidaat -> bevestigd, status opname_verwacht, spreekt EERST de instructie (start dus zelf nog GEEN opname)", async () => {
@@ -493,7 +494,7 @@ describe("verwerkTrainingKeuze", () => {
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
     expect(instructies).toEqual([
-      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
     ]);
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.status).toBe("mislukt");
@@ -538,7 +539,7 @@ describe("verwerkTrainingKeuze", () => {
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
     expect(instructies).toEqual([
-      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
     ]);
   });
 
@@ -551,7 +552,7 @@ describe("verwerkTrainingKeuze", () => {
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
     expect(instructies).toEqual([
-      { soort: "zeg_en_ophangen", tekst: "Voor deze training staat al een verslag klaar. Kies een andere training in de traineromgeving of bel opnieuw voor een andere training." },
+      { soort: "zeg_en_ophangen", tekst: "Voor deze training staat al een verslag klaar. Kies een andere training in de traineromgeving of bel opnieuw voor een andere training.", reden: "verslag_bestaat_al" },
     ]);
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.status).toBe("verslag_bestaat_al");
@@ -592,7 +593,7 @@ describe("verwerkTrainingKeuze", () => {
     const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "9" }) });
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
     expect(instructies).toEqual([
-      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving." },
+      { soort: "zeg_en_ophangen", tekst: "Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
     ]);
   });
 
@@ -610,7 +611,7 @@ describe("verwerkTrainingKeuze", () => {
 
     const instructies = await verwerkTrainingKeuze(payload, provider, oproepId, {});
 
-    expect(instructies[0]).toEqual({ soort: "zeg_en_ophangen", tekst: "Deze training is niet meer beschikbaar. Open de traineromgeving om je verslag daar te maken." });
+    expect(instructies[0]).toEqual({ soort: "zeg_en_ophangen", tekst: "Deze training is niet meer beschikbaar. Open de traineromgeving om je verslag daar te maken.", reden: "geen_training_gevonden" });
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.status).toBe("mislukt");
     expect(rij.foutcode).toBe("geen_training_gevonden");
@@ -643,12 +644,12 @@ describe("verwerkTrainingKeuze", () => {
 describe("verwerkOpnameAfgerond", () => {
   it("TRAINER_TELEFONIE_ENABLED uit -> niet beschikbaar", () => {
     vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
-    expect(verwerkOpnameAfgerond()).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." }]);
+    expect(verwerkOpnameAfgerond()).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" }]);
   });
 
   it("spec §9: vaste, exacte afsluitende boodschap na '#' of een reguliere afronding — trainer hoeft niets te bevestigen", () => {
     const instructies = verwerkOpnameAfgerond();
-    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren." }]);
+    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" }]);
   });
 });
 
@@ -670,7 +671,7 @@ describe("verwerkOpnameToets", () => {
     const oproepId = await oproepMetOpnameVerwacht();
     vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
     const instructies = await verwerkOpnameToets(payload, maakFakeProvider(), oproepId, {});
-    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." }]);
+    expect(instructies).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" }]);
   });
 
   it("spec §9: '#' -> stopt de opname en verwerkt hem, met de vaste afsluitende boodschap", async () => {
@@ -681,7 +682,7 @@ describe("verwerkOpnameToets", () => {
 
     expect(instructies).toEqual([
       { soort: "stop_opname", poging: 0 },
-      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren." },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" },
     ]);
   });
 
@@ -813,7 +814,7 @@ describe("verwerkSpreekAfgerond", () => {
     const oproepId = await oproepMetOpnameVerwacht();
     vi.stubEnv("TRAINER_TELEFONIE_ENABLED", "false");
     const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 0) }) });
-    expect(await verwerkSpreekAfgerond(payload, provider, oproepId, {})).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar." }]);
+    expect(await verwerkSpreekAfgerond(payload, provider, oproepId, {})).toEqual([{ soort: "zeg_en_ophangen", tekst: "Deze functie is nog niet beschikbaar.", reden: "niet_beschikbaar" }]);
   });
 
   it("ontbrekend client_state (bv. het gewone afscheidsbericht) -> stil genegeerd", async () => {
@@ -915,7 +916,7 @@ describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, da
     const stopInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
     expect(stopInstructies).toEqual([
       { soort: "stop_opname", poging: 3 },
-      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren." },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" },
     ]);
 
     // De uiteindelijke opname (poging 3, client_state="3") wordt normaal verwerkt -> precies één concept.
@@ -936,6 +937,154 @@ describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, da
     expect(collection("training-verslagen")[0]!.trainerInvoer).toBe("De vierde/laatste, geldige opname.");
     const finaleRij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(finaleRij.status).toBe("concept_klaar");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PRODUCTIEREGRESSIE (2026-08-27) — live bevestigd: een terminale
+// zeg_en_ophangen (bv. "geen beschikbare trainingen") deed een fire-and-
+// forget speak GEVOLGD DOOR een onmiddellijke hangup, die de tekst afsneed
+// voordat er iets hoorbaar was (call.speak.ended met status="call_hangup",
+// client_state=null). Fix: zelfde deterministische speak-dan-actie-sequencing
+// als spreek->opname (Blocker 2, 2026-08-26), nu ook voor spreek->ophangen —
+// zie provider.ts/telnyx-provider.ts se "hangup_uitvoeren". Dit blok bewijst
+// zowel de fix zelf als dat alle bestaande flows (opname/herstart/afronding/
+// kandidaatfiltering) ongewijzigd blijven werken.
+// ---------------------------------------------------------------------------
+
+function hangupClientStateVoor(reden: string): string {
+  return Buffer.from(`hangup_na_spraak:${reden}`, "utf8").toString("base64");
+}
+
+describe("productieregressie: spreek-dan-ophangen sequencing (2026-08-27)", () => {
+  async function herkendeOproep(kandidaten: TrainingMetSchool[] = [training()]) {
+    mockHaalRecenteTrainingen.mockResolvedValue(kandidaten);
+    await verwerkInkomendeCall(payload, maakFakeProvider(), {});
+    return collection("trainer-telefonie-oproepen")[0]!.id as number;
+  }
+
+  it("1/2: geen kandidaten -> UITSLUITEND een speak-instructie (zeg_en_ophangen) — geen enkele hangup_uitvoeren zit in het resultaat, dus structureel kan er vóór call.speak.ended nog geen hangup verstuurd zijn", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([]);
+
+    const instructies = await verwerkInkomendeCall(payload, maakFakeProvider(), {});
+
+    expect(instructies).toEqual([
+      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
+    ]);
+    expect(instructies.some((i) => i.soort === "hangup_uitvoeren")).toBe(false);
+  });
+
+  it("3: call.speak.ended met het bijbehorende client_state -> EXACT ÉÉN hangup_uitvoeren-instructie", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([]);
+    await verwerkInkomendeCall(payload, maakFakeProvider(), {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: hangupClientStateVoor("geen_training_gevonden") }) });
+
+    const instructies = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([{ soort: "hangup_uitvoeren", reden: "geen_training_gevonden" }]);
+  });
+
+  it("4: dubbel afgeleverd call.speak.ended (bv. Telnyx' eigen webhook-redelivery) -> beide keren EXACT dezelfde, enkelvoudige hangup_uitvoeren — nooit een tweede/andere actie. De daadwerkelijke bescherming tegen een dubbele HANGUP-aanroep bij Telnyx zelf loopt via het deterministische command_id (zie telnyx-provider.test.ts, 'dubbel afgeleverde hangup_uitvoeren')", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([]);
+    await verwerkInkomendeCall(payload, maakFakeProvider(), {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: hangupClientStateVoor("geen_training_gevonden") }) });
+
+    const eersteKeer = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
+    const tweedeKeer = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
+
+    expect(eersteKeer).toEqual([{ soort: "hangup_uitvoeren", reden: "geen_training_gevonden" }]);
+    expect(tweedeKeer).toEqual(eersteKeer);
+  });
+
+  it("5: onbekende trainer -> de boodschap wordt eerst volledig 'uitgesproken' (zeg_en_ophangen, geen voortijdige hangup), pas ná call.speak.ended volgt de hangup", async () => {
+    const provider = maakFakeProvider({ ontleedInkomendeCall: () => ({ providerCallId: "CA1", vanNummerRuw: "+31600000000", nummerVerborgen: false }) });
+
+    const spreekInstructies = await verwerkInkomendeCall(payload, provider, {});
+    expect(spreekInstructies).toEqual([
+      {
+        soort: "zeg_en_ophangen",
+        tekst: "Dit telefoonnummer is niet gekoppeld aan een traineraccount. Log in op de traineromgeving om je telefoonnummer te controleren of neem contact op met MijnLeerlijn.",
+        reden: "onbekend_nummer",
+      },
+    ]);
+
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    const spreekAfgerondProvider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: hangupClientStateVoor("onbekend_nummer") }) });
+    expect(await verwerkSpreekAfgerond(payload, spreekAfgerondProvider, oproepId, {})).toEqual([{ soort: "hangup_uitvoeren", reden: "onbekend_nummer" }]);
+  });
+
+  it("6: verslag bestaat al voor de gekozen training (geen alternatief) -> de boodschap wordt eerst volledig uitgesproken, pas ná call.speak.ended volgt de hangup", async () => {
+    const oproepId = await herkendeOproep([training()]);
+    collection("training-verslagen").push({ id: 777, trainer: TRAINER.id, mondayTrainingId: TRAINING_ID, status: "concept", bron: "telefoon", telefonieOproep: 999999 });
+
+    const spreekInstructies = await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    expect(spreekInstructies).toEqual([
+      {
+        soort: "zeg_en_ophangen",
+        tekst: "Voor deze training staat al een verslag klaar. Kies een andere training in de traineromgeving of bel opnieuw voor een andere training.",
+        reden: "verslag_bestaat_al",
+      },
+    ]);
+
+    const spreekAfgerondProvider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: hangupClientStateVoor("verslag_bestaat_al") }) });
+    expect(await verwerkSpreekAfgerond(payload, spreekAfgerondProvider, oproepId, {})).toEqual([{ soort: "hangup_uitvoeren", reden: "verslag_bestaat_al" }]);
+  });
+
+  it("7: de normale spreek->opname-flow blijft ongewijzigd werken (start_opname via verwerkSpreekAfgerond, raakt het hangup-pad niet)", async () => {
+    const oproepId = await herkendeOproep([training()]);
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+    const provider = maakFakeProvider({ ontleedSpreekAfgerond: () => ({ providerCallId: "CA1", clientState: clientStateVoor("start_opname", 0) }) });
+
+    const instructies = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([{ soort: "opname_starten", maxDuurSeconden: 900, stilteTimeoutSeconden: 5, stopToets: "#", herstartToets: "*", poging: 0 }]);
+  });
+
+  it("8: de '*'-herstartflow blijft werken (heropnamePogingen hoogt op, nieuwe zeg_en_neem_op, geen hangup)", async () => {
+    const oproepId = await herkendeOproep([training()]);
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+
+    const instructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*" }) }), oproepId, {});
+
+    expect(instructies).toEqual([
+      { soort: "stop_opname", poging: 0 },
+      {
+        soort: "zeg_en_neem_op",
+        tekst: "Geen probleem. We beginnen opnieuw. Spreek je verslag in na de piep en sluit af met een hekje.",
+        actieUrl: expect.stringContaining("opname-afgerond"),
+        statusCallbackUrl: expect.stringContaining("opname-status"),
+        stopToets: "#",
+        herstartToets: "*",
+        poging: 1,
+      },
+    ]);
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.heropnamePogingen).toBe(1);
+  });
+
+  it("9: de '#'-afrondflow blijft werken (stop_opname + het speak-only afscheidsbericht, GEEN voortijdige hangup_uitvoeren)", async () => {
+    const oproepId = await herkendeOproep([training()]);
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1" }) }), oproepId, {});
+
+    const instructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#" }) }), oproepId, {});
+
+    expect(instructies).toEqual([
+      { soort: "stop_opname", poging: 0 },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" },
+    ]);
+    expect(instructies.some((i) => i.soort === "hangup_uitvoeren")).toBe(false);
+  });
+
+  it("10: kandidaatfiltering blijft werken — de enige training heeft al een verslag (van een eerder gesprek/de portal), dus wordt ze nooit aangeboden en volgt de nette afwijzing i.p.v. een stille lege lijst", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([training()]);
+    collection("training-verslagen").push({ id: 555, trainer: TRAINER.id, mondayTrainingId: TRAINING_ID, status: "concept", bron: "portal", telefonieOproep: null });
+
+    const instructies = await verwerkInkomendeCall(payload, maakFakeProvider(), {});
+
+    expect(instructies).toEqual([
+      { soort: "zeg_en_ophangen", tekst: "Hallo Wessel. Ik zie geen trainingen waarvoor nog een verslag kan worden ingesproken. Controleer je trainingen in de traineromgeving.", reden: "geen_training_gevonden" },
+    ]);
   });
 });
 

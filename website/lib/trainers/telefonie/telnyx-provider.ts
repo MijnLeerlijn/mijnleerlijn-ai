@@ -181,7 +181,7 @@ async function telnyxCommando(callControlId: string, actie: string, body: Record
  * — geen persoonsgegeven, veilig om zo mee te sturen (spec §9). Gedecodeerd
  * door gesprek.ts se verwerkSpreekAfgerond(), na het call.speak.ended-event.
  */
-function coderenClientState(actie: string, poging: number, nonce?: number): string {
+function coderenClientState(actie: string, poging: number | string, nonce?: number): string {
   const ruw = nonce !== undefined ? `${actie}:${poging}:${nonce}` : `${actie}:${poging}`;
   return Buffer.from(ruw, "utf8").toString("base64");
 }
@@ -189,16 +189,41 @@ function coderenClientState(actie: string, poging: number, nonce?: number): stri
 /** Vertaalt één providerneutrale VoiceInstructie naar de bijbehorende Telnyx Call Control-commando('s). */
 async function voerInstructieUit(callControlId: string, instructie: VoiceInstructie): Promise<void> {
   switch (instructie.soort) {
-    case "zeg_en_ophangen":
-      await telnyxCommando(callControlId, "speak", {
-        payload: instructie.tekst,
-        payload_type: "text",
-        voice: TELNYX_TTS_VOICE,
-        language: TELNYX_TTS_TAAL,
-        service_level: TELNYX_TTS_SERVICE_LEVEL,
-      });
-      await telnyxCommando(callControlId, "hangup", {});
+    case "zeg_en_ophangen": {
+      // ROOT CAUSE VAN DE PRODUCTIEREGRESSIE (2026-08-27, live bevestigd):
+      // deze tak deed hier voorheen een fire-and-forget speak GEVOLGD DOOR
+      // een onmiddellijke hangup — Telnyx voert speak/hangup als volledig
+      // onafhankelijke commando's uit (geen impliciete wachtrij), dus de
+      // hangup sneed de tekst af voordat er iets hoorbaar was. Live-symptomen
+      // die dit exact verklaren: call.speak.ended met status="call_hangup"
+      // (de tekst werd afgebroken, niet volledig afgespeeld) en
+      // client_state=null (dit commando zette nooit een client_state — in
+      // tegenstelling tot zeg_en_neem_op/zeg_en_hervat_opname, die de vorige
+      // ronde al wél omgezet waren naar de deferred-aanpak hieronder).
+      //
+      // Fix: zelfde deterministische garantie als de opnamekant. Uitsluitend
+      // spreken, met client_state="hangup_na_spraak:<reden>" (geen nonce —
+      // zie provider.ts se hangup_uitvoeren-doc-comment: elke
+      // zeg_en_ophangen-aanroep is terminaal, dus een deterministisch
+      // command_id volstaat en beschermt bovendien tegen een dubbel
+      // afgeleverd call.speak.ended-event). De daadwerkelijke hangup volgt
+      // pas op dat event (zie ontleedSpreekAfgerond hieronder + gesprek.ts se
+      // verwerkSpreekAfgerond, hangup_na_spraak-tak).
+      await telnyxCommando(
+        callControlId,
+        "speak",
+        {
+          payload: instructie.tekst,
+          payload_type: "text",
+          voice: TELNYX_TTS_VOICE,
+          language: TELNYX_TTS_TAAL,
+          service_level: TELNYX_TTS_SERVICE_LEVEL,
+          client_state: coderenClientState("hangup_na_spraak", instructie.reden),
+        },
+        `speak-hangup-${instructie.reden}`
+      );
       return;
+    }
     case "zeg_en_kies_cijfers":
       // gather_using_speak = Telnyx' gecombineerde spreek+verzamel-commando,
       // dezelfde ene-stap-mechanica als Twilio's <Gather><Say>. actieUrl
@@ -352,6 +377,9 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
       );
       return;
     }
+    case "hangup_uitvoeren":
+      await telnyxCommando(callControlId, "hangup", {}, `hangup-${instructie.reden}`);
+      return;
   }
 }
 

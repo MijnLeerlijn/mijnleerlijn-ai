@@ -75,7 +75,7 @@ beforeEach(() => {
   mockVerwerkTrainingKeuze.mockReset().mockResolvedValue([]);
   mockVerwerkOpnameToets.mockReset().mockResolvedValue([]);
   mockVerwerkSpreekAfgerond.mockReset().mockResolvedValue([]);
-  mockVerwerkOpnameAfgerond.mockReset().mockReturnValue([{ soort: "zeg_en_ophangen", tekst: "Dank je." }]);
+  mockVerwerkOpnameAfgerond.mockReset().mockReturnValue([{ soort: "zeg_en_ophangen", tekst: "Dank je.", reden: "opname_afgerond" }]);
   mockVerwerkOpnameStatus.mockReset().mockResolvedValue(undefined);
   mockMaakOfHaalOproep.mockReset().mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
   mockTelnyxProvider.mockReset();
@@ -121,7 +121,7 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
   it("call.answered -> verwerkInkomendeCall aangeroepen, resultaat uitgevoerd via voerVoiceInstructiesUit", async () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
-    const instructies = [{ soort: "zeg_en_ophangen" as const, tekst: "Hallo." }];
+    const instructies = [{ soort: "zeg_en_ophangen" as const, tekst: "Hallo.", reden: "onbekend_nummer" }];
     mockVerwerkInkomendeCall.mockResolvedValue(instructies);
 
     const response = await POST(maakRequest({ data: { event_type: "call.answered", payload: { call_control_id: "cc_1", from: "+31612345678" } } }));
@@ -135,7 +135,7 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
     mockMaakOfHaalOproep.mockResolvedValue({ id: 77, status: "training_gekozen" } as never);
-    const instructies = [{ soort: "zeg_en_ophangen" as const, tekst: "Ok." }];
+    const instructies = [{ soort: "zeg_en_ophangen" as const, tekst: "Ok.", reden: "geen_keuze_gemaakt" }];
     mockVerwerkTrainingKeuze.mockResolvedValue(instructies);
 
     await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_1", digits: "1" } } }));
@@ -149,7 +149,7 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
     mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
-    const instructies = [{ soort: "stop_opname" as const, poging: 0 }, { soort: "zeg_en_ophangen" as const, tekst: "Bedankt." }];
+    const instructies = [{ soort: "stop_opname" as const, poging: 0 }, { soort: "zeg_en_ophangen" as const, tekst: "Bedankt.", reden: "opname_afgerond" }];
     mockVerwerkOpnameToets.mockResolvedValue(instructies);
 
     await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_1", digits: "#", gather_id: "opname_toets" } } }));
@@ -191,7 +191,7 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     await POST(maakRequest({ data: { event_type: "call.recording.saved", payload: { call_control_id: "cc_1", recording_id: "rec_1" } } }));
 
     expect(mockVerwerkOpnameStatus).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ recording_id: "rec_1" }));
-    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", [{ soort: "zeg_en_ophangen", tekst: "Dank je." }]);
+    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", [{ soort: "zeg_en_ophangen", tekst: "Dank je.", reden: "opname_afgerond" }]);
   });
 
   it("call.recording.error -> ook doorgezet naar verwerkOpnameStatus (dezelfde functie handelt de mislukte status zelf af)", async () => {

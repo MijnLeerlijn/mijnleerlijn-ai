@@ -83,7 +83,31 @@ export interface SpreekAfgerondGegevens {
  * grens die spec §16 vraagt.
  */
 export type VoiceInstructie =
-  | { soort: "zeg_en_ophangen"; tekst: string }
+  | {
+      /**
+       * Productie-regressieronde (2026-08-27, spec "nergens meer terminale
+       * tekst afspelen waarna de call onmiddellijk wordt opgehangen") —
+       * spreekt UITSLUITEND de tekst uit. Root cause van de live regressie:
+       * een eerdere versie deed hier fire-and-forget speak GEVOLGD DOOR een
+       * onmiddellijke hangup — exact dezelfde fout die de vorige ronde
+       * (Blocker 2) al repareerde voor zeg_en_neem_op/zeg_en_hervat_opname,
+       * maar toen niet op deze afsluitende tak toegepast. De daadwerkelijke
+       * hangup volgt nu pas op het bijbehorende call.speak.ended (zie
+       * "hangup_uitvoeren" hieronder + gesprek.ts se verwerkSpreekAfgerond)
+       * — zelfde deterministische garantie als de opnamekant.
+       */
+      soort: "zeg_en_ophangen";
+      tekst: string;
+      /**
+       * Waarom deze call wordt afgesloten — meegegeven in het speak-commando
+       * se client_state ("hangup_na_spraak:<reden>"), zodat
+       * verwerkSpreekAfgerond() na afloop weet dat er (uitsluitend) opgehangen
+       * moet worden, en de reden herkenbaar in de Telnyx-call-state/logs
+       * staat. Herbruikt waar van toepassing de bestaande OproepFoutcode-
+       * waarden (oproep-state.ts) — geen los, tweede vocabulaire nodig.
+       */
+      reden: string;
+    }
   | { soort: "zeg_en_kies_cijfers"; tekst: string; actieUrl: string; maxCijfers: number; timeoutSeconden: number }
   | {
       /**
@@ -186,6 +210,22 @@ export type VoiceInstructie =
       herstartToets: string;
       poging: number;
       nonce: number;
+    }
+  | {
+      /**
+       * De daadwerkelijke hangup-commando — uitsluitend uitgevoerd NADAT
+       * Telnyx bevestigde dat de bijbehorende zeg_en_ophangen-tekst volledig
+       * is uitgesproken. Geen `nonce`, in tegenstelling tot
+       * zeg_en_hervat_opname/opname_hervatten: elke zeg_en_ophangen-aanroeper
+       * is per constructie terminaal (bereikt hooguit één keer per gesprek),
+       * dus een deterministisch command_id (`${actie}:${callControlId}:hangup-
+       * ${reden}`) volstaat — een dubbel afgeleverd call.speak.ended-event
+       * (Telnyx' eigen webhook-redelivery) resulteert dan in HETZELFDE
+       * command_id, en Telnyx' eigen "zelfde command_id"-deduplicatie
+       * voorkomt vanzelf een tweede, overbodige hangup-aanroep.
+       */
+      soort: "hangup_uitvoeren";
+      reden: string;
     };
 
 /** Wat de webhookroute zelf als HTTP-antwoord aan de provider moet sturen — zie voerVoiceInstructiesUit. */
