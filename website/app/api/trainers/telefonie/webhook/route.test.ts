@@ -145,21 +145,21 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", instructies);
   });
 
-  it("call.gather.ended MET gather_id='opname_toets' -> dispatcht naar verwerkOpnameToets, NIET verwerkTrainingKeuze (spec §9/§10)", async () => {
+  it("call.gather.ended met oproep.status='opname_verwacht' -> dispatcht naar verwerkOpnameToets, NIET verwerkTrainingKeuze (spec §9/§10) — GEEN gather_id in de payload (productieregressie-ronde 2026-08-27: Telnyx stuurt dit veld nooit terug, hard bevestigd tegen de officiële SDK-broncode; dispatch mag dus nooit van dit veld afhangen)", async () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
     mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
     const instructies = [{ soort: "stop_opname" as const, poging: 0 }, { soort: "zeg_en_ophangen" as const, tekst: "Bedankt.", reden: "opname_afgerond" }];
     mockVerwerkOpnameToets.mockResolvedValue(instructies);
 
-    await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_1", digits: "#", gather_id: "opname_toets" } } }));
+    await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_1", digits: "#" } } }));
 
-    expect(mockVerwerkOpnameToets).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ digits: "#", gather_id: "opname_toets" }));
+    expect(mockVerwerkOpnameToets).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ digits: "#" }));
     expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
     expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", instructies);
   });
 
-  it("call.gather.ended ZONDER gather_id='opname_toets' (de trainingkeuze-gather) -> dispatcht naar verwerkTrainingKeuze, NIET verwerkOpnameToets", async () => {
+  it("call.gather.ended met oproep.status ANDERS DAN 'opname_verwacht' (de trainingkeuze-gather) -> dispatcht naar verwerkTrainingKeuze, NIET verwerkOpnameToets", async () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
     mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "trainer_herkend" } as never);
@@ -168,6 +168,33 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
 
     expect(mockVerwerkTrainingKeuze).toHaveBeenCalledTimes(1);
     expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
+  });
+
+  it("productieregressie-ronde (2026-08-27): een aanwezig gather_id-veld wordt genegeerd — dispatch hangt UITSLUITEND af van oproep.status, nooit van dit veld (root cause van de regressie was er juist blind op vertrouwen)", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "trainer_herkend" } as never);
+
+    // Zelfs als er (onverwacht) een gather_id="opname_toets" in de payload
+    // zou zitten, mag dat de dispatch niet meer sturen zolang de oproep geen
+    // opname verwacht.
+    await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_1", digits: "1", gather_id: "opname_toets" } } }));
+
+    expect(mockVerwerkTrainingKeuze).toHaveBeenCalledTimes(1);
+    expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
+  });
+
+  it("call.dtmf.received -> uitsluitend diagnostiek (tijdelijk, productieregressie-ronde 2026-08-27) — GEEN dispatch naar enige handler, toch 200", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
+
+    const response = await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_1", digit: "#" } } }));
+
+    expect(response.status).toBe(200);
+    expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
+    expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
+    expect(provider.voerVoiceInstructiesUit).not.toHaveBeenCalled();
   });
 
   it("call.speak.ended -> dispatcht naar verwerkSpreekAfgerond met de opgeloste oproepId (spec: deterministische speak->opname-sequencing)", async () => {

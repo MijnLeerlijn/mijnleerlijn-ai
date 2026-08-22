@@ -28,29 +28,65 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 //  call.answered     -> HIER pas verwerkInkomendeCall (trainerherkenning +
 //                       eerste gesproken menu) — functioneel de vervanger
 //                       van de oude inbound-route.
-//  call.gather.ended -> TWEE verschillende gathers monden hier uit, sinds
-//                       trainertelefonie V1-afronding (2026-08-26)
-//                       onderscheiden via het gather_id-veld dat elk
-//                       commando zelf meegeeft (zie telnyx-provider.ts):
-//                       gather_id="opname_toets" -> verwerkOpnameToets
-//                       ('#'/'*' tijdens het opnemen — zie hieronder); alle
-//                       andere gathers (de trainingkeuze/ja-nee-bevestiging,
-//                       zonder expliciete gather_id) -> verwerkTrainingKeuze,
-//                       ongewijzigd — vervanger van kies-training.
-//                       Vroeger (call.dtmf.received, nu VERWIJDERD): BEWEZEN
-//                       via Telnyx' eigen SDK-broncode (Expected Webhooks op
-//                       startRecording: uitsluitend call.recording.saved/
-//                       .transcription.saved/.error, NOOIT call.dtmf.received)
-//                       dat DTMF tijdens een kale record_start-opname niet
-//                       wordt afgeleverd — de oude '#'-tak hierboven was dus
-//                       feitelijk altijd dode code. Vervangen door een
-//                       PARALLELLE, stille gather-opdracht die naast elke
-//                       opname meeloopt (telnyx-provider.ts se
+//  call.gather.ended -> TWEE verschillende gathers monden hier uit — de
+//                       trainingkeuze/ja-nee-bevestiging-gather (geen opname
+//                       actief) en de parallelle '#'/'*'-gather die naast een
+//                       actieve opname meeloopt (telnyx-provider.ts se
 //                       voerInstructieUit, opname_starten/opname_hervatten-
-//                       tak) — dit IS nu de daadwerkelijke, geverifieerd
-//                       werkende mechaniek achter zowel '#' (stoppen+
-//                       verwerken) als '*' (afwijzen+opnieuw beginnen, spec
-//                       §9/§10), geen vangnet meer.
+//                       tak). Onderscheiden via oproep.status ===
+//                       "opname_verwacht" -> verwerkOpnameToets; alle andere
+//                       statussen -> verwerkTrainingKeuze.
+//                       PRODUCTIEREGRESSIE-RONDE (2026-08-27, spec "*/# doen
+//                       niets tijdens de opname") — ROOT CAUSE: dit
+//                       onderscheid liep tot deze fix via het `gather_id`-veld
+//                       dat elk gather-commando zelf meegeeft
+//                       (telnyx-provider.ts, gather_id="opname_toets"), in de
+//                       veronderstelling dat Telnyx dat op het
+//                       call.gather.ended-webhookevent zou terugsturen.
+//                       HARD WEERLEGD tegen Telnyx' eigen SDK-broncode
+//                       (telnyx@7.17.0, verse install, zelfde offline-
+//                       referentiemethode als eerder in dit project):
+//                       `gather_id` komt in de VOLLEDIGE SDK uitsluitend voor
+//                       als schrijf-parameter (ActionGatherParams,
+//                       resources/calls/actions.d.ts) — nooit als veld op
+//                       enig webhook-payload-type. `CallGatherEnded.Payload`
+//                       (webhooks.d.ts) somt zijn velden expliciet op
+//                       (call_control_id/call_leg_id/call_session_id/
+//                       client_state/connection_id/digits/from/status/to) —
+//                       gather_id ontbreekt daar, ondanks dat
+//                       ActionGatherParams se eigen doc-comment claimt "will
+//                       be sent back in the corresponding call.gather.ended
+//                       webhook" (een kennelijke discrepantie tussen Telnyx'
+//                       documentatie en het daadwerkelijke response-schema).
+//                       `vormVelden.gather_id === "opname_toets"` was hierdoor
+//                       STRUCTUREEL nooit waar — elk call.gather.ended-event,
+//                       ook tijdens een actieve opname, ging altijd naar
+//                       verwerkTrainingKeuze (die '#'/'*' niet herkent en
+//                       zonder hoorbaar effect afwijst/negeert). Vervangen
+//                       door oproep.status — EXACT dezelfde voorwaarde die
+//                       verwerkOpnameToets zelf al als eigen guard hanteert
+//                       (`oproep.status !== "opname_verwacht" -> []`), dus
+//                       geen nieuwe aanname, uitsluitend de dispatch-laag op
+//                       één lijn met de al-vertrouwde voorwaarde van de
+//                       handler zelf.
+//                       Correctie op een eerdere, onvolledige redenering in
+//                       dit bestand: startRecording() se EIGEN "Expected
+//                       Webhooks" (call.recording.saved/.transcription.saved/
+//                       .error) noemt inderdaad nooit call.dtmf.received —
+//                       maar dat zegt niets over de PARALLELLE gather()-
+//                       opdracht die naast de opname meeloopt. gather() se
+//                       EIGEN "Expected Webhooks" (actions.js, hard bevestigd)
+//                       noemt wél expliciet BEIDE: "call.dtmf.received (you
+//                       may receive many of these webhooks)" én
+//                       "call.gather.ended" — DTMF tijdens een actieve
+//                       parallelle gather wordt door Telnyx dus wél degelijk
+//                       verwacht/afgeleverd. call.dtmf.received zelf wordt nog
+//                       niet gedispatcht (zie hieronder — bewust nog niet, bij
+//                       maximum_digits:1 hoort het bijbehorende
+//                       call.gather.ended zelf al voldoende te zijn), maar
+//                       wordt deze ronde wél tijdelijk gelogd (puur
+//                       diagnostiek) om dat op de eerstvolgende live call
+//                       hard te bevestigen.
 //  call.speak.ended -> productieblocker-ronde (2026-08-26, spec "instructie
 //                       moet volledig zijn uitgesproken vóór opname start")
 //                       -> verwerkSpreekAfgerond: DE deterministische
@@ -146,15 +182,38 @@ export async function POST(request: NextRequest) {
       case "call.gather.ended": {
         if (!beperkPerGesprek.magVerder(callControlId)) break;
         const oproep = await maakOfHaalOproep(payload, callControlId);
-        // gather_id="opname_toets" (telnyx-provider.ts se voerInstructieUit,
-        // zeg_en_neem_op-tak) onderscheidt de parallelle '#'/'*'-gather
-        // tijdens het opnemen van de trainingkeuze-gather (die geen expliciete
-        // gather_id meekrijgt) — zie de toelichting bovenaan dit bestand.
+        // TIJDELIJKE DIAGNOSTIEK (productieregressie-ronde 2026-08-27, spec
+        // "*/# doen niets tijdens de opname") — uitsluitend niet-herleidbare
+        // technische velden (geen audio/transcriptie/telefoonnummer/API-key/
+        // persoonsgegevens): bevestigt op de eerstvolgende live call of
+        // gather_id daadwerkelijk afwezig is (zie de root-cause-toelichting
+        // bovenaan dit bestand) en wat digits/status/oproep op dat moment zijn.
+        // Verwijderen zodra dit hard bevestigd is.
+        console.log(
+          `[telefonie/diag] event_type=call.gather.ended gather_id=${vormVelden.gather_id ?? "(geen)"} digits=${vormVelden.digits ?? "(geen)"} oproepStatus=${oproep.status} oproepId=${oproep.id} gekozenTrainingId=${oproep.gekozenMondayTrainingId ?? "(geen)"}`
+        );
         const instructies =
-          vormVelden.gather_id === "opname_toets"
+          oproep.status === "opname_verwacht"
             ? await verwerkOpnameToets(payload, provider, oproep.id, vormVelden)
             : await verwerkTrainingKeuze(payload, provider, oproep.id, vormVelden);
         await provider.voerVoiceInstructiesUit(callControlId, instructies);
+        break;
+      }
+
+      case "call.dtmf.received": {
+        // TIJDELIJKE DIAGNOSTIEK (productieregressie-ronde 2026-08-27) —
+        // uitsluitend loggen, GEEN dispatch: Telnyx' eigen "Expected
+        // Webhooks" op de gather-opdracht noemen dit event expliciet naast
+        // call.gather.ended (zie de toelichting bovenaan dit bestand). Bij
+        // maximum_digits:1 hoort het bijbehorende call.gather.ended-event
+        // zelf al voldoende te zijn om '#'/'*' te verwerken — dit event
+        // bevestigt uitsluitend of/wanneer Telnyx het daadwerkelijk stuurt.
+        // Verwijderen zodra dat hard bevestigd is.
+        if (!beperkPerGesprek.magVerder(callControlId)) break;
+        const oproep = await maakOfHaalOproep(payload, callControlId);
+        console.log(
+          `[telefonie/diag] event_type=call.dtmf.received digit=${vormVelden.digit ?? "(geen)"} oproepStatus=${oproep.status} oproepId=${oproep.id} gekozenTrainingId=${oproep.gekozenMondayTrainingId ?? "(geen)"}`
+        );
         break;
       }
 
