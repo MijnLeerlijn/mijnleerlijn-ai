@@ -43,10 +43,29 @@ describe("POST /api/admin/trainer-kennis/herindexeer", () => {
   });
 
   it("voert de herindexering uit en geeft de tellingen terug", async () => {
-    mockHerindexeer.mockResolvedValue({ totaalGepubliceerd: 5, algGeindexeerd: 3, opnieuwGeindexeerd: 2, mislukt: 0 });
+    mockHerindexeer.mockResolvedValue({ totaalGepubliceerd: 5, algGeindexeerd: 3, opnieuwGeindexeerd: 2, mislukt: 0, mislukteDetails: [] });
     const response = await POST(maakRequest("POST"));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ totaalGepubliceerd: 5, algGeindexeerd: 3, opnieuwGeindexeerd: 2, mislukt: 0 });
+    expect(await response.json()).toEqual({ totaalGepubliceerd: 5, algGeindexeerd: 3, opnieuwGeindexeerd: 2, mislukt: 0, mislukteDetails: [] });
+  });
+
+  // Vervolgronde (2026-08-23) — de kern van deze opdracht: de route moet per
+  // mislukking een veilige diagnose teruggeven (categorie/stap/HTTP-status/
+  // modelnaam), zodat een volgende mislukking niet meer "1 mislukt" zonder
+  // detail oplevert.
+  it("geeft mislukteDetails (categorie/stap/HTTP-status/model) door in de response", async () => {
+    mockHerindexeer.mockResolvedValue({
+      totaalGepubliceerd: 1,
+      algGeindexeerd: 0,
+      opnieuwGeindexeerd: 0,
+      mislukt: 1,
+      mislukteDetails: [{ id: 42, categorie: "openai_api_key_ontbreekt", stap: "api_key", httpStatus: null, model: "text-embedding-3-small" }],
+    });
+    const response = await POST(maakRequest("POST"));
+    const body = await response.json();
+    expect(body.mislukteDetails).toEqual([
+      { id: 42, categorie: "openai_api_key_ontbreekt", stap: "api_key", httpStatus: null, model: "text-embedding-3-small" },
+    ]);
   });
 });
 

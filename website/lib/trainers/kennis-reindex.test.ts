@@ -56,7 +56,7 @@ describe("herindexeerTrainerKennisversies — backfill voor bestaande gepublicee
   it("laat een al-geldig-geïndexeerd record volledig met rust (geen embedIfChanged-aanroep, geen update)", async () => {
     const { payload, collection } = maakFakePayload({ "trainer-kennisversies": [versie({ id: 1 })] });
     const resultaat = await herindexeerTrainerKennisversies(payload);
-    expect(resultaat).toEqual({ totaalGepubliceerd: 1, algGeindexeerd: 1, opnieuwGeindexeerd: 0, mislukt: 0 });
+    expect(resultaat).toEqual({ totaalGepubliceerd: 1, algGeindexeerd: 1, opnieuwGeindexeerd: 0, mislukt: 0, mislukteDetails: [] });
     expect(mockEmbedIfChanged).not.toHaveBeenCalled();
     expect(collection("trainer-kennisversies")[0]).toMatchObject({ embeddingTextHash: "hash-1" }); // ongewijzigd
   });
@@ -69,7 +69,7 @@ describe("herindexeerTrainerKennisversies — backfill voor bestaande gepublicee
 
     const resultaat = await herindexeerTrainerKennisversies(payload);
 
-    expect(resultaat).toEqual({ totaalGepubliceerd: 1, algGeindexeerd: 0, opnieuwGeindexeerd: 1, mislukt: 0 });
+    expect(resultaat).toEqual({ totaalGepubliceerd: 1, algGeindexeerd: 0, opnieuwGeindexeerd: 1, mislukt: 0, mislukteDetails: [] });
     expect(collection("trainer-kennisversies")[0]).toMatchObject({ embedding: [0.3, 0.4], embeddingTextHash: "nieuwe-hash", embeddingStatus: "indexed" });
   });
 
@@ -82,8 +82,16 @@ describe("herindexeerTrainerKennisversies — backfill voor bestaande gepublicee
     expect(resultaat.opnieuwGeindexeerd).toBe(1);
   });
 
-  it("een blijvend mislukkende embedding wordt geteld als 'mislukt', schrijft niets weg, blokkeert de rest niet", async () => {
-    mockEmbedIfChanged.mockResolvedValue({ type: "failed", foutmelding: "AI-dienst tijdelijk niet bereikbaar" });
+  // Vervolgronde (2026-08-23) — de live herindexering liet 1 mislukking zien
+  // zonder verder detail; herindexeerTrainerKennisversies geeft dit nu terug
+  // via mislukteDetails (categorie/stap/HTTP-status/modelnaam), veilig genoeg
+  // om rechtstreeks aan een beheerder te tonen.
+  it("een blijvend mislukkende embedding wordt geteld als 'mislukt', geeft een veilige diagnose terug, schrijft niets weg", async () => {
+    mockEmbedIfChanged.mockResolvedValue({
+      type: "failed",
+      foutmelding: "Rate limited",
+      diagnose: { categorie: "openai_rate_limited", stap: "aanroep", httpStatus: 429, model: "text-embedding-3-small" },
+    });
     const { payload, collection } = maakFakePayload({
       "trainer-kennisversies": [
         versie({ id: 1, embeddingStatus: "pending", embedding: null }),
@@ -93,14 +101,55 @@ describe("herindexeerTrainerKennisversies — backfill voor bestaande gepublicee
 
     const resultaat = await herindexeerTrainerKennisversies(payload);
 
-    expect(resultaat).toEqual({ totaalGepubliceerd: 2, algGeindexeerd: 1, opnieuwGeindexeerd: 0, mislukt: 1 });
+    expect(resultaat).toEqual({
+      totaalGepubliceerd: 2,
+      algGeindexeerd: 1,
+      opnieuwGeindexeerd: 0,
+      mislukt: 1,
+      mislukteDetails: [{ id: 1, categorie: "openai_rate_limited", stap: "aanroep", httpStatus: 429, model: "text-embedding-3-small" }],
+    });
     expect(collection("trainer-kennisversies")[0]!.embeddingStatus).toBe("pending"); // ongewijzigd, geen halve schrijfactie
+  });
+
+  it("een mislukking zonder diagnose (embedIfChanged se eigen 'geen tekst'-validatie) krijgt de veilige fallback-categorie", async () => {
+    mockEmbedIfChanged.mockResolvedValue({ type: "failed", foutmelding: "Geen tekst beschikbaar om te embedden." });
+    const { payload } = maakFakePayload({ "trainer-kennisversies": [versie({ id: 1, embeddingStatus: "pending", embedding: null })] });
+
+    const resultaat = await herindexeerTrainerKennisversies(payload);
+
+    expect(resultaat.mislukteDetails).toEqual([{ id: 1, categorie: "onbekende_fout", stap: "onbekend", httpStatus: null, model: null }]);
+  });
+
+  it("een record zonder titel én tekst krijgt de eigen 'geen_tekst_om_te_embedden'-categorie, embedIfChanged wordt niet aangeroepen", async () => {
+    const { payload } = maakFakePayload({ "trainer-kennisversies": [versie({ id: 1, titel: "", tekst: "", embeddingStatus: "pending", embedding: null })] });
+
+    const resultaat = await herindexeerTrainerKennisversies(payload);
+
+    expect(resultaat.mislukteDetails).toEqual([{ id: 1, categorie: "geen_tekst_om_te_embedden", stap: "onbekend", httpStatus: null, model: null }]);
+    expect(mockEmbedIfChanged).not.toHaveBeenCalled();
+  });
+
+  it("de mislukteDetails bevatten nooit vraag-/antwoordinhoud of de titel/tekst van het record", async () => {
+    mockEmbedIfChanged.mockResolvedValue({
+      type: "failed",
+      foutmelding: "een heel gevoelige, niet te loggen boodschap",
+      diagnose: { categorie: "openai_server_fout", stap: "aanroep", httpStatus: 500, model: "text-embedding-3-small" },
+    });
+    const { payload } = maakFakePayload({
+      "trainer-kennisversies": [versie({ id: 1, titel: "Zeer geheime titel", tekst: "Zeer geheime tekst", embeddingStatus: "pending", embedding: null })],
+    });
+
+    const resultaat = await herindexeerTrainerKennisversies(payload);
+
+    const gezien = JSON.stringify(resultaat.mislukteDetails);
+    expect(gezien).not.toContain("Zeer geheime");
+    expect(gezien).not.toContain("een heel gevoelige");
   });
 
   it("negeert concepten volledig — nooit embedIfChanged aangeroepen voor een niet-gepubliceerde versie", async () => {
     const { payload } = maakFakePayload({ "trainer-kennisversies": [versie({ id: 1, status: "concept", embeddingStatus: "pending", embedding: null })] });
     const resultaat = await herindexeerTrainerKennisversies(payload);
-    expect(resultaat).toEqual({ totaalGepubliceerd: 0, algGeindexeerd: 0, opnieuwGeindexeerd: 0, mislukt: 0 });
+    expect(resultaat).toEqual({ totaalGepubliceerd: 0, algGeindexeerd: 0, opnieuwGeindexeerd: 0, mislukt: 0, mislukteDetails: [] });
     expect(mockEmbedIfChanged).not.toHaveBeenCalled();
   });
 

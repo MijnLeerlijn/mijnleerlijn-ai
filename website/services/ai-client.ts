@@ -1,5 +1,20 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, generateText, embed, transcribe } from "ai";
+import {
+  generateObject,
+  generateText,
+  embed,
+  transcribe,
+  AISDKError,
+  APICallError,
+  EmptyResponseBodyError,
+  InvalidResponseDataError,
+  JSONParseError,
+  LoadAPIKeyError,
+  LoadSettingError,
+  NoSuchModelError,
+  TooManyEmbeddingValuesForCallError,
+  TypeValidationError,
+} from "ai";
 import { z } from "zod";
 import { requireEnv, optionalEnv } from "@/config/env";
 
@@ -123,6 +138,66 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const model = openaiClient().embedding(getEmbeddingModelId());
   const result = await embed({ model, value: text });
   return result.embedding;
+}
+
+/**
+ * Productiecontrole vervolgronde (2026-08-23) — na de eerste live
+ * herindexering bleef het ene gepubliceerde trainerkennisrecord "mislukt"
+ * (embedIfChanged/generateEmbedding hierboven faalde). Zelfde aanpak als
+ * classificeerBlobFout (services/storage.ts): een veilige, categorie-only
+ * classificatie van de @ai-sdk/provider-foutklassen (via de "ai"-package
+ * geëxporteerd, zie node_modules/@ai-sdk/provider/dist/index.d.ts) — nooit
+ * de rauwe foutmelding, nooit de API-key, nooit de geëmbedde tekst zelf
+ * (die zit sowieso nergens in deze foutklassen, alleen in
+ * requestBodyValues/responseBody, welbewust niet gelezen). `model` is de
+ * al-bekende, aangevraagde model-ID (niet uit de fout zelf gehaald) — zodat
+ * de modelnaam ook aanwezig is wanneer de fout zelf geen modelId draagt.
+ */
+export interface EmbeddingFoutDiagnose {
+  categorie: string;
+  stap: "api_key" | "aanroep" | "respons" | "onbekend";
+  httpStatus: number | null;
+  model: string;
+}
+
+export function classificeerEmbeddingFout(error: unknown, model: string): EmbeddingFoutDiagnose {
+  if (error instanceof Error && error.message.startsWith("Ontbrekende verplichte omgevingsvariabele")) {
+    return { categorie: "openai_api_key_ontbreekt", stap: "api_key", httpStatus: null, model };
+  }
+  if (error instanceof LoadAPIKeyError) {
+    return { categorie: "openai_api_key_ongeldig", stap: "api_key", httpStatus: null, model };
+  }
+  if (error instanceof LoadSettingError) {
+    return { categorie: "openai_instelling_ongeldig", stap: "api_key", httpStatus: null, model };
+  }
+  if (error instanceof APICallError) {
+    const httpStatus = error.statusCode ?? null;
+    let categorie = "openai_api_fout";
+    if (httpStatus === 401 || httpStatus === 403) categorie = "openai_authenticatie_geweigerd";
+    else if (httpStatus === 404) categorie = "openai_model_niet_gevonden";
+    else if (httpStatus === 429) categorie = "openai_rate_limited";
+    else if (httpStatus != null && httpStatus >= 500) categorie = "openai_server_fout";
+    else if (httpStatus != null && httpStatus >= 400) categorie = "openai_verzoek_ongeldig";
+    return { categorie, stap: "aanroep", httpStatus, model };
+  }
+  if (error instanceof NoSuchModelError) {
+    return { categorie: "embedding_model_onbekend", stap: "aanroep", httpStatus: null, model };
+  }
+  if (error instanceof TooManyEmbeddingValuesForCallError) {
+    return { categorie: "te_veel_embedding_waarden_in_aanroep", stap: "aanroep", httpStatus: null, model };
+  }
+  if (
+    error instanceof JSONParseError ||
+    error instanceof InvalidResponseDataError ||
+    error instanceof EmptyResponseBodyError ||
+    error instanceof TypeValidationError
+  ) {
+    return { categorie: "onverwachte_respons_van_provider", stap: "respons", httpStatus: null, model };
+  }
+  if (error instanceof AISDKError) {
+    return { categorie: "ai_sdk_fout_overig", stap: "onbekend", httpStatus: null, model };
+  }
+  return { categorie: "onbekende_fout", stap: "onbekend", httpStatus: null, model };
 }
 
 /**

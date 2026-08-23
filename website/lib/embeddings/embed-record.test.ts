@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { embedIfChanged } from "./embed-record";
 import { generateEmbedding } from "@/services/ai-client";
 import { hashText } from "./text-hash";
+import { APICallError } from "ai";
 
-vi.mock("@/services/ai-client", () => ({
-  generateEmbedding: vi.fn(),
-  getEmbeddingModelId: () => "text-embedding-3-small-test",
-}));
+// classificeerEmbeddingFout blijft de ECHTE functie (importOriginal) — puur,
+// geen eigen AI-aanroep, en al apart getest in services/ai-client.test.ts;
+// hier wordt alleen bevestigd dat embedIfChanged 'm daadwerkelijk aanroept
+// en het resultaat op de failed-uitkomst zet.
+vi.mock("@/services/ai-client", async (importOriginal) => {
+  const echt = await importOriginal<typeof import("@/services/ai-client")>();
+  return { ...echt, generateEmbedding: vi.fn(), getEmbeddingModelId: () => "text-embedding-3-small-test" };
+});
 
 const mockGenerateEmbedding = vi.mocked(generateEmbedding);
 
@@ -67,5 +72,22 @@ describe("embedIfChanged", () => {
     const uitkomst = await embedIfChanged({ text: "Tekst.", storedHash: null, storedStatus: "pending" });
 
     expect(uitkomst).toMatchObject({ type: "failed", foutmelding: "OpenAI: rate limit exceeded" });
+  });
+
+  // Productiecontrole vervolgronde (2026-08-23) — de failed-uitkomst draagt
+  // sindsdien ook een veilige diagnose (categorie/stap/HTTP-status/model),
+  // additief naast foutmelding — bestaande aanroepers (process-embedding.ts)
+  // blijven ongewijzigd omdat die uitsluitend .foutmelding lezen.
+  it("voegt een veilige diagnose toe (categorie/stap/HTTP-status/model) bij een getypeerde AI-SDK-fout", async () => {
+    mockGenerateEmbedding.mockRejectedValue(
+      new APICallError({ message: "Rate limited", url: "https://api.openai.com/v1/embeddings", requestBodyValues: {}, statusCode: 429 })
+    );
+
+    const uitkomst = await embedIfChanged({ text: "Tekst.", storedHash: null, storedStatus: "pending" });
+
+    expect(uitkomst).toMatchObject({
+      type: "failed",
+      diagnose: { categorie: "openai_rate_limited", stap: "aanroep", httpStatus: 429, model: "text-embedding-3-small-test" },
+    });
   });
 });
