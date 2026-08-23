@@ -8,12 +8,21 @@ import { buildArticleText, type ArticleVoorEmbedding } from "@/lib/embeddings/em
 // lib/creator/derive-channel.ts ("Maak hiervan") — bronartikel -> AI
 // herschrijft voor een ander publiek -> beheerder controleert/bewerkt/
 // publiceert. Bewust GEEN kennisopzoeking (i.t.t. variant-adapt): de
-// trainerversie moet exact dezelfde feiten bevatten als het bronartikel
-// zelf, dus dat artikel is de enige toegestane bron — "geen nieuwe
-// inhoudelijke feiten verzinnen die niet uit de bron komen" (opdrachtseis).
+// trainerversie moet exact dezelfde feiten bevatten als de bron zelf, dus
+// die bron is het enige toegestane brondocument — "geen nieuwe inhoudelijke
+// feiten verzinnen die niet uit de bron komen" (opdrachtseis).
 // buildArticleText (lib/embeddings/embeddable-text.ts) hergebruikt de al-
 // bestaande, al-geteste artikel-naar-platte-tekst-omzetting — geen tweede
 // interpretatie van "wat is de tekst van dit artikel".
+//
+// Kennisbasis-basiskennis (2026-08-23) — dezelfde herschrijffunctie bedient
+// nu ook de centrale Kennisbasis (payload/components/KennisbasisView.tsx,
+// een `knowledge-sources`-rij met bronrol "background-model", zie
+// lib/assistant/kennisbasis-context.ts): dat veld is al platte tekst, dus
+// geen buildArticleText nodig — vandaar de losgetrokken
+// genereerTrainerversieVanTekst() hieronder, die genereerTrainerversie() nu
+// zelf ook gebruikt. Éen systeemprompt/AI-aanroep voor beide bronnen, geen
+// tweede, uit de pas kunnen lopen implementatie.
 export interface TrainerversieResultaat {
   titel: string;
   tekst: string;
@@ -42,12 +51,20 @@ Schrijf platte tekst, geen markdown-opmaak (geen **vet**, geen # kopjes, geen \`
 
 Antwoord uitsluitend met het gevraagde gestructureerde object.`;
 
-export async function genereerTrainerversie(bronArtikel: ArticleVoorEmbedding): Promise<TrainerversieResultaat> {
-  const brontekst = buildArticleText(bronArtikel);
+/**
+ * Gedeelde kern: herschrijft willekeurige brontekst (al platte tekst) tot een
+ * trainerversie. `bronLabel` is uitsluitend het label in de prompt ("artikel"/
+ * "kennisbasis") — verandert niets aan de regels zelf.
+ */
+export async function genereerTrainerversieVanTekst(bronTitel: string, brontekst: string, bronLabel = "artikel"): Promise<TrainerversieResultaat> {
   const ruweOutput = await generateStructuredOutput({
     schema: TrainerversieSchema,
     systemPrompt: SYSTEEMPROMPT,
-    userPrompt: `Origineel artikel ("${bronArtikel.title}"):\n\n${brontekst}\n\nSchrijf de trainerversie.`,
+    userPrompt: `Origineel ${bronLabel} ("${bronTitel}"):\n\n${brontekst}\n\nSchrijf de trainerversie.`,
   });
   return { titel: ruweOutput.titel.trim(), tekst: ruweOutput.tekst.trim() };
+}
+
+export async function genereerTrainerversie(bronArtikel: ArticleVoorEmbedding): Promise<TrainerversieResultaat> {
+  return genereerTrainerversieVanTekst(bronArtikel.title, buildArticleText(bronArtikel), "artikel");
 }

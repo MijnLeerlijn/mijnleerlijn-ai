@@ -6,8 +6,8 @@ import { generateEmbedding } from "@/services/ai-client";
 // trainerversie van een bestaand centraal kennisartikel. Zelfde patroon als
 // DerivedContent.ts ("Maak hiervan" — sourceArticle + status concept/
 // gepubliceerd + generatedByAi), niet toevallig: het is dezelfde vorm
-// (bronartikel -> AI herschrijft voor een ander publiek -> beheerder
-// controleert/bewerkt -> publiceert), nu voor het trainerspubliek i.p.v. een
+// (bron -> AI herschrijft voor een ander publiek -> beheerder controleert/
+// bewerkt -> publiceert), nu voor het trainerspubliek i.p.v. een
 // marketingkanaal. Bewust GEEN VariantOverride-concept hier — een
 // trainerversie is nooit per white-label-variant, dus de centrale
 // samenvoegfunctie (lib/content/merge.ts) is hier niet van toepassing.
@@ -18,11 +18,22 @@ import { generateEmbedding } from "@/services/ai-client";
 // toegang tot deze collectie — uitsluitend via lib/trainers/kennis.ts, met
 // overrideAccess:true en een harde status:"gepubliceerd"-filter, zelfde
 // rechtenpatroon als de rest van de traineromgeving.
+//
+// Kennisbasis-basiskennis (2026-08-23) — `bron` is bewust POLYMORF
+// (`articles` én `knowledge-sources`, niet alleen `sourceArticle` →
+// `articles` zoals eerst): de centrale Kennisbasis (/admin/kennisbasis,
+// KennisbasisView.tsx) is GEEN `articles`-record maar een gewone
+// `knowledge-sources`-rij met bronrol "background-model" (zie
+// lib/assistant/kennisbasis-context.ts) — dus dezelfde vorm als
+// KennisbasisOnderwerpen.gekoppeldeHandleidingen hieronder gespiegeld
+// (`relationTo: ["handleidingen","knowledge-sources"]`), i.p.v. een tweede,
+// parallelle "kennisbasis-trainerversie"-collectie te bouwen. Eén brontype
+// (kennisartikel of kennisbasisdocument) per record — nooit beide.
 export const TrainerKennisversies: CollectionConfig = {
   slug: "trainer-kennisversies",
   admin: {
     useAsTitle: "titel",
-    defaultColumns: ["titel", "sourceArticle", "status", "updatedAt"],
+    defaultColumns: ["titel", "bron", "status", "updatedAt"],
     group: "Trainers",
     description: "Trainerversies van kennisartikelen — AI-concept, door een beheerder gecontroleerd/bewerkt, pas zichtbaar voor trainers na 'Publiceren voor trainers'.",
   },
@@ -79,7 +90,14 @@ export const TrainerKennisversies: CollectionConfig = {
     ],
   },
   fields: [
-    { name: "sourceArticle", type: "relationship", relationTo: "articles", required: true, label: "Bronartikel" },
+    {
+      name: "bron",
+      type: "relationship",
+      relationTo: ["articles", "knowledge-sources"],
+      required: true,
+      label: "Bron",
+      admin: { description: "Het kennisartikel of de Kennisbasis waar deze trainerversie 1-op-1 haar feiten vandaan haalt." },
+    },
     { name: "titel", type: "text", required: true, label: "Titel (trainerperspectief)" },
     {
       name: "tekst",

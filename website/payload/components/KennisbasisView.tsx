@@ -13,6 +13,17 @@ import { Button, Gutter, toast } from "@payloadcms/ui";
 // kennisbasis-context.ts), dus dit scherm bewerkt gegarandeerd hetzelfde
 // document dat de Helpdesk AI daadwerkelijk gebruikt — nooit een tweede,
 // parallel document.
+//
+// Kennisbasis-basiskennis voor trainers (2026-08-23) — "Maak trainerversie"
+// hieronder roept dezelfde /api/creator/trainer-kennisversie-route aan als
+// Articles.ts se knop (MaakTrainerversieButton.tsx), maar dan met
+// `knowledgeSourceId` i.p.v. `articleId`: dit scherm bewerkt namelijk zelf
+// GEEN articles-record maar precies het achtergronddocument (`data.document`
+// hierboven) — dus geen `useDocumentInfo()` (die bestaat hier niet, dit is
+// geen standaard documentscherm), gewoon het al-geladen `data.document.id`.
+// Bewaart een concept exact zoals de Articles-knop: status "concept", pas
+// zichtbaar voor trainers na "Publiceren voor trainers" in het
+// trainer-kennisversies-scherm zelf — nooit stilzwijgend gepubliceerd.
 
 interface VariantOptie {
   id: number;
@@ -25,6 +36,15 @@ interface AchtergrondData {
   document: { id: number; title: string; content: string; updatedAt: string | null } | null;
 }
 
+/** Letterlijke kopie van dezelfde helper in CreatorView.tsx/MaakTrainerversieButton.tsx (bewuste, niet-gedeelde duplicatie — zie die bestanden). */
+async function json<T>(res: Response): Promise<T> {
+  const data = (await res.json().catch(() => null)) as (T & { errors?: { message?: string }[]; error?: string }) | null;
+  if (!res.ok) throw new Error(data?.errors?.[0]?.message || data?.error || "Actie mislukt.");
+  return data as T;
+}
+
+type TrainerversieStatus = "stil" | "bezig" | "gelukt" | "fout";
+
 export function KennisbasisView() {
   const [varianten, setVarianten] = useState<VariantOptie[]>([]);
   const [geselecteerd, setGeselecteerd] = useState<number | null>(null);
@@ -32,6 +52,9 @@ export function KennisbasisView() {
   const [tekst, setTekst] = useState("");
   const [status, setStatus] = useState<"laden" | "klaar" | "fout">("laden");
   const [opslaan, setOpslaan] = useState(false);
+  const [trainerversieStatus, setTrainerversieStatus] = useState<TrainerversieStatus>("stil");
+  const [trainerversieBoodschap, setTrainerversieBoodschap] = useState("");
+  const [trainerversieId, setTrainerversieId] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/variants?limit=100&sort=name&depth=0", { credentials: "include" })
@@ -47,6 +70,9 @@ export function KennisbasisView() {
   useEffect(() => {
     if (geselecteerd === null) return;
     setStatus("laden");
+    setTrainerversieStatus("stil");
+    setTrainerversieBoodschap("");
+    setTrainerversieId(null);
     fetch(`/api/knowledge-sources/achtergrond/${geselecteerd}`, { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error();
@@ -59,6 +85,43 @@ export function KennisbasisView() {
       })
       .catch(() => setStatus("fout"));
   }, [geselecteerd]);
+
+  async function maakTrainerversie() {
+    if (!data?.document) return;
+    setTrainerversieStatus("bezig");
+    setTrainerversieBoodschap("");
+    setTrainerversieId(null);
+    try {
+      const genRes = await fetch("/api/creator/trainer-kennisversie", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ knowledgeSourceId: data.document.id }),
+      });
+      const genData = await json<{ titel: string; tekst: string }>(genRes);
+
+      const saveRes = await fetch("/api/trainer-kennisversies", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bron: { relationTo: "knowledge-sources", value: data.document.id },
+          titel: genData.titel,
+          tekst: genData.tekst,
+          status: "concept",
+          generatedByAi: true,
+        }),
+      });
+      const saveData = await json<{ doc: { id: number } }>(saveRes);
+
+      setTrainerversieId(saveData.doc.id);
+      setTrainerversieBoodschap("Conceptversie aangemaakt — controleer en bewerk de tekst voordat je publiceert.");
+      setTrainerversieStatus("gelukt");
+    } catch (error) {
+      setTrainerversieBoodschap(error instanceof Error ? error.message : "Mislukt door een netwerk- of serverfout.");
+      setTrainerversieStatus("fout");
+    }
+  }
 
   async function opslaanTekst() {
     if (geselecteerd === null) return;
@@ -181,6 +244,27 @@ export function KennisbasisView() {
               <span style={{ fontSize: 12, color: "var(--theme-elevation-500)" }}>
                 Laatst bijgewerkt: {new Date(data.document.updatedAt).toLocaleString("nl-NL")}
               </span>
+            )}
+          </div>
+
+          <div style={{ marginTop: "2rem", paddingTop: "1.5rem", borderTop: "1px solid var(--theme-elevation-150)" }}>
+            <h2 style={{ marginBottom: "0.25rem" }}>Basiskennis voor trainers</h2>
+            <p style={{ color: "var(--theme-elevation-500)", marginTop: 0, marginBottom: "0.75rem" }}>
+              Herschrijft deze tekst — dezelfde feiten, vanuit trainersperspectief — als nieuwe conceptversie in{" "}
+              <em>Trainer-kennisversies</em>. Publiceren voor trainers gebeurt daarna apart, via de status van die
+              conceptversie.
+            </p>
+            <Button buttonStyle="secondary" disabled={!heeftBruikbareKennis || !data.document || trainerversieStatus === "bezig"} onClick={maakTrainerversie}>
+              {trainerversieStatus === "bezig" ? "Bezig met genereren…" : "Maak trainerversie"}
+            </Button>
+            {trainerversieStatus === "gelukt" && (
+              <p style={{ marginTop: "0.5rem", color: "var(--theme-success-500)" }}>
+                {trainerversieBoodschap}{" "}
+                {trainerversieId && <a href={`/admin/collections/trainer-kennisversies/${trainerversieId}`}>Open conceptversie →</a>}
+              </p>
+            )}
+            {trainerversieStatus === "fout" && trainerversieBoodschap && (
+              <p style={{ marginTop: "0.5rem", color: "var(--theme-error-500)" }}>{trainerversieBoodschap}</p>
             )}
           </div>
         </>

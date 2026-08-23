@@ -56,7 +56,13 @@ export function MaakTrainerversieButton() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceArticle: id, titel: genData.titel, tekst: genData.tekst, status: "concept", generatedByAi: true }),
+        body: JSON.stringify({
+          bron: { relationTo: "articles", value: id },
+          titel: genData.titel,
+          tekst: genData.tekst,
+          status: "concept",
+          generatedByAi: true,
+        }),
       });
       const saveData = await json<{ doc: { id: number } }>(saveRes);
 

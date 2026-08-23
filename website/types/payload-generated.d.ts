@@ -704,7 +704,18 @@ export interface TrainerLogboekItem {
  */
 export interface TrainerKennisversy {
   id: number;
-  sourceArticle: number | Article;
+  /**
+   * Het kennisartikel of de Kennisbasis waar deze trainerversie 1-op-1 haar feiten vandaan haalt.
+   */
+  bron:
+    | {
+        relationTo: 'articles';
+        value: number | Article;
+      }
+    | {
+        relationTo: 'knowledge-sources';
+        value: number | KnowledgeSource;
+      };
   titel: string;
   /**
    * Dezelfde feiten als het bronartikel, geschreven vanuit trainersperspectief. Platte tekst — geen HTML/markdown, wordt als gewone tekst getoond.
@@ -918,256 +929,6 @@ export interface Source {
   createdAt: string;
 }
 /**
- * Variant-specifieke aanvullingen, vervangingen of uitsluitingen op de centrale artikelboom.
- *
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "variant-overrides".
- */
-export interface VariantOverride {
-  id: number;
-  variant: number | Variant;
-  /**
-   * Het centrale artikel waarbinnen dit inhaakt.
-   */
-  targetArticle: number | Article;
-  targetType: 'article' | 'section' | 'block';
-  /**
-   * Gelijk aan targetArticle's ID wanneer Niveau = Artikel; anders de ID van de specifieke sectie of het specifieke blok binnen dat artikel.
-   */
-  targetId: string;
-  action: 'onveranderd' | 'aanvullen' | 'vervangen' | 'verbergen' | 'ander_medium' | 'invoegen_voor' | 'invoegen_na';
-  /**
-   * Vervangende/aanvullende/ingevoegde blokinhoud, of een media-referentie bij 'Ander medium'. Leeg bij 'Onveranderd' of 'Verbergen'.
-   */
-  payload?:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
-  /**
-   * Standaard aan. Uitzetten wanneer dit element al de juiste variant-terminologie bevat.
-   */
-  termOverridesApplied?: boolean | null;
-  status: 'concept' | 'gepubliceerd';
-  editedBy?: (number | null) | User;
-  basedOnArticleVersion?: string | null;
-  /**
-   * Alleen voor herkomst in Archief, geen functioneel effect.
-   */
-  generatedByAi?: boolean | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * Redactioneel gekozen recente wijzigingen, getoond op de homepage en /updates.
- *
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "updates".
- */
-export interface Update {
-  id: number;
-  article: number | Article;
-  badge: 'Nieuw' | 'Bijgewerkt';
-  date: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * Inzendingen van het contactformulier. Aanmaken kan alleen via de eigen API-route.
- *
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "contact-submissions".
- */
-export interface ContactSubmission {
-  id: number;
-  teacherName: string;
-  schoolName: string;
-  email: string;
-  requestType: string;
-  subject: string;
-  problemDescription: string;
-  expected?: string | null;
-  actual?: string | null;
-  pageUrl?: string | null;
-  variant?: (number | null) | Variant;
-  helpCenterUrl?: string | null;
-  submittedAt: string;
-  /**
-   * Alleen een grove categorie (bv. 'Chrome op desktop') — nooit een volledige user-agent.
-   */
-  deviceInfo?: string | null;
-  status: 'nieuw' | 'in_behandeling' | 'afgehandeld';
-  /**
-   * Bestanden staan privé in Vercel Blob. Downloaden genereert een kortlevende signed URL.
-   */
-  attachments?:
-    | {
-        storageKey: string;
-        filename: string;
-        mimeType: string;
-        sizeBytes: number;
-        uploadedAt: string;
-        id?: string | null;
-      }[]
-    | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * Ja/nee-feedback van bezoekers op AI-antwoorden. Aanmaken kan alleen via de eigen API-route.
- *
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "answer-feedback".
- */
-export interface AnswerFeedback {
-  id: number;
-  vraag: string;
-  antwoordTekst: string;
-  bronArtikelSlugs?: string[] | null;
-  variant?: (number | null) | Variant;
-  rating: 'nuttig' | 'niet_nuttig';
-  pageUrl?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-/**
- * Geïmporteerde Gmail-helpdesk-threads (alleen-lezen buiten de synchronisatie om).
- *
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "support-threads".
- */
-export interface SupportThread {
-  id: number;
-  /**
-   * Voorkomt dubbele import — zie lib/gmail/sync.ts.
-   */
-  gmailThreadId: string;
-  subject?: string | null;
-  /**
-   * Unieke e-mailadressen uit van/aan/cc van alle berichten.
-   */
-  participants?: string[] | null;
-  firstMessageAt?: string | null;
-  lastMessageAt?: string | null;
-  messageCount?: number | null;
-  snippet?: string | null;
-  messages?:
-    | {
-        gmailMessageId: string;
-        from?: string | null;
-        to?: string[] | null;
-        cc?: string[] | null;
-        sentAt?: string | null;
-        subject?: string | null;
-        /**
-         * Platte tekst (HTML omgezet). Citaten/handtekeningen bewust niet agressief verwijderd.
-         */
-        bodyText?: string | null;
-        id?: string | null;
-      }[]
-    | null;
-  /**
-   * Handmatig door een beheerder te zetten — de sync zelf wijzigt dit nooit.
-   */
-  status: 'new' | 'reviewed' | 'ignored' | 'processed';
-  importedAt?: string | null;
-  updatedFromGmailAt?: string | null;
-  /**
-   * 'Genegeerd' = de AI vond de thread te specifiek, onduidelijk of onopgelost (reden in aiAnalysisError) — geen concept aangemaakt. 'Mislukt' = technische fout tijdens analyse, nooit ten onrechte op 'Geanalyseerd' gezet.
-   */
-  aiAnalysisStatus: 'not-analyzed' | 'analyzing' | 'analyzed' | 'failed' | 'ignored';
-  /**
-   * Alleen technische foutmeldingen of AI-redenering — nooit berichtinhoud of persoonsgegevens.
-   */
-  aiAnalysisError?: string | null;
-  /**
-   * Concepten die (mede) uit deze thread zijn ontstaan.
-   */
-  knowledgeDrafts?: (number | KnowledgeDraft)[] | null;
-  analyzedAt?: string | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * AI-conceptkennisartikelen uit Gmail-helpdeskthreads. Aanmaken kan alleen via de synchronisatieroute; hier uitsluitend bekijken, aanpassen, goedkeuren of afkeuren.
- *
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "knowledge-drafts".
- */
-export interface KnowledgeDraft {
-  id: number;
-  title: string;
-  question: string;
-  shortAnswer: string;
-  fullAnswer: string;
-  steps?:
-    | {
-        title: string;
-        description: string;
-        id?: string | null;
-      }[]
-    | null;
-  category?: string | null;
-  keywords?: string[] | null;
-  /**
-   * Alle Gmail-threads die tot dit concept hebben bijgedragen.
-   */
-  sourceThreads?: (number | SupportThread)[] | null;
-  /**
-   * Handleidingen/video's/release notes/etc. die dit concept onderbouwen — automatisch, deterministisch gekoppeld op trefwoordoverlap (lib/knowledge/link-drafts.ts), nooit door de AI zelf 'besloten'.
-   */
-  knowledgeSources?: (number | KnowledgeSource)[] | null;
-  confidenceScore: number;
-  confidenceExplanation?: string | null;
-  /**
-   * Is deze kennis nuttig voor andere MijnLeerlijn-gebruikers, niet alleen deze afzender?
-   */
-  isGeneralKnowledge?: boolean | null;
-  /**
-   * Stond er in de brontekst iets klant-/leerling-/schoolspecifieks? Het concept zelf hoort dat nooit te bevatten (zie fullAnswer/shortAnswer) — dit vinkje is alleen ter waarschuwing bij het beoordelen.
-   */
-  customerSpecificInformationFound?: boolean | null;
-  customerSpecificInformationExplanation?: string | null;
-  /**
-   * Leeg = centraal, voor alle varianten.
-   */
-  variantContext?: (number | Variant)[] | null;
-  origin: 'support-thread-analyse' | 'creator-mail';
-  /**
-   * Alleen gezet wanneer dit concept via Creator se 'Maak hier een kennisstuk van' is ontstaan.
-   */
-  sourceMailDraft?: (number | null) | MailDraft;
-  status: 'new' | 'review' | 'approved' | 'rejected' | 'published';
-  aiModel?: string | null;
-  aiAnalyzedAt?: string | null;
-  /**
-   * Vrije notities van de beheerder bij het goed-/afkeuren.
-   */
-  reviewNotes?: string | null;
-  embeddingStatus: 'pending' | 'indexed' | 'stale';
-  embeddedAt?: string | null;
-  embeddingModel?: string | null;
-  embeddingTextHash?: string | null;
-  /**
-   * Tijdelijke ruwe vectoropslag — zie payload/collections/KnowledgeSources.ts.
-   */
-  embedding?:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
  * Kennisbronnen voor de AI (PDF's, video's, websites, release notes, handleidingen, FAQ's, interne documenten). Toevoegen via 'Create new'; indexeren via de knop hierboven in de lijst.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1294,6 +1055,139 @@ export interface KnowledgeSource {
   createdAt: string;
 }
 /**
+ * AI-conceptkennisartikelen uit Gmail-helpdeskthreads. Aanmaken kan alleen via de synchronisatieroute; hier uitsluitend bekijken, aanpassen, goedkeuren of afkeuren.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "knowledge-drafts".
+ */
+export interface KnowledgeDraft {
+  id: number;
+  title: string;
+  question: string;
+  shortAnswer: string;
+  fullAnswer: string;
+  steps?:
+    | {
+        title: string;
+        description: string;
+        id?: string | null;
+      }[]
+    | null;
+  category?: string | null;
+  keywords?: string[] | null;
+  /**
+   * Alle Gmail-threads die tot dit concept hebben bijgedragen.
+   */
+  sourceThreads?: (number | SupportThread)[] | null;
+  /**
+   * Handleidingen/video's/release notes/etc. die dit concept onderbouwen — automatisch, deterministisch gekoppeld op trefwoordoverlap (lib/knowledge/link-drafts.ts), nooit door de AI zelf 'besloten'.
+   */
+  knowledgeSources?: (number | KnowledgeSource)[] | null;
+  confidenceScore: number;
+  confidenceExplanation?: string | null;
+  /**
+   * Is deze kennis nuttig voor andere MijnLeerlijn-gebruikers, niet alleen deze afzender?
+   */
+  isGeneralKnowledge?: boolean | null;
+  /**
+   * Stond er in de brontekst iets klant-/leerling-/schoolspecifieks? Het concept zelf hoort dat nooit te bevatten (zie fullAnswer/shortAnswer) — dit vinkje is alleen ter waarschuwing bij het beoordelen.
+   */
+  customerSpecificInformationFound?: boolean | null;
+  customerSpecificInformationExplanation?: string | null;
+  /**
+   * Leeg = centraal, voor alle varianten.
+   */
+  variantContext?: (number | Variant)[] | null;
+  origin: 'support-thread-analyse' | 'creator-mail';
+  /**
+   * Alleen gezet wanneer dit concept via Creator se 'Maak hier een kennisstuk van' is ontstaan.
+   */
+  sourceMailDraft?: (number | null) | MailDraft;
+  status: 'new' | 'review' | 'approved' | 'rejected' | 'published';
+  aiModel?: string | null;
+  aiAnalyzedAt?: string | null;
+  /**
+   * Vrije notities van de beheerder bij het goed-/afkeuren.
+   */
+  reviewNotes?: string | null;
+  embeddingStatus: 'pending' | 'indexed' | 'stale';
+  embeddedAt?: string | null;
+  embeddingModel?: string | null;
+  embeddingTextHash?: string | null;
+  /**
+   * Tijdelijke ruwe vectoropslag — zie payload/collections/KnowledgeSources.ts.
+   */
+  embedding?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Geïmporteerde Gmail-helpdesk-threads (alleen-lezen buiten de synchronisatie om).
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "support-threads".
+ */
+export interface SupportThread {
+  id: number;
+  /**
+   * Voorkomt dubbele import — zie lib/gmail/sync.ts.
+   */
+  gmailThreadId: string;
+  subject?: string | null;
+  /**
+   * Unieke e-mailadressen uit van/aan/cc van alle berichten.
+   */
+  participants?: string[] | null;
+  firstMessageAt?: string | null;
+  lastMessageAt?: string | null;
+  messageCount?: number | null;
+  snippet?: string | null;
+  messages?:
+    | {
+        gmailMessageId: string;
+        from?: string | null;
+        to?: string[] | null;
+        cc?: string[] | null;
+        sentAt?: string | null;
+        subject?: string | null;
+        /**
+         * Platte tekst (HTML omgezet). Citaten/handtekeningen bewust niet agressief verwijderd.
+         */
+        bodyText?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * Handmatig door een beheerder te zetten — de sync zelf wijzigt dit nooit.
+   */
+  status: 'new' | 'reviewed' | 'ignored' | 'processed';
+  importedAt?: string | null;
+  updatedFromGmailAt?: string | null;
+  /**
+   * 'Genegeerd' = de AI vond de thread te specifiek, onduidelijk of onopgelost (reden in aiAnalysisError) — geen concept aangemaakt. 'Mislukt' = technische fout tijdens analyse, nooit ten onrechte op 'Geanalyseerd' gezet.
+   */
+  aiAnalysisStatus: 'not-analyzed' | 'analyzing' | 'analyzed' | 'failed' | 'ignored';
+  /**
+   * Alleen technische foutmeldingen of AI-redenering — nooit berichtinhoud of persoonsgegevens.
+   */
+  aiAnalysisError?: string | null;
+  /**
+   * Concepten die (mede) uit deze thread zijn ontstaan.
+   */
+  knowledgeDrafts?: (number | KnowledgeDraft)[] | null;
+  analyzedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * Concept-mailantwoorden geschreven met Creator.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1319,6 +1213,123 @@ export interface MailDraft {
   createdBy?: (number | null) | User;
   updatedAt: string;
   createdAt: string;
+}
+/**
+ * Variant-specifieke aanvullingen, vervangingen of uitsluitingen op de centrale artikelboom.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "variant-overrides".
+ */
+export interface VariantOverride {
+  id: number;
+  variant: number | Variant;
+  /**
+   * Het centrale artikel waarbinnen dit inhaakt.
+   */
+  targetArticle: number | Article;
+  targetType: 'article' | 'section' | 'block';
+  /**
+   * Gelijk aan targetArticle's ID wanneer Niveau = Artikel; anders de ID van de specifieke sectie of het specifieke blok binnen dat artikel.
+   */
+  targetId: string;
+  action: 'onveranderd' | 'aanvullen' | 'vervangen' | 'verbergen' | 'ander_medium' | 'invoegen_voor' | 'invoegen_na';
+  /**
+   * Vervangende/aanvullende/ingevoegde blokinhoud, of een media-referentie bij 'Ander medium'. Leeg bij 'Onveranderd' of 'Verbergen'.
+   */
+  payload?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Standaard aan. Uitzetten wanneer dit element al de juiste variant-terminologie bevat.
+   */
+  termOverridesApplied?: boolean | null;
+  status: 'concept' | 'gepubliceerd';
+  editedBy?: (number | null) | User;
+  basedOnArticleVersion?: string | null;
+  /**
+   * Alleen voor herkomst in Archief, geen functioneel effect.
+   */
+  generatedByAi?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Redactioneel gekozen recente wijzigingen, getoond op de homepage en /updates.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "updates".
+ */
+export interface Update {
+  id: number;
+  article: number | Article;
+  badge: 'Nieuw' | 'Bijgewerkt';
+  date: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Inzendingen van het contactformulier. Aanmaken kan alleen via de eigen API-route.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "contact-submissions".
+ */
+export interface ContactSubmission {
+  id: number;
+  teacherName: string;
+  schoolName: string;
+  email: string;
+  requestType: string;
+  subject: string;
+  problemDescription: string;
+  expected?: string | null;
+  actual?: string | null;
+  pageUrl?: string | null;
+  variant?: (number | null) | Variant;
+  helpCenterUrl?: string | null;
+  submittedAt: string;
+  /**
+   * Alleen een grove categorie (bv. 'Chrome op desktop') — nooit een volledige user-agent.
+   */
+  deviceInfo?: string | null;
+  status: 'nieuw' | 'in_behandeling' | 'afgehandeld';
+  /**
+   * Bestanden staan privé in Vercel Blob. Downloaden genereert een kortlevende signed URL.
+   */
+  attachments?:
+    | {
+        storageKey: string;
+        filename: string;
+        mimeType: string;
+        sizeBytes: number;
+        uploadedAt: string;
+        id?: string | null;
+      }[]
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Ja/nee-feedback van bezoekers op AI-antwoorden. Aanmaken kan alleen via de eigen API-route.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "answer-feedback".
+ */
+export interface AnswerFeedback {
+  id: number;
+  vraag: string;
+  antwoordTekst: string;
+  bronArtikelSlugs?: string[] | null;
+  variant?: (number | null) | Variant;
+  rating: 'nuttig' | 'niet_nuttig';
+  pageUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 /**
  * Handleidingen opgebouwd uit losse stappen met tekst en afbeeldingen — de opvolger van PDF-handleidingen.
@@ -2656,7 +2667,7 @@ export interface TrainerLogboekItemsSelect<T extends boolean = true> {
  * via the `definition` "trainer-kennisversies_select".
  */
 export interface TrainerKennisversiesSelect<T extends boolean = true> {
-  sourceArticle?: T;
+  bron?: T;
   titel?: T;
   tekst?: T;
   status?: T;

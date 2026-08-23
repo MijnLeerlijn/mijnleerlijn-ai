@@ -19,7 +19,7 @@ const mockGenereerAntwoord = vi.mocked(genereerTrainerKennisAntwoord);
 function kennisversie(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
-    sourceArticle: 10,
+    bron: { relationTo: "articles", value: 10 },
     titel: "Periodevoorbereiding",
     tekst: "Een periode duurt zes weken en start met een inleidend gesprek met de school.",
     status: "gepubliceerd",
