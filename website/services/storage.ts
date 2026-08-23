@@ -39,6 +39,13 @@ const DOWNLOAD_PREFIX = "downloads";
 // lib/media/private-blob-adapter.ts. Los van downloads/contact-attachments
 // zodat elke categorie zijn eigen, nooit-overlappende naamruimte houdt.
 const MEDIA_PREFIX = "media";
+// Traineromgeving V2, Fase 3 (2026-08-23) — Bestanden + Deelgroepen: eigen
+// prefix voor schoolbestanden én algemene trainerbestanden (samen, want ze
+// delen hetzelfde opslagmodel — zie payload/collections/TrainerBestanden.ts
+// voor de scope-discriminator). Los van MEDIA_PREFIX: dit loopt niet via de
+// Payload Media-collectie/cloud-storage-plugin, maar rechtstreeks via
+// lib/trainers/bestanden.ts, zelfde patroon als DOWNLOAD_PREFIX hierboven.
+const TRAINER_BESTANDEN_PREFIX = "trainer-bestanden";
 const DOWNLOAD_URL_GELDIGHEID_MS = 5 * 60 * 1000; // 5 minuten
 
 /**
@@ -138,6 +145,29 @@ export async function uploadMediaBestand(
     mimeType: opties.mimeType,
     sizeBytes: buffer.byteLength,
     prefix: MEDIA_PREFIX,
+  });
+}
+
+/**
+ * Traineromgeving V2, Fase 3 (2026-08-23) — schoolbestanden én algemene
+ * trainerbestanden, beide via deze ENE functie (het onderscheid leeft
+ * uitsluitend in payload/collections/TrainerBestanden.ts se `scope`-veld,
+ * niet in de opslaglaag). Buffer-variant, zelfde reden als
+ * uploadMediaBestand hierboven: lib/trainers/bestanden.ts se
+ * maakSchoolBestand/maakAlgemeenBestand nemen zelf al een kale
+ * buffer+metadata aan (i.p.v. een `File`) zodat die functies zonder
+ * File/FormData-gedoe unit-testbaar blijven — de aanroepende route zet de
+ * echte, uit request.formData() gelezen File daar zelf één keer voor om.
+ */
+export async function uploadTrainerBestand(
+  buffer: Buffer,
+  opties: { filename: string; mimeType: string }
+): Promise<GeuploadBestand> {
+  return uploadNaarPrivateBlob(buffer, {
+    filename: opties.filename,
+    mimeType: opties.mimeType,
+    sizeBytes: buffer.byteLength,
+    prefix: TRAINER_BESTANDEN_PREFIX,
   });
 }
 

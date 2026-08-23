@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, GraduationCap, NotebookText, School, BookOpen, CircleUserRound, LogOut } from "lucide-react";
+import { LayoutDashboard, GraduationCap, NotebookText, School, BookOpen, FolderOpen, CircleUserRound, LogOut } from "lucide-react";
 
 // Alle hrefs hieronder zijn het KALE pad zoals de browser dat ziet (de
 // proxy.ts-rewrite naar /trainers/* is voor de browser onzichtbaar) — zie de
@@ -22,12 +22,20 @@ import { LayoutDashboard, GraduationCap, NotebookText, School, BookOpen, CircleU
 // die feature): Dashboard | Trainingen | Logboek | Scholen | Kennis.
 // Profiel/Uitloggen bewust ongewijzigd (opdrachtseis: "geen extra
 // navigatierefactor nodig in deze ronde").
+//
+// Fase 3 (2026-08-23) — "Bestanden" toegevoegd na Kennis (opdrachtseis:
+// Dashboard | Trainingen | Logboek | Scholen | Kennis | Bestanden). Voor
+// SCHOOLbestanden blijft Scholen → [school] → "Bestanden"-tab de plek — dit
+// navitem is uitsluitend de algemene, trainerbrede bestandenpagina
+// (/bestanden), bewust een ander icoon dan Kennis (BookOpen) om de twee
+// concepten ook visueel niet te laten samenvallen.
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/trainingen", label: "Trainingen", icon: GraduationCap, exact: false },
   { href: "/logboek", label: "Logboek", icon: NotebookText, exact: false },
   { href: "/scholen", label: "Scholen", icon: School, exact: false },
   { href: "/kennis", label: "Kennis", icon: BookOpen, exact: false },
+  { href: "/bestanden", label: "Bestanden", icon: FolderOpen, exact: false },
   { href: "/profiel", label: "Profiel", icon: CircleUserRound, exact: false },
 ] as const;
 

@@ -51,6 +51,8 @@ import * as migration_20260828_090000_telefonie_opname_toets_claim from './20260
 import * as migration_20260828_100000_trainer_logboek_items_v1 from './20260828_100000_trainer_logboek_items_v1';
 import * as migration_20260828_110000_trainer_kennisversies_v1 from './20260828_110000_trainer_kennisversies_v1';
 import * as migration_20260828_120000_trainer_kennisversies_bron_polymorf from './20260828_120000_trainer_kennisversies_bron_polymorf';
+import * as migration_20260830_090000_trainer_deelgroepen_v1 from './20260830_090000_trainer_deelgroepen_v1';
+import * as migration_20260830_100000_trainer_bestanden_v1 from './20260830_100000_trainer_bestanden_v1';
 
 export const migrations = [
   {
@@ -317,5 +319,15 @@ export const migrations = [
     up: migration_20260828_120000_trainer_kennisversies_bron_polymorf.up,
     down: migration_20260828_120000_trainer_kennisversies_bron_polymorf.down,
     name: '20260828_120000_trainer_kennisversies_bron_polymorf',
+  },
+  {
+    up: migration_20260830_090000_trainer_deelgroepen_v1.up,
+    down: migration_20260830_090000_trainer_deelgroepen_v1.down,
+    name: '20260830_090000_trainer_deelgroepen_v1',
+  },
+  {
+    up: migration_20260830_100000_trainer_bestanden_v1.up,
+    down: migration_20260830_100000_trainer_bestanden_v1.down,
+    name: '20260830_100000_trainer_bestanden_v1',
   },
 ];

@@ -16,6 +16,8 @@ import { TrainingVerslagen } from "./payload/collections/TrainingVerslagen";
 import { TrainerTelefonieOproepen } from "./payload/collections/TrainerTelefonieOproepen";
 import { TrainerLogboekItems } from "./payload/collections/TrainerLogboekItems";
 import { TrainerKennisversies } from "./payload/collections/TrainerKennisversies";
+import { TrainerDeelgroepen } from "./payload/collections/TrainerDeelgroepen";
+import { TrainerBestanden } from "./payload/collections/TrainerBestanden";
 import { Variants } from "./payload/collections/Variants";
 import { Categories } from "./payload/collections/Categories";
 import { Articles } from "./payload/collections/Articles";
@@ -268,6 +270,8 @@ export default buildConfig({
     TrainerTelefonieOproepen,
     TrainerLogboekItems,
     TrainerKennisversies,
+    TrainerDeelgroepen,
+    TrainerBestanden,
     Variants,
     Categories,
     Articles,

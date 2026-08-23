@@ -6,9 +6,11 @@ import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalSchoolDetail } from "@/lib/trainers/monday-links";
 import { haalVerslagenPerTraining, haalTelefonischeConceptenVoorTrainer } from "@/lib/trainers/verslag";
+import { haalSchoolBestanden } from "@/lib/trainers/bestanden";
 import { formatKorteDatumTijd } from "@/lib/sales/format-datum";
 import { TrainingSecties, LegeToestand } from "./training-secties";
 import { SchooldetailTabs } from "./schooldetail-tabs";
+import { BestandenPaneel } from "./bestanden-paneel";
 import { TrainerVraagBlok } from "../../trainer-vraag-blok";
 
 interface SchooldetailProps {
@@ -52,6 +54,15 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
   // op "Gedaan" zetten) — een eigen banner boven de tabs is daarom
   // betrouwbaarder dan uitsluitend op de bestaande sectie-CTA's vertrouwen.
   const telefonischeConceptenVoorSchool = (await haalTelefonischeConceptenVoorTrainer(payload, trainer)).filter((c) => c.schoolId === school.id);
+
+  // Fase 3 (2026-08-23) — schoolbestanden-tab. haalSchoolBestanden verifieert
+  // de schooltoegang zelf nogmaals (haalSchoolDetail); hier al gegarandeerd
+  // niet-null, want deze pagina zelf gaf hierboven al notFound() als de
+  // trainer geen toegang tot deze school heeft.
+  const schoolBestanden = (await haalSchoolBestanden(payload, trainer, school.id)) ?? [];
+  const trainingenVoorUpload = Object.values(trainingen)
+    .flat()
+    .map((t) => ({ id: t.id, naam: t.naam }));
 
   const trainingenPaneel = <TrainingSecties trainingen={trainingen} schoolId={school.id} verslagenPerTraining={verslagenPerTraining} />;
 
@@ -147,6 +158,9 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
           trainingenPaneel={trainingenPaneel}
           aiPaneel={<TrainerVraagBlok soort="schooldetail" school={{ id: school.id, naam: school.naam }} />}
           logboekPaneel={logboekPaneel}
+          bestandenPaneel={
+            <BestandenPaneel schoolId={school.id} huidigeTrainerId={trainer.id} initieleBestanden={schoolBestanden} trainingen={trainingenVoorUpload} />
+          }
           contactpersoonPaneel={contactpersoonPaneel}
         />
       </section>

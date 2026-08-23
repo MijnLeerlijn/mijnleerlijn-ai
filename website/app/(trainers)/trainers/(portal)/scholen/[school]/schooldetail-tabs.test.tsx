@@ -10,22 +10,25 @@ import { SchooldetailTabs } from "./schooldetail-tabs";
 // wordt door page.tsx aangeleverd en hier uitsluitend doorgegeven, dus dit
 // bestand test bewust alleen de tab-ORKESTRATIE, niet de inhoud van de
 // individuele panelen zelf — die hebben hun eigen testbestanden.
+//
+// Fase 3 (2026-08-23) — "Bestanden" toegevoegd tussen Logboek en Contactpersoon.
 function renderTabs() {
   return render(
     <SchooldetailTabs
       trainingenPaneel={<p data-testid="paneel-trainingen">Trainingeninhoud</p>}
       aiPaneel={<p data-testid="paneel-ai">AI-inhoud</p>}
       logboekPaneel={<p data-testid="paneel-logboek">Logboekinhoud</p>}
+      bestandenPaneel={<p data-testid="paneel-bestanden">Bestandeninhoud</p>}
       contactpersoonPaneel={<p data-testid="paneel-contactpersoon">Contactpersooninhoud</p>}
     />
   );
 }
 
 describe("SchooldetailTabs", () => {
-  it("toont de 4 tabs in de juiste volgorde: Trainingen | Vraag aan AI | Logboek | Contactpersoon", () => {
+  it("toont de tabs in de juiste volgorde: Trainingen | Vraag aan AI | Logboek | Bestanden | Contactpersoon", () => {
     renderTabs();
     const tabs = screen.getAllByRole("tab").map((el) => el.textContent);
-    expect(tabs).toEqual(["Trainingen", "Vraag aan AI", "Logboek", "Contactpersoon"]);
+    expect(tabs).toEqual(["Trainingen", "Vraag aan AI", "Logboek", "Bestanden", "Contactpersoon"]);
   });
 
   it("'Trainingen' is standaard de actieve tab", () => {
@@ -34,6 +37,7 @@ describe("SchooldetailTabs", () => {
     expect(screen.getByTestId("paneel-trainingen")).toBeVisible();
     expect(screen.getByTestId("paneel-ai")).not.toBeVisible();
     expect(screen.getByTestId("paneel-logboek")).not.toBeVisible();
+    expect(screen.getByTestId("paneel-bestanden")).not.toBeVisible();
     expect(screen.getByTestId("paneel-contactpersoon")).not.toBeVisible();
   });
 
@@ -48,6 +52,20 @@ describe("SchooldetailTabs", () => {
     expect(screen.getByTestId("paneel-logboek")).toBeVisible();
     expect(screen.getByTestId("paneel-trainingen")).not.toBeVisible();
     expect(screen.getByTestId("paneel-ai")).not.toBeVisible();
+    expect(screen.getByTestId("paneel-bestanden")).not.toBeVisible();
+    expect(screen.getByTestId("paneel-contactpersoon")).not.toBeVisible();
+  });
+
+  it("klikken op 'Bestanden' toont uitsluitend dat paneel", async () => {
+    const user = userEvent.setup();
+    renderTabs();
+
+    await user.click(screen.getByRole("tab", { name: "Bestanden" }));
+
+    expect(screen.getByRole("tab", { name: "Bestanden" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("paneel-bestanden")).toBeVisible();
+    expect(screen.getByTestId("paneel-trainingen")).not.toBeVisible();
+    expect(screen.getByTestId("paneel-logboek")).not.toBeVisible();
     expect(screen.getByTestId("paneel-contactpersoon")).not.toBeVisible();
   });
 
@@ -56,12 +74,14 @@ describe("SchooldetailTabs", () => {
     renderTabs();
 
     await user.click(screen.getByRole("tab", { name: "Vraag aan AI" }));
+    await user.click(screen.getByRole("tab", { name: "Bestanden" }));
     await user.click(screen.getByRole("tab", { name: "Contactpersoon" }));
     await user.click(screen.getByRole("tab", { name: "Trainingen" }));
 
     expect(screen.getAllByTestId("paneel-trainingen")).toHaveLength(1);
     expect(screen.getAllByTestId("paneel-ai")).toHaveLength(1);
     expect(screen.getAllByTestId("paneel-logboek")).toHaveLength(1);
+    expect(screen.getAllByTestId("paneel-bestanden")).toHaveLength(1);
     expect(screen.getAllByTestId("paneel-contactpersoon")).toHaveLength(1);
   });
 

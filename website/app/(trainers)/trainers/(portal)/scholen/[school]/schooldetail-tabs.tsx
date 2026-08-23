@@ -2,12 +2,13 @@
 
 import { useState, type ReactNode } from "react";
 
-export type SchooldetailTabSleutel = "trainingen" | "ai" | "logboek" | "contactpersoon";
+export type SchooldetailTabSleutel = "trainingen" | "ai" | "logboek" | "bestanden" | "contactpersoon";
 
 const TABS: { sleutel: SchooldetailTabSleutel; label: string }[] = [
   { sleutel: "trainingen", label: "Trainingen" },
   { sleutel: "ai", label: "Vraag aan AI" },
   { sleutel: "logboek", label: "Logboek" },
+  { sleutel: "bestanden", label: "Bestanden" },
   { sleutel: "contactpersoon", label: "Contactpersoon" },
 ];
 
@@ -17,7 +18,7 @@ const TABS: { sleutel: SchooldetailTabSleutel; label: string }[] = [
  * presentatielaag: page.tsx (server component) haalt alle data zoals
  * voorheen op en rendert elk paneel zelf (geen nieuwe databronnen, geen
  * verdubbelde componenten) — dit component beslist uitsluitend WELK van de
- * vier al-gerenderde panelen zichtbaar is. Alle vier panelen blijven
+ * al-gerenderde panelen zichtbaar is. Alle panelen blijven
  * gemount (native `hidden`-attribuut i.p.v. conditioneel wegfilteren): een
  * ingetypte AI-vraag of scrollpositie in het Logboek gaat dus niet verloren
  * bij het wisselen van tab, zonder dat dit ergens een extra fetch/write
@@ -25,19 +26,26 @@ const TABS: { sleutel: SchooldetailTabSleutel; label: string }[] = [
  * form-submit, nooit bij mount).
  *
  * "Trainingen" is altijd de standaard-actieve tab (opdrachtseis). Op mobiel
- * blijft de tabbalk bruikbaar via horizontaal scrollen i.p.v. vier geplette
+ * blijft de tabbalk bruikbaar via horizontaal scrollen i.p.v. geplette
  * tabs (opdrachtseis) — de scrollbar zelf is verborgen voor een rustiger
  * beeld, maar de balk blijft met vinger/touchpad te bedienen.
+ *
+ * Fase 3 (2026-08-23) — "Bestanden" toegevoegd (opdrachtseis: nieuw tabblad
+ * op elke schooldetailpagina). Zelfde presentatiepatroon: page.tsx haalt de
+ * bestandenlijst zelf op (lib/trainers/bestanden.ts se haalSchoolBestanden)
+ * en geeft het kant-en-klare paneel door.
  */
 export function SchooldetailTabs({
   trainingenPaneel,
   aiPaneel,
   logboekPaneel,
+  bestandenPaneel,
   contactpersoonPaneel,
 }: {
   trainingenPaneel: ReactNode;
   aiPaneel: ReactNode;
   logboekPaneel: ReactNode;
+  bestandenPaneel: ReactNode;
   contactpersoonPaneel: ReactNode;
 }) {
   const [actief, setActief] = useState<SchooldetailTabSleutel>("trainingen");
@@ -78,6 +86,9 @@ export function SchooldetailTabs({
       </div>
       <div id="schooldetail-paneel-logboek" role="tabpanel" aria-labelledby="schooldetail-tab-logboek" hidden={actief !== "logboek"}>
         {logboekPaneel}
+      </div>
+      <div id="schooldetail-paneel-bestanden" role="tabpanel" aria-labelledby="schooldetail-tab-bestanden" hidden={actief !== "bestanden"}>
+        {bestandenPaneel}
       </div>
       <div id="schooldetail-paneel-contactpersoon" role="tabpanel" aria-labelledby="schooldetail-tab-contactpersoon" hidden={actief !== "contactpersoon"}>
         {contactpersoonPaneel}

@@ -33,6 +33,7 @@ import {
   ThumbsUp,
   TrendingUp,
   Users,
+  UsersRound,
   WandSparkles,
   type LucideIcon,
 } from "lucide-react";
@@ -128,6 +129,11 @@ export const NAV_GROUPS: NavGroupDef[] = [
       // nodig. Opent Payload's eigen, al bestaande collectielijst/-detailscherm
       // — geen tweede beheeromgeving.
       { label: "Telefonie", href: "/admin/collections/trainer-telefonie-oproepen", icon: Phone, color: "teal", description: "Telefonisch ingesproken trainingsverslagen — status, foutdiagnose, transcriptiepogingen.", permission: { type: "collection", slug: "trainer-telefonie-oproepen" } },
+      // Bestanden + Deelgroepen (Fase 3, 2026-08-23) — zelfde
+      // permission-patroon als "Telefonie" hierboven: automatisch verborgen
+      // voor een niet-editor, opent Payload's eigen collectielijst/-detailscherm.
+      { label: "Trainer bestanden", href: "/admin/collections/trainer-bestanden", icon: FolderOpen, color: "orange", description: "Schoolbestanden en algemene trainerbestanden — uploader, scope, school, groepen.", permission: { type: "collection", slug: "trainer-bestanden" } },
+      { label: "Trainer deelgroepen", href: "/admin/collections/trainer-deelgroepen", icon: UsersRound, color: "purple", description: "Groepen waarmee trainers algemene bestanden kunnen delen.", permission: { type: "collection", slug: "trainer-deelgroepen" } },
       { label: "Helpdesk Instellingen", href: "/admin/globals/helpdesk-instellingen", icon: Settings, color: "slate", description: "Algemene instellingen van de Helpdesk.", permission: { type: "global", slug: "helpdesk-instellingen" } },
     ],
   },

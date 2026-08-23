@@ -76,6 +76,8 @@ export interface Config {
     'trainer-telefonie-oproepen': TrainerTelefonieOproepen;
     'trainer-logboek-items': TrainerLogboekItem;
     'trainer-kennisversies': TrainerKennisversy;
+    'trainer-deelgroepen': TrainerDeelgroepen;
+    'trainer-bestanden': TrainerBestanden;
     variants: Variant;
     categories: Category;
     articles: Article;
@@ -121,6 +123,8 @@ export interface Config {
     'trainer-telefonie-oproepen': TrainerTelefonieOproepenSelect<false> | TrainerTelefonieOproepenSelect<true>;
     'trainer-logboek-items': TrainerLogboekItemsSelect<false> | TrainerLogboekItemsSelect<true>;
     'trainer-kennisversies': TrainerKennisversiesSelect<false> | TrainerKennisversiesSelect<true>;
+    'trainer-deelgroepen': TrainerDeelgroepenSelect<false> | TrainerDeelgroepenSelect<true>;
+    'trainer-bestanden': TrainerBestandenSelect<false> | TrainerBestandenSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
@@ -1211,6 +1215,66 @@ export interface MailDraft {
    */
   variantContext?: (number | Variant)[] | null;
   createdBy?: (number | null) | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Groepen waarmee trainers algemene bestanden kunnen delen (bv. 'Montessori-trainers', 'Regio Zuid'). Alleen beheerders kunnen groepen aanmaken/bewerken.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-deelgroepen".
+ */
+export interface TrainerDeelgroepen {
+  id: number;
+  naam: string;
+  omschrijving?: string | null;
+  /**
+   * Een inactieve groep blijft bestaan (historie/leden blijven zichtbaar in de admin) maar telt niet meer mee bij delen/lezen — bestaande bestanden die er via gedeeld waren, worden dus onzichtbaar voor de leden totdat de groep weer actief is.
+   */
+  actief?: boolean | null;
+  leden?: (number | TrainerAccount)[] | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Bestanden die trainers uploaden — bij een school, of algemeen (eventueel gedeeld via een deelgroep). Nooit rechtstreeks bewerken — uitsluitend server-side via lib/trainers/bestanden.ts, behalve door een beheerder hier in de admin.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-bestanden".
+ */
+export interface TrainerBestanden {
+  id: number;
+  /**
+   * School: hoort bij één specifieke school, zichtbaar voor elke eraan gekoppelde trainer. Algemeen: van de trainer zelf, optioneel gedeeld via deelgroep(en).
+   */
+  scope: 'school' | 'trainer';
+  titel: string;
+  categorie:
+    'curriculum' | 'presentatie' | 'trainingsmateriaal' | 'werkdocument' | 'export' | 'schooldocument' | 'overig';
+  omschrijving?: string | null;
+  storageKey: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploader: number | TrainerAccount;
+  /**
+   * Server-side geverifieerd via haalSchoolDetail — nooit ongecontroleerd door de client aangeleverd.
+   */
+  mondaySchoolId?: string | null;
+  schoolNaam?: string | null;
+  /**
+   * Alleen gevuld als expliciet aan een training gekoppeld — server-side geverifieerd via haalTrainingVoorMutatie.
+   */
+  mondayTrainingId?: string | null;
+  trainingNaam?: string | null;
+  /**
+   * Uitsluitend van toepassing op algemene trainerbestanden — een schoolbestand is altijd zichtbaar voor elke aan de school gekoppelde trainer, nooit los daarvan gedeeld/verborgen.
+   */
+  zichtbaarheid?: ('prive' | 'gedeeld') | null;
+  /**
+   * Elk lid van elke gekozen groep ziet dit bestand automatisch onder 'Met mij gedeeld' — dynamisch, geen kopie: een lid dat later uit de groep gaat, verliest toegang zonder dat dit veld hoeft te wijzigen.
+   */
+  deelgroepen?: (number | TrainerDeelgroepen)[] | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2328,6 +2392,14 @@ export interface PayloadLockedDocument {
         value: number | TrainerKennisversy;
       } | null)
     | ({
+        relationTo: 'trainer-deelgroepen';
+        value: number | TrainerDeelgroepen;
+      } | null)
+    | ({
+        relationTo: 'trainer-bestanden';
+        value: number | TrainerBestanden;
+      } | null)
+    | ({
         relationTo: 'variants';
         value: number | Variant;
       } | null)
@@ -2676,6 +2748,41 @@ export interface TrainerKennisversiesSelect<T extends boolean = true> {
   embeddingStatus?: T;
   embeddingTextHash?: T;
   embedding?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-deelgroepen_select".
+ */
+export interface TrainerDeelgroepenSelect<T extends boolean = true> {
+  naam?: T;
+  omschrijving?: T;
+  actief?: T;
+  leden?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-bestanden_select".
+ */
+export interface TrainerBestandenSelect<T extends boolean = true> {
+  scope?: T;
+  titel?: T;
+  categorie?: T;
+  omschrijving?: T;
+  storageKey?: T;
+  filename?: T;
+  mimeType?: T;
+  sizeBytes?: T;
+  uploader?: T;
+  mondaySchoolId?: T;
+  schoolNaam?: T;
+  mondayTrainingId?: T;
+  trainingNaam?: T;
+  zichtbaarheid?: T;
+  deelgroepen?: T;
   updatedAt?: T;
   createdAt?: T;
 }
