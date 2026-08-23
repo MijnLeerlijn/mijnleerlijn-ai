@@ -76,6 +76,7 @@ export interface Config {
     'trainer-telefonie-oproepen': TrainerTelefonieOproepen;
     'trainer-logboek-items': TrainerLogboekItem;
     'trainer-kennisversies': TrainerKennisversy;
+    'trainer-kennisvragen': TrainerKennisvragen;
     'trainer-deelgroepen': TrainerDeelgroepen;
     'trainer-bestanden': TrainerBestanden;
     variants: Variant;
@@ -123,6 +124,7 @@ export interface Config {
     'trainer-telefonie-oproepen': TrainerTelefonieOproepenSelect<false> | TrainerTelefonieOproepenSelect<true>;
     'trainer-logboek-items': TrainerLogboekItemsSelect<false> | TrainerLogboekItemsSelect<true>;
     'trainer-kennisversies': TrainerKennisversiesSelect<false> | TrainerKennisversiesSelect<true>;
+    'trainer-kennisvragen': TrainerKennisvragenSelect<false> | TrainerKennisvragenSelect<true>;
     'trainer-deelgroepen': TrainerDeelgroepenSelect<false> | TrainerDeelgroepenSelect<true>;
     'trainer-bestanden': TrainerBestandenSelect<false> | TrainerBestandenSelect<true>;
     variants: VariantsSelect<false> | VariantsSelect<true>;
@@ -1215,6 +1217,27 @@ export interface MailDraft {
    */
   variantContext?: (number | Variant)[] | null;
   createdBy?: (number | null) | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Privacybewust log van Kennis-Q&A-vragen — geen vraag-/antwoordtekst, uitsluitend of er een antwoord gevonden werd, de hoogste score en gebruikte bronnen. Dient ook als praktische diagnose voor de retrieval zelf.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-kennisvragen".
+ */
+export interface TrainerKennisvragen {
+  id: number;
+  trainer: number | TrainerAccount;
+  antwoordGevonden: boolean;
+  /**
+   * Cosine similarity (0-1) van de best passende bron. Leeg = geen enkele gepubliceerde/geïndexeerde trainerkennis om mee te vergelijken.
+   */
+  hoogsteSimilarity?: number | null;
+  /**
+   * De trainerkennisversies die daadwerkelijk als bron voor het antwoord gebruikt zijn (leeg bij geen antwoord).
+   */
+  gebruikteBronnen?: (number | TrainerKennisversy)[] | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2392,6 +2415,10 @@ export interface PayloadLockedDocument {
         value: number | TrainerKennisversy;
       } | null)
     | ({
+        relationTo: 'trainer-kennisvragen';
+        value: number | TrainerKennisvragen;
+      } | null)
+    | ({
         relationTo: 'trainer-deelgroepen';
         value: number | TrainerDeelgroepen;
       } | null)
@@ -2748,6 +2775,18 @@ export interface TrainerKennisversiesSelect<T extends boolean = true> {
   embeddingStatus?: T;
   embeddingTextHash?: T;
   embedding?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "trainer-kennisvragen_select".
+ */
+export interface TrainerKennisvragenSelect<T extends boolean = true> {
+  trainer?: T;
+  antwoordGevonden?: T;
+  hoogsteSimilarity?: T;
+  gebruikteBronnen?: T;
   updatedAt?: T;
   createdAt?: T;
 }

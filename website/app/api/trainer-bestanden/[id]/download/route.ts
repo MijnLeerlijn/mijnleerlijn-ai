@@ -14,6 +14,10 @@ import { genereerBestandDownloadUrlAlsAdmin } from "@/lib/trainers/bestanden";
 // vanuit de admin-omgeving domweg nooit de juiste cookie zien. Zelfde
 // scheiding als overal elders in dit project (verifyAdminSessionCookie vs.
 // verifyTrainerSessionCookie, twee losse cookies/mechanismen).
+//
+// Productiecontrole (2026-08-23): een storagefout geeft hier, net als de
+// trainer-downloadroute, een 502 met veilige server-side logging i.p.v. een
+// kale 500 — zie genereerBestandDownloadUrlAlsAdmin (lib/trainers/bestanden.ts).
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const bestandId = Number(id);
@@ -28,10 +32,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Alleen beheerders/redacteuren mogen dit." }, { status: 403 });
   }
 
-  const url = await genereerBestandDownloadUrlAlsAdmin(payload, bestandId);
-  if (!url) {
+  const uitkomst = await genereerBestandDownloadUrlAlsAdmin(payload, bestandId);
+  if (uitkomst.soort === "fout") {
+    return NextResponse.json({ error: "Downloaden is nu niet mogelijk. Probeer het later opnieuw." }, { status: 502 });
+  }
+  if (uitkomst.soort !== "ok") {
     return NextResponse.json({ error: "Niet gevonden." }, { status: 404 });
   }
 
-  return NextResponse.redirect(url, { status: 302, headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.redirect(uitkomst.url, { status: 302, headers: { "Cache-Control": "private, no-store" } });
 }

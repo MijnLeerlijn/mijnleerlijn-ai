@@ -1,4 +1,23 @@
-import { del, issueSignedToken, presignUrl, put } from "@vercel/blob";
+import {
+  del,
+  issueSignedToken,
+  presignUrl,
+  put,
+  BlobError,
+  BlobAccessError,
+  BlobContentTypeNotAllowedError,
+  BlobPathnameMismatchError,
+  BlobClientTokenExpiredError,
+  BlobFileTooLargeError,
+  BlobStoreNotFoundError,
+  BlobStoreSuspendedError,
+  BlobUnknownError,
+  BlobNotFoundError,
+  BlobServiceNotAvailable,
+  BlobServiceRateLimited,
+  BlobRequestAbortedError,
+  BlobPreconditionFailedError,
+} from "@vercel/blob";
 import { optionalEnv } from "@/config/env";
 
 // Privé bijlage-opslag voor het contactformulier — zie
@@ -171,23 +190,80 @@ export async function uploadTrainerBestand(
   });
 }
 
+/**
+ * Veilige, categorie-only foutclassificatie voor server-side logging —
+ * Productiecontrole (2026-08-23): een downloadfout moet diagnosticeerbaar
+ * zijn zonder ooit een token, signed URL, bestandsinhoud of persoonsgegeven
+ * te loggen. Elke @vercel/blob-foutklasse heeft een vaste, generieke
+ * message (geverifieerd in node_modules/@vercel/blob/dist/chunk-*.js —
+ * bv. BlobAccessError = altijd "Access denied, please provide a valid
+ * token..."), maar we loggen zelfs die message niet: uitsluitend welke
+ * klasse het was, plus een grove statuscategorie.
+ */
+export type BlobFoutStatusCategorie = "4xx" | "5xx" | "onbekend";
+
+export function classificeerBlobFout(error: unknown): { categorie: string; statusCategorie: BlobFoutStatusCategorie } {
+  if (error instanceof BlobStoreNotFoundError) return { categorie: "blob_store_not_found", statusCategorie: "4xx" };
+  if (error instanceof BlobStoreSuspendedError) return { categorie: "blob_store_suspended", statusCategorie: "4xx" };
+  if (error instanceof BlobAccessError) return { categorie: "blob_access_denied", statusCategorie: "4xx" };
+  if (error instanceof BlobNotFoundError) return { categorie: "blob_not_found", statusCategorie: "4xx" };
+  if (error instanceof BlobClientTokenExpiredError) return { categorie: "blob_token_expired", statusCategorie: "4xx" };
+  if (error instanceof BlobPathnameMismatchError) return { categorie: "blob_pathname_mismatch", statusCategorie: "4xx" };
+  if (error instanceof BlobContentTypeNotAllowedError) return { categorie: "blob_content_type_not_allowed", statusCategorie: "4xx" };
+  if (error instanceof BlobFileTooLargeError) return { categorie: "blob_file_too_large", statusCategorie: "4xx" };
+  if (error instanceof BlobPreconditionFailedError) return { categorie: "blob_precondition_failed", statusCategorie: "4xx" };
+  if (error instanceof BlobServiceRateLimited) return { categorie: "blob_rate_limited", statusCategorie: "4xx" };
+  if (error instanceof BlobServiceNotAvailable) return { categorie: "blob_service_unavailable", statusCategorie: "5xx" };
+  if (error instanceof BlobRequestAbortedError) return { categorie: "blob_request_aborted", statusCategorie: "onbekend" };
+  if (error instanceof BlobUnknownError) return { categorie: "blob_unknown", statusCategorie: "onbekend" };
+  if (error instanceof BlobError) return { categorie: "blob_error_overig", statusCategorie: "onbekend" };
+  return { categorie: "onbekende_fout", statusCategorie: "onbekend" };
+}
+
+/**
+ * Signaleert PRECIES welke van de twee stappen mislukte (issueSignedToken
+ * versus presignUrl) — Productiecontrole (2026-08-23), diagnosevereiste
+ * "stap/categorie". Draagt bewust geen `cause`/onderliggende foutmelding:
+ * de classificatie hierboven is al het volledige, veilig te loggen signaal.
+ */
+export class DownloadUrlFout extends Error {
+  constructor(
+    public readonly stap: "signed_token" | "presign",
+    public readonly categorie: string,
+    public readonly statusCategorie: BlobFoutStatusCategorie
+  ) {
+    super(`Download-URL genereren mislukt bij stap "${stap}" (${categorie}).`);
+    this.name = "DownloadUrlFout";
+  }
+}
+
 /** Kortlevende signed download-URL — pas genereren op het moment dat een melding daadwerkelijk geopend wordt. */
 export async function genereerDownloadUrl(storageKey: string): Promise<string> {
-  const signedToken = await issueSignedToken({
-    pathname: storageKey,
-    operations: ["get"],
-    validUntil: Date.now() + DOWNLOAD_URL_GELDIGHEID_MS,
-    ...blobAuthOptions(),
-  });
+  let signedToken: Awaited<ReturnType<typeof issueSignedToken>>;
+  try {
+    signedToken = await issueSignedToken({
+      pathname: storageKey,
+      operations: ["get"],
+      validUntil: Date.now() + DOWNLOAD_URL_GELDIGHEID_MS,
+      ...blobAuthOptions(),
+    });
+  } catch (error) {
+    const { categorie, statusCategorie } = classificeerBlobFout(error);
+    throw new DownloadUrlFout("signed_token", categorie, statusCategorie);
+  }
 
-  const { presignedUrl } = await presignUrl(signedToken, {
-    operation: "get",
-    pathname: storageKey,
-    access: "private",
-    validUntil: Date.now() + DOWNLOAD_URL_GELDIGHEID_MS,
-  });
-
-  return presignedUrl;
+  try {
+    const { presignedUrl } = await presignUrl(signedToken, {
+      operation: "get",
+      pathname: storageKey,
+      access: "private",
+      validUntil: Date.now() + DOWNLOAD_URL_GELDIGHEID_MS,
+    });
+    return presignedUrl;
+  } catch (error) {
+    const { categorie, statusCategorie } = classificeerBlobFout(error);
+    throw new DownloadUrlFout("presign", categorie, statusCategorie);
+  }
 }
 
 /** Verwijdert een bijlage direct en definitief — gebruikt bij bewaartermijn-verval en "verwijderen op verzoek". */

@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const uitkomst = await beantwoordTrainerKennisVraag(payload, vraag);
+    const uitkomst = await beantwoordTrainerKennisVraag(payload, trainer.id, vraag);
 
     if (uitkomst.type === "failed") {
       // Generiek naar de client — nooit foutmelding/raw AI-providerfouten

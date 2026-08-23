@@ -20,6 +20,12 @@ import { genereerTrainerBestandDownloadUrl } from "@/lib/trainers/bestanden";
 // patroon als elders in de trainerportal): een trainer kan zo nooit
 // onderscheiden of een bestand-ID gewoon niet bestaat, of van iemand anders
 // is.
+//
+// Productiecontrole (2026-08-23): een onverwachte fout in de storage-stap
+// (Vercel Blob signed-URL genereren) gaf voorheen een kale, ongevangen 500 —
+// nu een eigen "fout"-uitkomst (genereerTrainerBestandDownloadUrl logt zelf
+// al veilig bestandId/stap/categorie, zie lib/trainers/bestanden.ts) met een
+// duidelijke 502 i.p.v. een framework-crashpagina.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const bestandId = Number(id);
@@ -35,6 +41,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const uitkomst = await genereerTrainerBestandDownloadUrl(payload, sessieControle.trainer, bestandId);
+  if (uitkomst.soort === "fout") {
+    return NextResponse.json({ error: "Downloaden is nu niet mogelijk. Probeer het later opnieuw." }, { status: 502 });
+  }
   if (uitkomst.soort !== "ok") {
     return NextResponse.json({ error: "Niet gevonden." }, { status: 404 });
   }

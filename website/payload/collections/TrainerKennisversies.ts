@@ -1,6 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminFieldOnly, adminOnly, anyEditor } from "../access/roles";
-import { generateEmbedding } from "@/services/ai-client";
+import { embedIfChanged } from "@/lib/embeddings/embed-record";
 
 // Traineromgeving V2, Vervolgronde (2026-08-22) — "Kennis" fase 1: de
 // trainerversie van een bestaand centraal kennisartikel. Zelfde patroon als
@@ -45,14 +45,23 @@ export const TrainerKennisversies: CollectionConfig = {
   },
   hooks: {
     beforeChange: [
-      // Zelfde-collectie-eigen, bewust NIET de gedeelde run-embedding.ts-
-      // orchestrator (die bedient de centrale kennisindex — koppelen zou het
-      // isolatievereiste ondermijnen: "trainerkennis krijgt een eigen route/
-      // retrievalflow"). Herembedt alleen wanneer titel/tekst daadwerkelijk
-      // wijzigen (hash-vergelijking, zelfde idee als embedIfChanged elders)
-      // én de resulterende status "gepubliceerd" is — een concept hoeft nooit
-      // een embedding te hebben, dat bespaart onnodige AI-aanroepen tijdens
-      // het schrijven/bewerken vóór publicatie.
+      // Herembedt alleen wanneer titel/tekst daadwerkelijk wijzigen (hash-
+      // vergelijking) én de resulterende status "gepubliceerd" is — een
+      // concept hoeft nooit een embedding te hebben, dat bespaart onnodige
+      // AI-aanroepen tijdens het schrijven/bewerken vóór publicatie.
+      //
+      // embedIfChanged (lib/embeddings/embed-record.ts) is dezelfde, al
+      // bewezen hash-vergelijking + AI-aanroep als de centrale kennisindex
+      // gebruikt — bewust WEL hergebruikt, in tegenstelling tot de gedeelde
+      // run-embedding.ts-ORCHESTRATOR (die blijft bewust ongebruikt: die
+      // bedient de centrale kennisindex, koppelen zou het isolatievereiste
+      // ondermijnen — "trainerkennis krijgt een eigen route/retrievalflow").
+      // embedIfChanged zelf is pure, Payload-onafhankelijke rekenlogica
+      // zonder enige lees/schrijfkoppeling aan de centrale index, dus geen
+      // isolatieschending. Zelfde functie hergebruikt door de backfill
+      // (lib/trainers/kennis-reindex.ts) — één plek voor "moet dit record
+      // herembed worden", nooit twee losse implementaties die uit elkaar
+      // kunnen lopen.
       async ({ data, originalDoc }) => {
         if (!data || data.status !== "gepubliceerd") return data;
 
@@ -69,20 +78,26 @@ export const TrainerKennisversies: CollectionConfig = {
         const brontekst = `${titel}\n\n${tekst}`.trim();
         if (!brontekst) return data;
 
-        const hash = await sha256Hex(brontekst);
-        if (hash === (data.embeddingTextHash ?? originalDoc?.embeddingTextHash) && (data.embedding ?? originalDoc?.embedding)) {
-          return data;
-        }
-        try {
-          data.embedding = await generateEmbedding(brontekst);
-          data.embeddingTextHash = hash;
+        const uitkomst = await embedIfChanged({
+          text: brontekst,
+          storedHash: (data.embeddingTextHash ?? originalDoc?.embeddingTextHash) as string | null | undefined,
+          storedStatus: (data.embeddingStatus ?? originalDoc?.embeddingStatus) as string | null | undefined,
+        });
+        if (uitkomst.type === "embedded") {
+          data.embedding = uitkomst.embedding;
+          data.embeddingTextHash = uitkomst.hash;
           data.embeddingStatus = "indexed";
-        } catch (error) {
+        } else if (uitkomst.type === "failed") {
           // Best-effort: een mislukte embedding mag opslaan van de
           // trainerversie zelf nooit blokkeren — de beheerder kan gewoon
           // publiceren, alleen de Q&A-vindbaarheid is dan tijdelijk lager
           // (de tekst zelf blijft altijd gewoon leesbaar op /kennis).
-          console.error("[trainer-kennisversies] embedding mislukt (opslaan gaat door):", error);
+          // Productiecontrole (2026-08-23): dit was voorheen een doodlopend
+          // pad — een zo gefaald record bleef voor altijd "gepubliceerd"
+          // zonder embedding. lib/trainers/kennis-reindex.ts se
+          // herindexeerTrainerKennisversies() vindt en herprobeert precies
+          // zulke records (embeddingStatus !== "indexed").
+          console.error("[trainer-kennisversies] embedding mislukt (opslaan gaat door):", uitkomst.foutmelding);
           data.embeddingStatus = "pending";
         }
         return data;
@@ -146,8 +161,3 @@ export const TrainerKennisversies: CollectionConfig = {
     },
   ],
 };
-
-async function sha256Hex(tekst: string): Promise<string> {
-  const { createHash } = await import("node:crypto");
-  return createHash("sha256").update(tekst).digest("hex");
-}

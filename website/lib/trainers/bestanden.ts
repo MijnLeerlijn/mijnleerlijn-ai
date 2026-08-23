@@ -1,7 +1,7 @@
 import type { Payload } from "payload";
 import { haalSchoolDetail, haalTrainingVoorMutatie, bepaalScholenVoorTrainer } from "./monday-links";
 import { haalActieveGroepenVoorTrainer, type TrainerDeelgroepSamenvatting } from "./groepen";
-import { uploadTrainerBestand, genereerDownloadUrl } from "@/services/storage";
+import { uploadTrainerBestand, genereerDownloadUrl, DownloadUrlFout } from "@/services/storage";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V2, Fase 3 (2026-08-23) — Bestanden + Deelgroepen. Eén
@@ -378,7 +378,28 @@ export async function magTrainerBestandZien(payload: Payload, trainer: AuthTrain
   return false;
 }
 
-export type DownloadUitkomst = { soort: "niet_gevonden" } | { soort: "geen_toegang" } | { soort: "ok"; url: string; bestand: TrainerBestandRecord };
+export type DownloadUitkomst =
+  | { soort: "niet_gevonden" }
+  | { soort: "geen_toegang" }
+  | { soort: "fout" }
+  | { soort: "ok"; url: string; bestand: TrainerBestandRecord };
+
+export type AdminDownloadUitkomst = { soort: "niet_gevonden" } | { soort: "fout" } | { soort: "ok"; url: string };
+
+/**
+ * Productiecontrole (2026-08-23) — veilige diagnostiek bij een mislukte
+ * download: uitsluitend bestandId, welke route (trainer/admin), en (bij een
+ * Blob-fout) stap+categorie+statuscategorie. Nooit een token, signed URL,
+ * bestandsinhoud of persoonsgegeven — zie DownloadUrlFout/classificeerBlobFout
+ * (services/storage.ts) voor de classificatie zelf.
+ */
+function loggeDownloadFout(bestandId: number, route: "trainer" | "admin", error: unknown): void {
+  const details =
+    error instanceof DownloadUrlFout
+      ? { stap: error.stap, categorie: error.categorie, statusCategorie: error.statusCategorie }
+      : { stap: "onbekend", categorie: "onbekende_fout", statusCategorie: "onbekend" };
+  console.error("[trainer-bestanden] Download mislukt:", { bestandId, route, ...details });
+}
 
 export async function genereerTrainerBestandDownloadUrl(payload: Payload, trainer: AuthTrainer, bestandId: number): Promise<DownloadUitkomst> {
   const bestand = await haalBestand(payload, bestandId);
@@ -386,16 +407,27 @@ export async function genereerTrainerBestandDownloadUrl(payload: Payload, traine
   const magZien = await magTrainerBestandZien(payload, trainer, bestand);
   if (!magZien) return { soort: "geen_toegang" }; // route.ts geeft hiervoor bewust ook 404 terug — anti-enumeratie, zelfde patroon als elders
 
-  const doc = await payload.findByID({ collection: "trainer-bestanden", id: bestandId, overrideAccess: true, depth: 0 });
-  const url = await genereerDownloadUrl(doc.storageKey as string);
-  return { soort: "ok", url, bestand };
+  try {
+    const doc = await payload.findByID({ collection: "trainer-bestanden", id: bestandId, overrideAccess: true, depth: 0 });
+    const url = await genereerDownloadUrl(doc.storageKey as string);
+    return { soort: "ok", url, bestand };
+  } catch (error) {
+    loggeDownloadFout(bestandId, "trainer", error);
+    return { soort: "fout" };
+  }
 }
 
 /** Admin-variant — geen trainer-scoping-check, de aanroepende route heeft de admin-sessie zelf al geverifieerd (isEditor/isAdmin). */
-export async function genereerBestandDownloadUrlAlsAdmin(payload: Payload, bestandId: number): Promise<string | null> {
+export async function genereerBestandDownloadUrlAlsAdmin(payload: Payload, bestandId: number): Promise<AdminDownloadUitkomst> {
   const doc = await payload.findByID({ collection: "trainer-bestanden", id: bestandId, overrideAccess: true, depth: 0 }).catch(() => null);
-  if (!doc) return null;
-  return genereerDownloadUrl(doc.storageKey as string);
+  if (!doc) return { soort: "niet_gevonden" };
+  try {
+    const url = await genereerDownloadUrl(doc.storageKey as string);
+    return { soort: "ok", url };
+  } catch (error) {
+    loggeDownloadFout(bestandId, "admin", error);
+    return { soort: "fout" };
+  }
 }
 
 /**

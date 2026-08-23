@@ -3,14 +3,23 @@ import { cosineSimilarity } from "ai";
 import { generateEmbedding } from "@/services/ai-client";
 import { genereerTrainerKennisAntwoord, type TrainerKennisBron, type TrainerKennisAntwoordUitkomst } from "./kennis-antwoord";
 
-// Vervolgronde (2026-08-22) — "Kennis" fase 1, uitsluitend lezen. Bewust
-// GEEN import van monday-links.ts/verslag.ts/logboek.ts/telefonie/*: deze
-// laag mag structureel nooit schoolcontext, trainingsverslagen, logboek,
+// Vervolgronde (2026-08-22) — "Kennis" fase 1, primair lezen. Bewust GEEN
+// import van monday-links.ts/verslag.ts/logboek.ts/telefonie/*: deze laag
+// mag structureel nooit schoolcontext, trainingsverslagen, logboek,
 // telefonie of Monday-CRM-data aanraken (opdrachtseis) — dit bestand raakt
 // uitsluitend de trainer-kennisversies-collectie, altijd hard gefilterd op
 // status "gepubliceerd" (overrideAccess:true, zelfde rechtenpatroon als de
 // rest van de traineromgeving — trainers krijgen nooit rechtstreekse
 // Payload-toegang tot deze collectie).
+//
+// Productiecontrole (2026-08-23) — beantwoordTrainerKennisVraag schrijft
+// sindsdien ook een minimale, privacybewuste logregel naar
+// trainer-kennisvragen (opdrachtseis §3): geen vraag-/antwoordtekst, alleen
+// trainer/gevonden-of-niet/hoogste-score/gebruikte bronnen. Neemt bewust een
+// kale trainerId (number) aan i.p.v. het AuthTrainer-type uit ./auth — dat
+// zou een nieuwe module-import zijn die de architectuurtest (kennis-
+// architecture.test.ts) niet toestaat, terwijl een primitief getal geen
+// school-/verslag-/logboek-/telefoniecontext binnenhaalt.
 
 export interface TrainerKennisversieOverzicht {
   id: number;
@@ -75,12 +84,42 @@ async function zoekRelevanteKennis(payload: Payload, vraag: string): Promise<Tra
 }
 
 /**
+ * Best-effort vraaglog (opdrachtseis §3) — mag de trainer nooit hinderen:
+ * een mislukte logregel wordt hier zelf al afgevangen, nooit doorgegooid.
+ * Geen vraag-/antwoordtekst, uitsluitend trainer/gevonden-of-niet/hoogste-
+ * score/gebruikte bronnen.
+ */
+async function loggeKennisVraag(
+  payload: Payload,
+  trainerId: number,
+  bronnen: TrainerKennisBron[],
+  uitkomst: TrainerKennisAntwoordUitkomst
+): Promise<void> {
+  const hoogsteSimilarity = bronnen[0]?.similarity ?? null;
+  const gebruikteBronnen = uitkomst.type === "answered" ? uitkomst.bronnen.map((b) => b.id) : [];
+  await payload.create({
+    collection: "trainer-kennisvragen",
+    overrideAccess: true,
+    data: {
+      trainer: trainerId,
+      antwoordGevonden: uitkomst.type === "answered",
+      hoogsteSimilarity,
+      gebruikteBronnen,
+    },
+  });
+}
+
+/**
  * Losstaande route/retrievalflow (opdrachtseis, expliciet niet samengevoegd
  * met /api/trainers/vraag): importeert bewust niets uit monday-links.ts/
  * verslag.ts/logboek.ts/telefonie/* — uitsluitend gepubliceerde trainer-
  * kennisversies.
  */
-export async function beantwoordTrainerKennisVraag(payload: Payload, vraag: string): Promise<TrainerKennisAntwoordUitkomst> {
+export async function beantwoordTrainerKennisVraag(payload: Payload, trainerId: number, vraag: string): Promise<TrainerKennisAntwoordUitkomst> {
   const bronnen = await zoekRelevanteKennis(payload, vraag);
-  return genereerTrainerKennisAntwoord(vraag, bronnen);
+  const uitkomst = await genereerTrainerKennisAntwoord(vraag, bronnen);
+  await loggeKennisVraag(payload, trainerId, bronnen, uitkomst).catch((error) => {
+    console.error("[trainer-kennis] Vraaglog wegschrijven mislukt (antwoord gaat gewoon door):", error);
+  });
+  return uitkomst;
 }

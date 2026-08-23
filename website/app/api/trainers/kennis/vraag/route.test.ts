@@ -101,6 +101,17 @@ describe("POST /api/trainers/kennis/vraag — uitkomsten", () => {
     mockVerify.mockResolvedValue({ trainer: maakTrainer(1), cookieAanwezig: true });
   });
 
+  // Productiecontrole (2026-08-23) — beantwoordTrainerKennisVraag logt sinds
+  // deze ronde ook een vraaglog per trainer (opdrachtseis §3); de route moet
+  // daarvoor de ECHTE, server-geverifieerde trainer.id doorgeven, nooit een
+  // client-aangeleverde waarde.
+  it("geeft de sessie-trainer.id door aan beantwoordTrainerKennisVraag", async () => {
+    mockVerify.mockResolvedValue({ trainer: maakTrainer(777), cookieAanwezig: true });
+    mockBeantwoord.mockResolvedValue({ type: "no-answer", answer: "X", reasoning: "R", confidence: 0, model: "test", bronnen: [] });
+    await POST(maakRequest({ vraag: "Een vraag" }));
+    expect(mockBeantwoord).toHaveBeenCalledWith(expect.anything(), 777, "Een vraag");
+  });
+
   it("200 met antwoord + bronnen (id/titel) bij een geslaagd antwoord", async () => {
     mockBeantwoord.mockResolvedValue({
       type: "answered",

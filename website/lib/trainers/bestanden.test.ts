@@ -14,7 +14,7 @@ import {
   type RuwOpTeSlaanBestand,
 } from "./bestanden";
 import { haalSchoolDetail, haalTrainingVoorMutatie, bepaalScholenVoorTrainer } from "./monday-links";
-import { uploadTrainerBestand, genereerDownloadUrl } from "@/services/storage";
+import { uploadTrainerBestand, genereerDownloadUrl, DownloadUrlFout } from "@/services/storage";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import type { AuthTrainer } from "./auth";
 
@@ -31,10 +31,13 @@ vi.mock("./monday-links", () => ({
   haalTrainingVoorMutatie: vi.fn(),
   bepaalScholenVoorTrainer: vi.fn(),
 }));
-vi.mock("@/services/storage", () => ({
-  uploadTrainerBestand: vi.fn(),
-  genereerDownloadUrl: vi.fn(),
-}));
+// DownloadUrlFout blijft de ECHTE klasse (importOriginal) — loggeDownloadFout
+// (lib/trainers/bestanden.ts) doet een instanceof-check hiertegen; een losse
+// nagebootste klasse zou daar altijd false opleveren.
+vi.mock("@/services/storage", async (importOriginal) => {
+  const echt = await importOriginal<typeof import("@/services/storage")>();
+  return { ...echt, uploadTrainerBestand: vi.fn(), genereerDownloadUrl: vi.fn() };
+});
 
 const mockSchoolDetail = vi.mocked(haalSchoolDetail);
 const mockTrainingVoorMutatie = vi.mocked(haalTrainingVoorMutatie);
@@ -420,18 +423,43 @@ describe("genereerTrainerBestandDownloadUrl — §13 geautoriseerde download", (
     expect(uitkomst).toEqual({ soort: "ok", url: "https://signed.example/x", bestand: expect.objectContaining({ id: 1 }) });
     expect(mockDownloadUrl).toHaveBeenCalledWith("trainer-bestanden/uniek.pptx");
   });
+
+  // Productiecontrole (2026-08-23) — de live HTTP 500: een storagefout (bv.
+  // Vercel Blob) mag nooit als kale/ongevangen fout naar de route
+  // doorlekken — genereerTrainerBestandDownloadUrl vangt dit zelf op en
+  // geeft een eigen "fout"-uitkomst terug, ongeacht wát genereerDownloadUrl
+  // precies gooit (DownloadUrlFout of iets anders onverwachts).
+  it("een storagefout tijdens het genereren van de download-URL geeft 'fout', niet een ongevangen exception", async () => {
+    mockDownloadUrl.mockRejectedValue(new DownloadUrlFout("presign", "blob_service_unavailable", "5xx"));
+    const { payload } = maakFakePayload({ "trainer-bestanden": [algemeenBestandFixture({ id: 1, uploader: TRAINER.id })] });
+    const uitkomst = await genereerTrainerBestandDownloadUrl(payload, TRAINER, 1);
+    expect(uitkomst).toEqual({ soort: "fout" });
+  });
+
+  it("een onverwachte (niet-Blob) fout tijdens het genereren van de download-URL geeft ook 'fout'", async () => {
+    mockDownloadUrl.mockRejectedValue(new Error("iets onverwachts"));
+    const { payload } = maakFakePayload({ "trainer-bestanden": [algemeenBestandFixture({ id: 1, uploader: TRAINER.id })] });
+    const uitkomst = await genereerTrainerBestandDownloadUrl(payload, TRAINER, 1);
+    expect(uitkomst).toEqual({ soort: "fout" });
+  });
 });
 
 describe("genereerBestandDownloadUrlAlsAdmin — §13 admin mag altijd downloaden", () => {
-  it("geeft null voor een niet-bestaand bestand", async () => {
+  it("geeft niet_gevonden voor een niet-bestaand bestand", async () => {
     const { payload } = maakFakePayload({});
-    expect(await genereerBestandDownloadUrlAlsAdmin(payload, 999)).toBeNull();
+    expect(await genereerBestandDownloadUrlAlsAdmin(payload, 999)).toEqual({ soort: "niet_gevonden" });
   });
 
   it("geeft een signed URL, ongeacht scope/eigenaar (geen autorisatiecheck — de route zelf verifieert al isEditor)", async () => {
     mockDownloadUrl.mockResolvedValue("https://signed.example/admin");
     const { payload } = maakFakePayload({ "trainer-bestanden": [schoolBestandFixture({ id: 1, uploader: ANDERE_TRAINER.id })] });
-    expect(await genereerBestandDownloadUrlAlsAdmin(payload, 1)).toBe("https://signed.example/admin");
+    expect(await genereerBestandDownloadUrlAlsAdmin(payload, 1)).toEqual({ soort: "ok", url: "https://signed.example/admin" });
+  });
+
+  it("een storagefout geeft 'fout', niet een ongevangen exception", async () => {
+    mockDownloadUrl.mockRejectedValue(new DownloadUrlFout("signed_token", "blob_store_suspended", "4xx"));
+    const { payload } = maakFakePayload({ "trainer-bestanden": [schoolBestandFixture({ id: 1 })] });
+    expect(await genereerBestandDownloadUrlAlsAdmin(payload, 1)).toEqual({ soort: "fout" });
   });
 });
 

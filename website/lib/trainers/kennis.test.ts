@@ -32,6 +32,8 @@ function kennisversie(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const TRAINER_ID = 42;
+
 beforeEach(() => {
   mockGenerateEmbedding.mockReset();
   mockGenereerAntwoord.mockReset();
@@ -100,7 +102,7 @@ describe("beantwoordTrainerKennisVraag — retrieve't alleen gepubliceerde train
       ],
     });
 
-    const uitkomst = await beantwoordTrainerKennisVraag(payload, "Een vraag");
+    const uitkomst = await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Een vraag");
 
     expect(uitkomst.type).toBe("answered");
     if (uitkomst.type === "answered") {
@@ -125,7 +127,7 @@ describe("beantwoordTrainerKennisVraag — retrieve't alleen gepubliceerde train
       ],
     });
 
-    const uitkomst = await beantwoordTrainerKennisVraag(payload, "Vraag");
+    const uitkomst = await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Vraag");
 
     expect(uitkomst.type).toBe("answered");
     if (uitkomst.type === "answered") {
@@ -147,9 +149,71 @@ describe("beantwoordTrainerKennisVraag — retrieve't alleen gepubliceerde train
     }));
     const { payload } = maakFakePayload({ "trainer-kennisversies": [] });
 
-    const uitkomst = await beantwoordTrainerKennisVraag(payload, "Vraag");
+    const uitkomst = await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Vraag");
 
     expect(mockGenereerAntwoord).toHaveBeenCalledWith("Vraag", []);
     expect(uitkomst.type).toBe("no-answer");
+  });
+});
+
+describe("beantwoordTrainerKennisVraag — vraaglog (opdrachtseis §3), geen vraag-/antwoordtekst", () => {
+  it("logt een gevonden antwoord met de hoogste score en gebruikte bron-ID's, nooit vraag-/antwoordtekst", async () => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0]);
+    mockGenereerAntwoord.mockImplementation(async (_vraag, bronnen) => ({
+      type: "answered",
+      answer: "Een heel specifiek antwoord met details",
+      reasoning: "Reden",
+      confidence: 100,
+      model: "test",
+      bronnen,
+    }));
+    const { payload, collection } = maakFakePayload({
+      "trainer-kennisversies": [kennisversie({ id: 1, embedding: [1, 0] })],
+    });
+
+    await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Hoe lang duurt een periode?");
+
+    const logs = collection("trainer-kennisvragen");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ trainer: TRAINER_ID, antwoordGevonden: true, hoogsteSimilarity: 1, gebruikteBronnen: [1] });
+    expect(JSON.stringify(logs[0])).not.toContain("Hoe lang duurt een periode");
+    expect(JSON.stringify(logs[0])).not.toContain("Een heel specifiek antwoord");
+  });
+
+  it("logt een geweigerd antwoord (onvoldoende kennis) met antwoordGevonden:false en lege bronnenlijst", async () => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0]);
+    mockGenereerAntwoord.mockResolvedValue({
+      type: "no-answer",
+      answer: "Daarover heb ik in de beschikbare trainerkennis nog onvoldoende informatie.",
+      reasoning: "Geen bronnen.",
+      confidence: 0,
+      model: "test",
+      bronnen: [],
+    });
+    const { payload, collection } = maakFakePayload({ "trainer-kennisversies": [] });
+
+    await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Een onbeantwoordbare vraag");
+
+    const logs = collection("trainer-kennisvragen");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ trainer: TRAINER_ID, antwoordGevonden: false, hoogsteSimilarity: null, gebruikteBronnen: [] });
+  });
+
+  it("een mislukte vraaglog blokkeert het antwoord aan de trainer niet", async () => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0]);
+    mockGenereerAntwoord.mockImplementation(async (_vraag, bronnen) => ({
+      type: "answered",
+      answer: "Antwoord",
+      reasoning: "Reden",
+      confidence: 100,
+      model: "test",
+      bronnen,
+    }));
+    const { payload } = maakFakePayload({ "trainer-kennisversies": [kennisversie({ id: 1, embedding: [1, 0] })] });
+    const stukPayload = { ...payload, create: async () => { throw new Error("db weg"); } } as unknown as typeof payload;
+
+    const uitkomst = await beantwoordTrainerKennisVraag(stukPayload, TRAINER_ID, "Vraag");
+
+    expect(uitkomst.type).toBe("answered");
   });
 });

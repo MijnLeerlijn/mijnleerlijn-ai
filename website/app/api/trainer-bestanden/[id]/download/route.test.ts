@@ -41,15 +41,23 @@ describe("GET /api/trainer-bestanden/[id]/download", () => {
   });
 
   it("404 als het bestand niet bestaat", async () => {
-    mockGenereerUrl.mockResolvedValue(null);
+    mockGenereerUrl.mockResolvedValue({ soort: "niet_gevonden" });
     const response = await GET(maakRequest("999"), { params: Promise.resolve({ id: "999" }) });
     expect(response.status).toBe(404);
   });
 
   it("redirect (302) naar de signed URL voor een editor, ongeacht wie het bestand uploadde", async () => {
-    mockGenereerUrl.mockResolvedValue("https://signed.example/admin");
+    mockGenereerUrl.mockResolvedValue({ soort: "ok", url: "https://signed.example/admin" });
     const response = await GET(maakRequest("1"), { params: Promise.resolve({ id: "1" }) });
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://signed.example/admin");
+  });
+
+  // Productiecontrole (2026-08-23) — voorheen een kale 500 bij een
+  // storagefout; nu een duidelijke, veilig-gelogde 502.
+  it("502 bij een storagefout, niet een kale 500", async () => {
+    mockGenereerUrl.mockResolvedValue({ soort: "fout" });
+    const response = await GET(maakRequest("1"), { params: Promise.resolve({ id: "1" }) });
+    expect(response.status).toBe(502);
   });
 });

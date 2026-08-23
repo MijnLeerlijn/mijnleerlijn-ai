@@ -65,4 +65,12 @@ describe("GET /api/trainers/bestanden/[id]/download", () => {
     expect(response.headers.get("location")).toBe("https://signed.example/x");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
+
+  // Productiecontrole (2026-08-23) — voorheen een kale 500 bij een
+  // storagefout (bv. Vercel Blob); nu een duidelijke, veilig-gelogde 502.
+  it("502 bij een storagefout, niet een kale 500", async () => {
+    mockGenereerUrl.mockResolvedValue({ soort: "fout" });
+    const response = await GET(maakRequest("1"), { params: Promise.resolve({ id: "1" }) });
+    expect(response.status).toBe(502);
+  });
 });
