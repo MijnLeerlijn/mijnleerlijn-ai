@@ -11,7 +11,8 @@ export function maakOpenAiProvider(): AiProvider {
     throw configuratieFout("OPENAI_API_KEY ontbreekt in de omgevingsvariabelen.");
   }
 
-  const model = process.env.OPENAI_MODEL ?? STANDAARD_MODEL;
+  // Een lege OPENAI_MODEL telt als "niet ingesteld"; er is geen tweede fallback.
+  const model = process.env.OPENAI_MODEL?.trim() || STANDAARD_MODEL;
   // baseURL is instelbaar (OPENAI_BASE_URL) voor tests en alternatieve endpoints.
   const client = new OpenAI({ apiKey });
 

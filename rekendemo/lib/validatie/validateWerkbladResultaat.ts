@@ -2,6 +2,7 @@ import { profielVoorEiland } from "@/lib/locales";
 import { VERBODEN_TERMEN } from "@/lib/locales/gedeeld";
 import type { WerkbladResultaat } from "@/lib/resultaat";
 import type { WerkbladInstellingen } from "@/lib/werkblad";
+import { controleerOpgave } from "./rekencontrole";
 
 export type ValidatieUitkomst = {
   geldig: boolean;
@@ -150,6 +151,17 @@ const valutaRegel: ValidatieRegel = (resultaat, { instellingen }) => {
     : [];
 };
 
+/**
+ * Rekent eenvoudige berekeningen na. Opgaven die we niet veilig kunnen lezen
+ * blijven ongemoeid; alleen aantoonbare rekenfouten geven een validatiefout.
+ */
+const rekencontroleRegel: ValidatieRegel = (resultaat) =>
+  resultaat.opgaven.flatMap((opgave, index) =>
+    controleerOpgave(opgave).meldingen.map(
+      (melding) => `Opgave ${index + 1} ${melding}`,
+    ),
+  );
+
 /** Volgorde bepaalt de volgorde van de foutmeldingen. */
 export const VALIDATIE_REGELS: ValidatieRegel[] = [
   aantalOpgavenRegel,
@@ -159,6 +171,7 @@ export const VALIDATIE_REGELS: ValidatieRegel[] = [
   metadataRegel,
   verbodenTermenRegel,
   valutaRegel,
+  rekencontroleRegel,
 ];
 
 export function validateWerkbladResultaat(

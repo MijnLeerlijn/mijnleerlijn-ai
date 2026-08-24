@@ -2,6 +2,7 @@
 
 import { Knop } from "./ui/Knop";
 import type { Opgave, WerkbladResultaat } from "@/lib/resultaat";
+import { REKENSTATUS_LABEL, controleerOpgave } from "@/lib/validatie/rekencontrole";
 import { eilandLabel, leerjaarLabel, type WerkbladInstellingen } from "@/lib/werkblad";
 
 const ONTWIKKELMODUS = process.env.NODE_ENV !== "production";
@@ -121,7 +122,10 @@ function TechnischeDetails({ opgaven }: { opgaven: Opgave[] }) {
         Technische details (alleen in development)
       </summary>
       <ul className="mt-4 space-y-4">
-        {opgaven.map((opgave, index) => (
+        {opgaven.map((opgave, index) => {
+          const rekencontrole = controleerOpgave(opgave);
+
+          return (
           <li key={opgave.id} className="text-sm text-ink-muted">
             <p className="font-semibold text-ink">
               {index + 1}. {opgave.id} — {opgave.type}
@@ -129,8 +133,16 @@ function TechnischeDetails({ opgaven }: { opgaven: Opgave[] }) {
             <p>berekening: {opgave.berekening ?? "—"}</p>
             <p>context: {opgave.context ?? "—"}</p>
             <p>illustrationDescription: {opgave.illustrationDescription ?? "—"}</p>
+            <p>
+              rekencontrole:{" "}
+              <span className={rekencontrole.status === "fout" ? "font-semibold text-red-600" : undefined}>
+                {REKENSTATUS_LABEL[rekencontrole.status]}
+              </span>
+              {rekencontrole.reden ? ` (${rekencontrole.reden})` : ""}
+            </p>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </details>
   );
