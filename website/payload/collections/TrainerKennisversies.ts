@@ -68,6 +68,14 @@ export const TrainerKennisversies: CollectionConfig = {
       // (lib/trainers/kennis-reindex.ts) — één plek voor "moet dit record
       // herembed worden", nooit twee losse implementaties die uit elkaar
       // kunnen lopen.
+      //
+      // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing":
+      // embedInChunksIfChanged geeft sindsdien ook chunkMeta terug (per
+      // chunk: heading/headingSlug/headingLevel/chunkIndex, zie
+      // lib/embeddings/chunked-embed.ts) — weggeschreven in het NIEUWE veld
+      // embeddingChunks, index-uitgelijnd met embedding. Retrieval
+      // (lib/trainers/kennis.ts) gebruikt dit om een antwoord niet alleen
+      // naar het hele document, maar naar het exacte hoofdstuk te linken.
       async ({ data, originalDoc }) => {
         if (!data || data.status !== "gepubliceerd") return data;
 
@@ -91,6 +99,7 @@ export const TrainerKennisversies: CollectionConfig = {
         });
         if (uitkomst.type === "embedded") {
           data.embedding = uitkomst.embeddings;
+          data.embeddingChunks = uitkomst.chunkMeta;
           data.embeddingTextHash = uitkomst.hash;
           data.embeddingStatus = "indexed";
         } else if (uitkomst.type === "failed") {
@@ -167,6 +176,23 @@ export const TrainerKennisversies: CollectionConfig = {
         readOnly: true,
         hidden: true,
         description: "Ruwe vectoropslag voor de trainer-Q&A-zoekfunctie (lib/trainers/kennis.ts) — losstaand van de centrale kennisindex. Eén vector per chunk (number[][], zie lib/embeddings/chunk-text.ts) i.p.v. één vlakke vector: lange trainerkennis wordt vóór het embedden opgedeeld.",
+      },
+    },
+    {
+      // Hoofdstuknavigatie + bronverwijzing (2026-08-24) — index-uitgelijnd
+      // met `embedding` (embeddingChunks[i] hoort bij embedding[i]), bewust
+      // een APART veld i.p.v. in `embedding` gebundeld: retrieval-scoring
+      // (besteChunkSimilarity, lib/trainers/kennis.ts) blijft zo op een
+      // onveranderd number[][] werken. Kan ontbreken/korter zijn dan
+      // `embedding` voor records die vóór deze functionaliteit zijn
+      // geïndexeerd — lib/trainers/kennis-reindex.ts herkent zo'n record als
+      // "moet opnieuw" en vult dit veld met een herindexering alsnog.
+      name: "embeddingChunks",
+      type: "json",
+      admin: {
+        readOnly: true,
+        hidden: true,
+        description: "Hoofdstuk-metadata per chunk (heading/headingSlug/headingLevel/chunkIndex) — voor 'Bekijk hoofdstuk'-bronverwijzingen. Index-uitgelijnd met embedding.",
       },
     },
   ],

@@ -124,7 +124,29 @@ describe("POST /api/trainers/kennis/vraag — uitkomsten", () => {
     const response = await POST(maakRequest({ vraag: "Hoe begeleid ik een periodevoorbereiding?" }));
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual({ antwoord: "Zo begeleid je een school hierbij.", bronnen: [{ id: 5, titel: "Periodevoorbereiding" }] });
+    expect(body).toEqual({
+      antwoord: "Zo begeleid je een school hierbij.",
+      bronnen: [{ id: 5, titel: "Periodevoorbereiding", heading: null, headingSlug: null }],
+    });
+  });
+
+  // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+  // (opdrachtseis §5): de route geeft heading/headingSlug door zodat de
+  // client een "Bekijk hoofdstuk"-link kan tonen.
+  it("200 met heading/headingSlug per bron wanneer retrieval hoofdstuk-metadata teruggaf", async () => {
+    mockBeantwoord.mockResolvedValue({
+      type: "answered",
+      answer: "Zo werkt de cyclus.",
+      reasoning: "Gebaseerd op hoofdstuk 6.",
+      confidence: 90,
+      model: "gpt-4o",
+      bronnen: [
+        { id: 1, titel: "Basiskennis", tekst: "volledige tekst", similarity: 0.9, heading: "6. De cyclus", headingSlug: "6-de-cyclus" },
+      ],
+    });
+    const response = await POST(maakRequest({ vraag: "Hoe werkt de cyclus?" }));
+    const body = await response.json();
+    expect(body.bronnen).toEqual([{ id: 1, titel: "Basiskennis", heading: "6. De cyclus", headingSlug: "6-de-cyclus" }]);
   });
 
   it("200 met de eerlijke fallback-tekst en lege bronnenlijst wanneer er geen betrouwbaar antwoord is", async () => {

@@ -59,7 +59,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       antwoord: uitkomst.answer,
-      bronnen: uitkomst.bronnen.map((b) => ({ id: b.id, titel: b.titel })),
+      // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+      // (opdrachtseis §5): heading/headingSlug (null als het document geen
+      // hoofdstukmetadata heeft) zodat de client een "Bekijk hoofdstuk"-link
+      // naar /kennis/[id]#slug kan tonen i.p.v. alleen naar het document.
+      bronnen: uitkomst.bronnen.map((b) => ({ id: b.id, titel: b.titel, heading: b.heading ?? null, headingSlug: b.headingSlug ?? null })),
     });
   } catch (error) {
     console.error("[api/trainers/kennis/vraag] mislukt:", error);

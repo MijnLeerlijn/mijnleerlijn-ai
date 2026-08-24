@@ -23,6 +23,13 @@ import { embedInChunksIfChanged } from "@/lib/embeddings/chunked-embed";
 // embed()-aanroep (root cause + fix: lib/embeddings/chunked-embed.ts,
 // chunk-text.ts). embedInChunksIfChanged vervangt hier embedIfChanged; de
 // diagnose bevat nu ook chunkIndex/totaalChunks/inputTekens/geschatTokens.
+//
+// Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+// (opdrachtseis §8): bestaande gepubliceerde trainerkennis (zoals de live
+// Basiskennis) had al een geldige `embedding` van vóór deze functionaliteit,
+// maar nog geen `embeddingChunks` (hoofdstuk-metadata). Zo'n record moet
+// zonder handmatig herpubliceren alsnog hoofdstuk-metadata krijgen — zie
+// heeftGeldigeEmbeddingChunks/moetHerembedForceren hieronder.
 
 const MAX_KENNISVERSIES = 200; // zelfde grens als lib/trainers/kennis.ts — "houd het rustig en eenvoudig" op deze schaal.
 
@@ -31,6 +38,7 @@ interface RuweKennisversie {
   titel: string;
   tekst: string;
   embedding?: unknown;
+  embeddingChunks?: unknown;
   embeddingTextHash?: string | null;
   embeddingStatus?: string | null;
 }
@@ -55,6 +63,19 @@ async function haalGepubliceerdeVersiesRuw(payload: Payload): Promise<RuweKennis
 function heeftGeldigeEmbedding(versie: RuweKennisversie): boolean {
   if (versie.embeddingStatus !== "indexed" || !Array.isArray(versie.embedding) || versie.embedding.length === 0) return false;
   return (versie.embedding as unknown[]).every((chunk) => Array.isArray(chunk) && chunk.length > 0);
+}
+
+/**
+ * Heeft dit record al hoofdstuk-metadata (opdrachtseis §4/§8/§9)? Vereist
+ * exact evenveel chunk-metadata-items als embedding-vectoren (index-
+ * uitlijning, zie payload/collections/TrainerKennisversies.ts) — een
+ * record van vóór deze functionaliteit heeft embeddingChunks helemaal niet
+ * en telt hier terecht als "nee".
+ */
+function heeftGeldigeEmbeddingChunks(versie: RuweKennisversie): boolean {
+  if (!Array.isArray(versie.embeddingChunks) || versie.embeddingChunks.length === 0) return false;
+  if (!Array.isArray(versie.embedding)) return false;
+  return versie.embeddingChunks.length === versie.embedding.length;
 }
 
 export interface KennisRetrievalDiagnose {
@@ -114,16 +135,27 @@ export async function herindexeerTrainerKennisversies(payload: Payload): Promise
   const mislukteDetails: HerindexeerFoutDetail[] = [];
 
   for (const versie of versies) {
-    if (heeftGeldigeEmbedding(versie)) {
+    const heeftEmbedding = heeftGeldigeEmbedding(versie);
+    const heeftChunkMetadata = heeftGeldigeEmbeddingChunks(versie);
+    if (heeftEmbedding && heeftChunkMetadata) {
       algGeindexeerd++;
       continue;
     }
 
     const brontekst = `${versie.titel}\n\n${versie.tekst}`.trim();
+    // Alleen bij een AL geldige embedding die enkel de nieuwe hoofdstuk-
+    // metadata mist (opdrachtseis §8: bestaande Basiskennis van vóór deze
+    // functionaliteit) zou de tekst-hash nog matchen — embedInChunksIfChanged
+    // zou dan stil overslaan zonder de ontbrekende embeddingChunks alsnog te
+    // berekenen. Forceer uitsluitend in dat ene geval een volledige
+    // herberekening (geen storedHash/storedStatus); in elk ander geval (nooit
+    // geëmbed, eerder mislukt, status niet 'indexed') blijft de gewone hash/
+    // status-doorgifte behouden — zelfde gedrag als vóór deze ronde.
+    const forceerHerberekening = heeftEmbedding && !heeftChunkMetadata;
     const uitkomst = await embedInChunksIfChanged({
       text: brontekst,
-      storedHash: versie.embeddingTextHash,
-      storedStatus: versie.embeddingStatus,
+      storedHash: forceerHerberekening ? null : versie.embeddingTextHash,
+      storedStatus: forceerHerberekening ? null : versie.embeddingStatus,
     });
 
     if (uitkomst.type === "embedded") {
@@ -131,7 +163,7 @@ export async function herindexeerTrainerKennisversies(payload: Payload): Promise
         collection: "trainer-kennisversies",
         id: versie.id,
         overrideAccess: true,
-        data: { embedding: uitkomst.embeddings, embeddingTextHash: uitkomst.hash, embeddingStatus: "indexed" },
+        data: { embedding: uitkomst.embeddings, embeddingChunks: uitkomst.chunkMeta, embeddingTextHash: uitkomst.hash, embeddingStatus: "indexed" },
       });
       opnieuwGeindexeerd++;
     } else if (uitkomst.type === "failed") {

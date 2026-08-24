@@ -21,6 +21,15 @@
 // knip op vaste lengte. Nooit een blinde "elke N tekens"-knip wanneer een
 // natuurlijke grens beschikbaar is — bewust ontworpen, geen willekeurige
 // truncatie.
+//
+// Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing":
+// splitsInHeadingChunks hieronder bouwt VERDER op splitsInChunks (elke
+// Markdown-sectie, zie lib/content/markdown-headings.ts, wordt zelf zo nodig
+// nog in meerdere chunks opgedeeld), zodat elke chunk weet in welk hoofdstuk
+// hij stond — nodig zodat retrieval straks niet alleen naar het hele
+// document kan linken, maar naar het exacte hoofdstuk.
+
+import { parseerMarkdownSecties } from "@/lib/content/markdown-headings";
 
 /** ≈1500 tokens bij ~4 tekens/token — ruim onder de 8191-tokenlimiet van text-embedding-3-small (OpenAI), met marge voor de schatting zelf. */
 export const CHUNK_TARGET_TEKENS = 6000;
@@ -92,4 +101,48 @@ export function splitsInChunks(tekst: string, maxTekens: number = CHUNK_TARGET_T
   }
   voegToe(chunks, huidig);
   return chunks;
+}
+
+/** Eén embedding-chunk mét het hoofdstuk waarin hij stond (opdrachtseis §4). */
+export interface HeadingChunk {
+  text: string;
+  /** null = deze chunk viel vóór de eerste heading in het document (geen hoofdstuk om aan te koppelen). */
+  heading: string | null;
+  headingSlug: string | null;
+  headingLevel: number | null;
+  /** 0-based, over het HELE document — niet per sectie. */
+  chunkIndex: number;
+}
+
+/**
+ * Zelfde chunk-budget/natuurlijke-grenzen-logica als splitsInChunks, maar
+ * hoofdstukbewust: `tekst` wordt eerst in Markdown-secties opgedeeld (elke
+ * #/##/###-heading, zie lib/content/markdown-headings.ts), en pas ELKE
+ * SECTIE APART verder in chunks geknipt. Zo krijgt elke chunk automatisch de
+ * heading van zijn eigen sectie mee — ook wanneer een sectie zelf weer over
+ * meerdere chunks wordt verdeeld (elke vervolgchunk erft dezelfde heading,
+ * opdrachtseis §4: "een chunk zonder eigen heading direct erboven neemt de
+ * laatst geldige heading over"). Een sectie zonder content (bv. een heading
+ * direct gevolgd door de volgende) levert simpelweg geen chunk op — niets om
+ * te embedden, de heading zelf blijft via haalHeadingsOp gewoon in de TOC
+ * staan.
+ */
+export function splitsInHeadingChunks(tekst: string, maxTekens: number = CHUNK_TARGET_TEKENS): HeadingChunk[] {
+  const secties = parseerMarkdownSecties(tekst);
+  const resultaat: HeadingChunk[] = [];
+
+  for (const sectie of secties) {
+    const stukken = splitsInChunks(sectie.content, maxTekens);
+    for (const stuk of stukken) {
+      resultaat.push({
+        text: stuk,
+        heading: sectie.heading?.text ?? null,
+        headingSlug: sectie.heading?.slug ?? null,
+        headingLevel: sectie.heading?.level ?? null,
+        chunkIndex: resultaat.length,
+      });
+    }
+  }
+
+  return resultaat;
 }

@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalGepubliceerdeKennisversie } from "@/lib/trainers/kennis";
+import { KennisReader } from "./kennis-reader";
 
 export const metadata = { title: "Kennis — Trainerportal" };
 
@@ -13,10 +14,15 @@ export const metadata = { title: "Kennis — Trainerportal" };
 // een concept (nog niet gepubliceerd) of een niet-bestaand ID — 404, geen
 // onderscheid, zelfde privacy-/eenvoudsprincipe als elders in de
 // traineromgeving ("bestaat dit wel/hoort dit bij mij" nooit lekken via het
-// verschil tussen 403/404). Platte tekst gerenderd als gewone JSX-tekstchild
-// (whitespace-pre-line) — geen dangerouslySetInnerHTML, geen markdown-
-// parsing, zelfde veilige patroon als elders in de traineromgeving (zie
-// lib/trainers/activiteit.ts se kortePreview-toelichting).
+// verschil tussen 403/404).
+//
+// Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing": deze
+// pagina is nu uitsluitend de server-schil (auth-gate + de ene leesquery,
+// zelfde patroon als elders in de traineromgeving) — de daadwerkelijke
+// lezer (Markdown-rendering, inhoudsopgave, actief-hoofdstuk-tracking,
+// mobiel menu, deep-link-markering) leeft in het client-eiland kennis-
+// reader.tsx, want die heeft browser-API's nodig (IntersectionObserver,
+// window.location.hash) die niet server-side kunnen draaien.
 export default async function TrainerKennisversieDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const trainer = await haalIngelogdeTrainer();
   if (!trainer) redirect("/login");
@@ -36,10 +42,7 @@ export default async function TrainerKennisversieDetailPage({ params }: { params
         Terug naar Kennis
       </Link>
 
-      <div className="rounded-xl border border-grijs-200 bg-white p-6 shadow-sm">
-        <h1 className="font-display text-h2 font-bold text-donkerblauw">{kennisversie.titel}</h1>
-        <p className="mt-4 whitespace-pre-line text-body-md text-grijs-800">{kennisversie.tekst}</p>
-      </div>
+      <KennisReader titel={kennisversie.titel} tekst={kennisversie.tekst} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { generateEmbedding, getEmbeddingModelId, classificeerEmbeddingFout } from "@/services/ai-client";
 import { hashText } from "./text-hash";
-import { splitsInChunks } from "./chunk-text";
+import { splitsInHeadingChunks } from "./chunk-text";
 
 // Productiecontrole, vervolgronde (2026-08-23) — root cause van de live
 // HTTP 400 bij het embedden van trainerkennis: de Kennisbasis-achtergrond-
@@ -18,11 +18,31 @@ import { splitsInChunks } from "./chunk-text";
 // nodig. Zelfde hash-gebaseerde skip-logica als embedIfChanged (ongewijzigde
 // tekst + al geïndexeerd -> overslaan), maar embedt zo nodig in meerdere
 // stukken (lib/embeddings/chunk-text.ts) i.p.v. in één aanroep.
+//
+// Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing":
+// splitsInChunks (vlak, geen hoofdstukbesef) is hier vervangen door
+// splitsInHeadingChunks (bouwt op lib/content/markdown-headings.ts) — elke
+// chunk krijgt zijn hoofdstuk-metadata mee terug via `chunkMeta`, INDEX-
+// UITGELIJND met `embeddings` (chunkMeta[i] hoort bij embeddings[i]). Bewust
+// TWEE parallelle arrays i.p.v. één array van gebundelde objecten: `embedding`
+// blijft zo voor bestaande aanroepers (retrieval-scoring in lib/trainers/
+// kennis.ts) een onveranderd number[][] — geen wijziging aan hoe similarity-
+// scoring daar leest. De twee arrays kunnen nooit uit elkaar lopen: ze worden
+// hier, in dezelfde loop, uit exact dezelfde chunk-lijst opgebouwd en altijd
+// samen weggeschreven (nooit de één zonder de ander).
 
 export interface ChunkedEmbedInvoer {
   text: string;
   storedHash?: string | null;
   storedStatus?: string | null;
+}
+
+/** Hoofdstuk-metadata van één chunk — nooit de chunktekst zelf (die leeft alleen in `embedding`/de brontekst). */
+export interface TrainerEmbeddingChunkMeta {
+  heading: string | null;
+  headingSlug: string | null;
+  headingLevel: number | null;
+  chunkIndex: number;
 }
 
 /**
@@ -48,7 +68,7 @@ export interface ChunkEmbeddingFoutDiagnose {
 
 export type ChunkedEmbedUitkomst =
   | { type: "skipped" }
-  | { type: "embedded"; embeddings: number[][]; model: string; hash: string; aantalChunks: number }
+  | { type: "embedded"; embeddings: number[][]; chunkMeta: TrainerEmbeddingChunkMeta[]; model: string; hash: string; aantalChunks: number }
   | { type: "failed"; diagnose: ChunkEmbeddingFoutDiagnose };
 
 function schatTokens(tekens: number): number {
@@ -72,21 +92,23 @@ export async function embedInChunksIfChanged(invoer: ChunkedEmbedInvoer): Promis
     return { type: "skipped" };
   }
 
-  const chunks = splitsInChunks(invoer.text);
+  const chunks = splitsInHeadingChunks(invoer.text);
   const embeddings: number[][] = [];
+  const chunkMeta: TrainerEmbeddingChunkMeta[] = [];
 
   for (let i = 0; i < chunks.length; i += 1) {
     const chunk = chunks[i]!;
     try {
-      embeddings.push(await generateEmbedding(chunk));
+      embeddings.push(await generateEmbedding(chunk.text));
+      chunkMeta.push({ heading: chunk.heading, headingSlug: chunk.headingSlug, headingLevel: chunk.headingLevel, chunkIndex: chunk.chunkIndex });
     } catch (error) {
       const basis = classificeerEmbeddingFout(error, model);
       return {
         type: "failed",
-        diagnose: { ...basis, inputTekens: chunk.length, geschatTokens: schatTokens(chunk.length), chunkIndex: i, totaalChunks: chunks.length },
+        diagnose: { ...basis, inputTekens: chunk.text.length, geschatTokens: schatTokens(chunk.text.length), chunkIndex: i, totaalChunks: chunks.length },
       };
     }
   }
 
-  return { type: "embedded", embeddings, model, hash, aantalChunks: chunks.length };
+  return { type: "embedded", embeddings, chunkMeta, model, hash, aantalChunks: chunks.length };
 }

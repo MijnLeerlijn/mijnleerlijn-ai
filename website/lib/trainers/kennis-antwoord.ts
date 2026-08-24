@@ -24,6 +24,9 @@ export interface TrainerKennisBron {
   titel: string;
   tekst: string;
   similarity: number;
+  /** Hoofdstuk waar de best passende chunk van deze bron in stond (opdrachtseis §5) — ontbreekt/null als het document geen hoofdstukmetadata heeft, of de treffer vóór de eerste heading viel. */
+  heading?: string | null;
+  headingSlug?: string | null;
 }
 
 const SYSTEEMPROMPT = `Je bent de kennisassistent voor trainers van MijnLeerlijn.
@@ -51,8 +54,31 @@ export type TrainerKennisAntwoordUitkomst =
   | { type: "no-answer"; answer: string; reasoning: string; confidence: number; model: string; bronnen: TrainerKennisBron[] }
   | { type: "failed"; foutmelding: string };
 
+// Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing":
+// `bronnen` kan sindsdien meerdere entries voor HETZELFDE document bevatten
+// (verschillende hoofdstukken, zie zoekRelevanteKennis in lib/trainers/
+// kennis.ts) — elke entry draagt nog altijd de VOLLEDIGE, ongewijzigde
+// documenttekst (bron.tekst verandert niet). Zonder dedup zou het model
+// dezelfde volledige tekst tweemaal als aparte "bron" te zien krijgen.
+// Bewust een dedup UITSLUITEND hier, voor de prompt — de teruggegeven
+// `bronnen` (de citaties naar de trainer toe) blijven ongewijzigd
+// per-hoofdstuk, zodat meerdere relevante hoofdstukken alsnog allemaal een
+// eigen "Bekijk hoofdstuk"-link krijgen (opdrachtseis §5).
+function dedupliceerPerDocument(bronnen: TrainerKennisBron[]): TrainerKennisBron[] {
+  const gezien = new Set<number>();
+  const resultaat: TrainerKennisBron[] = [];
+  for (const bron of bronnen) {
+    if (gezien.has(bron.id)) continue;
+    gezien.add(bron.id);
+    resultaat.push(bron);
+  }
+  return resultaat;
+}
+
 function contextNaarPrompt(bronnen: TrainerKennisBron[]): string {
-  return bronnen.map((b, i) => `[Bron ${i + 1}: ${b.titel}]\n${b.tekst}`).join("\n\n");
+  return dedupliceerPerDocument(bronnen)
+    .map((b, i) => `[Bron ${i + 1}: ${b.titel}]\n${b.tekst}`)
+    .join("\n\n");
 }
 
 export async function genereerTrainerKennisAntwoord(vraag: string, bronnen: TrainerKennisBron[]): Promise<TrainerKennisAntwoordUitkomst> {

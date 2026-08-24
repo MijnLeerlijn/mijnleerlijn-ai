@@ -2,13 +2,16 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, ArrowRight } from "lucide-react";
 
 const MAX_VRAAG_LENGTE = 500;
 
 interface Bron {
   id: number;
   titel: string;
+  /** Hoofdstuk van de best passende chunk (opdrachtseis §5) — null als het document geen hoofdstukmetadata heeft. */
+  heading: string | null;
+  headingSlug: string | null;
 }
 
 interface Antwoord {
@@ -23,6 +26,12 @@ interface Antwoord {
  * — bewust een ANDER component, geen hergebruik van dat blok zelf: dit stuurt
  * naar een andere route (/api/trainers/kennis/vraag, geen schoolId-concept)
  * en toont bronartikelen met doorklik, wat trainer-vraag-blok.tsx niet doet.
+ *
+ * Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+ * (opdrachtseis §5): een bron met headingSlug krijgt een "Bekijk hoofdstuk"-
+ * link naar /kennis/[id]#slug (scrolt direct naar dat hoofdstuk, zie
+ * kennis-reader.tsx); zonder headingSlug (document zonder hoofdstukmetadata)
+ * blijft de link naar het hele document, zoals voorheen.
  */
 export function KennisVraagBlok() {
   const [vraag, setVraag] = useState("");
@@ -83,11 +92,17 @@ export function KennisVraagBlok() {
             {antwoord.bronnen.length > 0 && (
               <div>
                 <p className="text-label font-medium text-grijs-600">Gebruikte kennisartikelen</p>
-                <ul className="mt-1 flex flex-col gap-1">
-                  {antwoord.bronnen.map((bron) => (
-                    <li key={bron.id}>
-                      <Link href={`/kennis/${bron.id}`} className="text-body-sm text-teal-700 hover:underline">
-                        {bron.titel}
+                <ul className="mt-1.5 flex flex-col gap-1.5">
+                  {antwoord.bronnen.map((bron, index) => (
+                    <li key={`${bron.id}-${bron.headingSlug ?? index}`} className="rounded-lg border border-grijs-100 bg-white px-3 py-2">
+                      <p className="text-body-sm font-medium text-grijs-900">{bron.titel}</p>
+                      {bron.headingSlug && bron.heading && <p className="mt-0.5 text-label text-grijs-600">{bron.heading}</p>}
+                      <Link
+                        href={bron.headingSlug ? `/kennis/${bron.id}#${bron.headingSlug}` : `/kennis/${bron.id}`}
+                        className="mt-1 inline-flex items-center gap-1 text-body-sm font-medium text-teal-700 hover:underline"
+                      >
+                        {bron.headingSlug ? "Bekijk hoofdstuk" : "Bekijk artikel"}
+                        <ArrowRight size={13} />
                       </Link>
                     </li>
                   ))}

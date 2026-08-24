@@ -31,11 +31,19 @@ beforeEach(() => {
 
 describe("TrainerKennisversies beforeChange-hook — embedding bij publiceren", () => {
   it("embedt een nieuwe versie die direct als 'gepubliceerd' wordt aangemaakt", async () => {
-    mockEmbedInChunksIfChanged.mockResolvedValue({ type: "embedded", embeddings: [[0.1, 0.2]], model: "test-model", hash: "h1", aantalChunks: 1 });
+    mockEmbedInChunksIfChanged.mockResolvedValue({
+      type: "embedded",
+      embeddings: [[0.1, 0.2]],
+      chunkMeta: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }],
+      model: "test-model",
+      hash: "h1",
+      aantalChunks: 1,
+    });
 
     const resultaat = await draaiHook({ status: "gepubliceerd", titel: "Periodevoorbereiding", tekst: "Een periode duurt zes weken." });
 
     expect(resultaat.embedding).toEqual([[0.1, 0.2]]);
+    expect(resultaat.embeddingChunks).toEqual([{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }]);
     expect(resultaat.embeddingTextHash).toBe("h1");
     expect(resultaat.embeddingStatus).toBe("indexed");
     expect(typeof resultaat.publishedAt).toBe("string");
@@ -84,7 +92,14 @@ describe("TrainerKennisversies beforeChange-hook — embedding bij publiceren", 
   });
 
   it("bron articles versus knowledge-sources wordt identiek behandeld — de hook embedt uitsluitend titel+tekst, leest 'bron' nooit", async () => {
-    mockEmbedInChunksIfChanged.mockResolvedValue({ type: "embedded", embeddings: [[1]], model: "test", hash: "h", aantalChunks: 1 });
+    mockEmbedInChunksIfChanged.mockResolvedValue({
+      type: "embedded",
+      embeddings: [[1]],
+      chunkMeta: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }],
+      model: "test",
+      hash: "h",
+      aantalChunks: 1,
+    });
     await draaiHook({ status: "gepubliceerd", titel: "T", tekst: "X", bron: { relationTo: "articles", value: 1 } });
     await draaiHook({ status: "gepubliceerd", titel: "T", tekst: "X", bron: { relationTo: "knowledge-sources", value: 2 } });
     expect(mockEmbedInChunksIfChanged).toHaveBeenNthCalledWith(1, { text: "T\n\nX", storedHash: undefined, storedStatus: undefined });
@@ -103,6 +118,11 @@ describe("TrainerKennisversies beforeChange-hook — embedding bij publiceren", 
         [0.2, 0.2],
         [0.3, 0.3],
       ],
+      chunkMeta: [
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 },
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 1 },
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 2 },
+      ],
       model: "text-embedding-3-small",
       hash: "hash-lang",
       aantalChunks: 3,
@@ -114,5 +134,33 @@ describe("TrainerKennisversies beforeChange-hook — embedding bij publiceren", 
     expect(resultaat.embeddingStatus).toBe("indexed");
     expect(Array.isArray(resultaat.embedding)).toBe(true);
     expect((resultaat.embedding as unknown[]).length).toBe(3);
+    expect((resultaat.embeddingChunks as unknown[]).length).toBe(3);
+  });
+
+  // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing": bewijst
+  // dat de hook de chunkMeta van embedInChunksIfChanged ONGEWIJZIGD doorgeeft
+  // aan het nieuwe embeddingChunks-veld, index-uitgelijnd met embedding.
+  it("schrijft de hoofdstuk-metadata (chunkMeta) weg naar het nieuwe veld embeddingChunks, index-uitgelijnd met embedding", async () => {
+    mockEmbedInChunksIfChanged.mockResolvedValue({
+      type: "embedded",
+      embeddings: [
+        [0.1, 0.1],
+        [0.2, 0.2],
+      ],
+      chunkMeta: [
+        { heading: "1. Eerste hoofdstuk", headingSlug: "1-eerste-hoofdstuk", headingLevel: 2, chunkIndex: 0 },
+        { heading: "2. Tweede hoofdstuk", headingSlug: "2-tweede-hoofdstuk", headingLevel: 2, chunkIndex: 1 },
+      ],
+      model: "test-model",
+      hash: "h-headings",
+      aantalChunks: 2,
+    });
+
+    const resultaat = await draaiHook({ status: "gepubliceerd", titel: "Basiskennis", tekst: "## 1. Eerste hoofdstuk\nA.\n\n## 2. Tweede hoofdstuk\nB." });
+
+    expect(resultaat.embeddingChunks).toEqual([
+      { heading: "1. Eerste hoofdstuk", headingSlug: "1-eerste-hoofdstuk", headingLevel: 2, chunkIndex: 0 },
+      { heading: "2. Tweede hoofdstuk", headingSlug: "2-tweede-hoofdstuk", headingLevel: 2, chunkIndex: 1 },
+    ]);
   });
 });

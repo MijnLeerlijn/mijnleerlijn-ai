@@ -182,6 +182,118 @@ describe("beantwoordTrainerKennisVraag — retrieve't alleen gepubliceerde train
     }
   });
 
+  // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+  // (opdrachtseis §4/§5/§10): retrieval moet niet alleen document-ID/titel/
+  // score teruggeven, maar ook het hoofdstuk (heading/headingSlug) van de
+  // best passende chunk — en dat per (document, hoofdstuk) maar één keer.
+  describe("hoofdstuk-citaties (embeddingChunks)", () => {
+    it("geeft de heading + headingSlug van de best passende chunk terug", async () => {
+      mockGenerateEmbedding.mockResolvedValue([1, 0]); // query-embedding
+      mockGenereerAntwoord.mockImplementation(async (_vraag, bronnen) => ({
+        type: "answered",
+        answer: "Antwoord",
+        reasoning: "Reden",
+        confidence: 100,
+        model: "test",
+        bronnen,
+      }));
+      const { payload } = maakFakePayload({
+        "trainer-kennisversies": [
+          kennisversie({
+            id: 1,
+            embedding: [
+              [0, 1],
+              [1, 0],
+            ],
+            embeddingChunks: [
+              { heading: "1. Loodrecht hoofdstuk", headingSlug: "1-loodrecht-hoofdstuk", headingLevel: 2, chunkIndex: 0 },
+              { heading: "2. Identiek hoofdstuk", headingSlug: "2-identiek-hoofdstuk", headingLevel: 2, chunkIndex: 1 },
+            ],
+          }),
+        ],
+      });
+
+      const uitkomst = await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Vraag");
+
+      expect(uitkomst.type).toBe("answered");
+      if (uitkomst.type === "answered") {
+        expect(uitkomst.bronnen[0]).toMatchObject({ heading: "2. Identiek hoofdstuk", headingSlug: "2-identiek-hoofdstuk" });
+        expect(uitkomst.bronnen[0]!.similarity).toBeCloseTo(1);
+      }
+    });
+
+    it("meerdere chunks uit HETZELFDE hoofdstuk leveren maar één citatie op (de best scorende)", async () => {
+      mockGenerateEmbedding.mockResolvedValue([1, 0]);
+      mockGenereerAntwoord.mockImplementation(async (_vraag, bronnen) => ({ type: "answered", answer: "A", reasoning: "R", confidence: 100, model: "test", bronnen }));
+      const { payload } = maakFakePayload({
+        "trainer-kennisversies": [
+          kennisversie({
+            id: 1,
+            embedding: [
+              [0.9, 0.1],
+              [1, 0],
+            ],
+            embeddingChunks: [
+              { heading: "1. Eén hoofdstuk", headingSlug: "1-een-hoofdstuk", headingLevel: 2, chunkIndex: 0 },
+              { heading: "1. Eén hoofdstuk", headingSlug: "1-een-hoofdstuk", headingLevel: 2, chunkIndex: 1 }, // zelfde hoofdstuk, 2e chunk (lang hoofdstuk over meerdere chunks verdeeld)
+            ],
+          }),
+        ],
+      });
+
+      const uitkomst = await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Vraag");
+
+      expect(uitkomst.type).toBe("answered");
+      if (uitkomst.type === "answered") {
+        expect(uitkomst.bronnen).toHaveLength(1);
+        expect(uitkomst.bronnen[0]!.similarity).toBeCloseTo(1); // de beste van de 2 chunks
+      }
+    });
+
+    it("meerdere ECHT verschillende hoofdstukken (ook binnen hetzelfde document) leveren allebei een aparte citatie op", async () => {
+      mockGenerateEmbedding.mockResolvedValue([1, 0]);
+      mockGenereerAntwoord.mockImplementation(async (_vraag, bronnen) => ({ type: "answered", answer: "A", reasoning: "R", confidence: 100, model: "test", bronnen }));
+      const { payload } = maakFakePayload({
+        "trainer-kennisversies": [
+          kennisversie({
+            id: 1,
+            embedding: [
+              [1, 0],
+              [0.95, 0.05],
+            ],
+            embeddingChunks: [
+              { heading: "1. Hoofdstuk A", headingSlug: "1-hoofdstuk-a", headingLevel: 2, chunkIndex: 0 },
+              { heading: "2. Hoofdstuk B", headingSlug: "2-hoofdstuk-b", headingLevel: 2, chunkIndex: 1 },
+            ],
+          }),
+        ],
+      });
+
+      const uitkomst = await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Vraag");
+
+      expect(uitkomst.type).toBe("answered");
+      if (uitkomst.type === "answered") {
+        expect(uitkomst.bronnen.map((b) => b.headingSlug).sort()).toEqual(["1-hoofdstuk-a", "2-hoofdstuk-b"]);
+        expect(uitkomst.bronnen.every((b) => b.tekst === kennisversie().tekst)).toBe(true); // volledige documenttekst blijft ongewijzigd de LLM-context, ongeacht het hoofdstuk
+      }
+    });
+
+    it("een document zonder embeddingChunks (trainerkennis van vóór deze functionaliteit) geeft heading:null, gedraagt zich verder exact als voorheen", async () => {
+      mockGenerateEmbedding.mockResolvedValue([1, 0]);
+      mockGenereerAntwoord.mockImplementation(async (_vraag, bronnen) => ({ type: "answered", answer: "A", reasoning: "R", confidence: 100, model: "test", bronnen }));
+      const { payload } = maakFakePayload({ "trainer-kennisversies": [kennisversie({ id: 1, embedding: [[1, 0]] })] }); // geen embeddingChunks
+
+      const uitkomst = await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Vraag");
+
+      expect(uitkomst.type).toBe("answered");
+      if (uitkomst.type === "answered") {
+        expect(uitkomst.bronnen).toHaveLength(1);
+        expect(uitkomst.bronnen[0]!.heading).toBeNull();
+        expect(uitkomst.bronnen[0]!.headingSlug).toBeNull();
+      }
+    });
+  });
+
   it("geen gepubliceerde/geëmbedde kennis -> lege bronnenlijst, het embedding-model wordt dan nog wel voor de vraag zelf aangeroepen maar er is niets om tegen te vergelijken", async () => {
     mockGenerateEmbedding.mockResolvedValue([1, 0]);
     mockGenereerAntwoord.mockImplementation(async (_vraag, bronnen) => ({

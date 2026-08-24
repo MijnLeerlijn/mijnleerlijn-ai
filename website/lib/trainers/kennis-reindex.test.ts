@@ -26,6 +26,13 @@ function versie(overrides: Record<string, unknown> = {}) {
     embeddingStatus: "indexed",
     embeddingTextHash: "hash-1",
     embedding: [[1, 0]],
+    // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing":
+    // een default-versie() is nu pas ECHT "al volledig geïndexeerd" mét
+    // bijpassende (lege) hoofdstuk-metadata, index-uitgelijnd met de
+    // default embedding hierboven. Een test die specifiek het OUDE-vorm-
+    // scenario (embedding zonder embeddingChunks) wil nabootsen, geeft
+    // expliciet `embeddingChunks: undefined` mee.
+    embeddingChunks: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }],
     ...overrides,
   };
 }
@@ -79,6 +86,10 @@ describe("herindexeerTrainerKennisversies — backfill voor bestaande gepublicee
         [0.3, 0.4],
         [0.5, 0.6],
       ],
+      chunkMeta: [
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 },
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 1 },
+      ],
       model: "test-model",
       hash: "nieuwe-hash",
       aantalChunks: 2,
@@ -95,13 +106,93 @@ describe("herindexeerTrainerKennisversies — backfill voor bestaande gepublicee
         [0.3, 0.4],
         [0.5, 0.6],
       ],
+      embeddingChunks: [
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 },
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 1 },
+      ],
       embeddingTextHash: "nieuwe-hash",
       embeddingStatus: "indexed",
     });
   });
 
+  // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+  // (opdrachtseis §8): de kern van de backfill voor bestaande content — de
+  // live Basiskennis had al een geldige embedding van vóór deze
+  // functionaliteit, maar nog geen embeddingChunks. Zonder speciale
+  // behandeling zou de (ongewijzigde) tekst-hash nog matchen en
+  // embedInChunksIfChanged dus stil overslaan, en zou dit record voor altijd
+  // zonder hoofdstuk-metadata blijven — deze test bewijst dat dat niet
+  // gebeurt: een volledige herberekening wordt geforceerd.
+  it("een record met een AL geldige embedding maar zonder embeddingChunks wordt herindexeerd (bestaande Basiskennis krijgt alsnog hoofdstuk-metadata)", async () => {
+    mockEmbedInChunksIfChanged.mockResolvedValue({
+      type: "embedded",
+      embeddings: [[0.1, 0.2]],
+      chunkMeta: [{ heading: "1. Wat is MijnLeerlijn?", headingSlug: "1-wat-is-mijnleerlijn", headingLevel: 2, chunkIndex: 0 }],
+      model: "test-model",
+      hash: "hash-1", // zelfde hash als al opgeslagen — de tekst is NIET gewijzigd
+      aantalChunks: 1,
+    });
+    const { payload, collection } = maakFakePayload({
+      "trainer-kennisversies": [
+        versie({ id: 1, embeddingStatus: "indexed", embedding: [[1, 0]], embeddingTextHash: "hash-1", embeddingChunks: undefined }), // simuleert een record van vóór deze functionaliteit
+      ],
+    });
+
+    const resultaat = await herindexeerTrainerKennisversies(payload);
+
+    expect(resultaat).toEqual({ totaalGepubliceerd: 1, algGeindexeerd: 0, opnieuwGeindexeerd: 1, mislukt: 0, mislukteDetails: [] });
+    // De skip-logica werd bewust GEEN kans gegeven (storedHash niet doorgegeven) — anders was dit "algGeindexeerd" gebleven, zonder embeddingChunks.
+    expect(mockEmbedInChunksIfChanged).toHaveBeenCalledWith({ text: "Periodevoorbereiding\n\nEen periode duurt zes weken.", storedHash: null, storedStatus: null });
+    expect(collection("trainer-kennisversies")[0]).toMatchObject({
+      embeddingChunks: [{ heading: "1. Wat is MijnLeerlijn?", headingSlug: "1-wat-is-mijnleerlijn", headingLevel: 2, chunkIndex: 0 }],
+    });
+  });
+
+  it("een record met zowel geldige embedding als geldige embeddingChunks wordt met rust gelaten (geen onnodige AI-aanroep)", async () => {
+    const { payload } = maakFakePayload({
+      "trainer-kennisversies": [
+        versie({ id: 1, embedding: [[1, 0]], embeddingChunks: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }] }),
+      ],
+    });
+    const resultaat = await herindexeerTrainerKennisversies(payload);
+    expect(resultaat).toEqual({ totaalGepubliceerd: 1, algGeindexeerd: 1, opnieuwGeindexeerd: 0, mislukt: 0, mislukteDetails: [] });
+    expect(mockEmbedInChunksIfChanged).not.toHaveBeenCalled();
+  });
+
+  it("embeddingChunks met een ander aantal items dan embedding (inconsistente staat) telt ook als 'moet herindexeren'", async () => {
+    mockEmbedInChunksIfChanged.mockResolvedValue({
+      type: "embedded",
+      embeddings: [[0.1, 0.2]],
+      chunkMeta: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }],
+      model: "test-model",
+      hash: "hash-1",
+      aantalChunks: 1,
+    });
+    const { payload } = maakFakePayload({
+      "trainer-kennisversies": [
+        versie({
+          id: 1,
+          embedding: [
+            [1, 0],
+            [0, 1],
+          ],
+          embeddingChunks: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }], // 1 item, embedding heeft er 2
+        }),
+      ],
+    });
+    const resultaat = await herindexeerTrainerKennisversies(payload);
+    expect(resultaat.opnieuwGeindexeerd).toBe(1);
+  });
+
   it("een record met embeddingStatus 'indexed' maar zonder daadwerkelijke embedding-array wordt ook herprobeerd (inconsistente staat)", async () => {
-    mockEmbedInChunksIfChanged.mockResolvedValue({ type: "embedded", embeddings: [[1]], model: "test", hash: "h", aantalChunks: 1 });
+    mockEmbedInChunksIfChanged.mockResolvedValue({
+      type: "embedded",
+      embeddings: [[1]],
+      chunkMeta: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }],
+      model: "test",
+      hash: "h",
+      aantalChunks: 1,
+    });
     const { payload } = maakFakePayload({
       "trainer-kennisversies": [versie({ id: 1, embeddingStatus: "indexed", embedding: null })],
     });
@@ -152,6 +243,12 @@ describe("herindexeerTrainerKennisversies — backfill voor bestaande gepublicee
         [0.3, 0.3],
         [0.4, 0.4],
       ],
+      chunkMeta: [
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 },
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 1 },
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 2 },
+        { heading: null, headingSlug: null, headingLevel: null, chunkIndex: 3 },
+      ],
       model: "text-embedding-3-small",
       hash: "hash-lange-basiskennis",
       aantalChunks: 4,
@@ -191,7 +288,14 @@ describe("herindexeerTrainerKennisversies — backfill voor bestaande gepublicee
   });
 
   it("geeft de bestaande hash/status door aan embedInChunksIfChanged (consistent met de publiceerhook)", async () => {
-    mockEmbedInChunksIfChanged.mockResolvedValue({ type: "embedded", embeddings: [[1]], model: "test", hash: "h", aantalChunks: 1 });
+    mockEmbedInChunksIfChanged.mockResolvedValue({
+      type: "embedded",
+      embeddings: [[1]],
+      chunkMeta: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }],
+      model: "test",
+      hash: "h",
+      aantalChunks: 1,
+    });
     const { payload } = maakFakePayload({
       "trainer-kennisversies": [versie({ id: 1, embeddingStatus: "pending", embedding: null, embeddingTextHash: "oude-hash" })],
     });

@@ -71,6 +71,28 @@ describe("genereerTrainerKennisAntwoord — beantwoord vanuit trainerkennis, bro
     expect(call.userPrompt).toContain("Uniek Tekst Fragment");
   });
 
+  // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+  // (opdrachtseis §5/§9): retrieval kan sindsdien meerdere bronnen voor
+  // hetzelfde document teruggeven (verschillende hoofdstukken) — de volledige
+  // documenttekst mag dan niet dubbel in de LLM-prompt belanden, maar de
+  // teruggegeven `bronnen` (voor de citatie-UI) moet wél alle hoofdstukken
+  // behouden.
+  it("dezelfde documenttekst komt maar één keer in de LLM-prompt voor, ook als retrieval 2 hoofdstukken van hetzelfde document als bron gaf", async () => {
+    mockGenerate.mockResolvedValue({ hasAnswer: true, answer: "Antwoord.", reasoning: "Reden." });
+    const bronnen = [
+      bron({ id: 7, titel: "Basiskennis", tekst: "VOLLEDIGE DOCUMENTTEKST", heading: "1. Eerste hoofdstuk", headingSlug: "1-eerste-hoofdstuk" }),
+      bron({ id: 7, titel: "Basiskennis", tekst: "VOLLEDIGE DOCUMENTTEKST", heading: "2. Tweede hoofdstuk", headingSlug: "2-tweede-hoofdstuk", similarity: 0.7 }),
+    ];
+
+    const uitkomst = await genereerTrainerKennisAntwoord("Vraag", bronnen);
+
+    const call = mockGenerate.mock.calls[0]![0];
+    expect(call.userPrompt.match(/VOLLEDIGE DOCUMENTTEKST/g)).toHaveLength(1);
+    // De teruggegeven bronnen (citatie-UI) blijven wél per-hoofdstuk — beide hoofdstukken zijn nog zichtbaar voor de trainer.
+    expect(uitkomst.type).not.toBe("failed");
+    if (uitkomst.type !== "failed") expect(uitkomst.bronnen).toHaveLength(2);
+  });
+
   it("confidence is altijd de retrieval-score van de beste bron, nooit een zelfinschatting van het model", async () => {
     mockGenerate.mockResolvedValue({ hasAnswer: true, answer: "Antwoord.", reasoning: "Reden." });
     const uitkomst = await genereerTrainerKennisAntwoord("Vraag", [bron({ similarity: 0.73 }), bron({ id: 2, similarity: 0.9 })]);

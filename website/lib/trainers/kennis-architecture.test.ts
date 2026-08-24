@@ -61,11 +61,22 @@ describe("Architectuurgrens trainer-Kennis-Q&A — geen school-/verslag-/logboek
     }
   );
 
+  // Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing":
+  // @/lib/content/markdown-headings toegevoegd aan de allowlist. Bewust
+  // toegestaan: een zuivere, framework-loze Markdown-tekstparser (geen
+  // Payload/database-aanroepen, geen school-/verslag-/logboek-/
+  // telefoniecontext) — precies de categorie die deze grens NOOIT bedoelde
+  // te blokkeren (zie de toelichting bovenaan dit bestand).
   it("importeert wél uitsluitend de eigen, toegestane trainer-kennis-modules + generieke AI-/Payload-infrastructuur", () => {
     const bron = readFileSync(join(PROJECT_ROOT, "lib/trainers/kennis.ts"), "utf-8");
     const modules = geimporteerdeModules(bron);
     for (const importPad of modules) {
-      const toegestaan = importPad === "payload" || importPad === "ai" || importPad.startsWith("@/services/") || importPad === "./kennis-antwoord";
+      const toegestaan =
+        importPad === "payload" ||
+        importPad === "ai" ||
+        importPad.startsWith("@/services/") ||
+        importPad === "./kennis-antwoord" ||
+        importPad === "@/lib/content/markdown-headings";
       expect(toegestaan, `lib/trainers/kennis.ts importeert een onverwachte module: "${importPad}"`).toBe(true);
     }
   });

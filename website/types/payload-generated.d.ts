@@ -736,9 +736,21 @@ export interface TrainerKennisversy {
   embeddingStatus?: ('pending' | 'indexed') | null;
   embeddingTextHash?: string | null;
   /**
-   * Ruwe vectoropslag voor de trainer-Q&A-zoekfunctie (lib/trainers/kennis.ts) — losstaand van de centrale kennisindex.
+   * Ruwe vectoropslag voor de trainer-Q&A-zoekfunctie (lib/trainers/kennis.ts) — losstaand van de centrale kennisindex. Eén vector per chunk (number[][], zie lib/embeddings/chunk-text.ts) i.p.v. één vlakke vector: lange trainerkennis wordt vóór het embedden opgedeeld.
    */
   embedding?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Hoofdstuk-metadata per chunk (heading/headingSlug/headingLevel/chunkIndex) — voor 'Bekijk hoofdstuk'-bronverwijzingen. Index-uitgelijnd met embedding.
+   */
+  embeddingChunks?:
     | {
         [k: string]: unknown;
       }
@@ -2775,6 +2787,7 @@ export interface TrainerKennisversiesSelect<T extends boolean = true> {
   embeddingStatus?: T;
   embeddingTextHash?: T;
   embedding?: T;
+  embeddingChunks?: T;
   updatedAt?: T;
   createdAt?: T;
 }

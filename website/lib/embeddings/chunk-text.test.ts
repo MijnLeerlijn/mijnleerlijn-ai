@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { splitsInChunks, CHUNK_TARGET_TEKENS } from "./chunk-text";
+import { splitsInChunks, splitsInHeadingChunks, CHUNK_TARGET_TEKENS } from "./chunk-text";
 
 // Productiecontrole, vervolgronde (2026-08-23) — dekt de chunker die de
 // HTTP-400-fix mogelijk maakt: elk chunk moet ruim onder het tekenbudget
@@ -72,5 +72,74 @@ describe("splitsInChunks", () => {
     for (const alinea of alineas) {
       expect(chunks.filter((c) => c.includes(alinea))).toHaveLength(1);
     }
+  });
+});
+
+// Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+// (opdrachtseis §4/§10): elke chunk moet weten in welk hoofdstuk hij stond,
+// ook wanneer een hoofdstuk zelf over meerdere chunks wordt verdeeld.
+describe("splitsInHeadingChunks", () => {
+  it("lege tekst geeft een lege lijst", () => {
+    expect(splitsInHeadingChunks("")).toEqual([]);
+  });
+
+  it("tekst zonder enige heading krijgt heading:null, blijft gewoon embedbaar", () => {
+    const chunks = splitsInHeadingChunks("Gewone tekst zonder koppen.");
+    expect(chunks).toEqual([{ text: "Gewone tekst zonder koppen.", heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }]);
+  });
+
+  it("elke chunk van een kort document krijgt de heading van zijn eigen sectie", () => {
+    const markdown = ["## 1. Eerste hoofdstuk", "Inhoud 1.", "", "## 2. Tweede hoofdstuk", "Inhoud 2."].join("\n");
+    const chunks = splitsInHeadingChunks(markdown);
+    expect(chunks).toEqual([
+      { text: "Inhoud 1.", heading: "1. Eerste hoofdstuk", headingSlug: "1-eerste-hoofdstuk", headingLevel: 2, chunkIndex: 0 },
+      { text: "Inhoud 2.", heading: "2. Tweede hoofdstuk", headingSlug: "2-tweede-hoofdstuk", headingLevel: 2, chunkIndex: 1 },
+    ]);
+  });
+
+  it("een lang hoofdstuk dat zelf in meerdere chunks wordt gesplitst, behoudt dezelfde heading-metadata op elke vervolgchunk", () => {
+    const alinea = "x".repeat(4000);
+    const langHoofdstuk = [alinea, alinea, alinea].join("\n\n"); // 12000 tekens, budget 6000 -> minstens 2 chunks
+    const markdown = `## 6. Een lang hoofdstuk\n${langHoofdstuk}`;
+
+    const chunks = splitsInHeadingChunks(markdown, 6000);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.heading).toBe("6. Een lang hoofdstuk");
+      expect(chunk.headingSlug).toBe("6-een-lang-hoofdstuk");
+      expect(chunk.headingLevel).toBe(2);
+      expect(chunk.text.length).toBeLessThanOrEqual(6000);
+    }
+    // Doorlopende chunkIndex over het hele document, geen reset per sectie.
+    expect(chunks.map((c) => c.chunkIndex)).toEqual(chunks.map((_, i) => i));
+  });
+
+  it("tekst vóór de eerste heading vormt een eigen chunk met heading:null, gevolgd door de chunk(s) van de eerste heading", () => {
+    const markdown = ["Een inleidende alinea.", "", "## 1. Eerste hoofdstuk", "Inhoud van hoofdstuk 1."].join("\n");
+    const chunks = splitsInHeadingChunks(markdown);
+    expect(chunks).toEqual([
+      { text: "Een inleidende alinea.", heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 },
+      { text: "Inhoud van hoofdstuk 1.", heading: "1. Eerste hoofdstuk", headingSlug: "1-eerste-hoofdstuk", headingLevel: 2, chunkIndex: 1 },
+    ]);
+  });
+
+  it("een heading zonder eigen inhoud (direct gevolgd door de volgende heading) levert geen chunk op", () => {
+    const markdown = ["## Kop zonder tekst", "## Volgende kop", "Wel tekst hier."].join("\n");
+    const chunks = splitsInHeadingChunks(markdown);
+    expect(chunks).toEqual([{ text: "Wel tekst hier.", heading: "Volgende kop", headingSlug: "volgende-kop", headingLevel: 2, chunkIndex: 0 }]);
+  });
+
+  it("een realistisch-grote trainerkennistekst met veel hoofdstukken levert voor elk hoofdstuk minstens één correct-getagde chunk op", () => {
+    const hoofdstukken = Array.from({ length: 15 }, (_, i) => `## ${i + 1}. Hoofdstuk ${i + 1}\n${"tekst ".repeat(400).trim()}`);
+    const markdown = hoofdstukken.join("\n\n");
+
+    const chunks = splitsInHeadingChunks(markdown);
+
+    for (let i = 0; i < hoofdstukken.length; i += 1) {
+      const verwachteSlug = `${i + 1}-hoofdstuk-${i + 1}`;
+      expect(chunks.some((c) => c.headingSlug === verwachteSlug)).toBe(true);
+    }
+    for (const chunk of chunks) expect(chunk.text.length).toBeLessThanOrEqual(CHUNK_TARGET_TEKENS);
   });
 });

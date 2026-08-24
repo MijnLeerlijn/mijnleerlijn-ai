@@ -48,6 +48,7 @@ describe("embedInChunksIfChanged — korte tekst (één chunk)", () => {
     expect(uitkomst).toEqual({
       type: "embedded",
       embeddings: [[0.1, 0.2]],
+      chunkMeta: [{ heading: null, headingSlug: null, headingLevel: null, chunkIndex: 0 }],
       model: "text-embedding-3-small-test",
       hash: hashText(tekst),
       aantalChunks: 1,
@@ -111,6 +112,22 @@ describe("embedInChunksIfChanged — lange tekst (meerdere chunks), de kern van 
     }
     // Geen derde aanroep na de mislukking bij chunk 2 — geen halve/verspilde verdere AI-aanroepen.
     expect(mockGenerateEmbedding).toHaveBeenCalledTimes(2);
+  });
+
+  it("geeft de heading-metadata per chunk terug (opdrachtseis §4), index-uitgelijnd met embeddings", async () => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0]);
+    const tekst = ["## 1. Eerste hoofdstuk", "Inhoud 1.", "", "## 2. Tweede hoofdstuk", "Inhoud 2."].join("\n");
+
+    const uitkomst = await embedInChunksIfChanged({ text: tekst, storedHash: null, storedStatus: "pending" });
+
+    expect(uitkomst.type).toBe("embedded");
+    if (uitkomst.type === "embedded") {
+      expect(uitkomst.chunkMeta).toEqual([
+        { heading: "1. Eerste hoofdstuk", headingSlug: "1-eerste-hoofdstuk", headingLevel: 2, chunkIndex: 0 },
+        { heading: "2. Tweede hoofdstuk", headingSlug: "2-tweede-hoofdstuk", headingLevel: 2, chunkIndex: 1 },
+      ]);
+      expect(uitkomst.chunkMeta).toHaveLength(uitkomst.embeddings.length);
+    }
   });
 
   it("de diagnose bevat nooit de inhoud van de (mislukte) chunk zelf", async () => {

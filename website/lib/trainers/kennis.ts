@@ -1,6 +1,7 @@
 import type { Payload } from "payload";
 import { cosineSimilarity } from "ai";
 import { generateEmbedding } from "@/services/ai-client";
+import { haalHeadingsOp } from "@/lib/content/markdown-headings";
 import { genereerTrainerKennisAntwoord, type TrainerKennisBron, type TrainerKennisAntwoordUitkomst } from "./kennis-antwoord";
 
 // Vervolgronde (2026-08-22) — "Kennis" fase 1, primair lezen. Bewust GEEN
@@ -20,11 +21,22 @@ import { genereerTrainerKennisAntwoord, type TrainerKennisBron, type TrainerKenn
 // zou een nieuwe module-import zijn die de architectuurtest (kennis-
 // architecture.test.ts) niet toestaat, terwijl een primitief getal geen
 // school-/verslag-/logboek-/telefoniecontext binnenhaalt.
+//
+// Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing"
+// (opdrachtseis §7): haalGepubliceerdeKennisversies geeft nu ook de headings
+// van elk document mee, zodat de Kennis-zoekfunctie (kennis-lijst-client.tsx)
+// ook op hoofdstuktitel kan matchen en rechtstreeks naar dat hoofdstuk kan
+// linken. lib/content/markdown-headings.ts is bewust toegevoegd aan de
+// architectuurtest se allowlist voor dit bestand — een zuivere, framework-
+// loze tekstparser zonder enige school-/verslag-/logboek-/telefoniecontext,
+// dus geen inbreuk op de bestaande grens.
 
 export interface TrainerKennisversieOverzicht {
   id: number;
   titel: string;
   samenvatting: string;
+  /** Voor de zoekfunctie (opdrachtseis §7) — dezelfde headings/slugs als de lezer (lib/content/markdown-headings.ts), dus altijd geldige ankers. */
+  headings: { text: string; slug: string }[];
 }
 
 export interface TrainerKennisversieDetail {
@@ -53,6 +65,7 @@ export async function haalGepubliceerdeKennisversies(payload: Payload): Promise<
     id: doc.id,
     titel: doc.titel,
     samenvatting: doc.tekst.length > SAMENVATTING_LENGTE ? `${doc.tekst.slice(0, SAMENVATTING_LENGTE)}…` : doc.tekst,
+    headings: haalHeadingsOp(doc.tekst).map((h) => ({ text: h.text, slug: h.slug })),
   }));
 }
 
@@ -69,17 +82,51 @@ const MAX_BRONNEN = 4;
 // wordt sindsdien per chunk geëmbed (lib/embeddings/chunked-embed.ts, fix
 // voor de HTTP 400 bij lange, van de Kennisbasis afgeleide trainerkennis):
 // embedding is dus number[][] (één vector per chunk), niet meer één vlakke
-// vector. De score van een document is de HOOGSTE similarity over al zijn
-// chunks — de trainer krijgt nog altijd de volledige, ongewijzigde tekst
-// als bron/LLM-context (gpt-4o se contextvenster is ruim genoeg daarvoor,
-// alleen het EMBEDDING-model heeft de striktere limiet), alleen de
-// retrieval-SCORE kijkt naar het best passende fragment.
-function besteChunkSimilarity(queryEmbedding: number[], chunkEmbeddings: number[][]): number {
-  return Math.max(...chunkEmbeddings.map((chunk) => cosineSimilarity(queryEmbedding, chunk)));
-}
-
+// vector. De trainer krijgt nog altijd de volledige, ongewijzigde tekst als
+// bron/LLM-context (gpt-4o se contextvenster is ruim genoeg daarvoor, alleen
+// het EMBEDDING-model heeft de striktere limiet).
 function heeftGeldigeChunkEmbeddings(waarde: unknown): waarde is number[][] {
   return Array.isArray(waarde) && waarde.length > 0 && waarde.every((chunk) => Array.isArray(chunk) && chunk.length > 0);
+}
+
+// Vervolgronde (2026-08-24) — "hoofdstuknavigatie + bronverwijzing":
+// embeddingChunks (lib/embeddings/chunked-embed.ts) draagt per chunk de
+// hoofdstuk-metadata, index-uitgelijnd met embedding. Ontbreekt dit (een
+// trainerkennisversie van vóór deze functionaliteit, nog niet herindexeerd —
+// zie lib/trainers/kennis-reindex.ts) of klopt de lengte niet, dan krijgt
+// elke chunk gewoon heading:null: retrieval/antwoord functioneren dan exact
+// zoals vóór deze functionaliteit, alleen zonder hoofdstuk-citatie.
+interface RuweEmbeddingChunkMeta {
+  heading: string | null;
+  headingSlug: string | null;
+}
+
+function heeftGeldigeChunkMeta(waarde: unknown, verwachteLengte: number): waarde is RuweEmbeddingChunkMeta[] {
+  return Array.isArray(waarde) && waarde.length === verwachteLengte;
+}
+
+interface ChunkKandidaat {
+  docId: number;
+  titel: string;
+  tekst: string;
+  similarity: number;
+  heading: string | null;
+  headingSlug: string | null;
+}
+
+function bouwChunkKandidaten(
+  doc: { id: number; titel: string; tekst: string; embedding: number[][]; embeddingChunks?: unknown },
+  queryEmbedding: number[]
+): ChunkKandidaat[] {
+  const chunkMeta = heeftGeldigeChunkMeta(doc.embeddingChunks, doc.embedding.length) ? doc.embeddingChunks : null;
+  return doc.embedding.map((chunkEmbedding, i) => ({
+    docId: doc.id,
+    titel: doc.titel,
+    tekst: doc.tekst,
+    similarity: cosineSimilarity(queryEmbedding, chunkEmbedding),
+    heading: chunkMeta?.[i]?.heading ?? null,
+    headingSlug: chunkMeta?.[i]?.headingSlug ?? null,
+  }));
 }
 
 async function zoekRelevanteKennis(payload: Payload, vraag: string): Promise<TrainerKennisBron[]> {
@@ -94,10 +141,35 @@ async function zoekRelevanteKennis(payload: Payload, vraag: string): Promise<Tra
   if (metEmbedding.length === 0) return [];
 
   const queryEmbedding = await generateEmbedding(vraag);
-  return metEmbedding
-    .map((doc) => ({ id: doc.id, titel: doc.titel, tekst: doc.tekst, similarity: besteChunkSimilarity(queryEmbedding, doc.embedding) }))
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, MAX_BRONNEN);
+
+  const alleKandidaten = metEmbedding
+    .flatMap((doc) => bouwChunkKandidaten(doc, queryEmbedding))
+    .sort((a, b) => b.similarity - a.similarity);
+
+  // Per (document, hoofdstuk) hooguit één citatie — dankzij de sortering
+  // hierboven wint steeds de best scorende chunk van elk uniek paar. Meerdere
+  // chunks uit hetzelfde hoofdstuk -> één citatie (opdrachtseis §5); meerdere
+  // ECHT verschillende hoofdstukken (ook binnen hetzelfde document) mogen
+  // allebei als aparte bron verschijnen. Een chunk zonder heading (null) telt
+  // als een eigen sleutel per document — gedraagt zich dus exact als vóór
+  // deze functionaliteit (hooguit één citatie per document).
+  const gezienSleutels = new Set<string>();
+  const bronnen: TrainerKennisBron[] = [];
+  for (const kandidaat of alleKandidaten) {
+    const sleutel = `${kandidaat.docId}::${kandidaat.headingSlug ?? ""}`;
+    if (gezienSleutels.has(sleutel)) continue;
+    gezienSleutels.add(sleutel);
+    bronnen.push({
+      id: kandidaat.docId,
+      titel: kandidaat.titel,
+      tekst: kandidaat.tekst,
+      similarity: kandidaat.similarity,
+      heading: kandidaat.heading,
+      headingSlug: kandidaat.headingSlug,
+    });
+    if (bronnen.length >= MAX_BRONNEN) break;
+  }
+  return bronnen;
 }
 
 /**
