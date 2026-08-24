@@ -2,9 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import type { CSSProperties } from "react";
+import { GraduationCap, CirclePlay, ListTodo, FileClock, Phone, AlertTriangle, type LucideIcon } from "lucide-react";
 import type { AdminTrainersOverzicht, AdminTrainerKaart } from "@/lib/admin/trainers/overzicht";
 import type { AdminAandachtOverzicht } from "@/lib/admin/trainers/aandacht";
 import { formatKorteDatum, formatKorteDatumTijd } from "@/lib/sales/format-datum";
+import { NAV_COLOR_STYLES, type NavColor } from "@/lib/admin-nav/nav-colors";
+import { AANDACHT_SOORT_KLEUR, trainerActiefKleur } from "@/lib/admin/trainers/status-kleuren";
+import { AdminStatusBadge } from "./AdminStatusBadge";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard (spec §2).
 // Hergebruikt bewust de bestaande ml-sales__*-CSS-klassen (kaart/tabel/knop/
@@ -14,6 +19,10 @@ import { formatKorteDatum, formatKorteDatumTijd } from "@/lib/sales/format-datum
 // nieuw design system." Twee losse fetches ((1) overzicht, (2) aandacht) —
 // elk al zijn eigen, admin-brede, single-round-trip route (spec §13); geen
 // van beide roept de ander aan.
+//
+// Visuele polishronde (2026-08-24) — kleuraccenten per KPI-kaart + gekleurde
+// status (lib/admin/trainers/status-kleuren.ts), puur presentatie: geen
+// enkele fetch/filter/sortering hieronder is gewijzigd.
 
 async function apiGetOne<T>(url: string): Promise<T | null> {
   const res = await fetch(url, { credentials: "include" });
@@ -70,16 +79,19 @@ export function TrainersOverzichtView() {
       </div>
 
       <div className="ml-sales__kaarten-rij" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-        <TotaalKaart label="Actieve trainers" waarde={overzicht.totalen.actieveTrainers} />
-        <TotaalKaart label="Trainingen deze maand" waarde={overzicht.totalen.trainingenDezeMaand} />
-        <TotaalKaart label="Open to-do's" waarde={overzicht.totalen.openTodos} href="/admin/trainers/todo" />
-        <TotaalKaart label="Open verslagen" waarde={overzicht.totalen.openVerslagen} />
-        <TotaalKaart label="Mislukte telefonie-oproepen" waarde={overzicht.totalen.misluktetelefonieOproepen} />
+        <TotaalKaart label="Actieve trainers" waarde={overzicht.totalen.actieveTrainers} kleur="green" icoon={GraduationCap} />
+        <TotaalKaart label="Trainingen deze maand" waarde={overzicht.totalen.trainingenDezeMaand} kleur="blue" icoon={CirclePlay} />
+        <TotaalKaart label="Open to-do's" waarde={overzicht.totalen.openTodos} href="/admin/trainers/todo" kleur="orange" icoon={ListTodo} />
+        <TotaalKaart label="Open verslagen" waarde={overzicht.totalen.openVerslagen} kleur="orange" icoon={FileClock} />
+        <TotaalKaart label="Mislukte telefonie-oproepen" waarde={overzicht.totalen.misluktetelefonieOproepen} kleur="red" icoon={Phone} />
       </div>
 
       {aandacht && (aandacht.items.length > 0 || aandacht.trainersMetVeelOudeVerslagen.length > 0) && (
         <div className="ml-sales__section">
-          <h2>Aandacht</h2>
+          <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <AlertTriangle size={17} aria-hidden="true" style={{ color: NAV_COLOR_STYLES.orange.fg }} />
+            Aandacht
+          </h2>
           {aandacht.trainersMetVeelOudeVerslagen.length > 0 && (
             <p className="ml-sales__kaart-tekst" style={{ marginBottom: 8 }}>
               Trainers met veel oude/vastgelopen verslagen:{" "}
@@ -109,7 +121,9 @@ export function TrainersOverzichtView() {
                 <tbody>
                   {aandacht.items.slice(0, 30).map((item, i) => (
                     <tr key={i}>
-                      <td>{AANDACHT_LABEL[item.soort]}</td>
+                      <td>
+                        <AdminStatusBadge label={AANDACHT_LABEL[item.soort]} kleur={AANDACHT_SOORT_KLEUR[item.soort]} />
+                      </td>
                       <td>{item.trainerId ? <Link href={`/admin/trainers/detail?id=${item.trainerId}`}>{item.trainerNaam}</Link> : item.trainerNaam}</td>
                       <td>{item.schoolNaam}</td>
                       <td>{item.titel}</td>
@@ -152,10 +166,13 @@ export function TrainersOverzichtView() {
                 {zichtbareTrainers.map((t: AdminTrainerKaart) => (
                   <tr key={t.trainerId}>
                     <td>
-                      <Link href={`/admin/trainers/detail?id=${t.trainerId}`}>{t.naam}</Link>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                        <span className="ml-sales__status-stip" style={{ background: NAV_COLOR_STYLES[trainerActiefKleur(t.actief)].fg }} />
+                        <Link href={`/admin/trainers/detail?id=${t.trainerId}`}>{t.naam}</Link>
+                      </span>
                     </td>
                     <td>
-                      <span className={`ml-sales__badge${t.actief ? "" : " ml-sales__ontbrekend"}`}>{t.actief ? "Actief" : "Inactief"}</span>
+                      <AdminStatusBadge label={t.actief ? "Actief" : "Inactief"} kleur={trainerActiefKleur(t.actief)} />
                     </td>
                     <td>{t.aantalScholen}</td>
                     <td>{t.aantalKomendeTrainingen}</td>
@@ -176,10 +193,14 @@ export function TrainersOverzichtView() {
   );
 }
 
-function TotaalKaart({ label, waarde, href }: { label: string; waarde: number; href?: string }) {
+function TotaalKaart({ label, waarde, href, kleur, icoon: Icoon }: { label: string; waarde: number; href?: string; kleur: NavColor; icoon: LucideIcon }) {
+  const stijl = NAV_COLOR_STYLES[kleur];
   const inhoud = (
-    <div className="ml-sales__kaart" style={{ textAlign: "center" }}>
-      <p style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--ml-admin-accent)" }}>{waarde}</p>
+    <div className="ml-sales__kaart" style={{ textAlign: "center", alignItems: "center" }}>
+      <span className="ml-sales__kaart-icoon" style={{ "--item-fg": stijl.fg, "--item-bg": stijl.bg } as CSSProperties}>
+        <Icoon size={15} aria-hidden="true" />
+      </span>
+      <p style={{ fontSize: 28, fontWeight: 700, margin: 0, color: stijl.fg }}>{waarde}</p>
       <p className="ml-sales__kaart-tekst" style={{ margin: 0 }}>
         {label}
       </p>

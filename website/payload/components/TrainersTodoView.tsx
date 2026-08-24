@@ -5,7 +5,9 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { AdminTodoItem } from "@/lib/admin/trainers/todo";
 import { TODO_ICOON, TODO_CTA_LABEL, todoTijdLabel } from "@/lib/trainers/todo-styles";
-import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
+import { NAV_COLOR_STYLES, hexNaarRgba } from "@/lib/admin-nav/nav-colors";
+import { TODO_SOORT_KLEUR } from "@/lib/admin/trainers/status-kleuren";
+import { AdminStatusBadge } from "./AdminStatusBadge";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — adminbreed To do (spec §5).
 // Hergebruikt TODO_ICOON/TODO_CTA_LABEL/todoTijdLabel (lib/trainers/
@@ -102,16 +104,22 @@ export function TrainersTodoView() {
         <div className="ml-sales__grid">
           {zichtbaar.map((item, i) => {
             const Icoon = TODO_ICOON[item.soort];
+            const kleur = TODO_SOORT_KLEUR[item.soort];
+            const stijl = NAV_COLOR_STYLES[kleur];
             return (
-              <div className="ml-sales__kaart" key={`${item.trainerId}-${item.trainingId}-${i}`}>
+              <div
+                className="ml-sales__kaart ml-sales__kaart--accent"
+                key={`${item.trainerId}-${item.trainingId}-${i}`}
+                style={{ "--item-fg": stijl.fg, "--item-bg": hexNaarRgba(stijl.fg, 0.06) } as CSSProperties}
+              >
                 <div className="ml-sales__kaart-header">
                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span className="ml-sales__kaart-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.orange.fg, "--item-bg": NAV_COLOR_STYLES.orange.bg } as CSSProperties}>
+                    <span className="ml-sales__kaart-icoon" style={{ "--item-fg": stijl.fg, "--item-bg": stijl.bg } as CSSProperties}>
                       <Icoon size={15} aria-hidden="true" />
                     </span>
                     <strong>{item.trainingNaam}</strong>
                   </span>
-                  <span className="ml-sales__badge">{SOORT_LABEL[item.soort]}</span>
+                  <AdminStatusBadge label={SOORT_LABEL[item.soort]} kleur={kleur} />
                 </div>
                 <p className="ml-sales__kaart-tekst">{item.schoolNaam}</p>
                 <p className="ml-sales__kaart-tekst">

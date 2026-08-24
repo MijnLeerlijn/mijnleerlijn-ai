@@ -13,7 +13,13 @@ export interface NavColorStyle {
   bg: string;
 }
 
-function hexNaarRgba(hex: string, alpha: number): string {
+// Geëxporteerd (was lokaal) voor de visuele polishronde (2026-08-24, Admin
+// Trainerdashboard): kaart-accenten (To do/Aandacht) hebben een zachtere
+// tint nodig dan de 12%-alfa hierboven (die is afgestemd op kleine
+// badges/icoon-chips) — zelfde 9 merkkleuren, alleen een lagere alfa voor
+// een grotere kaartoppervlakte. Geen nieuwe kleurwaarden, uitsluitend
+// hergebruik van dezelfde hexwaarden met een andere dekking.
+export function hexNaarRgba(hex: string, alpha: number): string {
   const r = Number.parseInt(hex.slice(1, 3), 16);
   const g = Number.parseInt(hex.slice(3, 5), 16);
   const b = Number.parseInt(hex.slice(5, 7), 16);

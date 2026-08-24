@@ -18,6 +18,9 @@ import { TODO_ICOON, TODO_CTA_LABEL, todoTijdLabel } from "@/lib/trainers/todo-s
 import { ACTIVITEIT_LABEL, ACTIVITEIT_ICOON } from "@/lib/trainers/activiteit-styles";
 import { groepeerOpWeergaveStatus, type TrainingWeergaveStatus } from "@/lib/trainers/training-weergave";
 import { formatKorteDatum, formatKorteDatumTijd, vandaagIso } from "@/lib/sales/format-datum";
+import { NAV_COLOR_STYLES, type NavColor } from "@/lib/admin-nav/nav-colors";
+import { VERSLAG_STATUS_KLEUR, WRITEBACK_STATUS_KLEUR, TELEFONIE_STATUS_KLEUR, WEERGAVE_STATUS_KLEUR, TODO_SOORT_KLEUR, trainerActiefKleur } from "@/lib/admin/trainers/status-kleuren";
+import { AdminStatusBadge } from "./AdminStatusBadge";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdetail (spec §3).
 // "Bijna hetzelfde beeld als de trainer zelf ziet, in admin-context" —
@@ -210,9 +213,9 @@ function DetailVoorTrainer({ trainerId, initialTab }: { trainerId: string; initi
       <div className="ml-sales__header">
         <h1>{basis.naam}</h1>
         <div className="ml-sales__schooldetail-meta">
-          <span className="ml-sales__badge">{basis.actief ? "Actief" : "Inactief"}</span>
+          <AdminStatusBadge label={basis.actief ? "Actief" : "Inactief"} kleur={trainerActiefKleur(basis.actief)} />
           <span className="ml-sales__badge">{basis.email}</span>
-          {basis.telefonieActief && <span className="ml-sales__badge">Telefonische verslaglegging aan</span>}
+          {basis.telefonieActief && <AdminStatusBadge label="Telefonische verslaglegging aan" kleur="teal" />}
           {basis.mobielNummer && <span className="ml-sales__badge">{basis.mobielNummer}</span>}
         </div>
       </div>
@@ -242,35 +245,26 @@ function TabFoutmelding() {
   return <div className="ml-sales__leeg">Kon dit tabblad niet laden.</div>;
 }
 
+function MiniKpiKaart({ waarde, label, kleur }: { waarde: number; label: string; kleur: NavColor }) {
+  return (
+    <div className="ml-sales__kaart" style={{ textAlign: "center" }}>
+      <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: NAV_COLOR_STYLES[kleur].fg }}>{waarde}</p>
+      <p className="ml-sales__kaart-tekst" style={{ margin: 0 }}>
+        {label}
+      </p>
+    </div>
+  );
+}
+
 function OverzichtTab({ data }: { data: AdminTrainerOverzichtTab }) {
   const { dashboard, kennisQa } = data;
   return (
     <>
       <div className="ml-sales__kaarten-rij" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-        <div className="ml-sales__kaart" style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{dashboard.statistieken.totaalTrainingen}</p>
-          <p className="ml-sales__kaart-tekst" style={{ margin: 0 }}>
-            Trainingen totaal
-          </p>
-        </div>
-        <div className="ml-sales__kaart" style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{dashboard.statistieken.aantalScholen}</p>
-          <p className="ml-sales__kaart-tekst" style={{ margin: 0 }}>
-            Scholen
-          </p>
-        </div>
-        <div className="ml-sales__kaart" style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{dashboard.statistieken.verslagenAfgerond}</p>
-          <p className="ml-sales__kaart-tekst" style={{ margin: 0 }}>
-            Verslagen afgerond
-          </p>
-        </div>
-        <div className="ml-sales__kaart" style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{kennisQa.aantalVragen}</p>
-          <p className="ml-sales__kaart-tekst" style={{ margin: 0 }}>
-            Kennisvragen ({kennisQa.laatsteNDagen}d)
-          </p>
-        </div>
+        <MiniKpiKaart waarde={dashboard.statistieken.totaalTrainingen} label="Trainingen totaal" kleur="blue" />
+        <MiniKpiKaart waarde={dashboard.statistieken.aantalScholen} label="Scholen" kleur="teal" />
+        <MiniKpiKaart waarde={dashboard.statistieken.verslagenAfgerond} label="Verslagen afgerond" kleur="green" />
+        <MiniKpiKaart waarde={kennisQa.aantalVragen} label={`Kennisvragen (${kennisQa.laatsteNDagen}d)`} kleur="purple" />
       </div>
 
       {kennisQa.aantalVragen > 0 && (
@@ -287,7 +281,7 @@ function OverzichtTab({ data }: { data: AdminTrainerOverzichtTab }) {
               const Icoon = TODO_ICOON[item.soort];
               return (
                 <li key={i} className="ml-sales__kaart-tekst">
-                  <Icoon size={13} aria-hidden="true" style={{ verticalAlign: "middle", marginRight: 4 }} />
+                  <Icoon size={13} aria-hidden="true" style={{ verticalAlign: "middle", marginRight: 4, color: NAV_COLOR_STYLES[TODO_SOORT_KLEUR[item.soort]].fg }} />
                   {item.trainingNaam} — {item.schoolNaam} · {TODO_CTA_LABEL[item.soort]} · {todoTijdLabel(item)}
                 </li>
               );
@@ -378,7 +372,8 @@ function TrainingenTab({ data }: { data: TrainingMetSchool[] }) {
         .filter((status) => groepen[status].length > 0)
         .map((status) => (
           <div className="ml-sales__section" key={status}>
-            <h2>
+            <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="ml-sales__status-stip" style={{ background: NAV_COLOR_STYLES[WEERGAVE_STATUS_KLEUR[status]].fg }} />
               {WEERGAVE_STATUS_LABEL[status]} ({groepen[status].length})
             </h2>
             <div style={{ overflowX: "auto" }}>
@@ -431,10 +426,16 @@ function VerslagenTab({ data }: { data: AdminTrainerVerslagRegel[] }) {
               <td>{formatKorteDatumTijd(v.wanneer)}</td>
               <td>{v.trainingNaam}</td>
               <td>{v.schoolNaam}</td>
-              <td>{VERSLAG_STATUS_LABEL[v.status]}</td>
+              <td>
+                <AdminStatusBadge label={VERSLAG_STATUS_LABEL[v.status]} kleur={VERSLAG_STATUS_KLEUR[v.status]} />
+              </td>
               <td>{v.bron === "telefoon" ? "Telefonisch" : "Portal"}</td>
-              <td>{WRITEBACK_STATUS_LABEL[v.trainingUpdateStatus]}</td>
-              <td>{WRITEBACK_STATUS_LABEL[v.schoolUpdateStatus]}</td>
+              <td>
+                <AdminStatusBadge label={WRITEBACK_STATUS_LABEL[v.trainingUpdateStatus]} kleur={WRITEBACK_STATUS_KLEUR[v.trainingUpdateStatus]} />
+              </td>
+              <td>
+                <AdminStatusBadge label={WRITEBACK_STATUS_LABEL[v.schoolUpdateStatus]} kleur={WRITEBACK_STATUS_KLEUR[v.schoolUpdateStatus]} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -494,7 +495,9 @@ function TelefonieTab({ data }: { data: AdminTrainerOproepRegel[] }) {
           {data.map((o) => (
             <tr key={o.oproepId}>
               <td>{formatKorteDatumTijd(o.ontvangenOp)}</td>
-              <td>{OPROEP_STATUS_LABEL[o.status]}</td>
+              <td>
+                <AdminStatusBadge label={OPROEP_STATUS_LABEL[o.status]} kleur={TELEFONIE_STATUS_KLEUR[o.status]} />
+              </td>
               <td className={o.gekozenTrainingNaam ? undefined : "ml-sales__ontbrekend"}>{o.gekozenTrainingNaam ?? "—"}</td>
               <td>{o.transcriptiePogingen}</td>
               <td className={o.foutmelding ? undefined : "ml-sales__ontbrekend"}>{o.foutmelding ?? "—"}</td>

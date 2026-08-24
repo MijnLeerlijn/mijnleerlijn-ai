@@ -8,6 +8,7 @@ import type { AdminActiviteitItem, AdminActiviteitSoort } from "@/lib/admin/trai
 import { ACTIVITEIT_LABEL, ACTIVITEIT_ICOON } from "@/lib/trainers/activiteit-styles";
 import { formatKorteDatumTijd } from "@/lib/sales/format-datum";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
+import { activiteitSoortKleur } from "@/lib/admin/trainers/status-kleuren";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — admin-brede Activiteit (spec
 // §6). Hergebruikt ACTIVITEIT_LABEL/-ICOON (lib/trainers/activiteit-styles.ts)
@@ -104,9 +105,10 @@ export function TrainersActiviteitView() {
         <div className="ml-sales__logboek">
           {zichtbaar.map((item, i) => {
             const Icoon = icoonVoor(item.soort);
+            const stijl = NAV_COLOR_STYLES[activiteitSoortKleur(item.soort)];
             return (
               <div className="ml-sales__logboek-item" key={i}>
-                <span className="ml-sales__kaart-icoon" style={{ "--item-fg": NAV_COLOR_STYLES.teal.fg, "--item-bg": NAV_COLOR_STYLES.teal.bg } as CSSProperties}>
+                <span className="ml-sales__kaart-icoon" style={{ "--item-fg": stijl.fg, "--item-bg": stijl.bg } as CSSProperties}>
                   <Icoon size={15} aria-hidden="true" />
                 </span>
                 <div>

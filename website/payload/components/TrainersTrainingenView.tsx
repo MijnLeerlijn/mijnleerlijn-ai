@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { AdminTrainingRegel } from "@/lib/admin/trainers/trainingen";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
+import { WEERGAVE_STATUS_KLEUR, VERSLAG_STATUS_KLEUR } from "@/lib/admin/trainers/status-kleuren";
+import { AdminStatusBadge } from "./AdminStatusBadge";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — "Alle trainingen" adminbreed
 // (spec §4). Eén fetch van de volledige, admin-brede lijst (de server-route
@@ -26,7 +28,7 @@ const STATUS_LABEL: Record<AdminTrainingRegel["weergaveStatus"], string> = {
   geannuleerd: "Geannuleerd",
 };
 
-const VERSLAG_STATUS_LABEL: Record<string, string> = {
+const VERSLAG_STATUS_LABEL: Record<NonNullable<AdminTrainingRegel["verslagStatus"]> | "geen", string> = {
   concept: "Concept",
   gedeeltelijk: "Gedeeltelijk",
   bevestigd: "Bevestigd",
@@ -138,8 +140,16 @@ export function TrainersTrainingenView() {
                   </td>
                   <td>{t.schoolNaam}</td>
                   <td>{t.trainingNaam}</td>
-                  <td>{STATUS_LABEL[t.weergaveStatus]}</td>
-                  <td className={t.verslagStatus ? undefined : "ml-sales__ontbrekend"}>{t.verslagStatus ? VERSLAG_STATUS_LABEL[t.verslagStatus] : "Nog geen verslag"}</td>
+                  <td>
+                    <AdminStatusBadge label={STATUS_LABEL[t.weergaveStatus]} kleur={WEERGAVE_STATUS_KLEUR[t.weergaveStatus]} />
+                  </td>
+                  <td>
+                    {t.verslagStatus ? (
+                      <AdminStatusBadge label={VERSLAG_STATUS_LABEL[t.verslagStatus]} kleur={VERSLAG_STATUS_KLEUR[t.verslagStatus]} />
+                    ) : (
+                      <span className="ml-sales__ontbrekend">Nog geen verslag</span>
+                    )}
+                  </td>
                   <td className={t.verslagBron ? undefined : "ml-sales__ontbrekend"}>{t.verslagBron === "telefoon" ? "Telefonisch" : t.verslagBron === "portal" ? "Portal" : "—"}</td>
                 </tr>
               ))}

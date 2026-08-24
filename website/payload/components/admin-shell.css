@@ -1736,6 +1736,32 @@ a.ml-dashboard__card:hover {
   flex-shrink: 0;
 }
 
+/* Visuele polishronde (2026-08-24) — generieke statusstip (bv. trainer
+ * actief/inactief, sectiekop-status), zelfde vorm als .ml-sales__logboek-stip
+ * maar zonder aan dat specifieke (Sales-logboek-)begrip gekoppeld te zijn.
+ * Kleur altijd inline via style (--item-fg elders, hier gewoon `background`
+ * — geen --item-bg nodig, een stip heeft geen aparte achtergrondtint). */
+.ml-sales__status-stip {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+/* Visuele polishronde (2026-08-24) — kaart-accent voor To do/Aandacht:
+ * zelfde linkerrand+zachte-tint-conventie als de bestaande
+ * .ml-sales-widget__item--achterstallig/--conflict hierboven, nu herbruikbaar
+ * met een dynamische kleur (--item-fg/--item-bg, hier bewust een zachtere
+ * alfa dan de badge-variant — zie hexNaarRgba in nav-colors.ts) i.p.v. een
+ * hardgecodeerde variant per status. Uitsluitend op kaarten (.ml-sales__kaart
+ * binnen .ml-sales__grid), nooit op tabelrijen — spec-eis "tabellen blijven
+ * rustig, geen gekleurde volle achtergronden per rij". */
+.ml-sales__kaart--accent {
+  border-left: 3px solid var(--item-fg);
+  background: var(--item-bg);
+}
+
 .ml-sales__schooldetail-meta {
   display: flex;
   gap: 8px;
