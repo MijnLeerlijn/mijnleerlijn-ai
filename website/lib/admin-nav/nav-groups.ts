@@ -87,7 +87,7 @@ export interface NavItem {
 }
 
 export interface NavGroupDef {
-  id: "algemeen" | "helpdesk-ai" | "creator" | "curriculum-werkplaats" | "sales";
+  id: "algemeen" | "helpdesk-ai" | "creator" | "curriculum-werkplaats" | "sales" | "trainers";
   label: string;
   icon: LucideIcon;
   items: NavItem[];
@@ -117,23 +117,6 @@ export const NAV_GROUPS: NavGroupDef[] = [
       { label: "Downloadbeheer", href: "/admin/download-beheer", icon: FolderOpen, color: "teal", description: "Curateer de publieke downloads-bibliotheek." },
       { label: "Downloadcategorieën", href: "/admin/download-categorieen", icon: FolderTree, color: "orange", description: "Indeling van de downloads-bibliotheek." },
       { label: "Gebruikers", href: "/admin/collections/users", icon: Users, color: "green", description: "Beheerders en redacteuren.", permission: { type: "collection", slug: "users" } },
-      { label: "Trainers", href: "/admin/collections/trainer-accounts", icon: GraduationCap, color: "teal", description: "Accounts voor trainers.mijnleerlijn.chat.", permission: { type: "collection", slug: "trainer-accounts" } },
-      // Telefoniebeheer (2026-08-25) — bestond al als collectie
-      // (trainer-telefonie-oproepen, Ronde 3.5/Telnyx-migratie) maar had nog
-      // geen menu-item: admin.group "Basis — Technisch beheer" wordt via
-      // admin-shell.css verborgen (zie de toelichting bovenaan dit bestand),
-      // dus zonder een item hier was de collectie voor een beheerder
-      // onbereikbaar ondanks dat de data al werd opgeslagen. Zelfde
-      // permission-patroon als "Trainers" hierboven — automatisch verborgen
-      // voor een niet-admin (zie isNavItemVisible), geen aparte rolcontrole
-      // nodig. Opent Payload's eigen, al bestaande collectielijst/-detailscherm
-      // — geen tweede beheeromgeving.
-      { label: "Telefonie", href: "/admin/collections/trainer-telefonie-oproepen", icon: Phone, color: "teal", description: "Telefonisch ingesproken trainingsverslagen — status, foutdiagnose, transcriptiepogingen.", permission: { type: "collection", slug: "trainer-telefonie-oproepen" } },
-      // Bestanden + Deelgroepen (Fase 3, 2026-08-23) — zelfde
-      // permission-patroon als "Telefonie" hierboven: automatisch verborgen
-      // voor een niet-editor, opent Payload's eigen collectielijst/-detailscherm.
-      { label: "Trainer bestanden", href: "/admin/collections/trainer-bestanden", icon: FolderOpen, color: "orange", description: "Schoolbestanden en algemene trainerbestanden — uploader, scope, school, groepen.", permission: { type: "collection", slug: "trainer-bestanden" } },
-      { label: "Trainer deelgroepen", href: "/admin/collections/trainer-deelgroepen", icon: UsersRound, color: "purple", description: "Groepen waarmee trainers algemene bestanden kunnen delen.", permission: { type: "collection", slug: "trainer-deelgroepen" } },
       { label: "Helpdesk Instellingen", href: "/admin/globals/helpdesk-instellingen", icon: Settings, color: "slate", description: "Algemene instellingen van de Helpdesk.", permission: { type: "global", slug: "helpdesk-instellingen" } },
     ],
   },
@@ -189,6 +172,33 @@ export const NAV_GROUPS: NavGroupDef[] = [
       { label: "Scholen", href: "/admin/sales/scholen", icon: School, color: "teal", description: "Overzicht van alle scholen uit Monday." },
       { label: "Acties", href: "/admin/sales/acties", icon: ListTodo, color: "orange", description: "Alle geaccepteerde Sales-acties." },
       { label: "Sales Instellingen", href: "/admin/globals/sales-instellingen", icon: Settings, color: "slate", description: "Standaard follow-up-termijn en voorkeurskanaal.", permission: { type: "global", slug: "sales-instellingen" } },
+    ],
+  },
+  {
+    // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard (spec
+    // §1/§17): "Nieuw admin-hoofdonderdeel 'Trainers'... bestaande
+    // onderdelen (Trainer Accounts, Telefonie, Trainer bestanden, Trainer
+    // deelgroepen) mogen technisch blijven bestaan maar moeten logisch
+    // georganiseerd worden zodat trainerbeheer als één samenhangend domein
+    // voelt." De vier hieronder verplaatste items waren voorheen in
+    // "algemeen" ondergebracht (zie git-historie) — geen enkele
+    // collectie-config/route is gewijzigd, uitsluitend deze presentatielaag
+    // (zelfde uitgangspunt als de rest van dit bestand, zie de toelichting
+    // bovenaan). Zelfde vijf-nieuwe-paden-onder-één-prefix-opzet als "Sales"
+    // hierboven (zie payload.config.ts se /trainers/*-registraties,
+    // stuk-voor-stuk met exact: true om dezelfde prefix-matchreden).
+    id: "trainers",
+    label: "Trainers",
+    icon: GraduationCap,
+    items: [
+      { label: "Dashboard", href: "/admin/trainers", icon: LayoutGrid, color: "teal", description: "Centraal overzicht van alle trainers en hun werk." },
+      { label: "Alle trainingen", href: "/admin/trainers/trainingen", icon: CirclePlay, color: "blue", description: "Alle trainingen van alle trainers — filters op trainer, school, status, periode, verslagstatus." },
+      { label: "To do", href: "/admin/trainers/todo", icon: ListTodo, color: "orange", description: "Openstaande acties over alle trainers, dezelfde logica als het trainerdashboard." },
+      { label: "Activiteit", href: "/admin/trainers/activiteit", icon: MessageSquare, color: "purple", description: "Chronologische activiteit — verslagen en logboekitems van alle trainers." },
+      { label: "Trainer Accounts", href: "/admin/collections/trainer-accounts", icon: GraduationCap, color: "teal", description: "Accounts voor trainers.mijnleerlijn.chat.", permission: { type: "collection", slug: "trainer-accounts" } },
+      { label: "Telefonie", href: "/admin/collections/trainer-telefonie-oproepen", icon: Phone, color: "teal", description: "Telefonisch ingesproken trainingsverslagen — status, foutdiagnose, transcriptiepogingen.", permission: { type: "collection", slug: "trainer-telefonie-oproepen" } },
+      { label: "Trainer bestanden", href: "/admin/collections/trainer-bestanden", icon: FolderOpen, color: "orange", description: "Schoolbestanden en algemene trainerbestanden — uploader, scope, school, groepen.", permission: { type: "collection", slug: "trainer-bestanden" } },
+      { label: "Trainer deelgroepen", href: "/admin/collections/trainer-deelgroepen", icon: UsersRound, color: "purple", description: "Groepen waarmee trainers algemene bestanden kunnen delen.", permission: { type: "collection", slug: "trainer-deelgroepen" } },
     ],
   },
 ];

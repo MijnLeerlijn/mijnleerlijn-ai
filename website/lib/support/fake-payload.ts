@@ -105,6 +105,14 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
         if (waarde === undefined || waarde === null) return false;
         return String(waarde) < String((voorwaarde as { less_than: unknown }).less_than);
       }
+      // Admin Trainerdashboard (2026-08-24) — lib/admin/trainers/aggregatie.ts
+      // se haalKennisvragenSinds filtert op "createdAt >= sinds"; zelfde
+      // ISO-8601-lexicografische-vergelijking-is-veilig-redenering als
+      // less_than_equal/less_than hierboven.
+      if (voorwaarde && typeof voorwaarde === "object" && "greater_than_equal" in voorwaarde) {
+        if (waarde === undefined || waarde === null) return false;
+        return String(waarde) >= String((voorwaarde as { greater_than_equal: unknown }).greater_than_equal);
+      }
       // `exists: false` = leeg/niet gezet (undefined, null, of een lege
       // array bij een hasMany-relatieveld); `exists: true` het omgekeerde.
       if (voorwaarde && typeof voorwaarde === "object" && "exists" in voorwaarde) {

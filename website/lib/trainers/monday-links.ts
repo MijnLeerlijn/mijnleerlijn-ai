@@ -773,6 +773,120 @@ export async function haalAlleTrainingenVoorTrainer(trainer: AuthTrainer): Promi
   return alle;
 }
 
+export interface AdminTrainerMondayOverzicht {
+  /** mondayUitvoerderItemId -> trainingen (met school) van die trainer. */
+  trainingenPerTrainer: Map<string, TrainingMetSchool[]>;
+  /** mondayUitvoerderItemId -> bevestigde scholen (id/naam) van die trainer. */
+  scholenPerTrainer: Map<string, { id: string; naam: string }[]>;
+}
+
+/**
+ * Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard: de
+ * admin-brede tegenhanger van verzamelTrainerContext/haalAlleTrainingenVoorTrainer
+ * hierboven, voor een dashboard dat trainingen/scholen van MEERDERE trainers
+ * tegelijk moet tonen. Bewust een NIEUWE, EXPORTED functie i.p.v.
+ * verzamelTrainerContext (of haalAlleTrainingenVoorTrainer) N keer aan te
+ * roepen — dat zou N keer exact dezelfde, trainer-onafhankelijke Master
+ * Data-/Uitvoering-boarddata opnieuw ophalen (opdrachtseis §13: "vermijd N
+ * trainers × N losse Monday-requests"). Master Data en Uitvoering worden
+ * hier, net als in verzamelTrainerContext, ALTIJD volledig en ongefilterd
+ * opgehaald (haalAllePaginas, zelfde twee aanroepen); het enige verschil is
+ * dat de matching hieronder per SCHOOL alle gekoppelde trainers toewijst
+ * (Tier 1, "Master Data.Trainer bevat het item-ID van déze trainer" —
+ * dezelfde regel als verzamelTrainerContext, nu simpelweg voor elke trainer
+ * tegelijk toegepast) i.p.v. te filteren op één trainer. Resultaat: exact 2
+ * Monday-aanroepen, ONGEACHT het aantal trainers.
+ *
+ * Bewust ZONDER het eigen trainerboard per trainer op te halen (dat zou weer
+ * één Monday-aanroep PER trainer betekenen) — voor een read-only
+ * adminoverzicht niet nodig: trainerboardItemId is uitsluitend relevant voor
+ * bewerkbaarheid vanuit de trainerportal zelf (zie TrainingSamenvatting
+ * hierboven), niet voor admin-inzicht. Dit betekent ook dat Tier 2 (de
+ * legacy-groupTitle-naammatch, zie verzamelTrainerContext hierboven) hier
+ * niet wordt toegepast — die tier heeft, volgens de toelichting daar,
+ * inmiddels structureel geen enkele producent meer (elke unieke match wordt
+ * al door Tier 1 afgevangen), dus is dit in de praktijk geen inhoudelijke
+ * beperking, uitsluitend een theoretische — expliciet genoemd in het
+ * opleverrapport van deze fase.
+ *
+ * Geen caching (ook hier niet — zelfde bewuste "altijd live"-keuze als
+ * verzamelTrainerContext hierboven documenteert): dit is al maar 2 live
+ * Monday-reads per admin-paginabezoek, ongeacht het aantal trainers —
+ * caching zou hier geen aantoonbaar performanceprobleem oplossen, uitsluitend
+ * nieuwe complexiteit toevoegen (opdrachtseis §13: "geen nieuwe
+ * infrastructuur zonder noodzaak").
+ */
+export async function haalTrainingenEnScholenVoorAlleTrainers(): Promise<AdminTrainerMondayOverzicht> {
+  const [masterDataItems, uitvoeringItems] = await Promise.all([
+    haalAllePaginas({
+      boardId: MASTER_DATA_BOARD_ID,
+      columnIds: [MD_TRAINER_KOLOM, MD_HOOFDCONTACTPERSOON_KOLOM, MD_TYPE_SCHOOL_KOLOM, MD_LOCATION_KOLOM, MD_IMPLEMENTATIEFASE_KOLOM],
+      limit: MAX_MASTER_DATA_ITEMS,
+    }),
+    haalAllePaginas({
+      boardId: UITVOERING_BOARD_ID,
+      columnIds: [UV_SCHOOL_KOLOM, UV_STATUS_KOLOM, UV_DATUM_KOLOM, UV_LOGBOEK_KOLOM],
+      limit: MAX_UITVOERING_ITEMS,
+    }),
+  ]);
+
+  interface SchoolMetTrainers {
+    id: string;
+    naam: string;
+    trainerIds: string[];
+  }
+  const scholenById = new Map<string, SchoolMetTrainers>();
+  for (const item of masterDataItems) {
+    const kolommen = naarKolomMap(item.column_values);
+    scholenById.set(item.id, {
+      id: item.id,
+      naam: item.name,
+      trainerIds: parseLinkedPulseIds(kolommen.get(MD_TRAINER_KOLOM)?.value),
+    });
+  }
+
+  const trainingenPerSchool = new Map<string, TrainingSamenvatting[]>();
+  for (const item of uitvoeringItems) {
+    const kolommen = naarKolomMap(item.column_values);
+    const schoolIds = parseLinkedPulseIds(kolommen.get(UV_SCHOOL_KOLOM)?.value);
+    const datum = parseMondayDatum(kolommen.get(UV_DATUM_KOLOM)?.text);
+    const statusTekst = kolommen.get(UV_STATUS_KOLOM)?.text ?? null;
+    const samenvatting: TrainingSamenvatting = {
+      id: item.id,
+      naam: item.name,
+      status: bepaalTrainingStatus(statusTekst, datum),
+      ruweStatusTekst: statusTekst,
+      datum,
+      logboekIngevuld: parseCheckboxIngevuld(kolommen.get(UV_LOGBOEK_KOLOM)?.value),
+      trainerboardItemId: null, // niet opgehaald voor het admin-brede overzicht, zie moduletoelichting hierboven
+    };
+    for (const schoolId of schoolIds) {
+      const lijst = trainingenPerSchool.get(schoolId) ?? [];
+      lijst.push(samenvatting);
+      trainingenPerSchool.set(schoolId, lijst);
+    }
+  }
+
+  const trainingenPerTrainer = new Map<string, TrainingMetSchool[]>();
+  const scholenPerTrainer = new Map<string, { id: string; naam: string }[]>();
+  for (const school of scholenById.values()) {
+    const trainingen = trainingenPerSchool.get(school.id) ?? [];
+    for (const trainerId of school.trainerIds) {
+      const bestaandeScholen = scholenPerTrainer.get(trainerId) ?? [];
+      bestaandeScholen.push({ id: school.id, naam: school.naam });
+      scholenPerTrainer.set(trainerId, bestaandeScholen);
+
+      const bestaandeTrainingen = trainingenPerTrainer.get(trainerId) ?? [];
+      for (const training of trainingen) {
+        bestaandeTrainingen.push({ ...training, schoolId: school.id, schoolNaam: school.naam });
+      }
+      trainingenPerTrainer.set(trainerId, bestaandeTrainingen);
+    }
+  }
+
+  return { trainingenPerTrainer, scholenPerTrainer };
+}
+
 export interface SchoolDetail extends TrainerSchoolBron {
   /**
    * Ronde 2 vervolg (2026-08-19) — herbouwd op de centrale bucket-indeling

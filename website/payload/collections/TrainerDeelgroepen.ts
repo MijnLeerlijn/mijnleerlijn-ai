@@ -21,7 +21,11 @@ export const TrainerDeelgroepen: CollectionConfig = {
   admin: {
     useAsTitle: "naam",
     defaultColumns: ["naam", "actief", "leden", "updatedAt"],
-    group: "Trainers",
+    // Hernoemd van "Trainers" naar "Trainers — systeem" — botste met de
+    // nieuwe custom NAV_GROUPS-groep "Trainers" (Fase 4, 2026-08-24). Zie
+    // TrainerKennisversies.ts se toelichting bij dezelfde regel voor de
+    // volledige uitleg (exact dezelfde botsing als de eerdere Sales-nav-regressie).
+    group: "Trainers — systeem",
     description: "Groepen waarmee trainers algemene bestanden kunnen delen (bv. 'Montessori-trainers', 'Regio Zuid'). Alleen beheerders kunnen groepen aanmaken/bewerken.",
   },
   access: {

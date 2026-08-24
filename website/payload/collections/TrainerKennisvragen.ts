@@ -29,7 +29,11 @@ export const TrainerKennisvragen: CollectionConfig = {
   admin: {
     useAsTitle: "id",
     defaultColumns: ["trainer", "antwoordGevonden", "hoogsteSimilarity", "createdAt"],
-    group: "Trainers",
+    // Hernoemd van "Trainers" naar "Trainers — systeem" — botste met de
+    // nieuwe custom NAV_GROUPS-groep "Trainers" (Fase 4, 2026-08-24). Zie
+    // TrainerKennisversies.ts se toelichting bij dezelfde regel voor de
+    // volledige uitleg (exact dezelfde botsing als de eerdere Sales-nav-regressie).
+    group: "Trainers — systeem",
     description: "Privacybewust log van Kennis-Q&A-vragen — geen vraag-/antwoordtekst, uitsluitend of er een antwoord gevonden werd, de hoogste score en gebruikte bronnen. Dient ook als praktische diagnose voor de retrieval zelf.",
   },
   access: {

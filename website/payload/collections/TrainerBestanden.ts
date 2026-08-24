@@ -34,7 +34,11 @@ export const TrainerBestanden: CollectionConfig = {
   admin: {
     useAsTitle: "titel",
     defaultColumns: ["titel", "scope", "categorie", "uploader", "schoolNaam", "createdAt"],
-    group: "Trainers",
+    // Hernoemd van "Trainers" naar "Trainers — systeem" — botste met de
+    // nieuwe custom NAV_GROUPS-groep "Trainers" (Fase 4, 2026-08-24). Zie
+    // TrainerKennisversies.ts se toelichting bij dezelfde regel voor de
+    // volledige uitleg (exact dezelfde botsing als de eerdere Sales-nav-regressie).
+    group: "Trainers — systeem",
     description: "Bestanden die trainers uploaden — bij een school, of algemeen (eventueel gedeeld via een deelgroep). Nooit rechtstreeks bewerken — uitsluitend server-side via lib/trainers/bestanden.ts, behalve door een beheerder hier in de admin.",
   },
   access: {

@@ -259,6 +259,38 @@ export default buildConfig({
           path: "/trainers-diagnose/monday",
           exact: true,
         },
+        // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard
+        // (spec §1-§3). Zelfde vijf-statische-paden-onder-één-prefix-opzet
+        // als de vier "/sales/*"-registraties hierboven — dus ook hier
+        // `exact: true` overal (nooit weglaten): "/trainers" is een prefix
+        // van elk van de andere vier paden, zonder `exact` zou Payload's
+        // prefix-matching (zie de toelichting bij salesVandaag hierboven)
+        // elke subpagina stilzwijgend als het Dashboard renderen.
+        trainersOverzicht: {
+          Component: "@/payload/components/AdminViewShell#TrainersOverzichtViewShell",
+          path: "/trainers",
+          exact: true,
+        },
+        trainersDetail: {
+          Component: "@/payload/components/AdminViewShell#TrainerDetailViewShell",
+          path: "/trainers/detail",
+          exact: true,
+        },
+        trainersTrainingen: {
+          Component: "@/payload/components/AdminViewShell#TrainersTrainingenViewShell",
+          path: "/trainers/trainingen",
+          exact: true,
+        },
+        trainersTodo: {
+          Component: "@/payload/components/AdminViewShell#TrainersTodoViewShell",
+          path: "/trainers/todo",
+          exact: true,
+        },
+        trainersActiviteit: {
+          Component: "@/payload/components/AdminViewShell#TrainersActiviteitViewShell",
+          path: "/trainers/activiteit",
+          exact: true,
+        },
       },
     },
   },

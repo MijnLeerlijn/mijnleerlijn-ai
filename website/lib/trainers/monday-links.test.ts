@@ -12,6 +12,7 @@ import {
   haalSchoolDetail,
   haalRecenteTrainingenVoorTelefonie,
   haalAlleTrainingenVoorTrainer,
+  haalTrainingenEnScholenVoorAlleTrainers,
 } from "./monday-links";
 import type { AuthTrainer } from "./auth";
 
@@ -1262,4 +1263,103 @@ describe("haalRecenteTrainingenVoorTelefonie (Ronde 3.5, telefonie — spec §5/
   // dekking elders in dit bestand (bepaalScholenVoorTrainer). Het end-to-end
   // scenario — trainer A krijgt telefonisch nooit trainer B se trainingen te
   // kiezen — wordt bewezen in lib/trainers/telefonie/gesprek.test.ts.
+});
+
+// Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard.
+// haalTrainingenEnScholenVoorAlleTrainers is de admin-brede tegenhanger van
+// bepaalScholenVoorTrainer/haalAlleTrainingenVoorTrainer hierboven — dekt
+// zowel de correcte per-trainer-toewijzing (Tier 1, meerdere trainers
+// tegelijk) als de kern-performance-eis (opdrachtseis §13): exact 2
+// Monday-aanroepen, ongeacht het aantal trainers, en NOOIT een trainerboard-
+// aanroep (mondayQuery blijft voor deze functie altijd ongebruikt).
+describe("haalTrainingenEnScholenVoorAlleTrainers (Traineromgeving V2, Fase 4 — Admin Trainerdashboard)", () => {
+  it("wijst elke school toe aan de trainer(s) die er via Master Data.Trainer aan gekoppeld zijn, nooit aan een niet-gekoppelde trainer", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: [
+          masterDataItem({ id: "500", naam: "School van trainer A", trainerLinkedIds: [111] }),
+          masterDataItem({ id: "600", naam: "School van trainer B", trainerLinkedIds: [222] }),
+          masterDataItem({ id: "700", naam: "School zonder trainer" }),
+        ],
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+
+    const { scholenPerTrainer } = await haalTrainingenEnScholenVoorAlleTrainers();
+
+    expect(scholenPerTrainer.get("111")).toEqual([{ id: "500", naam: "School van trainer A" }]);
+    expect(scholenPerTrainer.get("222")).toEqual([{ id: "600", naam: "School van trainer B" }]);
+    expect(scholenPerTrainer.has("700")).toBe(false); // geen enkele trainer gekoppeld -> voor niemand zichtbaar
+  });
+
+  it("een school met meerdere gekoppelde trainers verschijnt bij ELK van die trainers", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Gedeelde school", trainerLinkedIds: [111, 222] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Gezamenlijke training", schoolIds: ["500"] })] });
+
+    const { scholenPerTrainer, trainingenPerTrainer } = await haalTrainingenEnScholenVoorAlleTrainers();
+
+    expect(scholenPerTrainer.get("111")).toEqual([{ id: "500", naam: "Gedeelde school" }]);
+    expect(scholenPerTrainer.get("222")).toEqual([{ id: "500", naam: "Gedeelde school" }]);
+    expect(trainingenPerTrainer.get("111")!.map((t) => t.naam)).toEqual(["Gezamenlijke training"]);
+    expect(trainingenPerTrainer.get("222")!.map((t) => t.naam)).toEqual(["Gezamenlijke training"]);
+  });
+
+  it("elke training draagt schoolId/schoolNaam (zelfde TrainingMetSchool-vorm als haalAlleTrainingenVoorTrainer), en trainerboardItemId is altijd null", async () => {
+    mockScholenPagina
+      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "500", naam: "Mijn School", trainerLinkedIds: [111] })] })
+      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "1", naam: "Training", schoolIds: ["500"] })] });
+
+    const { trainingenPerTrainer } = await haalTrainingenEnScholenVoorAlleTrainers();
+
+    const training = trainingenPerTrainer.get("111")![0]!;
+    expect(training.schoolId).toBe("500");
+    expect(training.schoolNaam).toBe("Mijn School");
+    expect(training.trainerboardItemId).toBeNull();
+  });
+
+  it("volgt meerdere pagina's per board (Master Data én Uitvoering), niet stil afgekapt bij de eerste pagina", async () => {
+    mockScholenPagina.mockImplementation(async ({ columnIds, cursor }) => {
+      const isMasterData = columnIds.includes("board_relation_mm5r2jy1");
+      if (isMasterData) {
+        if (!cursor) return { cursor: "md-pagina-2", items: [masterDataItem({ id: "500", naam: "School pagina 1", trainerLinkedIds: [111] })] };
+        return { cursor: null, items: [masterDataItem({ id: "600", naam: "School pagina 2", trainerLinkedIds: [222] })] };
+      }
+      return { cursor: null, items: [] };
+    });
+
+    const { scholenPerTrainer } = await haalTrainingenEnScholenVoorAlleTrainers();
+
+    expect(scholenPerTrainer.get("111")).toEqual([{ id: "500", naam: "School pagina 1" }]);
+    expect(scholenPerTrainer.get("222")).toEqual([{ id: "600", naam: "School pagina 2" }]);
+  });
+
+  // Kern-performance-eis (opdrachtseis §13): "vermijd N trainers × N losse
+  // Monday-requests" — deze functie moet ONGEACHT hoeveel trainers er in het
+  // resultaat voorkomen exact 2 aanroepen doen (Master Data + Uitvoering,
+  // elk 1 pagina in dit scenario), en NOOIT het trainerboard bevragen
+  // (mondayQuery, zie de moduletoelichting: bewust weggelaten voor het
+  // admin-brede overzicht).
+  it("doet exact 2 Monday-aanroepen ongeacht het aantal trainers in het resultaat, en roept nooit het trainerboard (mondayQuery) aan", async () => {
+    const VEEL_TRAINERS = Array.from({ length: 25 }, (_, i) => i + 1);
+    mockScholenPagina
+      .mockResolvedValueOnce({
+        cursor: null,
+        items: VEEL_TRAINERS.map((id) => masterDataItem({ id: `school-${id}`, naam: `School ${id}`, trainerLinkedIds: [id] })),
+      })
+      .mockResolvedValueOnce({ cursor: null, items: [] });
+
+    const { scholenPerTrainer } = await haalTrainingenEnScholenVoorAlleTrainers();
+
+    expect(scholenPerTrainer.size).toBe(25); // bewijst dat het scenario écht 25 trainers omvat
+    expect(mockScholenPagina).toHaveBeenCalledTimes(2);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it("lege boards geven lege Maps terug, geen fout", async () => {
+    mockScholenPagina.mockResolvedValue({ cursor: null, items: [] });
+    const { scholenPerTrainer, trainingenPerTrainer } = await haalTrainingenEnScholenVoorAlleTrainers();
+    expect(scholenPerTrainer.size).toBe(0);
+    expect(trainingenPerTrainer.size).toBe(0);
+  });
 });

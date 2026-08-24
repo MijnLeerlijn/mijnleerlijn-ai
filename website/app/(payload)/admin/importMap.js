@@ -1,4 +1,7 @@
+import { RetryTelefonieButton as RetryTelefonieButton_02096cccaa85a3e1eff5e106eeb19372 } from '@/payload/components/RetryTelefonieButton'
+import { DownloadTrainerBestandKnop as DownloadTrainerBestandKnop_10bec0d25d97da480d52ccd5904fbb97 } from '@/payload/components/DownloadTrainerBestandKnop'
 import { VariantOverridesLink as VariantOverridesLink_5a074d4699996afe996da3888537d5f4 } from '@/payload/components/VariantOverridesLink'
+import { MaakTrainerversieButton as MaakTrainerversieButton_0f12870eaa35584ee8305051643ba6c2 } from '@/payload/components/MaakTrainerversieButton'
 import { RscEntryLexicalCell as RscEntryLexicalCell_44fe37237e0ebf4470c9990d8cb7b07e } from '@payloadcms/richtext-lexical/rsc'
 import { RscEntryLexicalField as RscEntryLexicalField_44fe37237e0ebf4470c9990d8cb7b07e } from '@payloadcms/richtext-lexical/rsc'
 import { LexicalDiffComponent as LexicalDiffComponent_44fe37237e0ebf4470c9990d8cb7b07e } from '@payloadcms/richtext-lexical/rsc'
@@ -52,11 +55,19 @@ import { SalesSchooldetailViewShell as SalesSchooldetailViewShell_1e788d78f4aade
 import { SalesActiesViewShell as SalesActiesViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { SalesMondayDiagnoseViewShell as SalesMondayDiagnoseViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { TrainersMondayDiagnoseViewShell as TrainersMondayDiagnoseViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { TrainersOverzichtViewShell as TrainersOverzichtViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { TrainerDetailViewShell as TrainerDetailViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { TrainersTrainingenViewShell as TrainersTrainingenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { TrainersTodoViewShell as TrainersTodoViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { TrainersActiviteitViewShell as TrainersActiviteitViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
 export const importMap = {
+  "@/payload/components/RetryTelefonieButton#RetryTelefonieButton": RetryTelefonieButton_02096cccaa85a3e1eff5e106eeb19372,
+  "@/payload/components/DownloadTrainerBestandKnop#DownloadTrainerBestandKnop": DownloadTrainerBestandKnop_10bec0d25d97da480d52ccd5904fbb97,
   "@/payload/components/VariantOverridesLink#VariantOverridesLink": VariantOverridesLink_5a074d4699996afe996da3888537d5f4,
+  "@/payload/components/MaakTrainerversieButton#MaakTrainerversieButton": MaakTrainerversieButton_0f12870eaa35584ee8305051643ba6c2,
   "@payloadcms/richtext-lexical/rsc#RscEntryLexicalCell": RscEntryLexicalCell_44fe37237e0ebf4470c9990d8cb7b07e,
   "@payloadcms/richtext-lexical/rsc#RscEntryLexicalField": RscEntryLexicalField_44fe37237e0ebf4470c9990d8cb7b07e,
   "@payloadcms/richtext-lexical/rsc#LexicalDiffComponent": LexicalDiffComponent_44fe37237e0ebf4470c9990d8cb7b07e,
@@ -110,5 +121,10 @@ export const importMap = {
   "@/payload/components/AdminViewShell#SalesActiesViewShell": SalesActiesViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#SalesMondayDiagnoseViewShell": SalesMondayDiagnoseViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#TrainersMondayDiagnoseViewShell": TrainersMondayDiagnoseViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#TrainersOverzichtViewShell": TrainersOverzichtViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#TrainerDetailViewShell": TrainerDetailViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#TrainersTrainingenViewShell": TrainersTrainingenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#TrainersTodoViewShell": TrainersTodoViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#TrainersActiviteitViewShell": TrainersActiviteitViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }

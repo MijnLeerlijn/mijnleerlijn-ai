@@ -19,6 +19,11 @@ import { SalesSchooldetailView } from "./SalesSchooldetailView";
 import { SalesActiesView } from "./SalesActiesView";
 import { SalesMondayDiagnoseView } from "./SalesMondayDiagnoseView";
 import { TrainersMondayDiagnoseView } from "./TrainersMondayDiagnoseView";
+import { TrainersOverzichtView } from "./TrainersOverzichtView";
+import { TrainerDetailView } from "./TrainerDetailView";
+import { TrainersTrainingenView } from "./TrainersTrainingenView";
+import { TrainersTodoView } from "./TrainersTodoView";
+import { TrainersActiviteitView } from "./TrainersActiviteitView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -237,6 +242,47 @@ export function TrainersMondayDiagnoseViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="trainersMondayDiagnose">
       <TrainersMondayDiagnoseView />
+    </InAdminShell>
+  );
+}
+
+// Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard (spec §1-§3).
+export function TrainersOverzichtViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersOverzicht">
+      <TrainersOverzichtView />
+    </InAdminShell>
+  );
+}
+
+export function TrainerDetailViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersDetail">
+      <TrainerDetailView />
+    </InAdminShell>
+  );
+}
+
+export function TrainersTrainingenViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersTrainingen">
+      <TrainersTrainingenView />
+    </InAdminShell>
+  );
+}
+
+export function TrainersTodoViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersTodo">
+      <TrainersTodoView />
+    </InAdminShell>
+  );
+}
+
+export function TrainersActiviteitViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersActiviteit">
+      <TrainersActiviteitView />
     </InAdminShell>
   );
 }

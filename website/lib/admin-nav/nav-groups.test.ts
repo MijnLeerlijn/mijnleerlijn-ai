@@ -55,8 +55,8 @@ function maakEditorPermissions(): SanitizedPermissions {
 }
 
 describe("nav-groups", () => {
-  it("bevat alle 5 verwachte hoofdgroepen, in vaste volgorde", () => {
-    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["algemeen", "helpdesk-ai", "creator", "curriculum-werkplaats", "sales"]);
+  it("bevat alle 6 verwachte hoofdgroepen, in vaste volgorde", () => {
+    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["algemeen", "helpdesk-ai", "creator", "curriculum-werkplaats", "sales", "trainers"]);
   });
 
   it("elk item heeft een kleur en een omschrijving (nodig voor nav-icoon én dashboardkaart)", () => {
@@ -122,10 +122,13 @@ describe("nav-groups", () => {
     expect(alleZichtbareLabels).toContain("AI-gesprekken");
   });
 
-  it("getVisibleNavGroups: een admin ziet het Telefonie-item, in de 'algemeen'-groep, met een geldige permission-koppeling naar de bestaande collectie", () => {
+  it("getVisibleNavGroups: een admin ziet het Telefonie-item, in de 'trainers'-groep, met een geldige permission-koppeling naar de bestaande collectie", () => {
+    // Traineromgeving V2, Fase 4 (2026-08-24) — verplaatst van "algemeen" naar
+    // de nieuwe "trainers"-hoofdgroep (spec §1: bestaand trainerbeheer logisch
+    // samenvoegen), zelfde item/href/permission, alleen de groep wijzigde.
     const zichtbaar = getVisibleNavGroups(maakVolledigeToegang());
-    const algemeen = zichtbaar.find((g) => g.id === "algemeen");
-    const telefonie = algemeen?.items.find((i) => i.label === "Telefonie");
+    const trainers = zichtbaar.find((g) => g.id === "trainers");
+    const telefonie = trainers?.items.find((i) => i.label === "Telefonie");
     expect(telefonie).toBeDefined();
     expect(telefonie?.href).toBe("/admin/collections/trainer-telefonie-oproepen");
     expect(telefonie?.permission).toEqual({ type: "collection", slug: "trainer-telefonie-oproepen" });

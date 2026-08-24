@@ -34,7 +34,16 @@ export const TrainerKennisversies: CollectionConfig = {
   admin: {
     useAsTitle: "titel",
     defaultColumns: ["titel", "bron", "status", "updatedAt"],
-    group: "Trainers",
+    // Traineromgeving V2, Fase 4 (2026-08-24) — hernoemd van "Trainers" naar
+    // "Trainers — systeem": dat botste met de nieuwe custom NAV_GROUPS-groep
+    // "Trainers" (lib/admin-nav/nav-groups.ts) — Payload's <NavGroup> stempelt
+    // id={`nav-group-${label}`} zonder sanitatie, dus admin-shell.css se regel
+    // die déze automatisch gegenereerde Payload-groep verbergt zou anders via
+    // die gedeelde id ook de nieuwe custom sidebar-sectie verbergen. Exact
+    // dezelfde botsing/fix als de Sales-nav-regressie (zie dat bestand se
+    // toelichting) — zuiver presentatie/organisatie, geen schemawijziging,
+    // geen migratie nodig.
+    group: "Trainers — systeem",
     description: "Trainerversies van kennisartikelen — AI-concept, door een beheerder gecontroleerd/bewerkt, pas zichtbaar voor trainers na 'Publiceren voor trainers'.",
   },
   access: {
