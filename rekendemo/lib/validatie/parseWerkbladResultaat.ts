@@ -1,4 +1,9 @@
-import type { Opgave, OpgaveType, WerkbladResultaat } from "@/lib/resultaat";
+import type {
+  IllustratieType,
+  Opgave,
+  OpgaveType,
+  WerkbladResultaat,
+} from "@/lib/resultaat";
 import type { EilandId } from "@/lib/werkblad";
 
 /**
@@ -11,6 +16,7 @@ export type ParseResultaat =
   | { ok: false; fouten: string[] };
 
 const OPGAVE_TYPEN: OpgaveType[] = ["kaal", "verhaal"];
+const ILLUSTRATIE_TYPEN: IllustratieType[] = ["context", "exact-count"];
 const EILANDEN: EilandId[] = ["aruba", "curacao"];
 
 function isRecord(waarde: unknown): waarde is Record<string, unknown> {
@@ -86,6 +92,9 @@ export function parseWerkbladResultaat(onbekend: unknown): ParseResultaat {
       context: isVerhaal ? tekstOfNull(ruw.context) : null,
       illustrationDescription: isVerhaal
         ? tekstOfNull(ruw.illustrationDescription)
+        : null,
+      illustrationType: isVerhaal
+        ? (ILLUSTRATIE_TYPEN.find((optie) => optie === ruw.illustrationType) ?? null)
         : null,
     });
   });

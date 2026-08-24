@@ -38,6 +38,7 @@ export const WERKBLAD_JSON_SCHEMA = {
           "berekening",
           "context",
           "illustrationDescription",
+          "illustrationType",
         ],
         properties: {
           id: {
@@ -63,6 +64,12 @@ export const WERKBLAD_JSON_SCHEMA = {
             type: ["string", "null"],
             description:
               "Beschrijving van de passende educatieve tekening bij verhaalsommen. Null bij kale sommen.",
+          },
+          illustrationType: {
+            type: ["string", "null"],
+            enum: ["context", "exact-count", null],
+            description:
+              "Bij verhaalsommen: 'exact-count' als de leerling voorwerpen in de tekening moet tellen om de som op te lossen, anders 'context'. Null bij kale sommen.",
           },
         },
       },

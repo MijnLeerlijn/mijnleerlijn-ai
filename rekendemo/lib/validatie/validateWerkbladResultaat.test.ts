@@ -19,6 +19,7 @@ const kaleOpgave = (nummer: number, berekening: string, antwoord: string): Opgav
   berekening,
   context: null,
   illustrationDescription: null,
+  illustrationType: null,
 });
 
 const werkblad = (opgaven: Opgave[]): WerkbladResultaat => ({
@@ -76,6 +77,25 @@ describe("validateWerkbladResultaat", () => {
     const uitkomst = validateWerkbladResultaat(werkblad(opgaven), { instellingen });
 
     expect(uitkomst.geldig).toBe(true);
+  });
+
+  it("eist een illustrationType bij verhaalsommen", () => {
+    const opgaven = [...goedeOpgaven];
+    opgaven[0] = {
+      ...goedeOpgaven[0],
+      type: "verhaal",
+      context: "markt",
+      illustrationDescription: "Kinderen bij een fruitkraam.",
+      illustrationType: null,
+    };
+
+    const uitkomst = validateWerkbladResultaat(werkblad(opgaven), {
+      instellingen: { ...instellingen, opgaveType: "combinatie" },
+    });
+
+    expect(uitkomst.fouten).toContain(
+      "Verhaalsom 1 heeft geen illustrationType ('context' of 'exact-count').",
+    );
   });
 
   it("blijft de bestaande regels controleren", () => {

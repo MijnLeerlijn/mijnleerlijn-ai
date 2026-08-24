@@ -38,6 +38,8 @@ export type LokaalProfiel = {
   eilandNaam: string;
   taal: LokaleTaal;
   valuta: Valuta;
+  /** Engelse omschrijving van de omgeving, gebruikt in beeldprompts. */
+  beeldOmgeving: string;
   contexten: LokaleContexten;
   voornamen: string[];
   /** Eilandspecifieke zaken die vermeden moeten worden. */

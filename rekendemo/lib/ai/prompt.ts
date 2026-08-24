@@ -119,7 +119,9 @@ export function bouwGebruikersPrompt(instellingen: WerkbladInstellingen): string
     "- antwoord: alleen het antwoord, zonder uitleg",
     "- berekening: de kale som met uitkomst, bijvoorbeeld '3 x 6 = 18'",
     "- context: bij verhaalsommen één of twee woorden voor de gebruikte situatie (bijvoorbeeld 'markt'); null bij kale sommen",
-    "- illustrationDescription: bij verhaalsommen een korte, feitelijke beschrijving van een eenvoudige educatieve tekening die bij de som past en de getallen uit de som laat zien; null bij kale sommen",
+    "- illustrationDescription: bij verhaalsommen een korte, feitelijke beschrijving van een eenvoudige educatieve tekening die bij de som past; null bij kale sommen",
+    "- illustrationType: bij verhaalsommen 'exact-count' als de leerling voorwerpen in de tekening moet tellen om de som op te lossen, en 'context' als alle getallen al in de vraag staan en de tekening alleen de situatie laat zien; null bij kale sommen",
+    "  Zet bij twijfel 'exact-count'. Schrijf de opgave bij voorkeur zo dat alle getallen in de tekst staan, dus zodat 'context' volstaat.",
   ];
 
   const tekenwens = instellingen.tekenwens.trim();

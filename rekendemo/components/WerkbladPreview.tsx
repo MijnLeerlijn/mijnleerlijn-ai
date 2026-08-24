@@ -1,6 +1,8 @@
 "use client";
 
+import { IllustratieVak } from "./IllustratieVak";
 import { Knop } from "./ui/Knop";
+import { useIllustraties, type IllustratieMap } from "@/lib/client/useIllustraties";
 import type { Opgave, WerkbladResultaat } from "@/lib/resultaat";
 import { REKENSTATUS_LABEL, controleerOpgave } from "@/lib/validatie/rekencontrole";
 import { eilandLabel, leerjaarLabel, type WerkbladInstellingen } from "@/lib/werkblad";
@@ -18,6 +20,8 @@ export function WerkbladPreview({
   instellingen,
   onTerug,
 }: WerkbladPreviewProps) {
+  const illustraties = useIllustraties(resultaat, instellingen);
+
   const kenmerken = [
     { label: "Eiland", waarde: eilandLabel(resultaat.eiland) },
     { label: "Taal", waarde: resultaat.taal },
@@ -52,7 +56,11 @@ export function WerkbladPreview({
         <ol className="divide-y divide-line">
           {resultaat.opgaven.map((opgave, index) => (
             <li key={opgave.id} className="py-6 first:pt-0 last:pb-0">
-              <OpgaveWeergave opgave={opgave} nummer={index + 1} />
+              <OpgaveWeergave
+                opgave={opgave}
+                nummer={index + 1}
+                illustratie={illustraties[opgave.id]}
+              />
             </li>
           ))}
         </ol>
@@ -74,7 +82,9 @@ export function WerkbladPreview({
         </section>
       ) : null}
 
-      {ONTWIKKELMODUS ? <TechnischeDetails opgaven={resultaat.opgaven} /> : null}
+      {ONTWIKKELMODUS ? (
+        <TechnischeDetails opgaven={resultaat.opgaven} illustraties={illustraties} />
+      ) : null}
 
       <Knop type="button" variant="secundair" onClick={onTerug}>
         Nieuw werkblad maken
@@ -83,7 +93,15 @@ export function WerkbladPreview({
   );
 }
 
-function OpgaveWeergave({ opgave, nummer }: { opgave: Opgave; nummer: number }) {
+function OpgaveWeergave({
+  opgave,
+  nummer,
+  illustratie,
+}: {
+  opgave: Opgave;
+  nummer: number;
+  illustratie: IllustratieMap[string] | undefined;
+}) {
   return (
     <div className="flex gap-4">
       <span className="w-7 shrink-0 pt-0.5 text-base font-semibold text-ink-muted tabular-nums">
@@ -97,17 +115,11 @@ function OpgaveWeergave({ opgave, nummer }: { opgave: Opgave; nummer: number }) 
           ) : null}
         </p>
 
-        {opgave.type === "verhaal" ? (
-          <div className="mt-3 rounded-2xl border border-dashed border-line bg-canvas px-4 py-5">
-            <p className="text-sm text-ink-muted">
-              Tekening wordt in de volgende fase toegevoegd
-            </p>
-            {opgave.illustrationDescription ? (
-              <p className="mt-2 text-sm text-ink-muted/80 italic">
-                {opgave.illustrationDescription}
-              </p>
-            ) : null}
-          </div>
+        {opgave.type === "verhaal" && opgave.illustrationDescription ? (
+          <IllustratieVak
+            state={illustratie}
+            beschrijving={opgave.illustrationDescription}
+          />
         ) : null}
       </div>
     </div>
@@ -115,7 +127,13 @@ function OpgaveWeergave({ opgave, nummer }: { opgave: Opgave; nummer: number }) 
 }
 
 /** Alleen in development: laat zien wat de AI precies bedacht heeft. */
-function TechnischeDetails({ opgaven }: { opgaven: Opgave[] }) {
+function TechnischeDetails({
+  opgaven,
+  illustraties,
+}: {
+  opgaven: Opgave[];
+  illustraties: IllustratieMap;
+}) {
   return (
     <details className="rounded-card border border-line bg-white/60 px-6 py-4">
       <summary className="cursor-pointer text-sm font-semibold text-ink-muted">
@@ -133,6 +151,16 @@ function TechnischeDetails({ opgaven }: { opgaven: Opgave[] }) {
             <p>berekening: {opgave.berekening ?? "—"}</p>
             <p>context: {opgave.context ?? "—"}</p>
             <p>illustrationDescription: {opgave.illustrationDescription ?? "—"}</p>
+            <p>illustrationType: {opgave.illustrationType ?? "—"}</p>
+            <p>illustratiestatus: {illustraties[opgave.id]?.status ?? "—"}</p>
+            {illustraties[opgave.id]?.prompt ? (
+              <details className="mt-1">
+                <summary className="cursor-pointer">beeldprompt</summary>
+                <p className="mt-1 whitespace-pre-line">
+                  {illustraties[opgave.id]?.prompt}
+                </p>
+              </details>
+            ) : null}
             <p>
               rekencontrole:{" "}
               <span className={rekencontrole.status === "fout" ? "font-semibold text-red-600" : undefined}>

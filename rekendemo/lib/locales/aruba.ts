@@ -14,6 +14,8 @@ export const ARUBA: LokaalProfiel = {
     schrijfwijze:
       "Arubaans Papiamento met de Arubaanse (etymologische) spelling, bijvoorbeeld 'Papiamento', 'cu', 'nos', 'mucha'. Meng dit niet met de Curaçaose spelling (Papiamentu, 'ku', 'mucha' met fonetische schrijfwijze).",
   },
+  beeldOmgeving:
+    "everyday life on Aruba: modest concrete houses with low garden walls and metal roofs, small neighbourhood shops and simple market stalls, dry sunny landscape with cacti and low shrubs, school buildings with open corridors and shaded courtyards, ordinary modern clothing suitable for a warm climate",
   valuta: {
     naam: "Arubaanse florin",
     code: "AWG",

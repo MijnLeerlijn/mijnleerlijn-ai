@@ -98,6 +98,11 @@ const verhaalsomRegel: ValidatieRegel = (resultaat) => {
     if (!opgave.illustrationDescription) {
       fouten.push(`Verhaalsom ${nummer} heeft geen illustrationDescription.`);
     }
+    if (!opgave.illustrationType) {
+      fouten.push(
+        `Verhaalsom ${nummer} heeft geen illustrationType ('context' of 'exact-count').`,
+      );
+    }
   });
 
   return fouten;

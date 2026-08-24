@@ -14,8 +14,12 @@ MijnLeerlijn-projecten in deze repository.
 - **Fase 2.5** — eenvoudige berekeningen worden automatisch nagerekend (zonder
   `eval`), het antwoord wordt vergeleken waar dat ondubbelzinnig kan, en er zijn
   unit tests voor die controle.
+- **Fase 3** — automatisch gegenereerde tekeningen bij verhaalsommen via de
+  OpenAI Images API, in één vaste stijl (moderne educatieve vectorstijl).
+  Opgaven waarbij de leerling in de tekening moet tellen (`exact-count`) krijgen
+  bewust géén AI-tekening; die bouwen we later programmatisch.
 
-Nog niet aanwezig: tekeningen, PDF, opslag, accounts.
+Nog niet aanwezig: PDF, opslag, accounts.
 
 ## Lokaal starten
 
@@ -34,6 +38,9 @@ Open daarna http://localhost:3000.
 | --- | --- | --- |
 | `OPENAI_API_KEY` | ja | API-sleutel van OpenAI. Wordt alleen server-side gebruikt. |
 | `OPENAI_MODEL` | nee | Leeg of afwezig = `gpt-5`. Bijvoorbeeld `gpt-5-mini` voor sneller en goedkoper. |
+| `OPENAI_IMAGE_MODEL` | nee | Leeg of afwezig = `gpt-image-1-mini`. Bijvoorbeeld `gpt-image-1` voor meer kwaliteit. |
+| `OPENAI_IMAGE_SIZE` | nee | Standaard `1536x1024` (liggend, dichtst bij 4:3). |
+| `OPENAI_IMAGE_QUALITY` | nee | Standaard `medium` voor de gpt-image-modellen. |
 | `OPENAI_BASE_URL` | nee | Alternatief endpoint, bijvoorbeeld een lokale testserver. |
 | `AI_PROVIDER` | nee | Op dit moment alleen `openai`. |
 
@@ -54,13 +61,15 @@ npm run test       # unit tests (vitest)
 
 ```
 app/                        App Router: layout, globals.css, scherm "Werkblad maken"
-app/api/generate/route.ts   Server-side generatie-endpoint
+app/api/generate/route.ts   Server-side generatie-endpoint (opgaven)
+app/api/illustration/route.ts  Server-side endpoint voor één tekening
 components/                 WerkbladFormulier en WerkbladPreview
 components/ui/              Herbruikbare formulierelementen
 lib/werkblad.ts             Formuliermodel, opties, taallogica en invoercontrole
 lib/resultaat.ts            Type van het gegenereerde werkblad
 lib/locales/                Lokale kennisprofielen (aruba.ts, curacao.ts, gedeeld.ts)
 lib/ai/                     Prompt, JSON-schema, providerlaag en generator
+lib/images/                 Vaste beeldstijl, beeldprompt en beeldproviderlaag
 lib/validatie/              Vormcontrole, didactische/lokale regels en de rekencontrole
 lib/client/                 Aanroep van /api/generate vanuit de browser
 ```

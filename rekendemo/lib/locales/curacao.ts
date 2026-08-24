@@ -13,6 +13,8 @@ export const CURACAO: LokaalProfiel = {
     schrijfwijze:
       "Curaçaos Papiamentu met de Curaçaose (fonologische) spelling, bijvoorbeeld 'Papiamentu', 'ku', 'nos', 'mucha'. Meng dit niet met de Arubaanse spelling (Papiamento, 'cu').",
   },
+  beeldOmgeving:
+    "everyday life on Curaçao: modest houses in soft pastel colours with low garden walls, small neighbourhood shops (toko) and simple market stalls, dry sunny landscape with cacti and low shrubs, school buildings with open corridors and shaded courtyards, ordinary modern clothing suitable for a warm climate",
   valuta: {
     naam: "Caribbean guilder",
     code: "XCG",
