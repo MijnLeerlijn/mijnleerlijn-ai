@@ -3,13 +3,19 @@
 import { useState } from "react";
 import { WerkbladFormulier } from "@/components/WerkbladFormulier";
 import { WerkbladPreview } from "@/components/WerkbladPreview";
+import { ALGEMENE_FOUTMELDING, vraagWerkbladAan } from "@/lib/client/werkbladApi";
+import type { WerkbladResultaat } from "@/lib/resultaat";
 import { STANDAARD_INSTELLINGEN, type WerkbladInstellingen } from "@/lib/werkblad";
+
+type Status = "formulier" | "bezig" | "resultaat";
 
 export default function WerkbladMakenPagina() {
   const [instellingen, setInstellingen] = useState<WerkbladInstellingen>(
     STANDAARD_INSTELLINGEN,
   );
-  const [toonPreview, setToonPreview] = useState(false);
+  const [status, setStatus] = useState<Status>("formulier");
+  const [resultaat, setResultaat] = useState<WerkbladResultaat | null>(null);
+  const [foutmelding, setFoutmelding] = useState<string | null>(null);
 
   function wijzig(wijziging: Partial<WerkbladInstellingen>) {
     setInstellingen((huidig) => ({ ...huidig, ...wijziging }));
@@ -17,9 +23,30 @@ export default function WerkbladMakenPagina() {
 
   // Het formulier is langer dan één scherm; zonder scroll naar boven zou de
   // preview onder de vouw beginnen.
-  function schakel(preview: boolean) {
-    setToonPreview(preview);
+  function scrollNaarBoven() {
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function genereer() {
+    if (status === "bezig") return;
+
+    setStatus("bezig");
+    setFoutmelding(null);
+
+    try {
+      const nieuwResultaat = await vraagWerkbladAan(instellingen);
+      setResultaat(nieuwResultaat);
+      setStatus("resultaat");
+      scrollNaarBoven();
+    } catch (fout) {
+      setFoutmelding(fout instanceof Error ? fout.message : ALGEMENE_FOUTMELDING);
+      setStatus("formulier");
+    }
+  }
+
+  function terugNaarFormulier() {
+    setStatus("formulier");
+    scrollNaarBoven();
   }
 
   return (
@@ -36,16 +63,19 @@ export default function WerkbladMakenPagina() {
         </p>
       </header>
 
-      {toonPreview ? (
+      {status === "resultaat" && resultaat ? (
         <WerkbladPreview
+          resultaat={resultaat}
           instellingen={instellingen}
-          onTerug={() => schakel(false)}
+          onTerug={terugNaarFormulier}
         />
       ) : (
         <WerkbladFormulier
           waarden={instellingen}
           onWijzig={wijzig}
-          onVerstuur={() => schakel(true)}
+          onVerstuur={genereer}
+          bezig={status === "bezig"}
+          foutmelding={foutmelding}
         />
       )}
     </main>

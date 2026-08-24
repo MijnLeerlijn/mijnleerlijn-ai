@@ -12,7 +12,7 @@ export function Knop({ variant = "primair", className = "", ...props }: KnopProp
 
   return (
     <button
-      className={`inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold transition-colors ${stijl} ${className}`}
+      className={`inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${stijl} ${className}`}
       {...props}
     />
   );

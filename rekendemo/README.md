@@ -4,19 +4,38 @@ Demo-webapp waarmee een leerkracht een rekendoel invoert en daar lokaal passend
 rekenmateriaal bij laat maken. Deze applicatie staat los van de andere
 MijnLeerlijn-projecten in deze repository.
 
-**Fase 1 (dit is wat er nu staat):** de basis van de app en het invoerscherm,
-met een preview van de gemaakte keuzes. Er wordt nog niets gegenereerd — geen
-AI, geen tekeningen, geen PDF.
+**Wat er nu staat:**
+
+- **Fase 1** — het invoerscherm: eiland, taal, rekendoel, leerjaar, type opgaven,
+  aantal opgaven, tekenwens en antwoordenblad.
+- **Fase 2** — echte generatie van rekenopgaven via de OpenAI API, met lokale
+  kennisprofielen per eiland, gestructureerde JSON-output, een validatielaag en
+  een preview van het werkblad.
+
+Nog niet aanwezig: tekeningen, PDF, opslag, accounts.
 
 ## Lokaal starten
 
 ```bash
 cd rekendemo
 npm install
+cp .env.example .env.local   # vul OPENAI_API_KEY in
 npm run dev
 ```
 
 Open daarna http://localhost:3000.
+
+## Omgevingsvariabelen
+
+| Variabele | Verplicht | Toelichting |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | ja | API-sleutel van OpenAI. Wordt alleen server-side gebruikt. |
+| `OPENAI_MODEL` | nee | Standaard `gpt-5`. Bijvoorbeeld `gpt-5-mini` voor sneller en goedkoper. |
+| `OPENAI_BASE_URL` | nee | Alternatief endpoint, bijvoorbeeld een lokale testserver. |
+| `AI_PROVIDER` | nee | Op dit moment alleen `openai`. |
+
+Zet dezelfde variabelen in Vercel onder Project Settings → Environment Variables.
+Committeer nooit een echte sleutel; `.env*.local` staat in `.gitignore`.
 
 ## Overige scripts
 
@@ -30,11 +49,22 @@ npm run lint       # ESLint
 ## Structuur
 
 ```
-app/                 App Router: layout, globals.css en het scherm "Werkblad maken"
-components/          WerkbladFormulier en WerkbladPreview
-components/ui/       Herbruikbare formulierelementen (kaarten, segmenten, toggle, knop)
-lib/werkblad.ts      Datamodel, opties, standaardwaarden en taallogica per eiland
+app/                        App Router: layout, globals.css, scherm "Werkblad maken"
+app/api/generate/route.ts   Server-side generatie-endpoint
+components/                 WerkbladFormulier en WerkbladPreview
+components/ui/              Herbruikbare formulierelementen
+lib/werkblad.ts             Formuliermodel, opties, taallogica en invoercontrole
+lib/resultaat.ts            Type van het gegenereerde werkblad
+lib/locales/                Lokale kennisprofielen (aruba.ts, curacao.ts, gedeeld.ts)
+lib/ai/                     Prompt, JSON-schema, providerlaag en generator
+lib/validatie/              Vormcontrole en didactische/lokale controles op de output
+lib/client/                 Aanroep van /api/generate vanuit de browser
 ```
+
+De lagen staan bewust los van elkaar: het kennisprofiel weet niets van de AI-provider,
+de provider niets van de eilanden, en de validatie draait op het resultaat zonder de
+prompt te kennen. Een ander model instellen, een eiland toevoegen of een regel
+aanscherpen kan daardoor per laag.
 
 ## Deployment
 

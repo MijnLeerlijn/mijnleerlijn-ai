@@ -25,12 +25,16 @@ type WerkbladFormulierProps = {
   waarden: WerkbladInstellingen;
   onWijzig: (wijziging: Partial<WerkbladInstellingen>) => void;
   onVerstuur: () => void;
+  bezig: boolean;
+  foutmelding: string | null;
 };
 
 export function WerkbladFormulier({
   waarden,
   onWijzig,
   onVerstuur,
+  bezig,
+  foutmelding,
 }: WerkbladFormulierProps) {
   const [fout, setFout] = useState<string | null>(null);
 
@@ -42,6 +46,8 @@ export function WerkbladFormulier({
 
   function verstuur(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (bezig) return;
 
     if (waarden.rekendoel.trim().length === 0) {
       setFout("Vul een rekendoel in, zodat we passend materiaal kunnen maken.");
@@ -185,14 +191,47 @@ export function WerkbladFormulier({
         </div>
       </section>
 
-      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-        <Knop type="submit" className="w-full sm:w-auto">
-          Genereer werkblad
-        </Knop>
-        <p className="text-sm text-ink-muted">
-          Je kunt je keuzes daarna nog aanpassen.
-        </p>
+      <div className="space-y-4">
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+          <Knop type="submit" disabled={bezig} className="w-full gap-2.5 sm:w-auto">
+            {bezig ? <Spinner /> : null}
+            {bezig ? "Je werkblad wordt gemaakt…" : "Genereer werkblad"}
+          </Knop>
+          <p className="text-sm text-ink-muted">
+            {bezig
+              ? "Dit duurt meestal een halve minuut."
+              : "Je kunt je keuzes daarna nog aanpassen."}
+          </p>
+        </div>
+
+        {foutmelding ? (
+          <p
+            role="alert"
+            className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+          >
+            {foutmelding}
+          </p>
+        ) : null}
       </div>
     </form>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      className="h-4 w-4 animate-spin text-white/80"
+      fill="none"
+    >
+      <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="2.5" opacity="0.3" />
+      <path
+        d="M18 10a8 8 0 0 0-8-8"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
