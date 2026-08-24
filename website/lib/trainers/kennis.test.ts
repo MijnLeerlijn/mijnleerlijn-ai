@@ -10,6 +10,13 @@ import { maakFakePayload } from "@/lib/support/fake-payload";
 // kennis-antwoord.test.ts). cosineSimilarity zelf (uit de "ai"-package)
 // draait hier ECHT, niet gemockt — het is een pure rekenfunctie zonder
 // externe aanroep, dus een mock zou hier alleen ruis toevoegen.
+//
+// Vervolgronde (2026-08-23) — embedding is sindsdien number[][] (één vector
+// per chunk, zie lib/embeddings/chunked-embed.ts — fix voor de HTTP 400 bij
+// te lange trainerkennis): de fixtures hieronder gebruiken dus geneste
+// vectoren (bv. [[1, 0]]), nooit meer een vlakke [1, 0]. generateEmbedding()
+// zelf blijft één vlakke vector per aanroep teruggeven — dat is de
+// QUERY-embedding, niet de documentopslag, dus die vorm verandert hier niet.
 vi.mock("@/services/ai-client", () => ({ generateEmbedding: vi.fn() }));
 vi.mock("./kennis-antwoord", () => ({ genereerTrainerKennisAntwoord: vi.fn() }));
 
@@ -25,7 +32,7 @@ function kennisversie(overrides: Record<string, unknown> = {}) {
     status: "gepubliceerd",
     generatedByAi: true,
     embeddingStatus: "indexed",
-    embedding: [1, 0],
+    embedding: [[1, 0]],
     updatedAt: "2026-08-20T09:00:00.000Z",
     createdAt: "2026-08-20T09:00:00.000Z",
     ...overrides,
@@ -96,8 +103,8 @@ describe("beantwoordTrainerKennisVraag — retrieve't alleen gepubliceerde train
     }));
     const { payload } = maakFakePayload({
       "trainer-kennisversies": [
-        kennisversie({ id: 1, titel: "Gepubliceerd + geëmbed", status: "gepubliceerd", embedding: [1, 0] }),
-        kennisversie({ id: 2, titel: "Concept", status: "concept", embedding: [1, 0] }),
+        kennisversie({ id: 1, titel: "Gepubliceerd + geëmbed", status: "gepubliceerd", embedding: [[1, 0]] }),
+        kennisversie({ id: 2, titel: "Concept", status: "concept", embedding: [[1, 0]] }),
         kennisversie({ id: 3, titel: "Gepubliceerd zonder embedding", status: "gepubliceerd", embedding: null }),
       ],
     });
@@ -122,8 +129,8 @@ describe("beantwoordTrainerKennisVraag — retrieve't alleen gepubliceerde train
     }));
     const { payload } = maakFakePayload({
       "trainer-kennisversies": [
-        kennisversie({ id: 1, titel: "Loodrecht (orthogonaal)", embedding: [0, 1] }), // similarity 0
-        kennisversie({ id: 2, titel: "Identiek", embedding: [1, 0] }), // similarity 1
+        kennisversie({ id: 1, titel: "Loodrecht (orthogonaal)", embedding: [[0, 1]] }), // similarity 0
+        kennisversie({ id: 2, titel: "Identiek", embedding: [[1, 0]] }), // similarity 1
       ],
     });
 
@@ -134,6 +141,44 @@ describe("beantwoordTrainerKennisVraag — retrieve't alleen gepubliceerde train
       expect(uitkomst.bronnen.map((b) => b.id)).toEqual([2, 1]);
       expect(uitkomst.bronnen[0]!.similarity).toBeCloseTo(1);
       expect(uitkomst.bronnen[1]!.similarity).toBeCloseTo(0);
+    }
+  });
+
+  // Vervolgronde (2026-08-23) — de kern van de chunking-fix aan de
+  // retrieval-kant: een document met meerdere chunks (embedding: number[][])
+  // scoort op zijn BESTE chunk, niet op de eerste/gemiddelde. De volledige,
+  // ongewijzigde tekst blijft de bron/LLM-context, ongeacht welke chunk won.
+  it("een document met meerdere chunk-embeddings scoort op de best passende chunk", async () => {
+    mockGenerateEmbedding.mockResolvedValue([1, 0]); // query-embedding
+    mockGenereerAntwoord.mockImplementation(async (_vraag, bronnen) => ({
+      type: "answered",
+      answer: "Antwoord",
+      reasoning: "Reden",
+      confidence: 100,
+      model: "test",
+      bronnen,
+    }));
+    const { payload } = maakFakePayload({
+      "trainer-kennisversies": [
+        // Eerste chunk loodrecht (similarity 0), tweede chunk identiek (similarity 1) — de BESTE chunk moet winnen.
+        kennisversie({
+          id: 1,
+          titel: "Basiskennis (meerdere chunks)",
+          tekst: "De volledige, ongewijzigde tekst blijft de LLM-context.",
+          embedding: [
+            [0, 1],
+            [1, 0],
+          ],
+        }),
+      ],
+    });
+
+    const uitkomst = await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Vraag");
+
+    expect(uitkomst.type).toBe("answered");
+    if (uitkomst.type === "answered") {
+      expect(uitkomst.bronnen[0]!.similarity).toBeCloseTo(1);
+      expect(uitkomst.bronnen[0]!.tekst).toBe("De volledige, ongewijzigde tekst blijft de LLM-context.");
     }
   });
 
@@ -168,7 +213,7 @@ describe("beantwoordTrainerKennisVraag — vraaglog (opdrachtseis §3), geen vra
       bronnen,
     }));
     const { payload, collection } = maakFakePayload({
-      "trainer-kennisversies": [kennisversie({ id: 1, embedding: [1, 0] })],
+      "trainer-kennisversies": [kennisversie({ id: 1, embedding: [[1, 0]] })],
     });
 
     await beantwoordTrainerKennisVraag(payload, TRAINER_ID, "Hoe lang duurt een periode?");
@@ -209,7 +254,7 @@ describe("beantwoordTrainerKennisVraag — vraaglog (opdrachtseis §3), geen vra
       model: "test",
       bronnen,
     }));
-    const { payload } = maakFakePayload({ "trainer-kennisversies": [kennisversie({ id: 1, embedding: [1, 0] })] });
+    const { payload } = maakFakePayload({ "trainer-kennisversies": [kennisversie({ id: 1, embedding: [[1, 0]] })] });
     const stukPayload = { ...payload, create: async () => { throw new Error("db weg"); } } as unknown as typeof payload;
 
     const uitkomst = await beantwoordTrainerKennisVraag(stukPayload, TRAINER_ID, "Vraag");

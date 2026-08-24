@@ -1,6 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminFieldOnly, adminOnly, anyEditor } from "../access/roles";
-import { embedIfChanged } from "@/lib/embeddings/embed-record";
+import { embedInChunksIfChanged } from "@/lib/embeddings/chunked-embed";
 
 // Traineromgeving V2, Vervolgronde (2026-08-22) — "Kennis" fase 1: de
 // trainerversie van een bestaand centraal kennisartikel. Zelfde patroon als
@@ -50,15 +50,21 @@ export const TrainerKennisversies: CollectionConfig = {
       // concept hoeft nooit een embedding te hebben, dat bespaart onnodige
       // AI-aanroepen tijdens het schrijven/bewerken vóór publicatie.
       //
-      // embedIfChanged (lib/embeddings/embed-record.ts) is dezelfde, al
-      // bewezen hash-vergelijking + AI-aanroep als de centrale kennisindex
-      // gebruikt — bewust WEL hergebruikt, in tegenstelling tot de gedeelde
-      // run-embedding.ts-ORCHESTRATOR (die blijft bewust ongebruikt: die
-      // bedient de centrale kennisindex, koppelen zou het isolatievereiste
-      // ondermijnen — "trainerkennis krijgt een eigen route/retrievalflow").
-      // embedIfChanged zelf is pure, Payload-onafhankelijke rekenlogica
-      // zonder enige lees/schrijfkoppeling aan de centrale index, dus geen
-      // isolatieschending. Zelfde functie hergebruikt door de backfill
+      // Productiecontrole, vervolgronde (2026-08-23) — een trainerversie kan
+      // een feitbehoudende AI-herschrijving zijn van het Kennisbasis-
+      // achtergronddocument (bedoeld als promptcontext voor gpt-4o, zie
+      // lib/assistant/kennisbasis-context.ts) en ruimschoots de 8191-
+      // tokenlimiet van text-embedding-3-small overschrijden — één
+      // ongedeelde embed()-aanroep werd dan door OpenAI met HTTP 400
+      // geweigerd. embedInChunksIfChanged (lib/embeddings/chunked-embed.ts)
+      // deelt de brontekst zo nodig op in meerdere chunks (lib/embeddings/
+      // chunk-text.ts) en embedt elk apart — data.embedding wordt dus
+      // number[][] (één vector per chunk), nooit meer één vlakke vector.
+      // Bewust een aparte functie van de gedeelde embedIfChanged
+      // (lib/embeddings/embed-record.ts, ongewijzigd voor de centrale
+      // kennisindex: die embedt altijd al vooraf gestructureerde, kortere
+      // tekst per document/hoofdstuk/stap, nooit één ongedeelde lange
+      // string). Zelfde functie hergebruikt door de backfill
       // (lib/trainers/kennis-reindex.ts) — één plek voor "moet dit record
       // herembed worden", nooit twee losse implementaties die uit elkaar
       // kunnen lopen.
@@ -78,13 +84,13 @@ export const TrainerKennisversies: CollectionConfig = {
         const brontekst = `${titel}\n\n${tekst}`.trim();
         if (!brontekst) return data;
 
-        const uitkomst = await embedIfChanged({
+        const uitkomst = await embedInChunksIfChanged({
           text: brontekst,
           storedHash: (data.embeddingTextHash ?? originalDoc?.embeddingTextHash) as string | null | undefined,
           storedStatus: (data.embeddingStatus ?? originalDoc?.embeddingStatus) as string | null | undefined,
         });
         if (uitkomst.type === "embedded") {
-          data.embedding = uitkomst.embedding;
+          data.embedding = uitkomst.embeddings;
           data.embeddingTextHash = uitkomst.hash;
           data.embeddingStatus = "indexed";
         } else if (uitkomst.type === "failed") {
@@ -97,7 +103,7 @@ export const TrainerKennisversies: CollectionConfig = {
           // zonder embedding. lib/trainers/kennis-reindex.ts se
           // herindexeerTrainerKennisversies() vindt en herprobeert precies
           // zulke records (embeddingStatus !== "indexed").
-          console.error("[trainer-kennisversies] embedding mislukt (opslaan gaat door):", uitkomst.foutmelding);
+          console.error("[trainer-kennisversies] embedding mislukt (opslaan gaat door):", uitkomst.diagnose);
           data.embeddingStatus = "pending";
         }
         return data;
@@ -157,7 +163,11 @@ export const TrainerKennisversies: CollectionConfig = {
     {
       name: "embedding",
       type: "json",
-      admin: { readOnly: true, hidden: true, description: "Ruwe vectoropslag voor de trainer-Q&A-zoekfunctie (lib/trainers/kennis.ts) — losstaand van de centrale kennisindex." },
+      admin: {
+        readOnly: true,
+        hidden: true,
+        description: "Ruwe vectoropslag voor de trainer-Q&A-zoekfunctie (lib/trainers/kennis.ts) — losstaand van de centrale kennisindex. Eén vector per chunk (number[][], zie lib/embeddings/chunk-text.ts) i.p.v. één vlakke vector: lange trainerkennis wordt vóór het embedden opgedeeld.",
+      },
     },
   ],
 };

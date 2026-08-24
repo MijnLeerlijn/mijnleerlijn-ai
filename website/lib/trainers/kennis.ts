@@ -65,6 +65,23 @@ export async function haalGepubliceerdeKennisversie(payload: Payload, id: number
 
 const MAX_BRONNEN = 4;
 
+// Productiecontrole, vervolgronde (2026-08-23) — een trainerkennisversie
+// wordt sindsdien per chunk geëmbed (lib/embeddings/chunked-embed.ts, fix
+// voor de HTTP 400 bij lange, van de Kennisbasis afgeleide trainerkennis):
+// embedding is dus number[][] (één vector per chunk), niet meer één vlakke
+// vector. De score van een document is de HOOGSTE similarity over al zijn
+// chunks — de trainer krijgt nog altijd de volledige, ongewijzigde tekst
+// als bron/LLM-context (gpt-4o se contextvenster is ruim genoeg daarvoor,
+// alleen het EMBEDDING-model heeft de striktere limiet), alleen de
+// retrieval-SCORE kijkt naar het best passende fragment.
+function besteChunkSimilarity(queryEmbedding: number[], chunkEmbeddings: number[][]): number {
+  return Math.max(...chunkEmbeddings.map((chunk) => cosineSimilarity(queryEmbedding, chunk)));
+}
+
+function heeftGeldigeChunkEmbeddings(waarde: unknown): waarde is number[][] {
+  return Array.isArray(waarde) && waarde.length > 0 && waarde.every((chunk) => Array.isArray(chunk) && chunk.length > 0);
+}
+
 async function zoekRelevanteKennis(payload: Payload, vraag: string): Promise<TrainerKennisBron[]> {
   const resultaat = await payload.find({
     collection: "trainer-kennisversies",
@@ -73,12 +90,12 @@ async function zoekRelevanteKennis(payload: Payload, vraag: string): Promise<Tra
     depth: 0,
     limit: MAX_KENNISVERSIES,
   });
-  const metEmbedding = resultaat.docs.filter((doc): doc is typeof doc & { embedding: number[] } => Array.isArray(doc.embedding) && doc.embedding.length > 0);
+  const metEmbedding = resultaat.docs.filter((doc): doc is typeof doc & { embedding: number[][] } => heeftGeldigeChunkEmbeddings(doc.embedding));
   if (metEmbedding.length === 0) return [];
 
   const queryEmbedding = await generateEmbedding(vraag);
   return metEmbedding
-    .map((doc) => ({ id: doc.id, titel: doc.titel, tekst: doc.tekst, similarity: cosineSimilarity(queryEmbedding, doc.embedding) }))
+    .map((doc) => ({ id: doc.id, titel: doc.titel, tekst: doc.tekst, similarity: besteChunkSimilarity(queryEmbedding, doc.embedding) }))
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, MAX_BRONNEN);
 }

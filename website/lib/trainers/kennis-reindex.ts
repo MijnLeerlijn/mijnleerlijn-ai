@@ -1,6 +1,5 @@
 import type { Payload } from "payload";
-import { embedIfChanged } from "@/lib/embeddings/embed-record";
-import type { EmbeddingFoutDiagnose } from "@/services/ai-client";
+import { embedInChunksIfChanged } from "@/lib/embeddings/chunked-embed";
 
 // Productiecontrole (2026-08-23) — Kennis-Q&A-retrieval vond gepubliceerde
 // trainerkennis niet terug. Root cause: een trainerversie kon "gepubliceerd"
@@ -13,11 +12,17 @@ import type { EmbeddingFoutDiagnose } from "@/services/ai-client";
 // lib/trainers/kennis.ts se retrieval leest. Geen enkele vraag-/
 // antwoordinhoud hier, uitsluitend tellingen en record-ID's.
 //
-// Vervolgronde (2026-08-23) — de eerste live herindexering liet 1 record
-// "mislukt" zien zonder verder detail. herindexeerTrainerKennisversies geeft
-// nu ook per mislukking een veilige diagnose terug (categorie/stap/HTTP-
-// status/modelnaam, via classificeerEmbeddingFout — services/ai-client.ts)
-// — nooit de API-key, promptekst of volledige kennisinhoud.
+// Vervolgronde (2026-08-23), 1e diagnoseronde — de eerste live
+// herindexering liet 1 record "mislukt" zien zonder verder detail:
+// herindexeerTrainerKennisversies geeft sindsdien ook per mislukking een
+// veilige diagnose terug (categorie/stap/HTTP-status/modelnaam) — nooit de
+// API-key, prompttekst of volledige kennisinhoud.
+//
+// Vervolgronde (2026-08-23), 2e diagnoseronde — die diagnose wees op HTTP
+// 400 ("openai_verzoek_ongeldig"): de brontekst bleek te lang voor één
+// embed()-aanroep (root cause + fix: lib/embeddings/chunked-embed.ts,
+// chunk-text.ts). embedInChunksIfChanged vervangt hier embedIfChanged; de
+// diagnose bevat nu ook chunkIndex/totaalChunks/inputTekens/geschatTokens.
 
 const MAX_KENNISVERSIES = 200; // zelfde grens als lib/trainers/kennis.ts — "houd het rustig en eenvoudig" op deze schaal.
 
@@ -42,12 +47,14 @@ async function haalGepubliceerdeVersiesRuw(payload: Payload): Promise<RuweKennis
 }
 
 // Zelfde definitie van "bruikbaar voor retrieval" als lib/trainers/kennis.ts
-// se zoekRelevanteKennis (Array.isArray + niet-leeg) — hier aangevuld met de
+// se zoekRelevanteKennis (elke chunk een niet-lege vector — embedding is
+// number[][], zie lib/embeddings/chunked-embed.ts) — hier aangevuld met de
 // embeddingStatus-check, zodat een record met een toevallig nog aanwezige
 // maar VEROUDERDE embedding (hash niet meer actueel) hier ook als "moet
 // herindexeren" telt, ook al zou de kale retrieval-filter hem nog meenemen.
 function heeftGeldigeEmbedding(versie: RuweKennisversie): boolean {
-  return versie.embeddingStatus === "indexed" && Array.isArray(versie.embedding) && versie.embedding.length > 0;
+  if (versie.embeddingStatus !== "indexed" || !Array.isArray(versie.embedding) || versie.embedding.length === 0) return false;
+  return (versie.embedding as unknown[]).every((chunk) => Array.isArray(chunk) && chunk.length > 0);
 }
 
 export interface KennisRetrievalDiagnose {
@@ -63,13 +70,22 @@ export async function haalKennisRetrievalDiagnose(payload: Payload): Promise<Ken
   return { totaalGepubliceerd: versies.length, geindexeerd, zonderEmbedding: versies.length - geindexeerd };
 }
 
-/** Eén mislukking, veilig te tonen aan een beheerder — nooit API-key/prompt/kennisinhoud. */
+/**
+ * Eén mislukking, veilig te tonen aan een beheerder — nooit API-key/prompt/
+ * kennisinhoud, alleen categorieën en getallen (chunkIndex/totaalChunks/
+ * inputTekens/geschatTokens: zie embedInChunksIfChanged, lib/embeddings/
+ * chunked-embed.ts).
+ */
 export interface HerindexeerFoutDetail {
   id: number;
   categorie: string;
   stap: "api_key" | "aanroep" | "respons" | "onbekend";
   httpStatus: number | null;
-  model: string | null;
+  model: string;
+  inputTekens: number;
+  geschatTokens: number;
+  chunkIndex: number;
+  totaalChunks: number;
 }
 
 export interface HerindexeerResultaat {
@@ -78,17 +94,6 @@ export interface HerindexeerResultaat {
   opnieuwGeindexeerd: number;
   mislukt: number;
   mislukteDetails: HerindexeerFoutDetail[];
-}
-
-// Fallback "onbekende_fout" is uitsluitend voor een embedIfChanged-uitkomst
-// zónder diagnose (in de praktijk alleen embedIfChanged's eigen "geen tekst"-
-// validatie — komt hier nooit voor, want de aanroeper filtert een lege
-// brontekst hierboven al vóór embedIfChanged wordt aangeroepen). Zelfde
-// naam/betekenis als classificeerEmbeddingFout se eigen catch-all.
-function veiligeDiagnose(diagnose: EmbeddingFoutDiagnose | undefined): Omit<HerindexeerFoutDetail, "id"> {
-  return diagnose
-    ? { categorie: diagnose.categorie, stap: diagnose.stap, httpStatus: diagnose.httpStatus, model: diagnose.model }
-    : { categorie: "onbekende_fout", stap: "onbekend", httpStatus: null, model: null };
 }
 
 /**
@@ -115,13 +120,7 @@ export async function herindexeerTrainerKennisversies(payload: Payload): Promise
     }
 
     const brontekst = `${versie.titel}\n\n${versie.tekst}`.trim();
-    if (!brontekst) {
-      mislukt++;
-      mislukteDetails.push({ id: versie.id, categorie: "geen_tekst_om_te_embedden", stap: "onbekend", httpStatus: null, model: null });
-      continue;
-    }
-
-    const uitkomst = await embedIfChanged({
+    const uitkomst = await embedInChunksIfChanged({
       text: brontekst,
       storedHash: versie.embeddingTextHash,
       storedStatus: versie.embeddingStatus,
@@ -132,18 +131,19 @@ export async function herindexeerTrainerKennisversies(payload: Payload): Promise
         collection: "trainer-kennisversies",
         id: versie.id,
         overrideAccess: true,
-        data: { embedding: uitkomst.embedding, embeddingTextHash: uitkomst.hash, embeddingStatus: "indexed" },
+        data: { embedding: uitkomst.embeddings, embeddingTextHash: uitkomst.hash, embeddingStatus: "indexed" },
       });
       opnieuwGeindexeerd++;
     } else if (uitkomst.type === "failed") {
-      const detail = { id: versie.id, ...veiligeDiagnose(uitkomst.diagnose) };
+      const detail: HerindexeerFoutDetail = { id: versie.id, ...uitkomst.diagnose };
       console.error("[trainer-kennisversies] herindexeren mislukt:", detail);
       mislukt++;
       mislukteDetails.push(detail);
     } else {
       // "skipped" zou hier niet moeten voorkomen (heeftGeldigeEmbedding
-      // filtert dat al uit vóórdat embedIfChanged wordt aangeroepen), maar
-      // is inhoudelijk gelijk aan "al in orde" mocht het toch gebeuren.
+      // filtert dat al uit vóórdat embedInChunksIfChanged wordt
+      // aangeroepen), maar is inhoudelijk gelijk aan "al in orde" mocht het
+      // toch gebeuren.
       algGeindexeerd++;
     }
   }

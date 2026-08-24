@@ -59,12 +59,34 @@ describe("POST /api/admin/trainer-kennis/herindexeer", () => {
       algGeindexeerd: 0,
       opnieuwGeindexeerd: 0,
       mislukt: 1,
-      mislukteDetails: [{ id: 42, categorie: "openai_api_key_ontbreekt", stap: "api_key", httpStatus: null, model: "text-embedding-3-small" }],
+      mislukteDetails: [
+        {
+          id: 42,
+          categorie: "openai_verzoek_ongeldig",
+          stap: "aanroep",
+          httpStatus: 400,
+          model: "text-embedding-3-small",
+          inputTekens: 5800,
+          geschatTokens: 1450,
+          chunkIndex: 2,
+          totaalChunks: 5,
+        },
+      ],
     });
     const response = await POST(maakRequest("POST"));
     const body = await response.json();
     expect(body.mislukteDetails).toEqual([
-      { id: 42, categorie: "openai_api_key_ontbreekt", stap: "api_key", httpStatus: null, model: "text-embedding-3-small" },
+      {
+        id: 42,
+        categorie: "openai_verzoek_ongeldig",
+        stap: "aanroep",
+        httpStatus: 400,
+        model: "text-embedding-3-small",
+        inputTekens: 5800,
+        geschatTokens: 1450,
+        chunkIndex: 2,
+        totaalChunks: 5,
+      },
     ]);
   });
 });
