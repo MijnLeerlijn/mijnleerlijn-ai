@@ -38,7 +38,7 @@ function training(overrides: Partial<TrainingMetSchool> = {}): TrainingMetSchool
 
 beforeEach(() => {
   mockMondayOverzicht.mockReset();
-  mockMondayOverzicht.mockResolvedValue({ trainingenPerTrainer: new Map(), scholenPerTrainer: new Map() });
+  mockMondayOverzicht.mockResolvedValue({ trainingenPerTrainer: new Map(), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() });
 });
 
 const trainerAccount = (overrides: Record<string, unknown> = {}) => ({
@@ -79,6 +79,8 @@ describe("haalAdminTrainersOverzicht — dashboardtotalen en trainerkaarten", ()
     mockMondayOverzicht.mockResolvedValue({
       trainingenPerTrainer: new Map(),
       scholenPerTrainer: new Map([["uitv-1", [{ id: "s1", naam: "School A" }, { id: "s2", naam: "School B" }]]]),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     });
     const { payload } = maakFakePayload({ "trainer-accounts": [trainerAccount({ id: 1 })] });
     const overzicht = await haalAdminTrainersOverzicht(payload);
@@ -93,6 +95,8 @@ describe("haalAdminTrainersOverzicht — dashboardtotalen en trainerkaarten", ()
         ["uitv-2", [training({ id: "gedeelde-training", datum: `${dezeMaand}-15` })]],
       ]),
       scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     });
     const { payload } = maakFakePayload({ "trainer-accounts": [trainerAccount({ id: 1, mondayUitvoerderItemId: "uitv-1" }), trainerAccount({ id: 2, mondayUitvoerderItemId: "uitv-2" })] });
     const overzicht = await haalAdminTrainersOverzicht(payload);
@@ -131,6 +135,8 @@ describe("haalAdminTrainersOverzicht — dashboardtotalen en trainerkaarten", ()
     mockMondayOverzicht.mockResolvedValue({
       trainingenPerTrainer: new Map([["uitv-2", [training({ id: "training-van-b" })]]]),
       scholenPerTrainer: new Map([["uitv-2", [{ id: "s2", naam: "School van B" }]]]),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     });
     const { payload } = maakFakePayload({
       "trainer-accounts": [trainerAccount({ id: 1, name: "Trainer A", mondayUitvoerderItemId: "uitv-1" }), trainerAccount({ id: 2, name: "Trainer B", mondayUitvoerderItemId: "uitv-2" })],

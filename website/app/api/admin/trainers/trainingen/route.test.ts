@@ -45,6 +45,8 @@ beforeEach(() => {
       ["uitv-b", [trainingB]],
     ]),
     scholenPerTrainer: new Map(),
+    scholen: new Map(),
+    trainingenPerSchool: new Map(),
   });
 });
 

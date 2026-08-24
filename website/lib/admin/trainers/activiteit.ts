@@ -77,7 +77,7 @@ export function bouwAdminActiviteitFeed(
           soort: "telefonie_mislukt",
           trainerId: o.trainerId as number,
           trainerNaam: trainerNaam(o.trainerId),
-          schoolId: null,
+          schoolId: o.gekozenMondaySchoolId,
           schoolNaam: o.gekozenSchoolNaam ?? "Onbekende school",
           titel: o.gekozenTrainingNaam ?? "Telefonische oproep",
           wanneer: o.afgerondOp as string,

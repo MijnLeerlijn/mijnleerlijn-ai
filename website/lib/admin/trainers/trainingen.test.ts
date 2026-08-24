@@ -62,6 +62,8 @@ describe("bouwAdminTrainingenLijst", () => {
         ["uitv-b", [training({ id: "gedeelde-training" })]],
       ]),
       scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     };
     const rijen = bouwAdminTrainingenLijst(overzicht, [trainerA, trainerB], []);
     expect(rijen).toHaveLength(2);
@@ -78,6 +80,8 @@ describe("bouwAdminTrainingenLijst", () => {
         ["uitv-b", [training({ id: "training-b" })]],
       ]),
       scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     };
     const verslagA = verslagActiviteit({ trainerId: 1, mondayTrainingId: "training-a", status: "voltooid", bron: "portal" });
     const verslagB = verslagActiviteit({ trainerId: 2, mondayTrainingId: "training-b", status: "concept", bron: "telefoon" });
@@ -90,7 +94,7 @@ describe("bouwAdminTrainingenLijst", () => {
   });
 
   it("toont verslagStatus/verslagBron als null wanneer er nog geen verslagrij bestaat", () => {
-    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["uitv-1", [training()]]]), scholenPerTrainer: new Map() };
+    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["uitv-1", [training()]]]), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() };
     const rijen = bouwAdminTrainingenLijst(overzicht, [trainer()], []);
     expect(rijen[0]).toMatchObject({ verslagStatus: null, verslagBron: null });
   });
@@ -99,13 +103,15 @@ describe("bouwAdminTrainingenLijst", () => {
     const overzicht: AdminTrainerMondayOverzicht = {
       trainingenPerTrainer: new Map([["uitv-1", [training({ status: "geannuleerd", datum: "2020-01-01" })]]]),
       scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     };
     const rijen = bouwAdminTrainingenLijst(overzicht, [trainer()], []);
     expect(rijen[0]?.weergaveStatus).toBe("geannuleerd");
   });
 
   it("slaat een Monday-item zonder gekoppeld trainer-account defensief over", () => {
-    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["onbekend", [training()]]]), scholenPerTrainer: new Map() };
+    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["onbekend", [training()]]]), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() };
     expect(bouwAdminTrainingenLijst(overzicht, [trainer({ mondayUitvoerderItemId: "uitv-1" })], [])).toEqual([]);
   });
 
@@ -118,6 +124,8 @@ describe("bouwAdminTrainingenLijst", () => {
         ],
       ]),
       scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     };
     const rijen = bouwAdminTrainingenLijst(overzicht, [trainer()], []);
     expect(rijen.map((r) => r.trainingId)).toEqual(["nieuw", "midden", "oud"]);

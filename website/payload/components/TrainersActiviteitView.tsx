@@ -116,7 +116,8 @@ export function TrainersActiviteitView() {
                     <Link href={`/admin/trainers/detail?id=${item.trainerId}`}>{item.trainerNaam}</Link> — {item.titel}
                   </div>
                   <div className="ml-sales__logboek-meta">
-                    {formatKorteDatumTijd(item.wanneer)} · {labelVoor(item.soort)} · {item.schoolNaam}
+                    {formatKorteDatumTijd(item.wanneer)} · {labelVoor(item.soort)} ·{" "}
+                    {item.schoolId ? <Link href={`/admin/trainers/school?id=${item.schoolId}`}>{item.schoolNaam}</Link> : item.schoolNaam}
                   </div>
                 </div>
               </div>

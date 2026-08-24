@@ -49,6 +49,7 @@ function misluktOproep(overrides: Partial<AdminMislukteTelefonieOproep> = {}): A
     foutcode: "transcriptie_mislukt",
     foutmelding: "Max. pogingen bereikt",
     afgerondOp: "2026-08-18T00:00:00.000Z",
+    gekozenMondaySchoolId: "s1",
     gekozenSchoolNaam: "School Een",
     gekozenTrainingNaam: "Training 1",
     ...overrides,

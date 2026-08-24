@@ -171,6 +171,8 @@ export interface AdminMislukteTelefonieOproep {
   foutcode: OproepFoutcode | null;
   foutmelding: string | null;
   afgerondOp: string | null;
+  /** Traineromgeving V2, Fase 5 (2026-08-24) — additief: het bestaande gekozenMondaySchoolId-veld (payload/collections/TrainerTelefonieOproepen.ts) was al opgeslagen maar hier nog niet doorgegeven; nodig om Aandacht/Activiteit correct op school te kunnen filteren (lib/admin/trainers/schooldetail.ts). */
+  gekozenMondaySchoolId: string | null;
   gekozenSchoolNaam: string | null;
   gekozenTrainingNaam: string | null;
 }
@@ -199,6 +201,7 @@ export async function haalMislukteTelefonieOproepenVoorAlleTrainers(payload: Pay
     foutcode: (doc.foutcode as OproepFoutcode | null) ?? null,
     foutmelding: doc.foutmelding ?? null,
     afgerondOp: doc.afgerondOp ?? null,
+    gekozenMondaySchoolId: doc.gekozenMondaySchoolId ?? null,
     gekozenSchoolNaam: doc.gekozenSchoolNaam ?? null,
     gekozenTrainingNaam: doc.gekozenTrainingNaam ?? null,
   }));

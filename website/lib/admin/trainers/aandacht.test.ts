@@ -33,7 +33,7 @@ function verslag(overrides: Partial<AdminOpenVerslag> = {}): AdminOpenVerslag {
 }
 
 function misluktOproep(overrides: Partial<AdminMislukteTelefonieOproep> = {}): AdminMislukteTelefonieOproep {
-  return { oproepId: 1, trainerId: 1, foutcode: "onbekende_fout", foutmelding: "Iets ging mis", afgerondOp: "2026-08-20T00:00:00.000Z", gekozenSchoolNaam: null, gekozenTrainingNaam: null, ...overrides };
+  return { oproepId: 1, trainerId: 1, foutcode: "onbekende_fout", foutmelding: "Iets ging mis", afgerondOp: "2026-08-20T00:00:00.000Z", gekozenMondaySchoolId: null, gekozenSchoolNaam: null, gekozenTrainingNaam: null, ...overrides };
 }
 
 function dagenGeleden(dagen: number): string {

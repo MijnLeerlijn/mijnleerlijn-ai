@@ -33,6 +33,8 @@ export interface AdminAandachtItem {
   soort: AdminAandachtSoort;
   trainerId: number | null;
   trainerNaam: string;
+  /** Traineromgeving V2, Fase 5 (2026-08-24) — additief, voor school-gescopeerde Aandacht (lib/admin/trainers/schooldetail.ts). Null blijft mogelijk: een mislukte oproep zonder gekozen school (spec-eis "geen arbitraire nieuwe status" — dit is en blijft gewoon een bestaand mogelijk-leeg veld). */
+  schoolId: string | null;
   schoolNaam: string;
   titel: string;
   /** Moment waarop dit item is ontstaan/laatst gewijzigd — bepaalt de sortering (langst-lopend eerst). */
@@ -74,6 +76,7 @@ export function bouwAdminAandachtOverzicht(
           soort: "telefonie_mislukt",
           trainerId: o.trainerId,
           trainerNaam: o.trainerId !== null ? (trainerPerId.get(o.trainerId)?.naam ?? "Onbekende trainer") : "Onbekende trainer",
+          schoolId: o.gekozenMondaySchoolId,
           schoolNaam: o.gekozenSchoolNaam ?? "Onbekende school",
           titel: o.gekozenTrainingNaam ?? "Telefonische oproep",
           wanneer: o.afgerondOp as string,
@@ -85,6 +88,7 @@ export function bouwAdminAandachtOverzicht(
         soort: "verslag_vastgelopen",
         trainerId: v.trainerId,
         trainerNaam: v.trainerNaam,
+        schoolId: v.schoolId,
         schoolNaam: v.schoolNaam,
         titel: v.trainingNaam,
         wanneer: v.wanneer,
@@ -96,6 +100,7 @@ export function bouwAdminAandachtOverzicht(
         soort: "concept_oud",
         trainerId: v.trainerId,
         trainerNaam: v.trainerNaam,
+        schoolId: v.schoolId,
         schoolNaam: v.schoolNaam,
         titel: v.trainingNaam,
         wanneer: v.wanneer,

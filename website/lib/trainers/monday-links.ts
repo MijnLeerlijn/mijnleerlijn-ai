@@ -773,11 +773,35 @@ export async function haalAlleTrainingenVoorTrainer(trainer: AuthTrainer): Promi
   return alle;
 }
 
+/**
+ * Traineromgeving V2, Fase 5 (2026-08-24) — Admin Schooldetail: schoolbasis
+ * zoals hieronder ook al voor elke school werd opgebouwd (id/naam/
+ * trainerIds), nu AANGEVULD met onderwijstype/locatie — dezelfde twee kolommen
+ * die hieronder al in de Master Data-fetch zaten (columnIds) maar tot nu toe
+ * niet werden uitgelezen (alleen MD_TRAINER_KOLOM). Zuiver additief: geen
+ * extra Monday-aanroep, geen wijziging aan trainingenPerTrainer/
+ * scholenPerTrainer hieronder — uitsluitend twee al-opgehaalde kolommen
+ * alsnog parsen en een school-geïndexeerde kaart (was al een lokale
+ * tussenwaarde, nu ook geretourneerd) beschikbaar maken voor
+ * lib/admin/trainers/schooldetail.ts.
+ */
+export interface AdminSchoolMonday {
+  id: string;
+  naam: string;
+  onderwijstype: string | null;
+  locatie: string | null;
+  trainerIds: string[];
+}
+
 export interface AdminTrainerMondayOverzicht {
   /** mondayUitvoerderItemId -> trainingen (met school) van die trainer. */
   trainingenPerTrainer: Map<string, TrainingMetSchool[]>;
   /** mondayUitvoerderItemId -> bevestigde scholen (id/naam) van die trainer. */
   scholenPerTrainer: Map<string, { id: string; naam: string }[]>;
+  /** schoolId -> schoolbasis (naam/onderwijstype/locatie/gekoppelde trainers). */
+  scholen: Map<string, AdminSchoolMonday>;
+  /** schoolId -> trainingen van die school (ongeacht trainer). */
+  trainingenPerSchool: Map<string, TrainingSamenvatting[]>;
 }
 
 /**
@@ -830,17 +854,14 @@ export async function haalTrainingenEnScholenVoorAlleTrainers(): Promise<AdminTr
     }),
   ]);
 
-  interface SchoolMetTrainers {
-    id: string;
-    naam: string;
-    trainerIds: string[];
-  }
-  const scholenById = new Map<string, SchoolMetTrainers>();
+  const scholenById = new Map<string, AdminSchoolMonday>();
   for (const item of masterDataItems) {
     const kolommen = naarKolomMap(item.column_values);
     scholenById.set(item.id, {
       id: item.id,
       naam: item.name,
+      onderwijstype: kolommen.get(MD_TYPE_SCHOOL_KOLOM)?.text || null,
+      locatie: kolommen.get(MD_LOCATION_KOLOM)?.text || null,
       trainerIds: parseLinkedPulseIds(kolommen.get(MD_TRAINER_KOLOM)?.value),
     });
   }
@@ -884,7 +905,7 @@ export async function haalTrainingenEnScholenVoorAlleTrainers(): Promise<AdminTr
     }
   }
 
-  return { trainingenPerTrainer, scholenPerTrainer };
+  return { trainingenPerTrainer, scholenPerTrainer, scholen: scholenById, trainingenPerSchool };
 }
 
 export interface SchoolDetail extends TrainerSchoolBron {

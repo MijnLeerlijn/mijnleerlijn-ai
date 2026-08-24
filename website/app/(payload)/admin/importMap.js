@@ -60,6 +60,7 @@ import { TrainerDetailViewShell as TrainerDetailViewShell_1e788d78f4aade245b171d
 import { TrainersTrainingenViewShell as TrainersTrainingenViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { TrainersTodoViewShell as TrainersTodoViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { TrainersActiviteitViewShell as TrainersActiviteitViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { SchoolDetailViewShell as SchoolDetailViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -126,5 +127,6 @@ export const importMap = {
   "@/payload/components/AdminViewShell#TrainersTrainingenViewShell": TrainersTrainingenViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#TrainersTodoViewShell": TrainersTodoViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#TrainersActiviteitViewShell": TrainersActiviteitViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#SchoolDetailViewShell": SchoolDetailViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }

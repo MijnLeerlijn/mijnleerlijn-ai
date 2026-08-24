@@ -57,6 +57,8 @@ function verslag(overrides: Partial<AdminOpenVerslag> = {}): AdminOpenVerslag {
 const legeMondayOverzicht: AdminTrainerMondayOverzicht = {
   trainingenPerTrainer: new Map(),
   scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
 };
 
 describe("bouwAdminTodoLijst", () => {
@@ -85,6 +87,8 @@ describe("bouwAdminTodoLijst", () => {
     const overzicht: AdminTrainerMondayOverzicht = {
       trainingenPerTrainer: new Map([["uitv-1", [training({ id: "t-verlopen", datum: "2020-01-01", status: "gedaan", logboekIngevuld: false })]]]),
       scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     };
     const todo = bouwAdminTodoLijst(overzicht, [], [trainer()]);
     expect(todo).toHaveLength(1);
@@ -99,6 +103,8 @@ describe("bouwAdminTodoLijst", () => {
     const overzicht: AdminTrainerMondayOverzicht = {
       trainingenPerTrainer: new Map([["uitv-1", [training({ id: "dezelfde-training", datum: "2020-01-01", logboekIngevuld: false })]]]),
       scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     };
     const todo = bouwAdminTodoLijst(overzicht, [v], [trainer()]);
     expect(todo).toHaveLength(1);
@@ -107,7 +113,7 @@ describe("bouwAdminTodoLijst", () => {
 
   it("prioriteitsvolgorde: telefonisch_concept > verslag_vastgelopen > concept_gestart > verslag_ontbreekt, ongeacht invoervolgorde", () => {
     const ontbreekt = training({ id: "t-ontbreekt", datum: "2020-01-01", logboekIngevuld: false });
-    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["uitv-1", [ontbreekt]]]), scholenPerTrainer: new Map() };
+    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["uitv-1", [ontbreekt]]]), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() };
     const gestart = verslag({ verslagId: 1, mondayTrainingId: "t-gestart", status: "concept", bron: "portal" });
     const vastgelopen = verslag({ verslagId: 2, mondayTrainingId: "t-vastgelopen", status: "bevestigd", bron: "portal" });
     const telefonisch = verslag({ verslagId: 3, mondayTrainingId: "t-telefonisch", status: "concept", bron: "telefoon" });
@@ -133,6 +139,8 @@ describe("bouwAdminTodoLijst", () => {
     const overzicht: AdminTrainerMondayOverzicht = {
       trainingenPerTrainer: new Map([["onbekend-uitv-item", [training({ datum: "2020-01-01", logboekIngevuld: false })]]]),
       scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
     };
     expect(() => bouwAdminTodoLijst(overzicht, [], [trainer({ mondayUitvoerderItemId: "uitv-1" })])).not.toThrow();
     expect(bouwAdminTodoLijst(overzicht, [], [trainer({ mondayUitvoerderItemId: "uitv-1" })])).toHaveLength(0);

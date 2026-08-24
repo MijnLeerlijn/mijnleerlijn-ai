@@ -35,7 +35,7 @@ beforeEach(() => {
   mockMonday.mockReset();
   mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
   mockTrainers.mockResolvedValue([trainerA]);
-  mockMonday.mockResolvedValue({ trainingenPerTrainer: new Map(), scholenPerTrainer: new Map() });
+  mockMonday.mockResolvedValue({ trainingenPerTrainer: new Map(), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() });
   mockOpenVerslagen.mockResolvedValue([
     {
       verslagId: 1,

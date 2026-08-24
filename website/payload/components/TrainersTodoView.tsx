@@ -121,7 +121,9 @@ export function TrainersTodoView() {
                   </span>
                   <AdminStatusBadge label={SOORT_LABEL[item.soort]} kleur={kleur} />
                 </div>
-                <p className="ml-sales__kaart-tekst">{item.schoolNaam}</p>
+                <p className="ml-sales__kaart-tekst">
+                  <Link href={`/admin/trainers/school?id=${item.schoolId}`}>{item.schoolNaam}</Link>
+                </p>
                 <p className="ml-sales__kaart-tekst">
                   <Link href={`/admin/trainers/detail?id=${item.trainerId}`}>{item.trainerNaam}</Link>
                 </p>

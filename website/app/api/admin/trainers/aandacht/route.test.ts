@@ -53,7 +53,7 @@ describe("GET /api/admin/trainers/aandacht — rechten", () => {
 
 describe("GET /api/admin/trainers/aandacht — inhoud", () => {
   it("geeft items en trainersMetVeelOudeVerslagen terug voor een editor", async () => {
-    mockMislukt.mockResolvedValue([{ oproepId: 1, trainerId: 1, foutcode: "onbekende_fout", foutmelding: "fout", afgerondOp: "2026-08-20T00:00:00.000Z", gekozenSchoolNaam: null, gekozenTrainingNaam: null }]);
+    mockMislukt.mockResolvedValue([{ oproepId: 1, trainerId: 1, foutcode: "onbekende_fout", foutmelding: "fout", afgerondOp: "2026-08-20T00:00:00.000Z", gekozenMondaySchoolId: null, gekozenSchoolNaam: null, gekozenTrainingNaam: null }]);
     const response = await GET(maakRequest());
     const body = await response.json();
     expect(response.status).toBe(200);

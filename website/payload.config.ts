@@ -291,6 +291,15 @@ export default buildConfig({
           path: "/trainers/activiteit",
           exact: true,
         },
+        // Traineromgeving V2, Fase 5 (2026-08-24) — Admin Schooldetail (spec
+        // §1/§7): bereikbaar vanuit bestaande Trainerdashboard-flows (nooit
+        // via een eigen hoofdmenu-item), zelfde exact:true-reden als
+        // hierboven — "/trainers" is ook van dit pad een prefix.
+        trainersSchool: {
+          Component: "@/payload/components/AdminViewShell#SchoolDetailViewShell",
+          path: "/trainers/school",
+          exact: true,
+        },
       },
     },
   },

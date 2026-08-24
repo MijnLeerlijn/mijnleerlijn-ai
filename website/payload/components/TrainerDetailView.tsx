@@ -346,7 +346,9 @@ function ScholenTab({ data }: { data: TrainerScholenResultaat }) {
         <tbody>
           {data.bevestigd.map((school) => (
             <tr key={school.id}>
-              <td>{school.naam}</td>
+              <td>
+                <Link href={`/admin/trainers/school?id=${school.id}`}>{school.naam}</Link>
+              </td>
               <td className={school.onderwijstype ? undefined : "ml-sales__ontbrekend"}>{school.onderwijstype || "—"}</td>
               <td className={school.locatie ? undefined : "ml-sales__ontbrekend"}>{school.locatie || "—"}</td>
               <td>{school.aantalOpen}</td>

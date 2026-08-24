@@ -24,6 +24,7 @@ import { TrainerDetailView } from "./TrainerDetailView";
 import { TrainersTrainingenView } from "./TrainersTrainingenView";
 import { TrainersTodoView } from "./TrainersTodoView";
 import { TrainersActiviteitView } from "./TrainersActiviteitView";
+import { SchoolDetailView } from "./SchoolDetailView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -283,6 +284,15 @@ export function TrainersActiviteitViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="trainersActiviteit">
       <TrainersActiviteitView />
+    </InAdminShell>
+  );
+}
+
+// Traineromgeving V2, Fase 5 (2026-08-24) — Admin Schooldetail (spec §1).
+export function SchoolDetailViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersSchool">
+      <SchoolDetailView />
     </InAdminShell>
   );
 }

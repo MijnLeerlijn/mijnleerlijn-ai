@@ -138,7 +138,9 @@ export function TrainersTrainingenView() {
                   <td>
                     <Link href={`/admin/trainers/detail?id=${t.trainerId}`}>{t.trainerNaam}</Link>
                   </td>
-                  <td>{t.schoolNaam}</td>
+                  <td>
+                    <Link href={`/admin/trainers/school?id=${t.schoolId}`}>{t.schoolNaam}</Link>
+                  </td>
                   <td>{t.trainingNaam}</td>
                   <td>
                     <AdminStatusBadge label={STATUS_LABEL[t.weergaveStatus]} kleur={WEERGAVE_STATUS_KLEUR[t.weergaveStatus]} />
