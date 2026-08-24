@@ -8,6 +8,7 @@ import Input from "@/components/atoms/Input";
 import Spinner from "@/components/atoms/Spinner";
 import ContactForm from "@/components/organisms/ContactForm";
 import MarkdownAnswer from "@/components/molecules/MarkdownAnswer";
+import DeelGesprekKnop from "@/components/organisms/DeelGesprekKnop";
 import { useVariant } from "@/providers/VariantProvider";
 
 interface PublicManual {
@@ -98,6 +99,13 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
   // kandidaat i.p.v. nogmaals te vragen.
   const [pendingClarification, setPendingClarification] = useState<string | null>(null);
   const bezig = berichten.some((b) => b.status === "laden");
+  // Chat delen via URL (2026-08-24) — exact de "klaar"-berichten met een
+  // gelogd conversationId: een verduidelijkings-/foutbericht heeft nooit een
+  // antwoord.conversationId (zie de Bericht-interface hierboven), dus die
+  // vallen hier vanzelf al buiten — geen aparte uitsluiting nodig.
+  const deelbareConversationIds = berichten
+    .filter((b) => b.status === "klaar" && b.antwoord?.conversationId != null)
+    .map((b) => b.antwoord!.conversationId!);
 
   function samengesteldeUitleg(bericht: Bericht): string {
     const delen = [`Oorspronkelijke vraag:\n${bericht.vraag}`];
@@ -224,6 +232,11 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
 
   return (
     <div className="flex flex-col">
+      {deelbareConversationIds.length > 0 && (
+        <div className="mb-4 flex justify-end">
+          <DeelGesprekKnop conversationIds={deelbareConversationIds} />
+        </div>
+      )}
       <div className="flex flex-col gap-6">
         {berichten.length === 0 && (
           <div className="rounded-xl border border-dashed border-grijs-200 bg-grijs-50 p-6">

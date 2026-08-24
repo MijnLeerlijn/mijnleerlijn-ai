@@ -55,6 +55,7 @@ import * as migration_20260830_090000_trainer_deelgroepen_v1 from './20260830_09
 import * as migration_20260830_100000_trainer_bestanden_v1 from './20260830_100000_trainer_bestanden_v1';
 import * as migration_20260830_120000_trainer_kennisvragen_v1 from './20260830_120000_trainer_kennisvragen_v1';
 import * as migration_20260830_130000_trainer_kennisversies_embedding_chunks from './20260830_130000_trainer_kennisversies_embedding_chunks';
+import * as migration_20260901_090000_gedeelde_chats_v1 from './20260901_090000_gedeelde_chats_v1';
 
 export const migrations = [
   {
@@ -341,5 +342,10 @@ export const migrations = [
     up: migration_20260830_130000_trainer_kennisversies_embedding_chunks.up,
     down: migration_20260830_130000_trainer_kennisversies_embedding_chunks.down,
     name: '20260830_130000_trainer_kennisversies_embedding_chunks',
+  },
+  {
+    up: migration_20260901_090000_gedeelde_chats_v1.up,
+    down: migration_20260901_090000_gedeelde_chats_v1.down,
+    name: '20260901_090000_gedeelde_chats_v1',
   },
 ];

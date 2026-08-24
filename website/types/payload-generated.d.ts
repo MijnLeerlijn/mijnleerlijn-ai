@@ -98,6 +98,7 @@ export interface Config {
     'kennisbasis-onderwerpen': KennisbasisOnderwerpen;
     'helpdesk-vragen': HelpdeskVragen;
     'assistant-conversations': AssistantConversation;
+    'gedeelde-chats': GedeeldeChat;
     'assistant-eval-questions': AssistantEvalQuestion;
     'assistant-eval-runs': AssistantEvalRun;
     'sales-schools': SalesSchool;
@@ -146,6 +147,7 @@ export interface Config {
     'kennisbasis-onderwerpen': KennisbasisOnderwerpenSelect<false> | KennisbasisOnderwerpenSelect<true>;
     'helpdesk-vragen': HelpdeskVragenSelect<false> | HelpdeskVragenSelect<true>;
     'assistant-conversations': AssistantConversationsSelect<false> | AssistantConversationsSelect<true>;
+    'gedeelde-chats': GedeeldeChatsSelect<false> | GedeeldeChatsSelect<true>;
     'assistant-eval-questions': AssistantEvalQuestionsSelect<false> | AssistantEvalQuestionsSelect<true>;
     'assistant-eval-runs': AssistantEvalRunsSelect<false> | AssistantEvalRunsSelect<true>;
     'sales-schools': SalesSchoolsSelect<false> | SalesSchoolsSelect<true>;
@@ -1810,6 +1812,66 @@ export interface AssistantConversation {
   createdAt: string;
 }
 /**
+ * Snapshots van gedeelde Helpdesk-AI-gesprekken — beheer/intrekken (zie ook lib/helpdesk/delen.ts).
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "gedeelde-chats".
+ */
+export interface GedeeldeChat {
+  id: number;
+  /**
+   * sha256-hash van de share-token — nooit de ruwe token zelf.
+   */
+  tokenHash: string;
+  /**
+   * Bevroren kopie — nooit bijgewerkt na het aanmaken van deze deel-link.
+   */
+  berichten: {
+    vraag: string;
+    antwoord: string;
+    manuals?:
+      | {
+          manualId: number;
+          title: string;
+          hasFile?: boolean | null;
+          id?: string | null;
+        }[]
+      | null;
+    steps?:
+      | {
+          handleidingId: number;
+          handleidingSlug: string;
+          handleidingTitel: string;
+          handleidingUrl: string;
+          stepId: string;
+          stepNummer: number;
+          titel: string;
+          uitleg: string;
+          images?:
+            | {
+                url: string;
+                caption?: string | null;
+                alt: string;
+                id?: string | null;
+              }[]
+            | null;
+          id?: string | null;
+        }[]
+      | null;
+    id?: string | null;
+  }[];
+  /**
+   * Uitsluitend voor beheer/herleidbaarheid — nooit publiek geretourneerd.
+   */
+  bronConversaties?: (number | AssistantConversation)[] | null;
+  /**
+   * Gezet zodra de deel-link is ingetrokken — vanaf dan niet meer publiek bereikbaar.
+   */
+  revokedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * Vaste testvragenset voor de chatbot-evaluatieomgeving (/admin/globals/assistant-eval). Zie payload/seed/eval-questions.ts.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -2513,6 +2575,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'assistant-conversations';
         value: number | AssistantConversation;
+      } | null)
+    | ({
+        relationTo: 'gedeelde-chats';
+        value: number | GedeeldeChat;
       } | null)
     | ({
         relationTo: 'assistant-eval-questions';
@@ -3427,6 +3493,53 @@ export interface AssistantConversationsSelect<T extends boolean = true> {
   centraleKennisbasisGebruikt?: T;
   centraleKennisbasisVersion?: T;
   tegenstrijdigheid?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "gedeelde-chats_select".
+ */
+export interface GedeeldeChatsSelect<T extends boolean = true> {
+  tokenHash?: T;
+  berichten?:
+    | T
+    | {
+        vraag?: T;
+        antwoord?: T;
+        manuals?:
+          | T
+          | {
+              manualId?: T;
+              title?: T;
+              hasFile?: T;
+              id?: T;
+            };
+        steps?:
+          | T
+          | {
+              handleidingId?: T;
+              handleidingSlug?: T;
+              handleidingTitel?: T;
+              handleidingUrl?: T;
+              stepId?: T;
+              stepNummer?: T;
+              titel?: T;
+              uitleg?: T;
+              images?:
+                | T
+                | {
+                    url?: T;
+                    caption?: T;
+                    alt?: T;
+                    id?: T;
+                  };
+              id?: T;
+            };
+        id?: T;
+      };
+  bronConversaties?: T;
+  revokedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

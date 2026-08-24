@@ -5,6 +5,7 @@ import { verkrijgGeldigeToegang } from "@/lib/google-calendar/connection";
 import { GOOGLE_CALENDAR_READONLY_SCOPE, fetchPrimaryCalendar } from "@/lib/google-calendar/oauth";
 import { fetchAgendaEventsInBereik, lokaleMiddernachtAlsUtc, volgendeDagIso } from "@/lib/google-calendar/api";
 import { haalBerichtVoorAntwoord, haalThreadVoorAntwoord, bareAddress, replyOnderwerp } from "@/lib/google-gmail/api";
+import { handtekeningTekst } from "@/lib/mail/handtekening";
 
 // Mijn Werk Fase 3 (2026-08-17) — het AI-antwoordvoorstel. UITSLUITEND
 // aangeroepen na een expliciete klik op "Maak antwoordvoorstel" (nooit
@@ -123,8 +124,21 @@ export async function genereerAntwoordvoorstel(payload: Payload, invoer: MailRep
     messages: [{ role: "user", content: `${ontvangenBlok}${threadBlok}${schoolBlok}${beschikbaarheidBlok}` }],
   });
 
+  // Persoonlijke handtekening (2026-08-24, spec §B10/§B11) — toegevoegd aan
+  // het CONCEPT (niet pas bij versturen, zie app/api/werk/mail/versturen/
+  // route.ts): de medewerker bekijkt/bewerkt dit concept altijd zelf vóór
+  // het versturen (expliciete opdrachtseis, zie SYSTEEMPROMPT hierboven) —
+  // een handtekening die pas onzichtbaar bij het versturen wordt toegevoegd
+  // zou dat "wat je ziet is wat je verstuurt"-principe doorbreken. Puur
+  // deterministisch achteraf toegevoegd, geen onderdeel van de AI-prompt
+  // zelf. Geen extra query nodig buiten deze ene, gerichte lookup — de
+  // overal-in-Mijn-Werk-gebruikte AuthUser/sessieControle-vorm kent hier geen
+  // rol (dit is een achtergrondfunctie zonder request-object).
+  const gebruiker = await payload.findByID({ collection: "users", id: invoer.eigenaarId, overrideAccess: true, depth: 0 }).catch(() => null);
+  const conceptMetHandtekening = conceptTekst + handtekeningTekst({ naam: gebruiker?.name ?? null });
+
   return {
-    conceptTekst,
+    conceptTekst: conceptMetHandtekening,
     aan: bareAddress(bericht.van),
     onderwerp: replyOnderwerp(bericht.onderwerp),
     gmailThreadId: bericht.gmailThreadId,

@@ -35,6 +35,7 @@ import { Handleidingen } from "./payload/collections/Handleidingen";
 import { KennisbasisOnderwerpen } from "./payload/collections/KennisbasisOnderwerpen";
 import { HelpdeskVragen } from "./payload/collections/HelpdeskVragen";
 import { AssistantConversations } from "./payload/collections/AssistantConversations";
+import { GedeeldeChats } from "./payload/collections/GedeeldeChats";
 import { AssistantEvalQuestions } from "./payload/collections/AssistantEvalQuestions";
 import { AssistantEvalRuns } from "./payload/collections/AssistantEvalRuns";
 import { MailDrafts } from "./payload/collections/MailDrafts";
@@ -334,6 +335,7 @@ export default buildConfig({
     KennisbasisOnderwerpen,
     HelpdeskVragen,
     AssistantConversations,
+    GedeeldeChats,
     AssistantEvalQuestions,
     AssistantEvalRuns,
     SalesSchools,
