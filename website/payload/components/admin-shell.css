@@ -1867,6 +1867,105 @@ a.ml-dashboard__card:hover {
   margin-top: 3px;
 }
 
+/* Correctieronde Admin Traineromgeving (2026-08-25) — Bewerken/Verwijderen
+ * per handmatig logboekitem, plus het bewerkformulier. Overlay/paneel/header
+ * spiegelen bewust .ml-creator__overlay/-paneel/-header (zelfde "eenvoudige,
+ * hand-gebouwde overlay i.p.v. Payload's Modal-systeem"-reden) — hier onder
+ * het ml-sales__-prefix, zodat elke sectie zijn eigen CSS-familie houdt. */
+.ml-sales__logboek-item-acties {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.ml-sales__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.ml-sales__overlay-paneel {
+  width: 100%;
+  max-width: 440px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  border-radius: var(--ml-admin-radius);
+  background: var(--theme-elevation-0);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.25);
+}
+
+.ml-sales__overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ml-sales__overlay-header h2 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--theme-elevation-800);
+}
+
+.ml-sales__overlay-header button {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: none;
+  background: var(--theme-elevation-50);
+  color: var(--theme-elevation-500);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ml-sales__overlay-header button:hover {
+  background: var(--theme-elevation-100);
+  color: var(--theme-elevation-800);
+}
+
+.ml-sales__overlay-veld {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ml-sales__overlay-veld label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-elevation-600);
+}
+
+.ml-sales__overlay-veld input,
+.ml-sales__overlay-veld select,
+.ml-sales__overlay-veld textarea {
+  padding: 7px 10px;
+  border-radius: var(--ml-admin-radius-sm);
+  border: 1px solid var(--theme-elevation-200);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--theme-input-bg);
+  color: var(--theme-text);
+}
+
+.ml-sales__overlay-acties {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .ml-sales__chat {
   display: flex;
   flex-direction: column;

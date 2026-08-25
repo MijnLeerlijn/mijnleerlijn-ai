@@ -35,7 +35,19 @@ beforeEach(() => {
   mockMonday.mockReset();
   mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
   mockTrainers.mockResolvedValue([trainerA]);
-  mockMonday.mockResolvedValue({ trainingenPerTrainer: new Map(), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() });
+  // Correctieronde Admin Traineromgeving (2026-08-25) — de actuele-
+  // trainingenwhitelist (training-actualiteit.ts) vereist dat "t1" ook echt
+  // in de (mock-)Monday-trainingenset van trainer A voorkomt, anders wordt
+  // het openVerslag hieronder terecht als niet-actueel gefilterd (zie
+  // lib/admin/trainers/todo.test.ts voor de dekking van die filtering zelf).
+  mockMonday.mockResolvedValue({
+    trainingenPerTrainer: new Map([
+      ["uitv-a", [{ id: "t1", naam: "T1", status: "gedaan", ruweStatusTekst: "Gedaan", datum: "2026-08-20", logboekIngevuld: false, trainerboardItemId: null, schoolId: "s1", schoolNaam: "School A" }]],
+    ]),
+    scholenPerTrainer: new Map(),
+    scholen: new Map(),
+    trainingenPerSchool: new Map(),
+  });
   mockOpenVerslagen.mockResolvedValue([
     {
       verslagId: 1,

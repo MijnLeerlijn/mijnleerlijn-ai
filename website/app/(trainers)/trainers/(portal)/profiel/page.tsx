@@ -4,14 +4,19 @@ import { CircleUserRound, Mail, Phone } from "lucide-react";
 import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalTelefonieProfiel } from "@/lib/trainers/telefonie/trainer-lookup";
+import { WachtwoordForm } from "./wachtwoord-form";
 
 export const metadata = { title: "Profiel — Trainerportal" };
 
-// Ronde 1 — puur read-only accountoverzicht. Accountbeheer (naam/e-mail/
-// wachtwoord wijzigen, koppeling aan Monday-ID's) blijft adminOnly
-// (payload/collections/Trainers.ts se access-config) en heeft in deze ronde
-// bewust geen zelfbedieningsscherm — geen functionaliteit tonen die niet
-// bestaat.
+// Ronde 1 — puur read-only accountoverzicht. Accountbeheer (naam/e-mail,
+// koppeling aan Monday-ID's) blijft adminOnly (payload/collections/
+// TrainerAccounts.ts se access-config) en heeft bewust geen zelfbedienings-
+// scherm — geen functionaliteit tonen die niet bestaat. Correctieronde Admin
+// Traineromgeving (2026-08-25) voegt HIER WEL zelfbediening toe voor het
+// wachtwoord (WachtwoordForm hieronder, opdrachtseis) — dat is een bewuste,
+// afzonderlijk geautoriseerde uitzondering (payload.login/payload.update via
+// lib/trainers/wachtwoord.ts, nooit rechtstreeks via de collectie-access),
+// geen algehele koerswijziging van de rest van dit read-only scherm.
 //
 // Mobiel nummer (Ronde 3.5, telefonie, spec §24) — zelfde reden: uitsluitend
 // TONEN, geen zelfbedieningsformulier om het te wijzigen. Spec §24 liet
@@ -64,6 +69,8 @@ export default async function TrainerProfielPage() {
           </p>
         )}
       </div>
+
+      <WachtwoordForm />
     </div>
   );
 }

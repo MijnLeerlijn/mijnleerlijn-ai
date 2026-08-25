@@ -2,6 +2,7 @@ import type { Payload } from "payload";
 import { haalDashboardData, type TrainingMetSchool } from "./monday-links";
 import { haalTelefonischeConceptenVoorTrainer, haalVerslagenDieAandachtNodigHebben, haalGestarteConceptenVoorTrainer, telVoltooideVerslagen } from "./verslag";
 import { haalActiviteitVoorTrainer, type ActiviteitItem } from "./activiteit";
+import { bouwActueleTrainingIds, isActueleTraining } from "./training-actualiteit";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V2, Fase 1 (2026-08-28) — Dashboard V2: "Wat moet ik
@@ -99,10 +100,28 @@ export async function haalDashboardV2Data(payload: Payload, trainer: AuthTrainer
   // aflopend (meest recent eerst) uit hun eigen leesfunctie komen.
   const verlopenZonderVerslag = [...data.logboekOpenstaand].sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? ""));
 
+  // Correctieronde Admin Traineromgeving (2026-08-25, spec §1) — root cause
+  // van achtergebleven To do's: telefonischeConcepten/vastgelopenVerslagen/
+  // gestarteConcepten komen uit "training-verslagen"-records die BLIJVEN
+  // bestaan nadat een training in Monday verwijderd/ontkoppeld is (historie,
+  // met opzet nooit verwijderd — zie verslag.ts). Zonder deze toets bleef zo'n
+  // record voor altijd als To do zichtbaar. actueleTrainingIds komt uit
+  // data.alleTrainingen (hierboven al, ongefilterd, opgehaald via
+  // haalDashboardData — geen extra Monday-call) — verlopenZonderVerslag hoeft
+  // dit filter niet: dat komt zelf al rechtstreeks uit dezelfde live
+  // Monday-set (data.logboekOpenstaand), dus is per definitie altijd actueel.
+  const actueleTrainingIds = bouwActueleTrainingIds(data.alleTrainingen);
+
   const kandidaten: TodoItem[] = [
-    ...telefonischeConcepten.map((c): TodoItem => ({ soort: "telefonisch_concept", schoolId: c.schoolId, schoolNaam: c.schoolNaam, trainingNaam: c.trainingNaam, trainingId: c.mondayTrainingId, wanneer: c.ontvangenOp })),
-    ...vastgelopenVerslagen.map((v): TodoItem => ({ soort: "verslag_vastgelopen", schoolId: v.schoolId, schoolNaam: v.schoolNaam, trainingNaam: v.trainingNaam, trainingId: v.mondayTrainingId, wanneer: v.wanneer, verslagStatus: v.status })),
-    ...gestarteConcepten.map((c): TodoItem => ({ soort: "concept_gestart", schoolId: c.schoolId, schoolNaam: c.schoolNaam, trainingNaam: c.trainingNaam, trainingId: c.mondayTrainingId, wanneer: c.wanneer })),
+    ...telefonischeConcepten
+      .filter((c) => isActueleTraining(actueleTrainingIds, c.mondayTrainingId))
+      .map((c): TodoItem => ({ soort: "telefonisch_concept", schoolId: c.schoolId, schoolNaam: c.schoolNaam, trainingNaam: c.trainingNaam, trainingId: c.mondayTrainingId, wanneer: c.ontvangenOp })),
+    ...vastgelopenVerslagen
+      .filter((v) => isActueleTraining(actueleTrainingIds, v.mondayTrainingId))
+      .map((v): TodoItem => ({ soort: "verslag_vastgelopen", schoolId: v.schoolId, schoolNaam: v.schoolNaam, trainingNaam: v.trainingNaam, trainingId: v.mondayTrainingId, wanneer: v.wanneer, verslagStatus: v.status })),
+    ...gestarteConcepten
+      .filter((c) => isActueleTraining(actueleTrainingIds, c.mondayTrainingId))
+      .map((c): TodoItem => ({ soort: "concept_gestart", schoolId: c.schoolId, schoolNaam: c.schoolNaam, trainingNaam: c.trainingNaam, trainingId: c.mondayTrainingId, wanneer: c.wanneer })),
     ...verlopenZonderVerslag.map((t): TodoItem => ({ soort: "verslag_ontbreekt", schoolId: t.schoolId, schoolNaam: t.schoolNaam, trainingNaam: t.naam, trainingId: t.id, wanneer: t.datum ?? "" })),
   ];
 

@@ -150,3 +150,71 @@ export async function haalLogboekVoorTrainer(payload: Payload, trainer: AuthTrai
   });
   return resultaat.docs as LogboekItemRecord[];
 }
+
+// ---------------------------------------------------------------------------
+// Admin: handmatig logboekitem bewerken/verwijderen (Correctieronde Admin
+// Traineromgeving, 2026-08-25) — spec §2: een beheerder moet een bestaand
+// HANDMATIG logboekitem kunnen openen/bewerken/verwijderen op Admin →
+// Trainers → School → Logboek. "Alleen handmatige items" is hier geen aparte
+// runtime-check: elk record in "trainer-logboek-items" IS per definitie
+// handmatig (zie TrainerLogboekItems.ts — automatische trainingsverslagen
+// leven uitsluitend in "training-verslagen", telefonie-events uitsluitend in
+// "trainer-telefonie-oproepen", allebei aparte collecties/ID-ruimtes; een
+// findByID/update/delete op "trainer-logboek-items" kan zo'n record dus
+// structureel nooit raken). School/oorspronkelijke trainer blijven bewust
+// NOOIT wijzigbaar (spec: "hoeven in V1 niet wijzigbaar te zijn") — deze twee
+// functies hebben domweg geen invoerveld waarmee `trainer`/`mondaySchoolId`/
+// `schoolNaam`/`mondayTrainingId`/`trainingNaam` gezet zouden kunnen worden,
+// ongeacht wat een aanroepende route in een request-body zou doorgeven.
+//
+// Admin-auth zit ALTIJD in de aanroepende API-route (verifyAdminSessionCookie
+// — nooit de trainercookie), niet hier — zelfde scheiding als elders in
+// lib/admin/trainers/: dit bestand blijft puur data-access, met
+// overrideAccess:true omdat TrainerLogboekItems.ts se access-blok update/
+// create hard op () => false heeft staan (nooit via de publieke Payload-API).
+
+export interface LogboekWijzigInvoer {
+  type?: LogboekType;
+  /** ISO-datumtijdstring. */
+  occurredAt?: string;
+  tekst?: string;
+}
+
+export type LogboekWijzigUitkomst = { soort: "niet_gevonden" } | { soort: "ongeldige_invoer"; boodschap: string } | { soort: "ok"; item: LogboekItemRecord };
+
+export async function wijzigLogboekItemAlsAdmin(payload: Payload, logboekItemId: number, invoer: LogboekWijzigInvoer): Promise<LogboekWijzigUitkomst> {
+  const bestaand = await payload.findByID({ collection: "trainer-logboek-items", id: logboekItemId, overrideAccess: true, depth: 0 }).catch(() => null);
+  if (!bestaand) return { soort: "niet_gevonden" };
+
+  const data: { type?: LogboekType; occurredAt?: string; tekst?: string } = {};
+
+  if (invoer.type !== undefined) {
+    if (!LOGBOEK_TYPES.includes(invoer.type)) return { soort: "ongeldige_invoer", boodschap: "Ongeldig type." };
+    data.type = invoer.type;
+  }
+
+  if (invoer.occurredAt !== undefined) {
+    const occurredAtDatum = new Date(invoer.occurredAt);
+    if (Number.isNaN(occurredAtDatum.getTime())) return { soort: "ongeldige_invoer", boodschap: "Ongeldige datum/tijd." };
+    data.occurredAt = occurredAtDatum.toISOString();
+  }
+
+  if (invoer.tekst !== undefined) {
+    const tekst = begrensLengte(invoer.tekst.trim(), MAX_TEKST_LENGTE);
+    if (tekst.length === 0) return { soort: "ongeldige_invoer", boodschap: "Vul een notitie in." };
+    data.tekst = tekst;
+  }
+
+  const bijgewerkt = await payload.update({ collection: "trainer-logboek-items", id: logboekItemId, overrideAccess: true, data });
+  return { soort: "ok", item: bijgewerkt as LogboekItemRecord };
+}
+
+export type LogboekVerwijderUitkomst = "verwijderd" | "niet_gevonden";
+
+/** Idempotent-in-uitstraling (net als lib/helpdesk/delen.ts se trekDeelLinkIn): de aanroepende route hoeft geen apart bestaanscontrole-verzoek te doen. */
+export async function verwijderLogboekItemAlsAdmin(payload: Payload, logboekItemId: number): Promise<LogboekVerwijderUitkomst> {
+  const bestaand = await payload.findByID({ collection: "trainer-logboek-items", id: logboekItemId, overrideAccess: true, depth: 0 }).catch(() => null);
+  if (!bestaand) return "niet_gevonden";
+  await payload.delete({ collection: "trainer-logboek-items", id: logboekItemId, overrideAccess: true });
+  return "verwijderd";
+}

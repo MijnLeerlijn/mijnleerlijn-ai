@@ -58,6 +58,14 @@ function dashboardData(overrides: Partial<TrainerDashboardData> = {}): TrainerDa
     logboekOpenstaand: [],
     bevestigdeScholen: [{ id: "500", naam: "School A" }],
     totaalTrainingen: 7,
+    // Correctieronde Admin Traineromgeving (2026-08-25) — actuele-trainingen-
+    // whitelist voor de To-do-filtering (training-actualiteit.ts). Standaard
+    // leeg: tests die telefonische/vastgelopen/gestarte concepten mocken en
+    // verwachten dat ze in de To do verschijnen, geven hier expliciet een
+    // matchende alleTrainingen mee — dat is exact het nieuwe gedrag dat
+    // bewaakt moet worden (zie ook de aparte "actuele-trainingenwhitelist"-
+    // testgroep hieronder).
+    alleTrainingen: [],
     ...overrides,
   };
 }
@@ -98,6 +106,7 @@ describe("haalDashboardV2Data", () => {
 
   it("To do is zichtbaar (niet-leeg) zodra minstens één categorie iets oplevert", async () => {
     mockHaalTelefonischeConcepten.mockResolvedValue([telefonischConcept()]);
+    mockHaalDashboardData.mockResolvedValue(dashboardData({ alleTrainingen: [training({ id: "9" })] }));
 
     const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
 
@@ -116,7 +125,9 @@ describe("haalDashboardV2Data", () => {
     mockHaalTelefonischeConcepten.mockResolvedValue([telefonischConcept({ mondayTrainingId: "1", ontvangenOp: "2026-08-10T09:00:00.000Z" })]);
     mockHaalVerslagenDieAandachtNodigHebben.mockResolvedValue([vastgelopenVerslag({ mondayTrainingId: "2", wanneer: "2026-08-29T09:00:00.000Z" })]);
     mockHaalGestarteConcepten.mockResolvedValue([gestartConcept({ mondayTrainingId: "3", wanneer: "2026-08-30T09:00:00.000Z" })]);
-    mockHaalDashboardData.mockResolvedValue(dashboardData({ logboekOpenstaand: [training({ id: "4", datum: "2026-08-31" })] }));
+    mockHaalDashboardData.mockResolvedValue(
+      dashboardData({ logboekOpenstaand: [training({ id: "4", datum: "2026-08-31" })], alleTrainingen: [training({ id: "1" }), training({ id: "2" }), training({ id: "3" }), training({ id: "4" })] })
+    );
 
     const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
 
@@ -126,7 +137,7 @@ describe("haalDashboardV2Data", () => {
   it("dezelfde training komt maar één keer voor in To do, ook als hij in meerdere categorieën tegelijk voorkomt — hoogste prioriteit wint", async () => {
     mockHaalTelefonischeConcepten.mockResolvedValue([telefonischConcept({ mondayTrainingId: "1" })]);
     mockHaalVerslagenDieAandachtNodigHebben.mockResolvedValue([vastgelopenVerslag({ mondayTrainingId: "1" })]);
-    mockHaalDashboardData.mockResolvedValue(dashboardData({ logboekOpenstaand: [training({ id: "1" })] }));
+    mockHaalDashboardData.mockResolvedValue(dashboardData({ logboekOpenstaand: [training({ id: "1" })], alleTrainingen: [training({ id: "1" })] }));
 
     const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
 
@@ -182,5 +193,55 @@ describe("haalDashboardV2Data", () => {
     mockHaalDashboardData.mockResolvedValue(dashboardData({ bevestigdeScholen: scholen }));
     const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
     expect(data.bevestigdeScholen).toEqual(scholen);
+  });
+});
+
+// Correctieronde Admin Traineromgeving (2026-08-25, spec §1/§3) — root cause:
+// telefonische/vastgelopen/gestarte conceptverslagen bleven voorheen
+// onvoorwaardelijk als To do zichtbaar, ook nadat de bijbehorende training
+// niet meer in Monday bestond/gekoppeld was bij deze trainer.
+describe("haalDashboardV2Data — actuele-trainingenwhitelist (spec §1)", () => {
+  it("training bestaat nog bij de trainer (in alleTrainingen) → het conceptverslag mag als To do zichtbaar zijn", async () => {
+    mockHaalTelefonischeConcepten.mockResolvedValue([telefonischConcept({ mondayTrainingId: "9" })]);
+    mockHaalDashboardData.mockResolvedValue(dashboardData({ alleTrainingen: [training({ id: "9" })] }));
+
+    const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
+
+    expect(data.todo.map((i) => i.trainingId)).toContain("9");
+  });
+
+  it("training verwijderd/ontkoppeld uit Monday (niet in alleTrainingen) → oud telefonisch concept levert GEEN To do meer op, ook al bestaat het record nog", async () => {
+    mockHaalTelefonischeConcepten.mockResolvedValue([telefonischConcept({ mondayTrainingId: "verwijderd" })]);
+    mockHaalDashboardData.mockResolvedValue(dashboardData({ alleTrainingen: [] })); // Monday geeft deze training niet meer terug
+
+    const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
+
+    expect(data.todo).toEqual([]);
+  });
+
+  it("een vastgelopen (gedeeltelijk/bevestigd) verslag van een verwijderde training levert ook geen To do meer op", async () => {
+    mockHaalVerslagenDieAandachtNodigHebben.mockResolvedValue([vastgelopenVerslag({ mondayTrainingId: "verwijderd" })]);
+    mockHaalDashboardData.mockResolvedValue(dashboardData({ alleTrainingen: [] }));
+
+    const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
+
+    expect(data.todo).toEqual([]);
+  });
+
+  it("een zelf-gestart (portal)concept van een verwijderde training levert ook geen To do meer op", async () => {
+    mockHaalGestarteConcepten.mockResolvedValue([gestartConcept({ mondayTrainingId: "verwijderd" })]);
+    mockHaalDashboardData.mockResolvedValue(dashboardData({ alleTrainingen: [] }));
+
+    const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
+
+    expect(data.todo).toEqual([]);
+  });
+
+  it("verslag_ontbreekt (rechtstreeks uit de live Monday-set) blijft altijd zichtbaar — die categorie heeft de whitelist niet nodig", async () => {
+    mockHaalDashboardData.mockResolvedValue(dashboardData({ logboekOpenstaand: [training({ id: "live-1" })], alleTrainingen: [] }));
+
+    const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
+
+    expect(data.todo.map((i) => i.trainingId)).toEqual(["live-1"]);
   });
 });

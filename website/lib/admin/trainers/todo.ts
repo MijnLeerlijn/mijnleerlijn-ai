@@ -1,6 +1,7 @@
 import { groepeerOpWeergaveStatus } from "@/lib/trainers/training-weergave";
 import { vandaagIsoAmsterdam, type AdminTrainerMondayOverzicht } from "@/lib/trainers/monday-links";
 import type { TodoItem } from "@/lib/trainers/dashboard";
+import { bouwActueleTrainingIds, isActueleTraining } from "@/lib/trainers/training-actualiteit";
 import type { AdminOpenVerslag, AdminTrainerAccount } from "./aggregatie";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — admin-brede To-do-lijst. Spec §5:
@@ -42,11 +43,38 @@ export type AdminTodoItem = TodoItem & { trainerId: number; trainerNaam: string 
  */
 export function bouwAdminTodoLijst(mondayOverzicht: AdminTrainerMondayOverzicht, openVerslagen: AdminOpenVerslag[], trainers: AdminTrainerAccount[]): AdminTodoItem[] {
   const trainerPerMondayId = new Map(trainers.map((t) => [t.mondayUitvoerderItemId, t]));
+  const trainerPerId = new Map(trainers.map((t) => [t.id, t]));
   const vandaag = vandaagIsoAmsterdam();
 
-  const telefonischeConcepten = openVerslagen.filter((v) => v.status === "concept" && v.bron === "telefoon");
-  const vastgelopenVerslagen = openVerslagen.filter((v) => v.status === "gedeeltelijk" || v.status === "bevestigd");
-  const gestarteConcepten = openVerslagen.filter((v) => v.status === "concept" && v.bron === "portal");
+  // Correctieronde Admin Traineromgeving (2026-08-25, spec §1) — root cause
+  // van achtergebleven To do's in het admin-brede overzicht: openVerslagen
+  // komt uit "training-verslagen"-records die BLIJVEN bestaan nadat een
+  // training in Monday verwijderd/ontkoppeld is bij die trainer (historie,
+  // met opzet nooit verwijderd). Zonder deze toets bleef zo'n record voor
+  // altijd als To do zichtbaar, ook nadat de trainer 'm allang niet meer in
+  // zijn eigen omgeving zag. Whitelist per trainer (spec: "training aan
+  // andere trainer gekoppeld → geen oude To do bij oorspronkelijke trainer")
+  // — opgebouwd uit mondayOverzicht.trainingenPerTrainer, dat deze functie
+  // toch al als parameter krijgt (spec §13: "geen extra Monday-call per To
+  // do/trainer" — de al-opgehaalde admin-brede Monday-aggregatie blijft
+  // leidend). Lazy + gecachet per trainerId: bij 500 openVerslagen van
+  // dezelfde handvol trainers wordt de Set zo maar één keer per trainer
+  // gebouwd, niet één keer per record.
+  const actueleTrainingIdsPerTrainer = new Map<number, Set<string>>();
+  function actueleTrainingIdsVoorTrainer(trainerId: number): Set<string> {
+    const bestaand = actueleTrainingIdsPerTrainer.get(trainerId);
+    if (bestaand) return bestaand;
+    const trainer = trainerPerId.get(trainerId);
+    const trainingen = trainer ? (mondayOverzicht.trainingenPerTrainer.get(trainer.mondayUitvoerderItemId) ?? []) : [];
+    const set = bouwActueleTrainingIds(trainingen);
+    actueleTrainingIdsPerTrainer.set(trainerId, set);
+    return set;
+  }
+  const isActueelVoorEigenTrainer = (v: AdminOpenVerslag) => isActueleTraining(actueleTrainingIdsVoorTrainer(v.trainerId), v.mondayTrainingId);
+
+  const telefonischeConcepten = openVerslagen.filter((v) => v.status === "concept" && v.bron === "telefoon" && isActueelVoorEigenTrainer(v));
+  const vastgelopenVerslagen = openVerslagen.filter((v) => (v.status === "gedeeltelijk" || v.status === "bevestigd") && isActueelVoorEigenTrainer(v));
+  const gestarteConcepten = openVerslagen.filter((v) => v.status === "concept" && v.bron === "portal" && isActueelVoorEigenTrainer(v));
 
   const verlopenZonderVerslag: AdminTodoItem[] = [];
   for (const [mondayUitvoerderItemId, trainingen] of mondayOverzicht.trainingenPerTrainer) {

@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { CSSProperties } from "react";
-import { AlertTriangle, AlertCircle, type LucideIcon } from "lucide-react";
+import type { CSSProperties, FormEvent } from "react";
+import { AlertTriangle, AlertCircle, X, type LucideIcon } from "lucide-react";
 import type {
   AdminSchoolBasis,
   AdminSchoolOverzichtTab,
@@ -34,8 +34,11 @@ import { AdminStatusBadge } from "./AdminStatusBadge";
 // TrainersOverzichtView.tsx se overzicht+aandacht) — die twee horen bij de
 // altijd-zichtbare kopregel, niet bij een specifiek tabblad.
 //
-// EXPLICIET GEEN impersonation-login, GEEN inline-edits (spec §6: V1 is
-// read-only) — elke tab hieronder is uitsluitend lezen.
+// EXPLICIET GEEN impersonation-login (spec §6: V1 is read-only) — elke tab
+// hieronder is uitsluitend lezen, met ÉÉN bewuste uitzondering: Correctieronde
+// Admin Traineromgeving (2026-08-25, spec §2) voegt Bewerken/Verwijderen toe
+// voor HANDMATIGE logboekitems op de Logboek-tab (LogboekTab hieronder) — de
+// enige mutatie in deze view. Elke andere tab blijft ongewijzigd read-only.
 
 const TABS = ["overzicht", "trainers", "trainingen", "verslagen", "logboek", "bestanden"] as const;
 type Tab = (typeof TABS)[number];
@@ -264,7 +267,7 @@ function DetailVoorSchool({ schoolId, initialTab }: { schoolId: string; initialT
       {!tabLaden && tab === "trainers" && (trainers ? <TrainersTab data={trainers} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "trainingen" && (trainingen ? <TrainingenTab data={trainingen} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "verslagen" && (verslagen ? <VerslagenTab data={verslagen} /> : <TabFoutmelding />)}
-      {!tabLaden && tab === "logboek" && (logboek ? <LogboekTab data={logboek} /> : <TabFoutmelding />)}
+      {!tabLaden && tab === "logboek" && (logboek ? <LogboekTab data={logboek} setData={setLogboek} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "bestanden" && (bestanden ? <BestandenTab data={bestanden} /> : <TabFoutmelding />)}
     </div>
   );
@@ -464,23 +467,173 @@ function VerslagenTab({ data }: { data: AdminSchoolVerslagRegel[] }) {
   );
 }
 
-function LogboekTab({ data }: { data: AdminSchoolLogboekRegel[] }) {
-  if (data.length === 0) return <div className="ml-sales__leeg">Nog geen logboekitems.</div>;
+/**
+ * Correctieronde Admin Traineromgeving (2026-08-25, spec §2) — Bewerken/
+ * Verwijderen per HANDMATIG logboekitem. Elke rij hier is per definitie
+ * handmatig (zie lib/trainers/logboek.ts se toelichting bij
+ * wijzigLogboekItemAlsAdmin/verwijderLogboekItemAlsAdmin) — geen aparte
+ * "is dit automatisch"-check nodig, deze hele tab kent alleen handmatige
+ * items. `setData` werkt rechtstreeks op de tab-state van DetailVoorSchool
+ * (geen refetch nodig) zodat de tijdlijn direct de actuele gegevens toont
+ * (spec: "Na opslaan/verwijderen moet de schooltijdlijn direct de actuele
+ * gegevens tonen").
+ */
+function LogboekTab({ data, setData }: { data: AdminSchoolLogboekRegel[]; setData: (updater: (huidig: AdminSchoolLogboekRegel[] | null) => AdminSchoolLogboekRegel[] | null) => void }) {
+  const [bewerkItem, setBewerkItem] = useState<AdminSchoolLogboekRegel | null>(null);
+  const [verwijderBezigId, setVerwijderBezigId] = useState<number | null>(null);
+
+  async function verwijder(item: AdminSchoolLogboekRegel) {
+    if (!window.confirm("Weet je zeker dat je dit logboekitem wilt verwijderen?")) return;
+    setVerwijderBezigId(item.id);
+    try {
+      const response = await fetch(`/api/admin/trainers/logboek/${item.id}`, { method: "DELETE", credentials: "include" });
+      if (!response.ok) {
+        window.alert("Verwijderen is niet gelukt. Probeer het opnieuw.");
+        return;
+      }
+      setData((huidig) => (huidig ? huidig.filter((i) => i.id !== item.id) : huidig));
+    } catch {
+      window.alert("Verwijderen is niet gelukt. Probeer het opnieuw.");
+    } finally {
+      setVerwijderBezigId(null);
+    }
+  }
+
   return (
-    <div className="ml-sales__logboek">
-      {data.map((item) => (
-        <div className="ml-sales__logboek-item" key={item.id}>
-          <span className="ml-sales__logboek-stip" />
-          <div>
-            <div>
-              <Link href={`/admin/trainers/detail?id=${item.trainerId}`}>{item.trainerNaam}</Link> — {item.trainingNaam ?? item.tekst}
+    <>
+      {data.length === 0 ? (
+        <div className="ml-sales__leeg">Nog geen logboekitems.</div>
+      ) : (
+        <div className="ml-sales__logboek">
+          {data.map((item) => (
+            <div className="ml-sales__logboek-item" key={item.id}>
+              <span className="ml-sales__logboek-stip" />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div>
+                  <Link href={`/admin/trainers/detail?id=${item.trainerId}`}>{item.trainerNaam}</Link> — {item.trainingNaam ?? item.tekst}
+                </div>
+                <div className="ml-sales__logboek-meta">
+                  {formatKorteDatumTijd(item.occurredAt)} · {LOGBOEK_TYPE_LABEL[item.type]}
+                </div>
+              </div>
+              <div className="ml-sales__actie-knoppen ml-sales__logboek-item-acties">
+                <button type="button" className="ml-sales__knop" onClick={() => setBewerkItem(item)}>
+                  Bewerken
+                </button>
+                <button type="button" className="ml-sales__knop ml-sales__knop--gevaar" disabled={verwijderBezigId === item.id} onClick={() => verwijder(item)}>
+                  {verwijderBezigId === item.id ? "Bezig…" : "Verwijderen"}
+                </button>
+              </div>
             </div>
-            <div className="ml-sales__logboek-meta">
-              {formatKorteDatumTijd(item.occurredAt)} · {LOGBOEK_TYPE_LABEL[item.type]}
-            </div>
-          </div>
+          ))}
         </div>
-      ))}
+      )}
+
+      {bewerkItem && (
+        <LogboekBewerkModal
+          item={bewerkItem}
+          onSluiten={() => setBewerkItem(null)}
+          onOpgeslagen={(bijgewerkt) => {
+            setData((huidig) => (huidig ? huidig.map((i) => (i.id === bijgewerkt.id ? { ...i, ...bijgewerkt } : i)) : huidig));
+            setBewerkItem(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/** "2026-08-28T14:05" in de LOKALE tijd van de browser — zelfde conventie als app/(trainers)/trainers/(portal)/logboek/nieuw/logboek-form.tsx se nuAlsDatetimeLocal, hier vanaf een BESTAANDE ISO-tijdstip i.p.v. "nu". */
+function isoAlsDatetimeLocal(iso: string): string {
+  const datum = new Date(iso);
+  const lokaal = new Date(datum.getTime() - datum.getTimezoneOffset() * 60_000);
+  return lokaal.toISOString().slice(0, 16);
+}
+
+function LogboekBewerkModal({
+  item,
+  onSluiten,
+  onOpgeslagen,
+}: {
+  item: AdminSchoolLogboekRegel;
+  onSluiten: () => void;
+  onOpgeslagen: (item: AdminSchoolLogboekRegel) => void;
+}) {
+  const [type, setType] = useState<AdminSchoolLogboekRegel["type"]>(item.type);
+  const [occurredAt, setOccurredAt] = useState(isoAlsDatetimeLocal(item.occurredAt));
+  const [tekst, setTekst] = useState(item.tekst);
+  const [bezig, setBezig] = useState(false);
+  const [fout, setFout] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (tekst.trim().length === 0) return;
+    setBezig(true);
+    setFout(null);
+    try {
+      const response = await fetch(`/api/admin/trainers/logboek/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ type, occurredAt: new Date(occurredAt).toISOString(), tekst }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setFout(typeof body.error === "string" ? body.error : "Opslaan mislukt. Probeer het opnieuw.");
+        setBezig(false);
+        return;
+      }
+      onOpgeslagen({ ...item, ...body.item });
+    } catch {
+      setFout("Opslaan mislukt — controleer je verbinding en probeer het opnieuw.");
+      setBezig(false);
+    }
+  }
+
+  return (
+    <div className="ml-sales__overlay" onClick={onSluiten}>
+      <div className="ml-sales__overlay-paneel" onClick={(e) => e.stopPropagation()}>
+        <div className="ml-sales__overlay-header">
+          <h2>Logboekitem bewerken</h2>
+          <button type="button" onClick={onSluiten} aria-label="Sluiten">
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="ml-sales__overlay-veld">
+            <label htmlFor="logboek-bewerk-type">Type</label>
+            <select id="logboek-bewerk-type" value={type} onChange={(e) => setType(e.target.value as AdminSchoolLogboekRegel["type"])}>
+              {Object.entries(LOGBOEK_TYPE_LABEL).map(([waarde, label]) => (
+                <option key={waarde} value={waarde}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="ml-sales__overlay-veld">
+            <label htmlFor="logboek-bewerk-datum">Datum/tijd</label>
+            <input id="logboek-bewerk-datum" type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} required />
+          </div>
+
+          <div className="ml-sales__overlay-veld">
+            <label htmlFor="logboek-bewerk-tekst">Notitie</label>
+            <textarea id="logboek-bewerk-tekst" value={tekst} onChange={(e) => setTekst(e.target.value)} rows={5} required />
+          </div>
+
+          {fout && <p style={{ color: "#dc2626", fontSize: 12, margin: 0 }}>{fout}</p>}
+
+          <div className="ml-sales__overlay-acties">
+            <button type="button" className="ml-sales__knop" onClick={onSluiten} disabled={bezig}>
+              Annuleren
+            </button>
+            <button type="submit" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig || tekst.trim().length === 0}>
+              {bezig ? "Opslaan…" : "Opslaan"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

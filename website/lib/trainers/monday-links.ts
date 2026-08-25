@@ -654,6 +654,17 @@ export interface TrainerDashboardData {
    * een tweede, aparte verzamelTrainerContext()-aanroep te laten doen.
    */
   totaalTrainingen: number;
+  /**
+   * Correctieronde Admin Traineromgeving (2026-08-25) — ALLE trainingen van
+   * deze trainer, ONGEFILTERD (elke status, met of zonder datum): de
+   * actuele-trainingen-whitelist voor lib/trainers/training-actualiteit.ts.
+   * Zelfde reden als bevestigdeScholen/totaalTrainingen hierboven: puur
+   * hergebruik van alleTrainingenMetSchool, geen nieuwe Monday-aanroep. Moet
+   * ALLE trainingen bevatten (niet alleen vandaag/komend/logboekOpenstaand)
+   * — een training-verslag-concept over een reeds afgeronde ("gedaan")
+   * training moet nog altijd als actueel gelden.
+   */
+  alleTrainingen: TrainingMetSchool[];
 }
 
 /**
@@ -703,6 +714,7 @@ export async function haalDashboardData(trainer: AuthTrainer): Promise<TrainerDa
     logboekOpenstaand: groepen.verslag_nog_invullen,
     bevestigdeScholen,
     totaalTrainingen: alleTrainingenMetSchool.length,
+    alleTrainingen: alleTrainingenMetSchool,
   };
 }
 

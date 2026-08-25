@@ -104,6 +104,15 @@ describe("haalAdminTrainersOverzicht — dashboardtotalen en trainerkaarten", ()
   });
 
   it("open-verslagen-totaal en open-to-do's-totaal komen overeen met de som van de per-trainerkaarten se to-do-telling", async () => {
+    // Correctieronde Admin Traineromgeving (2026-08-25) — het openVerslag
+    // telt alleen mee als To do wanneer de training ook echt in de (mock-)
+    // Monday-trainingenset van trainer 1 voorkomt (training-actualiteit.ts).
+    mockMondayOverzicht.mockResolvedValue({
+      trainingenPerTrainer: new Map([["uitv-1", [training({ id: "t1" })]]]),
+      scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
+    });
     const { payload } = maakFakePayload({
       "trainer-accounts": [trainerAccount({ id: 1 })],
       "training-verslagen": [{ id: 1, trainer: 1, mondayTrainingId: "t1", mondaySchoolId: "s1", schoolNaam: "School A", trainingNaam: "T1", status: "concept", bron: "telefoon", updatedAt: "2026-08-20T00:00:00.000Z", telefonieOproep: null }],

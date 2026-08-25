@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { maakLogboekItem, haalLogboekVoorTrainer } from "./logboek";
+import { maakLogboekItem, haalLogboekVoorTrainer, wijzigLogboekItemAlsAdmin, verwijderLogboekItemAlsAdmin } from "./logboek";
 import { haalSchoolDetail, haalTrainingVoorMutatie } from "./monday-links";
 import { haalUpdatesVoorItem, maakUpdate, wijzigKolomWaarde, wijzigKolomWaardeJson } from "@/lib/sales/monday-client";
 import { maakFakePayload } from "@/lib/support/fake-payload";
@@ -224,5 +224,125 @@ describe("haalLogboekVoorTrainer", () => {
     }
     const items = await haalLogboekVoorTrainer(payload, TRAINER_A, { limiet: 2 });
     expect(items).toHaveLength(2);
+  });
+});
+
+// Correctieronde Admin Traineromgeving (2026-08-25, spec §2) — admin
+// bewerkt/verwijdert een bestaand HANDMATIG logboekitem. Zelfde
+// fake-payload-conventie als hierboven; seedt een echt item via het
+// bestaande, al-geteste maakLogboekItem i.p.v. een los fixture-object, zodat
+// deze tests ook meteen bewijzen dat de admin-functies op een ECHT, zo net
+// door een trainer aangemaakt record werken.
+describe("wijzigLogboekItemAlsAdmin", () => {
+  async function maakItem(payload: ReturnType<typeof maakFakePayload>["payload"]) {
+    const uitkomst = await maakLogboekItem(payload, TRAINER_A, { mondaySchoolId: SCHOOL_ID, type: "notitie", occurredAt: "2026-08-20T10:00:00.000Z", tekst: "Oorspronkelijke tekst." });
+    if (uitkomst.soort !== "ok") throw new Error("kon testitem niet aanmaken");
+    return uitkomst.item;
+  }
+
+  it("admin kan de tekst wijzigen", async () => {
+    const { payload } = maakFakePayload({});
+    const item = await maakItem(payload);
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, item.id, { tekst: "Aangepaste tekst." });
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.tekst).toBe("Aangepaste tekst.");
+  });
+
+  it("admin kan het type wijzigen", async () => {
+    const { payload } = maakFakePayload({});
+    const item = await maakItem(payload);
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, item.id, { type: "helpdesk" });
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.type).toBe("helpdesk");
+  });
+
+  it("admin kan de datum/tijd wijzigen", async () => {
+    const { payload } = maakFakePayload({});
+    const item = await maakItem(payload);
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, item.id, { occurredAt: "2026-08-22T09:30:00.000Z" });
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.occurredAt).toBe("2026-08-22T09:30:00.000Z");
+  });
+
+  it("een wijziging blijft bij de juiste school/trainer — die velden veranderen nooit mee (er bestaat geen invoerveld voor)", async () => {
+    const { payload } = maakFakePayload({});
+    const item = await maakItem(payload);
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, item.id, { tekst: "Nieuwe tekst.", type: "overleg", occurredAt: "2026-08-23T00:00:00.000Z" });
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.mondaySchoolId).toBe(SCHOOL_ID);
+    expect(uitkomst.item.schoolNaam).toBe("School A");
+    const opgeslagen = await haalLogboekVoorTrainer(payload, TRAINER_A);
+    expect(opgeslagen).toHaveLength(1); // nog steeds gekoppeld aan trainer A, niet "verhuisd"
+  });
+
+  it("een onbekend logboekitem-ID -> niet_gevonden", async () => {
+    const { payload } = maakFakePayload({});
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, 999999, { tekst: "Poging." });
+    expect(uitkomst.soort).toBe("niet_gevonden");
+  });
+
+  it("automatische verslagactiviteit is via dit endpoint NIET bewerkbaar: een ID uit 'training-verslagen' bestaat niet als logboekitem, dus altijd niet_gevonden", async () => {
+    const { payload, collection } = maakFakePayload({
+      "training-verslagen": [{ id: 5000, trainer: TRAINER_A.id, mondayTrainingId: TRAINING_ID, mondaySchoolId: SCHOOL_ID, schoolNaam: "School A", trainingNaam: "Training A", status: "bevestigd", bron: "portal" }],
+    });
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, 5000, { tekst: "Poging tot ombouwen van een automatisch verslag." });
+    expect(uitkomst.soort).toBe("niet_gevonden");
+    // Het verslagrecord zelf blijft ongewijzigd.
+    expect(collection("training-verslagen")[0]?.status).toBe("bevestigd");
+  });
+
+  it("leegmaken van de tekst (whitespace-only) -> ongeldige_invoer, geen wijziging opgeslagen", async () => {
+    const { payload } = maakFakePayload({});
+    const item = await maakItem(payload);
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, item.id, { tekst: "   " });
+    expect(uitkomst.soort).toBe("ongeldige_invoer");
+    const opgeslagen = await haalLogboekVoorTrainer(payload, TRAINER_A);
+    expect(opgeslagen[0]!.tekst).toBe("Oorspronkelijke tekst.");
+  });
+
+  it("ongeldig type -> ongeldige_invoer", async () => {
+    const { payload } = maakFakePayload({});
+    const item = await maakItem(payload);
+    // @ts-expect-error opzettelijk een niet-bestaand type voor deze test
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, item.id, { type: "onbestaand" });
+    expect(uitkomst.soort).toBe("ongeldige_invoer");
+  });
+
+  it("ongeldige datum -> ongeldige_invoer", async () => {
+    const { payload } = maakFakePayload({});
+    const item = await maakItem(payload);
+    const uitkomst = await wijzigLogboekItemAlsAdmin(payload, item.id, { occurredAt: "geen-datum" });
+    expect(uitkomst.soort).toBe("ongeldige_invoer");
+  });
+});
+
+describe("verwijderLogboekItemAlsAdmin", () => {
+  it("admin kan een handmatig logboekitem verwijderen", async () => {
+    const { payload } = maakFakePayload({});
+    const gemaakt = await maakLogboekItem(payload, TRAINER_A, { mondaySchoolId: SCHOOL_ID, type: "notitie", occurredAt: "2026-08-20T10:00:00.000Z", tekst: "Te verwijderen." });
+    if (gemaakt.soort !== "ok") throw new Error("kon testitem niet aanmaken");
+
+    const uitkomst = await verwijderLogboekItemAlsAdmin(payload, gemaakt.item.id);
+    expect(uitkomst).toBe("verwijderd");
+    expect(await haalLogboekVoorTrainer(payload, TRAINER_A)).toEqual([]);
+  });
+
+  it("een onbekend logboekitem-ID -> niet_gevonden, geen fout", async () => {
+    const { payload } = maakFakePayload({});
+    const uitkomst = await verwijderLogboekItemAlsAdmin(payload, 999999);
+    expect(uitkomst).toBe("niet_gevonden");
+  });
+
+  it("automatische verslagactiviteit is via dit endpoint NIET verwijderbaar: een training-verslagen-ID bestaat niet als logboekitem", async () => {
+    const { payload, collection } = maakFakePayload({
+      "training-verslagen": [{ id: 5001, trainer: TRAINER_A.id, mondayTrainingId: TRAINING_ID, mondaySchoolId: SCHOOL_ID, schoolNaam: "School A", trainingNaam: "Training A", status: "bevestigd", bron: "portal" }],
+    });
+    const uitkomst = await verwijderLogboekItemAlsAdmin(payload, 5001);
+    expect(uitkomst).toBe("niet_gevonden");
+    expect(collection("training-verslagen")).toHaveLength(1); // ongewijzigd
   });
 });

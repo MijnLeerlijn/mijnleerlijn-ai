@@ -236,6 +236,7 @@ describe("bouwTrainerAlgemeneContext / bouwTrainerAlgemeenPrompt — contextmini
       { id: "502", naam: "School C" },
     ],
     totaalTrainingen: 3,
+    alleTrainingen: [],
   };
 
   it("hergebruikt haalDashboardData rechtstreeks, geen extra Monday-aanroep", async () => {
