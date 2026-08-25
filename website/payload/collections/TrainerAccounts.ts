@@ -57,6 +57,32 @@ export const TrainerAccounts: CollectionConfig = {
     update: adminOnly,
     delete: adminOnly,
   },
+  // Herverificatieronde (na oplevering volledig traineraccountbeheer) — live
+  // tegen echte Postgres getest en zo ontdekt: Payload's eigen loginOperation
+  // kent geen concept "actief"/gedeactiveerd (dat is een veld dat DEZE
+  // collectie zelf toevoegt) — zonder deze hook accepteert /api/trainer-
+  // accounts/login (en dus ook payload.login()) een correct wachtwoord van
+  // een gedeactiveerde trainer gewoon en geeft een geldig token terug. Elke
+  // vervolgaanroep werd al wél correct geweigerd (lib/trainers/auth.ts se
+  // verifyTrainerSessionCookie leest trainer.actief vers, zie aldaar) — een
+  // gedeactiveerde trainer kon dus nooit daadwerkelijk iets GEBRUIKEN, maar
+  // kreeg bij het inloggen zelf geen duidelijke melding en belandde pas na
+  // een geslaagd ogende login weer terug op /login. Deze hook sluit dat gat
+  // bij de bron, exact zoals het veld se eigen omschrijving hierboven al
+  // belooft ("Uitgevinkt = kan niet meer inloggen"). Draait pas NA correcte
+  // wachtwoordverificatie (Payload's loginOperation, geen eigen auth-hack) —
+  // geen enkele informatie-asymmetrie t.o.v. een fout wachtwoord voor wie het
+  // wachtwoord niet kent.
+  hooks: {
+    beforeLogin: [
+      ({ user }) => {
+        if (user && (user as { actief?: boolean }).actief === false) {
+          throw new Error("Dit traineraccount is gedeactiveerd. Neem contact op met de beheerder.");
+        }
+        return user;
+      },
+    ],
+  },
   fields: [
     { name: "name", type: "text", required: true, label: "Naam" },
     {
