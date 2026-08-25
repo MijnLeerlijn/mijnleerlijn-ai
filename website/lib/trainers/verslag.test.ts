@@ -12,6 +12,8 @@ import {
   haalVerslagenDieAandachtNodigHebben,
   haalRecenteVerslagenVoorTrainer,
   telVoltooideVerslagen,
+  wijzigVerslagAlsAdmin,
+  verwijderVerslagAlsAdmin,
   type VerslagStructuur,
 } from "./verslag";
 import { haalTrainingVoorMutatie, haalSchoolDetail, parseCheckboxIngevuld } from "./monday-links";
@@ -1264,5 +1266,89 @@ describe("telVoltooideVerslagen (Traineromgeving V2, Fase 1 — dashboardstatist
   it("geen enkel voltooid verslag -> 0, geen fout", async () => {
     const { payload } = maakFakePayload({});
     expect(await telVoltooideVerslagen(payload, TRAINER)).toBe(0);
+  });
+});
+
+// Admin Schooldetail/Trainerdetail — Verslagen volledig kunnen lezen/
+// bewerken/verwijderen (vervolgronde). wijzigVerslagAlsAdmin/
+// verwijderVerslagAlsAdmin raken UITSLUITEND definitieveTekst (wijzigen)
+// resp. de hele rij (verwijderen) aan — nooit trainingUpdateStatus/
+// schoolUpdateStatus/*MondayId/*ClaimedAt/afrondingResultaat, dus nooit de
+// Monday-writebackketen hierboven. Zie beide functies se eigen toelichting
+// in verslag.ts voor de volledige analyse.
+describe("wijzigVerslagAlsAdmin", () => {
+  it("wijzigt uitsluitend definitieveTekst, trainer/school/training/bron/status/writeback-velden blijven ongewijzigd", async () => {
+    const { payload, collection } = maakFakePayload({
+      "training-verslagen": [
+        {
+          id: 1,
+          trainer: TRAINER.id,
+          mondayTrainingId: CENTRALE_TRAINING_ID,
+          mondaySchoolId: SCHOOL_ID,
+          schoolNaam: "School A",
+          trainingNaam: "Training A",
+          bron: "portal",
+          status: "bevestigd",
+          trainingUpdateStatus: "geschreven",
+          trainingUpdateMondayId: "update-1",
+          schoolUpdateStatus: "geschreven",
+          schoolUpdateMondayId: "update-2",
+          definitieveTekst: "Oorspronkelijke tekst.",
+        },
+      ],
+    });
+    const uitkomst = await wijzigVerslagAlsAdmin(payload, 1, { definitieveTekst: "Gecorrigeerde tekst." });
+    if (uitkomst.soort !== "ok") throw new Error("verwachtte ok");
+    expect(uitkomst.verslag.definitieveTekst).toBe("Gecorrigeerde tekst.");
+
+    const rij = collection("training-verslagen")[0];
+    expect(rij?.definitieveTekst).toBe("Gecorrigeerde tekst.");
+    expect(rij?.trainer).toBe(TRAINER.id);
+    expect(rij?.mondaySchoolId).toBe(SCHOOL_ID);
+    expect(rij?.mondayTrainingId).toBe(CENTRALE_TRAINING_ID);
+    expect(rij?.bron).toBe("portal");
+    expect(rij?.status).toBe("bevestigd");
+    expect(rij?.trainingUpdateStatus).toBe("geschreven");
+    expect(rij?.trainingUpdateMondayId).toBe("update-1");
+    expect(rij?.schoolUpdateStatus).toBe("geschreven");
+    expect(rij?.schoolUpdateMondayId).toBe("update-2");
+  });
+
+  it("niet_gevonden bij een onbekend verslag-ID", async () => {
+    const { payload } = maakFakePayload({});
+    const uitkomst = await wijzigVerslagAlsAdmin(payload, 999, { definitieveTekst: "Tekst." });
+    expect(uitkomst.soort).toBe("niet_gevonden");
+  });
+
+  it("ongeldige_invoer bij een lege/whitespace-tekst", async () => {
+    const { payload } = maakFakePayload({ "training-verslagen": [{ id: 1, trainer: TRAINER.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, definitieveTekst: "Iets." }] });
+    const uitkomst = await wijzigVerslagAlsAdmin(payload, 1, { definitieveTekst: "   " });
+    expect(uitkomst.soort).toBe("ongeldige_invoer");
+  });
+});
+
+describe("verwijderVerslagAlsAdmin", () => {
+  it("verwijdert het verslag", async () => {
+    const { payload, collection } = maakFakePayload({ "training-verslagen": [{ id: 1, trainer: TRAINER.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, status: "voltooid" }] });
+    const uitkomst = await verwijderVerslagAlsAdmin(payload, 1);
+    expect(uitkomst).toBe("verwijderd");
+    expect(collection("training-verslagen")).toHaveLength(0);
+  });
+
+  it("niet_gevonden bij een onbekend verslag-ID", async () => {
+    const { payload } = maakFakePayload({});
+    const uitkomst = await verwijderVerslagAlsAdmin(payload, 999);
+    expect(uitkomst).toBe("niet_gevonden");
+  });
+
+  it("verwijdert nooit het verslag van een ander (cross-leak-proof: een tweede rij blijft ongemoeid)", async () => {
+    const { payload, collection } = maakFakePayload({
+      "training-verslagen": [
+        { id: 1, trainer: TRAINER.id, mondayTrainingId: "1", mondaySchoolId: SCHOOL_ID, status: "voltooid" },
+        { id: 2, trainer: TRAINER_B.id, mondayTrainingId: "2", mondaySchoolId: SCHOOL_ID, status: "voltooid" },
+      ],
+    });
+    await verwijderVerslagAlsAdmin(payload, 1);
+    expect(collection("training-verslagen").map((v) => v.id)).toEqual([2]);
   });
 });

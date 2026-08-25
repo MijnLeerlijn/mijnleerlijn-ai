@@ -203,7 +203,16 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
           const { tekst, params } = ontleedRaweSql(query);
           const verslagen = arr("training-verslagen");
 
-          if (tekst.includes("SET definitieve_tekst")) {
+          // Precies bevestigVerslag se stap-3-SQL (alle vier kolommen samen,
+          // atomisch) — bewust ALLE VIER kolomnamen vereist, niet alleen
+          // "SET definitieve_tekst": lib/trainers/verslag.ts se
+          // wijzigVerslagAlsAdmin (vervolgronde, admin-tekstbewerking) schrijft
+          // via schrijfVerslagVelden ÉÉN kolom (definitieve_tekst alleen) met
+          // een SQL-tekst die "SET definitieve_tekst" ook bevat — zonder deze
+          // striktere check zou die aanroep hier ten onrechte de
+          // concept-only/status-forcerende bevestigVerslag-simulatie raken
+          // i.p.v. de generieke setMatch-tak hieronder.
+          if (tekst.includes("SET definitieve_tekst") && tekst.includes("bevestigd_door_trainer_naam")) {
             const [nieuweTekst, bevestigdOp, trainerNaam, id] = params as [string, string, string, number];
             const doc = verslagen.find((d) => d.id === id && d.status === "concept");
             if (!doc) return { rows: [] };

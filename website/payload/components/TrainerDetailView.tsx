@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import type {
@@ -12,15 +12,16 @@ import type {
   AdminTrainerBestandenTab,
 } from "@/lib/admin/trainers/trainerdetail";
 import type { TrainerScholenResultaat, TrainingMetSchool } from "@/lib/trainers/monday-links";
-import type { LogboekItemRecord, LogboekType } from "@/lib/trainers/logboek";
+import type { LogboekItemRecord } from "@/lib/trainers/logboek";
 import type { TodoItem } from "@/lib/trainers/dashboard";
 import { TODO_ICOON, TODO_CTA_LABEL, todoTijdLabel } from "@/lib/trainers/todo-styles";
 import { ACTIVITEIT_LABEL, ACTIVITEIT_ICOON } from "@/lib/trainers/activiteit-styles";
 import { groepeerOpWeergaveStatus, type TrainingWeergaveStatus } from "@/lib/trainers/training-weergave";
 import { formatKorteDatum, formatKorteDatumTijd, vandaagIso } from "@/lib/sales/format-datum";
 import { NAV_COLOR_STYLES, type NavColor } from "@/lib/admin-nav/nav-colors";
-import { VERSLAG_STATUS_KLEUR, WRITEBACK_STATUS_KLEUR, TELEFONIE_STATUS_KLEUR, WEERGAVE_STATUS_KLEUR, TODO_SOORT_KLEUR, trainerActiefKleur } from "@/lib/admin/trainers/status-kleuren";
+import { TELEFONIE_STATUS_KLEUR, WEERGAVE_STATUS_KLEUR, TODO_SOORT_KLEUR, trainerActiefKleur } from "@/lib/admin/trainers/status-kleuren";
 import { AdminStatusBadge } from "./AdminStatusBadge";
+import { VerslagenLijst, LogboekLijst } from "./AdminVerslagLogboek";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdetail (spec §3).
 // "Bijna hetzelfde beeld als de trainer zelf ziet, in admin-context" —
@@ -33,9 +34,12 @@ import { AdminStatusBadge } from "./AdminStatusBadge";
 // (andere bundel, ander CSS-systeem — rechtstreeks hergebruik van
 // portal-componenten zou hier niet renderen).
 //
-// EXPLICIET GEEN impersonation-login, GEEN inline-edits (spec §8): elke tab
-// hieronder is uitsluitend lezen — geen enkele knop hier wijzigt een
-// verslag/training/telefonie-status.
+// EXPLICIET GEEN impersonation-login (spec §8) — met twee bewuste
+// uitzonderingen op "uitsluitend lezen" (vervolgronde): Verslagen- en
+// Logboek-tab hebben nu Bewerken/Verwijderen, via dezelfde gedeelde
+// AdminVerslagLogboek.tsx-componenten als SchoolDetailView.tsx (geen tweede
+// implementatie voor dezelfde gegevens). Elke andere tab blijft read-only —
+// geen enkele andere knop hier wijzigt een training/telefonie-status.
 //
 // Elke tab wordt LAZY opgehaald (pas bij eerste keer openen, dan gecachet in
 // React-state) — zie lib/admin/trainers/trainerdetail.ts se moduletoelichting
@@ -62,33 +66,6 @@ async function apiGetOne<T>(url: string): Promise<T | null> {
 function isTab(waarde: string | null): waarde is Tab {
   return (TABS as readonly string[]).includes(waarde ?? "");
 }
-
-const VERSLAG_STATUS_LABEL: Record<AdminTrainerVerslagRegel["status"], string> = {
-  concept: "Concept",
-  gedeeltelijk: "Gedeeltelijk",
-  bevestigd: "Bevestigd",
-  voltooid: "Voltooid",
-};
-const WRITEBACK_STATUS_LABEL: Record<AdminTrainerVerslagRegel["trainingUpdateStatus"], string> = {
-  niet_verzonden: "Niet verzonden",
-  bezig: "Bezig",
-  geschreven: "Geschreven",
-  mislukt: "Mislukt",
-  niet_geactiveerd: "Niet actief",
-};
-// Letterlijke kopie van lib/trainers/logboek.ts se LOGBOEK_TYPE_LABEL — niet
-// rechtstreeks geïmporteerd: dat bestand importeert monday-links.ts (live
-// Monday-API-code) op runtime-niveau, niet veilig om in een "use
-// client"-component te bundelen (zelfde reden als lib/sales/format-datum.ts
-// se TYPE_LABEL-toelichting). Bij een wijziging aan LOGBOEK_TYPES/-LABEL
-// ook hier bijwerken.
-const LOGBOEK_TYPE_LABEL: Record<LogboekType, string> = {
-  telefonisch: "Telefonisch",
-  helpdesk: "Helpdesk",
-  overleg: "Overleg",
-  notitie: "Notitie",
-  overig: "Overig",
-};
 
 const WEERGAVE_STATUS_LABEL: Record<TrainingWeergaveStatus, string> = {
   open: "Open",
@@ -122,7 +99,9 @@ function DetailInner() {
 }
 
 function DetailVoorTrainer({ trainerId, initialTab }: { trainerId: string; initialTab: Tab }) {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [accountActieBezig, setAccountActieBezig] = useState(false);
 
   const [basis, setBasis] = useState<AdminTrainerBasis | null>(null);
   const [basisLaden, setBasisLaden] = useState(true);
@@ -152,6 +131,55 @@ function DetailVoorTrainer({ trainerId, initialTab }: { trainerId: string; initi
       setBasisLaden(false);
     });
   }, [trainerId]);
+
+  /**
+   * Volledig traineraccountbeheer (vervolgronde) — deactiveren/activeren
+   * hergebruikt uitsluitend het al bestaande actief-veld (zie
+   * lib/trainers/trainer-account.ts se toelichting bij
+   * zetTrainerActiefStatus). Verwijderen krijgt bij bestaande relaties een
+   * duidelijke 409-foutmelding terug (server-side relatietelling) — nooit
+   * een blinde cascade.
+   */
+  async function zetActiefStatus(nieuweWaarde: boolean) {
+    const vraag = nieuweWaarde ? "Weet je zeker dat je deze trainer weer wilt activeren?" : "Weet je zeker dat je deze trainer wilt deactiveren? De trainer kan hierna niet meer inloggen, de historie blijft behouden.";
+    if (!window.confirm(vraag)) return;
+    setAccountActieBezig(true);
+    try {
+      const response = await fetch(`/api/admin/trainers/account/${trainerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ actief: nieuweWaarde }),
+      });
+      if (!response.ok) {
+        window.alert("Wijzigen van de actief-status is niet gelukt. Probeer het opnieuw.");
+        return;
+      }
+      setBasis((huidig) => (huidig ? { ...huidig, actief: nieuweWaarde } : huidig));
+    } catch {
+      window.alert("Wijzigen van de actief-status is niet gelukt. Probeer het opnieuw.");
+    } finally {
+      setAccountActieBezig(false);
+    }
+  }
+
+  async function verwijderTrainer() {
+    if (!window.confirm("Weet je zeker dat je dit traineraccount wilt verwijderen? Dit kan niet ongedaan worden gemaakt.")) return;
+    setAccountActieBezig(true);
+    try {
+      const response = await fetch(`/api/admin/trainers/account/${trainerId}`, { method: "DELETE", credentials: "include" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        window.alert(typeof body.error === "string" ? body.error : "Verwijderen is niet gelukt. Probeer het opnieuw.");
+        return;
+      }
+      router.push("/admin/trainers");
+    } catch {
+      window.alert("Verwijderen is niet gelukt. Probeer het opnieuw.");
+    } finally {
+      setAccountActieBezig(false);
+    }
+  }
 
   // Inline fetch-met-ignore-vlag (zie TrainersOverzichtView.tsx se
   // toelichting) — GEEN losse useCallback-functie aanroepen vanuit het
@@ -218,6 +246,17 @@ function DetailVoorTrainer({ trainerId, initialTab }: { trainerId: string; initi
           {basis.telefonieActief && <AdminStatusBadge label="Telefonische verslaglegging aan" kleur="teal" />}
           {basis.mobielNummer && <span className="ml-sales__badge">{basis.mobielNummer}</span>}
         </div>
+        <div className="ml-sales__actie-knoppen" style={{ marginTop: 10 }}>
+          <Link href={`/admin/collections/trainer-accounts/${trainerId}`} className="ml-sales__knop">
+            Trainer bewerken
+          </Link>
+          <button type="button" className="ml-sales__knop" disabled={accountActieBezig} onClick={() => zetActiefStatus(!basis.actief)}>
+            {basis.actief ? "Trainer deactiveren" : "Trainer activeren"}
+          </button>
+          <button type="button" className="ml-sales__knop ml-sales__knop--gevaar" disabled={accountActieBezig} onClick={verwijderTrainer}>
+            Trainer verwijderen
+          </button>
+        </div>
       </div>
 
       <div className="ml-sales-widget__tabs">
@@ -233,8 +272,27 @@ function DetailVoorTrainer({ trainerId, initialTab }: { trainerId: string; initi
       {!tabLaden && tab === "overzicht" && (overzicht ? <OverzichtTab data={overzicht} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "scholen" && (scholen ? <ScholenTab data={scholen} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "trainingen" && (trainingen ? <TrainingenTab data={trainingen} /> : <TabFoutmelding />)}
-      {!tabLaden && tab === "verslagen" && (verslagen ? <VerslagenTab data={verslagen} /> : <TabFoutmelding />)}
-      {!tabLaden && tab === "logboek" && (logboek ? <LogboekTab data={logboek} /> : <TabFoutmelding />)}
+      {!tabLaden && tab === "verslagen" && (verslagen ? (
+        <VerslagenLijst
+          data={verslagen}
+          toonTrainerKolom={false}
+          toonSchoolKolom
+          onGewijzigd={(verslagId, wijziging) => setVerslagen((huidig) => (huidig ? huidig.map((v) => (v.verslagId === verslagId ? { ...v, ...wijziging } : v)) : huidig))}
+          onVerwijderd={(verslagId) => setVerslagen((huidig) => (huidig ? huidig.filter((v) => v.verslagId !== verslagId) : huidig))}
+        />
+      ) : (
+        <TabFoutmelding />
+      ))}
+      {!tabLaden && tab === "logboek" && (logboek ? (
+        <LogboekLijst
+          data={logboek}
+          toonTrainerKolom={false}
+          onGewijzigd={(id, wijziging) => setLogboek((huidig) => (huidig ? huidig.map((i) => (i.id === id ? { ...i, ...wijziging } : i)) : huidig))}
+          onVerwijderd={(id) => setLogboek((huidig) => (huidig ? huidig.filter((i) => i.id !== id) : huidig))}
+        />
+      ) : (
+        <TabFoutmelding />
+      ))}
       {!tabLaden && tab === "telefonie" && (telefonie ? <TelefonieTab data={telefonie} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "bestanden" && (bestanden ? <BestandenTab data={bestanden} /> : <TabFoutmelding />)}
     </div>
@@ -403,65 +461,6 @@ function TrainingenTab({ data }: { data: TrainingMetSchool[] }) {
           </div>
         ))}
     </>
-  );
-}
-
-function VerslagenTab({ data }: { data: AdminTrainerVerslagRegel[] }) {
-  if (data.length === 0) return <div className="ml-sales__leeg">Nog geen verslagen.</div>;
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table className="ml-sales__tabel">
-        <thead>
-          <tr>
-            <th>Datum</th>
-            <th>Training</th>
-            <th>School</th>
-            <th>Status</th>
-            <th>Bron</th>
-            <th>Training-update</th>
-            <th>School-update</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((v) => (
-            <tr key={v.verslagId}>
-              <td>{formatKorteDatumTijd(v.wanneer)}</td>
-              <td>{v.trainingNaam}</td>
-              <td>{v.schoolNaam}</td>
-              <td>
-                <AdminStatusBadge label={VERSLAG_STATUS_LABEL[v.status]} kleur={VERSLAG_STATUS_KLEUR[v.status]} />
-              </td>
-              <td>{v.bron === "telefoon" ? "Telefonisch" : "Portal"}</td>
-              <td>
-                <AdminStatusBadge label={WRITEBACK_STATUS_LABEL[v.trainingUpdateStatus]} kleur={WRITEBACK_STATUS_KLEUR[v.trainingUpdateStatus]} />
-              </td>
-              <td>
-                <AdminStatusBadge label={WRITEBACK_STATUS_LABEL[v.schoolUpdateStatus]} kleur={WRITEBACK_STATUS_KLEUR[v.schoolUpdateStatus]} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function LogboekTab({ data }: { data: LogboekItemRecord[] }) {
-  if (data.length === 0) return <div className="ml-sales__leeg">Nog geen logboekitems.</div>;
-  return (
-    <div className="ml-sales__logboek">
-      {data.map((item) => (
-        <div className="ml-sales__logboek-item" key={item.id}>
-          <span className="ml-sales__logboek-stip" />
-          <div>
-            <div>{item.trainingNaam ?? item.tekst}</div>
-            <div className="ml-sales__logboek-meta">
-              {formatKorteDatumTijd(item.occurredAt)} · {LOGBOEK_TYPE_LABEL[item.type]} · {item.schoolNaam ?? "Onbekende school"}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { normaliseerNederlandsNummer } from "@/lib/trainers/telefonie/nummer";
 
 // Traineromgeving V1, Ronde 1 (2026-08-19) — eigen auth-collectie voor
 // trainers.mijnleerlijn.chat, structureel gescheiden van "users" (zie
@@ -92,6 +93,29 @@ export const TrainerAccounts: CollectionConfig = {
       admin: {
         description:
           "Genormaliseerd E.164-formaat, bv. +31612345678 (lib/trainers/telefonie/nummer.ts se normaliseerNederlandsNummer — altijd via die functie zetten, nooit ruwe invoer). Postgres' unique-index behandelt NULL als 'geen waarde, geen botsing' (meerdere trainers mogen dit dus leeg laten) — uniciteit geldt alleen zodra een nummer daadwerkelijk gezet is. Ronde 3.5 (2026-08-25): dit is uitsluitend een IDENTIFICATIESIGNAAL voor inkomende gesprekken (caller-ID is niet spoofing-bestendig) — geeft nooit rechtstreeks toestemming voor een definitieve Monday-write; alleen een concept aanmaken. Voor V1 alleen door een beheerder wijzigbaar (zie Profiel-pagina toelichting) — een zelfbedieningswijziging vereist eerst SMS-verificatie, nog niet gebouwd.",
+      },
+      // Vervolgronde (volledig traineraccountbeheer) — voorheen kon dit veld
+      // alleen ooit correct gezet worden als de schrijvende code zelf al
+      // netjes normaliseerNederlandsNummer aanriep (er bestond nog geen
+      // enkele schrijfplek). Nu de admin dit veld via Payload's EIGEN
+      // collectie-editor bewerkbaar heeft, normaliseert dit veld zichzelf —
+      // ongeacht welke schrijfplek het aanroept (generieke admin-UI of een
+      // eigen route) blijft lib/trainers/telefonie/trainer-lookup.ts se
+      // exacte-matchquery zo altijd tegen een correct E.164-genormaliseerd
+      // nummer werken (spec: "valideer formaat volgens bestaande
+      // telefoniecode", "geen oude cache of duplicaat" — vindTrainerVoorTelefoonnummer
+      // leest dit veld sowieso altijd vers, geen cache om te verversen).
+      hooks: {
+        beforeValidate: [
+          ({ value }: { value?: string | null }) => {
+            if (value === undefined || value === null || value.trim() === "") return value;
+            const genormaliseerd = normaliseerNederlandsNummer(value);
+            if (!genormaliseerd) {
+              throw new Error("Ongeldig telefoonnummer — gebruik een geldig Nederlands mobiel nummer (bv. 06 12345678 of +31612345678).");
+            }
+            return genormaliseerd;
+          },
+        ],
       },
     },
     {

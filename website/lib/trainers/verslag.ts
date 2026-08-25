@@ -1177,3 +1177,73 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
 
   return { soort: "resultaat", verslag: werkrij, afronding: afronding.resultaat, weergaveTekst: updateTekst };
 }
+
+// ---------------------------------------------------------------------------
+// Correctieronde Admin Traineromgeving, vervolgronde (Admin Schooldetail
+// Verslagen/Logboek) — admin-only wijzig/verwijder op het BESTAANDE
+// trainingsverslag (spec: "gebruik het bestaande training-verslagen record,
+// maak geen kopie"). Bewust GEEN wijziging aan bevestigVerslag/
+// schrijfVerslagUpdateIdempotent hierboven.
+//
+// Writeback-analyse (opleverrapport-eis: "onderzoek eerst hoe de bestaande
+// Monday-writeback werkt"): bevestigVerslag schrijft uitsluitend naar Monday
+// wanneer trainingUpdateStatus/schoolUpdateStatus nog niet "geschreven" zijn
+// (zie de twee "if (...Status !== 'geschreven')"-blokken in stap 4/5
+// hierboven) — dat is de VOLLEDIGE writeback-trigger in deze codebase, geen
+// hooks op de collectie zelf (TrainingVerslagen.ts kent er geen).
+// wijzigVerslagAlsAdmin hieronder raakt uitsluitend definitieveTekst aan —
+// nooit trainingUpdateStatus/schoolUpdateStatus/*MondayId/*ClaimedAt/
+// afrondingResultaat — en roept bevestigVerslag/schrijfVerslagUpdateIdempotent
+// zelf nergens aan. Een admin-tekstwijziging kan dus STRUCTUREEL nooit zelf
+// een Monday-write veroorzaken. Wel kan een LATERE, aparte trainerbevestiging
+// (dezelfde, ongewijzigde bevestigVerslag-flow, alleen bereikbaar zolang een
+// kant nog niet "geschreven" is) daarna de dan geldende — mogelijk door de
+// admin gewijzigde — tekst gebruiken: dat is bestaand, ongewijzigd gedrag
+// (bevestigVerslag gebruikt altijd de actuele definitieveTekst), geen nieuw
+// schrijfpad dat deze functie zelf introduceert.
+//
+// wijzigVerslagAlsAdmin gebruikt bewust schrijfVerslagVelden i.p.v.
+// payload.update() — zie de doc-comment daarboven bij schrijfVerslagVelden:
+// "empirisch bevestigd dat payload.update() op DEZE rij een gelijktijdige,
+// andere payload.update()-schrijving kan clobberen". Dezelfde reden geldt
+// hier: een admin die de tekst bewerkt mag een gelijktijdige
+// bevestigVerslag/schrijfVerslagUpdateIdempotent-schrijving op dezelfde rij
+// nooit ongemerkt overschrijven.
+// ---------------------------------------------------------------------------
+
+export interface VerslagWijzigInvoer {
+  definitieveTekst: string;
+}
+export type VerslagWijzigUitkomst = { soort: "niet_gevonden" } | { soort: "ongeldige_invoer"; boodschap: string } | { soort: "ok"; verslag: VerslagRecord };
+
+export async function wijzigVerslagAlsAdmin(payload: Payload, verslagId: number, invoer: VerslagWijzigInvoer): Promise<VerslagWijzigUitkomst> {
+  const bestaand = await payload.findByID({ collection: "training-verslagen", id: verslagId, overrideAccess: true, depth: 0 }).catch(() => null);
+  if (!bestaand) return { soort: "niet_gevonden" };
+  const tekst = begrensLengte(invoer.definitieveTekst.trim(), MAX_DEFINITIEVETEKST_LENGTE);
+  if (tekst.length === 0) return { soort: "ongeldige_invoer", boodschap: "Vul een verslagtekst in." };
+  const bijgewerkt = await schrijfVerslagVelden(payload, verslagId, { definitieve_tekst: tekst });
+  return { soort: "ok", verslag: bijgewerkt };
+}
+
+export type VerslagVerwijderUitkomst = "verwijderd" | "niet_gevonden";
+
+/**
+ * Hard delete — veiligheidsanalyse (opleverrapport): trainer_telefonie_
+ * oproepen.verslag_id heeft ON DELETE SET NULL (migratie 20260825_090000_
+ * telefonie_v1.ts, live geverifieerd tegen de migratie-SQL) — verwijderen
+ * van dit verslag zet die koppeling automatisch/atomisch op null; de
+ * telefonie-oproeprij zelf (transcriptiepogingen/-duur/foutcode/tijdstippen
+ * — spec §9 elders: nooit audio/volledige transcriptietekst in dat record)
+ * blijft volledig en ongewijzigd bestaan, uitsluitend de verwijzing ernaartoe
+ * verdwijnt. Geen andere collectie verwijst naar training-verslagen (enige
+ * relationTo: "training-verslagen" in heel payload/collections/ is precies
+ * dit ene veld). Dus: geen dangling references, geen handmatige
+ * opschoonstap nodig, geen nieuwe soft-delete-architectuur te bouwen — de
+ * bestaande FK-constraint IS al de veiligste bestaande architectuur.
+ */
+export async function verwijderVerslagAlsAdmin(payload: Payload, verslagId: number): Promise<VerslagVerwijderUitkomst> {
+  const bestaand = await payload.findByID({ collection: "training-verslagen", id: verslagId, overrideAccess: true, depth: 0 }).catch(() => null);
+  if (!bestaand) return "niet_gevonden";
+  await payload.delete({ collection: "training-verslagen", id: verslagId, overrideAccess: true });
+  return "verwijderd";
+}

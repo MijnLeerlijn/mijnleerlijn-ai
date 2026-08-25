@@ -167,6 +167,9 @@ export interface AdminTrainerVerslagRegel {
   schoolUpdateStatus: VerslagRecord["schoolUpdateStatus"];
   bevestigdOp: string | null;
   wanneer: string;
+  /** Vervolgronde (Verslagen: volledige inhoud lezen/bewerken) — zie schooldetail.ts se AdminSchoolVerslagRegel voor dezelfde velden/reden. */
+  definitieveTekst: string | null;
+  trainerInvoer: string | null;
 }
 
 export async function haalAdminTrainerVerslagenTab(payload: Payload, trainerId: number): Promise<TrainerDetailTabUitkomst<AdminTrainerVerslagRegel[]>> {
@@ -194,6 +197,8 @@ export async function haalAdminTrainerVerslagenTab(payload: Payload, trainerId: 
     schoolUpdateStatus: doc.schoolUpdateStatus as VerslagRecord["schoolUpdateStatus"],
     bevestigdOp: doc.bevestigdOp ?? null,
     wanneer: doc.updatedAt,
+    definitieveTekst: doc.definitieveTekst ?? null,
+    trainerInvoer: doc.trainerInvoer ?? null,
   }));
   return { soort: "ok", data };
 }

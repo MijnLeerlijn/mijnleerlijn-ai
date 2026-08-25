@@ -220,12 +220,17 @@ export interface AdminSchoolVerslagRegel {
   trainerId: number;
   trainerNaam: string;
   mondayTrainingId: string;
+  schoolNaam: string;
   trainingNaam: string;
   wanneer: string;
   status: VerslagRecord["status"];
   bron: "portal" | "telefoon";
   trainingUpdateStatus: VerslagRecord["trainingUpdateStatus"];
   schoolUpdateStatus: VerslagRecord["schoolUpdateStatus"];
+  /** Vervolgronde (Verslagen: volledige inhoud lezen/bewerken) — de bron van waarheid voor de Monday-schrijving, zie TrainingVerslagen.ts. Enige door de admin bewerkbare veld. */
+  definitieveTekst: string | null;
+  /** Oorspronkelijke, door de trainer getypte invoer — alleen-lezen context, nooit door de admin bewerkbaar (zie lib/trainers/verslag.ts se wijzigVerslagAlsAdmin). */
+  trainerInvoer: string | null;
 }
 
 export async function haalAdminSchoolVerslagenTab(payload: Payload, schoolId: string): Promise<SchoolDetailTabUitkomst<AdminSchoolVerslagRegel[]>> {
@@ -250,12 +255,15 @@ export async function haalAdminSchoolVerslagenTab(payload: Payload, schoolId: st
         trainerId: trainerGepopuleerd ? trainerGepopuleerd.id : (trainerVeld as number),
         trainerNaam: trainerGepopuleerd?.name ?? "Onbekende trainer",
         mondayTrainingId: doc.mondayTrainingId,
+        schoolNaam: doc.schoolNaam ?? "Onbekende school",
         trainingNaam: doc.trainingNaam ?? "Training",
         wanneer: doc.updatedAt,
         status: doc.status as VerslagRecord["status"],
         bron: (doc.bron as "portal" | "telefoon" | null) ?? "portal",
         trainingUpdateStatus: doc.trainingUpdateStatus as VerslagRecord["trainingUpdateStatus"],
         schoolUpdateStatus: doc.schoolUpdateStatus as VerslagRecord["schoolUpdateStatus"],
+        definitieveTekst: doc.definitieveTekst ?? null,
+        trainerInvoer: doc.trainerInvoer ?? null,
       };
     }),
   };

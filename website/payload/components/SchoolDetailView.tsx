@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { CSSProperties, FormEvent } from "react";
-import { AlertTriangle, AlertCircle, X, type LucideIcon } from "lucide-react";
+import type { CSSProperties } from "react";
+import { AlertTriangle, AlertCircle, type LucideIcon } from "lucide-react";
 import type {
   AdminSchoolBasis,
   AdminSchoolOverzichtTab,
@@ -21,8 +21,9 @@ import { TODO_ICOON, TODO_CTA_LABEL, todoTijdLabel } from "@/lib/trainers/todo-s
 import { ACTIVITEIT_LABEL, ACTIVITEIT_ICOON } from "@/lib/trainers/activiteit-styles";
 import { formatKorteDatum, formatKorteDatumTijd } from "@/lib/sales/format-datum";
 import { NAV_COLOR_STYLES, type NavColor } from "@/lib/admin-nav/nav-colors";
-import { VERSLAG_STATUS_KLEUR, WRITEBACK_STATUS_KLEUR, WEERGAVE_STATUS_KLEUR, TODO_SOORT_KLEUR, AANDACHT_SOORT_KLEUR, trainerActiefKleur, activiteitSoortKleur } from "@/lib/admin/trainers/status-kleuren";
+import { VERSLAG_STATUS_KLEUR, WEERGAVE_STATUS_KLEUR, TODO_SOORT_KLEUR, AANDACHT_SOORT_KLEUR, trainerActiefKleur, activiteitSoortKleur } from "@/lib/admin/trainers/status-kleuren";
 import { AdminStatusBadge } from "./AdminStatusBadge";
+import { VerslagenLijst, LogboekLijst, VERSLAG_STATUS_LABEL } from "./AdminVerslagLogboek";
 
 // Traineromgeving V2, Fase 5 (2026-08-24) — Admin Schooldetail (spec §1-§4).
 // Zelfde opzet als TrainerDetailView.tsx: statisch pad + ?id=/?tab=, ÉÉN
@@ -61,19 +62,6 @@ function isTab(waarde: string | null): waarde is Tab {
   return (TABS as readonly string[]).includes(waarde ?? "");
 }
 
-const VERSLAG_STATUS_LABEL: Record<AdminSchoolVerslagRegel["status"], string> = {
-  concept: "Concept",
-  gedeeltelijk: "Gedeeltelijk",
-  bevestigd: "Bevestigd",
-  voltooid: "Voltooid",
-};
-const WRITEBACK_STATUS_LABEL: Record<AdminSchoolVerslagRegel["trainingUpdateStatus"], string> = {
-  niet_verzonden: "Niet verzonden",
-  bezig: "Bezig",
-  geschreven: "Geschreven",
-  mislukt: "Mislukt",
-  niet_geactiveerd: "Niet actief",
-};
 const WEERGAVE_STATUS_LABEL: Record<AdminTrainingRegel["weergaveStatus"], string> = {
   open: "Open",
   vandaag: "Vandaag",
@@ -86,17 +74,6 @@ const AANDACHT_LABEL: Record<AdminAandachtSoort, string> = {
   telefonie_mislukt: "Telefonie mislukt",
   verslag_vastgelopen: "Verslag vastgelopen",
   concept_oud: "Oud concept",
-};
-// Letterlijke kopie van lib/trainers/logboek.ts se LOGBOEK_TYPE_LABEL — zie
-// TrainerDetailView.tsx se toelichting bij dezelfde regel voor de reden
-// (dat bestand importeert monday-links.ts op runtime-niveau, niet veilig om
-// in een "use client"-component te bundelen).
-const LOGBOEK_TYPE_LABEL: Record<AdminSchoolLogboekRegel["type"], string> = {
-  telefonisch: "Telefonisch",
-  helpdesk: "Helpdesk",
-  overleg: "Overleg",
-  notitie: "Notitie",
-  overig: "Overig",
 };
 
 function labelVoorActiviteit(soort: AdminActiviteitSoort): string {
@@ -152,6 +129,25 @@ function DetailVoorSchool({ schoolId, initialTab }: { schoolId: string; initialT
       genegeerd = true;
     };
   }, [schoolId]);
+
+  /**
+   * Vervolgronde (Verslagen verwijderen) — een verwijderd verslag kan de
+   * kopregel-tellingen (open to-do's/open verslagen) en de Aandacht-sectie
+   * doen wijzigen (spec: "de bestaande actuele To-do-logica moet dat gewoon
+   * correct kunnen laten zien"). Beide worden al read-time herberekend uit
+   * de actuele Payload-/Monday-data (geen aparte cache) — hier dus puur een
+   * herfetch van diezelfde twee altijd-zichtbare kopregel-onderdelen, geen
+   * nieuwe logica. Diepere, nog niet bezochte tabbladen verversen vanzelf
+   * bij de eerstvolgende keer openen (bestaande lazy-tab-cache).
+   */
+  async function herlaadBasisEnAandacht() {
+    const [basisData, aandachtData] = await Promise.all([
+      apiGetOne<AdminSchoolBasis>(`/api/admin/trainers/school?id=${schoolId}&tab=basis`),
+      apiGetOne<AdminAandachtItem[]>(`/api/admin/trainers/school?id=${schoolId}&tab=aandacht`),
+    ]);
+    if (basisData) setBasis(basisData);
+    setAandacht(aandachtData ?? []);
+  }
 
   // Inline fetch-met-ignore-vlag — zie TrainerDetailView.tsx se toelichting bij dezelfde regel.
   useEffect(() => {
@@ -266,8 +262,28 @@ function DetailVoorSchool({ schoolId, initialTab }: { schoolId: string; initialT
       {!tabLaden && tab === "overzicht" && (overzicht ? <OverzichtTab data={overzicht} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "trainers" && (trainers ? <TrainersTab data={trainers} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "trainingen" && (trainingen ? <TrainingenTab data={trainingen} /> : <TabFoutmelding />)}
-      {!tabLaden && tab === "verslagen" && (verslagen ? <VerslagenTab data={verslagen} /> : <TabFoutmelding />)}
-      {!tabLaden && tab === "logboek" && (logboek ? <LogboekTab data={logboek} setData={setLogboek} /> : <TabFoutmelding />)}
+      {!tabLaden && tab === "verslagen" && (verslagen ? (
+        <VerslagenLijst
+          data={verslagen}
+          toonSchoolKolom={false}
+          onGewijzigd={(verslagId, wijziging) => setVerslagen((huidig) => (huidig ? huidig.map((v) => (v.verslagId === verslagId ? { ...v, ...wijziging } : v)) : huidig))}
+          onVerwijderd={(verslagId) => {
+            setVerslagen((huidig) => (huidig ? huidig.filter((v) => v.verslagId !== verslagId) : huidig));
+            void herlaadBasisEnAandacht();
+          }}
+        />
+      ) : (
+        <TabFoutmelding />
+      ))}
+      {!tabLaden && tab === "logboek" && (logboek ? (
+        <LogboekLijst
+          data={logboek}
+          onGewijzigd={(id, wijziging) => setLogboek((huidig) => (huidig ? huidig.map((i) => (i.id === id ? { ...i, ...wijziging } : i)) : huidig))}
+          onVerwijderd={(id) => setLogboek((huidig) => (huidig ? huidig.filter((i) => i.id !== id) : huidig))}
+        />
+      ) : (
+        <TabFoutmelding />
+      ))}
       {!tabLaden && tab === "bestanden" && (bestanden ? <BestandenTab data={bestanden} /> : <TabFoutmelding />)}
     </div>
   );
@@ -421,219 +437,6 @@ function TrainingenTab({ data }: { data: AdminTrainingRegel[] }) {
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function VerslagenTab({ data }: { data: AdminSchoolVerslagRegel[] }) {
-  if (data.length === 0) return <div className="ml-sales__leeg">Nog geen verslagen.</div>;
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table className="ml-sales__tabel">
-        <thead>
-          <tr>
-            <th>Datum</th>
-            <th>Trainer</th>
-            <th>Training</th>
-            <th>Status</th>
-            <th>Bron</th>
-            <th>Training-update</th>
-            <th>School-update</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((v) => (
-            <tr key={v.verslagId}>
-              <td>{formatKorteDatumTijd(v.wanneer)}</td>
-              <td>
-                <Link href={`/admin/trainers/detail?id=${v.trainerId}`}>{v.trainerNaam}</Link>
-              </td>
-              <td>{v.trainingNaam}</td>
-              <td>
-                <AdminStatusBadge label={VERSLAG_STATUS_LABEL[v.status]} kleur={VERSLAG_STATUS_KLEUR[v.status]} />
-              </td>
-              <td>{v.bron === "telefoon" ? "Telefonisch" : "Portal"}</td>
-              <td>
-                <AdminStatusBadge label={WRITEBACK_STATUS_LABEL[v.trainingUpdateStatus]} kleur={WRITEBACK_STATUS_KLEUR[v.trainingUpdateStatus]} />
-              </td>
-              <td>
-                <AdminStatusBadge label={WRITEBACK_STATUS_LABEL[v.schoolUpdateStatus]} kleur={WRITEBACK_STATUS_KLEUR[v.schoolUpdateStatus]} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/**
- * Correctieronde Admin Traineromgeving (2026-08-25, spec §2) — Bewerken/
- * Verwijderen per HANDMATIG logboekitem. Elke rij hier is per definitie
- * handmatig (zie lib/trainers/logboek.ts se toelichting bij
- * wijzigLogboekItemAlsAdmin/verwijderLogboekItemAlsAdmin) — geen aparte
- * "is dit automatisch"-check nodig, deze hele tab kent alleen handmatige
- * items. `setData` werkt rechtstreeks op de tab-state van DetailVoorSchool
- * (geen refetch nodig) zodat de tijdlijn direct de actuele gegevens toont
- * (spec: "Na opslaan/verwijderen moet de schooltijdlijn direct de actuele
- * gegevens tonen").
- */
-function LogboekTab({ data, setData }: { data: AdminSchoolLogboekRegel[]; setData: (updater: (huidig: AdminSchoolLogboekRegel[] | null) => AdminSchoolLogboekRegel[] | null) => void }) {
-  const [bewerkItem, setBewerkItem] = useState<AdminSchoolLogboekRegel | null>(null);
-  const [verwijderBezigId, setVerwijderBezigId] = useState<number | null>(null);
-
-  async function verwijder(item: AdminSchoolLogboekRegel) {
-    if (!window.confirm("Weet je zeker dat je dit logboekitem wilt verwijderen?")) return;
-    setVerwijderBezigId(item.id);
-    try {
-      const response = await fetch(`/api/admin/trainers/logboek/${item.id}`, { method: "DELETE", credentials: "include" });
-      if (!response.ok) {
-        window.alert("Verwijderen is niet gelukt. Probeer het opnieuw.");
-        return;
-      }
-      setData((huidig) => (huidig ? huidig.filter((i) => i.id !== item.id) : huidig));
-    } catch {
-      window.alert("Verwijderen is niet gelukt. Probeer het opnieuw.");
-    } finally {
-      setVerwijderBezigId(null);
-    }
-  }
-
-  return (
-    <>
-      {data.length === 0 ? (
-        <div className="ml-sales__leeg">Nog geen logboekitems.</div>
-      ) : (
-        <div className="ml-sales__logboek">
-          {data.map((item) => (
-            <div className="ml-sales__logboek-item" key={item.id}>
-              <span className="ml-sales__logboek-stip" />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div>
-                  <Link href={`/admin/trainers/detail?id=${item.trainerId}`}>{item.trainerNaam}</Link> — {item.trainingNaam ?? item.tekst}
-                </div>
-                <div className="ml-sales__logboek-meta">
-                  {formatKorteDatumTijd(item.occurredAt)} · {LOGBOEK_TYPE_LABEL[item.type]}
-                </div>
-              </div>
-              <div className="ml-sales__actie-knoppen ml-sales__logboek-item-acties">
-                <button type="button" className="ml-sales__knop" onClick={() => setBewerkItem(item)}>
-                  Bewerken
-                </button>
-                <button type="button" className="ml-sales__knop ml-sales__knop--gevaar" disabled={verwijderBezigId === item.id} onClick={() => verwijder(item)}>
-                  {verwijderBezigId === item.id ? "Bezig…" : "Verwijderen"}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {bewerkItem && (
-        <LogboekBewerkModal
-          item={bewerkItem}
-          onSluiten={() => setBewerkItem(null)}
-          onOpgeslagen={(bijgewerkt) => {
-            setData((huidig) => (huidig ? huidig.map((i) => (i.id === bijgewerkt.id ? { ...i, ...bijgewerkt } : i)) : huidig));
-            setBewerkItem(null);
-          }}
-        />
-      )}
-    </>
-  );
-}
-
-/** "2026-08-28T14:05" in de LOKALE tijd van de browser — zelfde conventie als app/(trainers)/trainers/(portal)/logboek/nieuw/logboek-form.tsx se nuAlsDatetimeLocal, hier vanaf een BESTAANDE ISO-tijdstip i.p.v. "nu". */
-function isoAlsDatetimeLocal(iso: string): string {
-  const datum = new Date(iso);
-  const lokaal = new Date(datum.getTime() - datum.getTimezoneOffset() * 60_000);
-  return lokaal.toISOString().slice(0, 16);
-}
-
-function LogboekBewerkModal({
-  item,
-  onSluiten,
-  onOpgeslagen,
-}: {
-  item: AdminSchoolLogboekRegel;
-  onSluiten: () => void;
-  onOpgeslagen: (item: AdminSchoolLogboekRegel) => void;
-}) {
-  const [type, setType] = useState<AdminSchoolLogboekRegel["type"]>(item.type);
-  const [occurredAt, setOccurredAt] = useState(isoAlsDatetimeLocal(item.occurredAt));
-  const [tekst, setTekst] = useState(item.tekst);
-  const [bezig, setBezig] = useState(false);
-  const [fout, setFout] = useState<string | null>(null);
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (tekst.trim().length === 0) return;
-    setBezig(true);
-    setFout(null);
-    try {
-      const response = await fetch(`/api/admin/trainers/logboek/${item.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ type, occurredAt: new Date(occurredAt).toISOString(), tekst }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setFout(typeof body.error === "string" ? body.error : "Opslaan mislukt. Probeer het opnieuw.");
-        setBezig(false);
-        return;
-      }
-      onOpgeslagen({ ...item, ...body.item });
-    } catch {
-      setFout("Opslaan mislukt — controleer je verbinding en probeer het opnieuw.");
-      setBezig(false);
-    }
-  }
-
-  return (
-    <div className="ml-sales__overlay" onClick={onSluiten}>
-      <div className="ml-sales__overlay-paneel" onClick={(e) => e.stopPropagation()}>
-        <div className="ml-sales__overlay-header">
-          <h2>Logboekitem bewerken</h2>
-          <button type="button" onClick={onSluiten} aria-label="Sluiten">
-            <X size={16} aria-hidden="true" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="ml-sales__overlay-veld">
-            <label htmlFor="logboek-bewerk-type">Type</label>
-            <select id="logboek-bewerk-type" value={type} onChange={(e) => setType(e.target.value as AdminSchoolLogboekRegel["type"])}>
-              {Object.entries(LOGBOEK_TYPE_LABEL).map(([waarde, label]) => (
-                <option key={waarde} value={waarde}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="ml-sales__overlay-veld">
-            <label htmlFor="logboek-bewerk-datum">Datum/tijd</label>
-            <input id="logboek-bewerk-datum" type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} required />
-          </div>
-
-          <div className="ml-sales__overlay-veld">
-            <label htmlFor="logboek-bewerk-tekst">Notitie</label>
-            <textarea id="logboek-bewerk-tekst" value={tekst} onChange={(e) => setTekst(e.target.value)} rows={5} required />
-          </div>
-
-          {fout && <p style={{ color: "#dc2626", fontSize: 12, margin: 0 }}>{fout}</p>}
-
-          <div className="ml-sales__overlay-acties">
-            <button type="button" className="ml-sales__knop" onClick={onSluiten} disabled={bezig}>
-              Annuleren
-            </button>
-            <button type="submit" className="ml-sales__knop ml-sales__knop--primair" disabled={bezig || tekst.trim().length === 0}>
-              {bezig ? "Opslaan…" : "Opslaan"}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }
