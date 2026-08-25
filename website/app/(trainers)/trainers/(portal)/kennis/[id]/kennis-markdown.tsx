@@ -20,7 +20,12 @@ import type { MarkdownHeading } from "@/lib/content/markdown-headings";
 // hekjes als heading, dus een toevallige #### moet ook hier NOOIT als losse
 // heading verschijnen (anders zou de volgorde waarin headings hier worden
 // geconsumeerd niet meer overeenkomen met `headings`).
-const ALLOWED_ELEMENTS: string[] = ["h1", "h2", "h3", "p", "strong", "em", "ul", "ol", "li", "a", "br"];
+// Handleidingronde (2026-08-25) — "img" toegevoegd (opdrachtseis: "bouw de
+// pagina zo dat hier later eenvoudig screenshots tussen de tekst geplaatst
+// kunnen worden") zodat standaard Markdown-afbeeldingssyntax (![alt](url))
+// in trainerkennis- ÉN handleidingtekst voortaan gewoon rendert. Puur
+// additief: bestaande content zonder afbeeldingen rendert ongewijzigd.
+const ALLOWED_ELEMENTS: string[] = ["h1", "h2", "h3", "p", "strong", "em", "ul", "ol", "li", "a", "br", "img"];
 
 // Permanent aanwezig (nooit alleen via JS toegevoegd) zodat de transitie zelf
 // al vanaf de eerste render klaarstaat — het kortstondig markeren bij een
@@ -91,6 +96,11 @@ const COMPONENTS: Components = {
       {children}
     </a>
   ),
+  img: ({ src, alt }) =>
+    typeof src === "string" ? (
+      // eslint-disable-next-line @next/next/no-img-element -- bron kan elke toekomstige afbeeldingslocatie zijn (bv. Blob-storage), geen vaste next/image-domeinallowlist hier nodig voor content die nog niet bestaat.
+      <img src={src} alt={alt ?? ""} className="my-3 block max-w-full rounded-lg border border-grijs-200 shadow-sm" />
+    ) : null,
 };
 
 export interface KennisMarkdownProps {

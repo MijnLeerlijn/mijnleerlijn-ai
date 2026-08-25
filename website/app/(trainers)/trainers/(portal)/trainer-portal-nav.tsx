@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, GraduationCap, NotebookText, School, BookOpen, FolderOpen, CircleUserRound, LogOut } from "lucide-react";
+import { LayoutDashboard, GraduationCap, NotebookText, School, BookOpen, FolderOpen, HelpCircle, CircleUserRound, LogOut } from "lucide-react";
 
 // Alle hrefs hieronder zijn het KALE pad zoals de browser dat ziet (de
 // proxy.ts-rewrite naar /trainers/* is voor de browser onzichtbaar) — zie de
@@ -29,6 +29,14 @@ import { LayoutDashboard, GraduationCap, NotebookText, School, BookOpen, FolderO
 // navitem is uitsluitend de algemene, trainerbrede bestandenpagina
 // (/bestanden), bewust een ander icoon dan Kennis (BookOpen) om de twee
 // concepten ook visueel niet te laten samenvallen.
+//
+// Handleidingronde (2026-08-25) — "Handleiding" toegevoegd ná Bestanden, vóór
+// Profiel (opdrachtseis, exacte volgorde: "Dashboard | Trainingen | Logboek |
+// Scholen | Kennis | Bestanden | Handleiding" — Profiel/Uitloggen ongewijzigd).
+// HelpCircle i.p.v. BookOpen (Kennis): een "?"-icoon sluit aan bij het
+// toekomstige "? Uitleg"-vocabulaire dat elders contextueel naar een
+// handleidinghoofdstuk moet gaan verwijzen (nog niet gebouwd, wel structureel
+// voorbereid — zie handleiding/page.tsx) en voorkomt visuele verwarring met Kennis.
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/trainingen", label: "Trainingen", icon: GraduationCap, exact: false },
@@ -36,6 +44,7 @@ const NAV_ITEMS = [
   { href: "/scholen", label: "Scholen", icon: School, exact: false },
   { href: "/kennis", label: "Kennis", icon: BookOpen, exact: false },
   { href: "/bestanden", label: "Bestanden", icon: FolderOpen, exact: false },
+  { href: "/handleiding", label: "Handleiding", icon: HelpCircle, exact: false },
   { href: "/profiel", label: "Profiel", icon: CircleUserRound, exact: false },
 ] as const;
 

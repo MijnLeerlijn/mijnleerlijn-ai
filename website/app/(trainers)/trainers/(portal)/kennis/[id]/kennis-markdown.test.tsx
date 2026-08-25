@@ -99,3 +99,24 @@ describe("KennisMarkdown — veiligheid", () => {
     expect(img).toBeNull();
   });
 });
+
+// Handleidingronde (2026-08-25) — "img" toegevoegd aan de allowlist zodat
+// screenshots later eenvoudig via standaard Markdown-afbeeldingssyntax
+// (![alt](url)) tussengevoegd kunnen worden (handleiding/page.tsx). Puur
+// additief: dit bestaat los van de rehype-raw-veiligheidsgrens hierboven —
+// alleen ECHTE Markdown-afbeeldingssyntax (die remark zelf al tot een image-
+// knoop parseert, geen ruwe HTML) komt hierdoor terecht.
+describe("KennisMarkdown — afbeeldingen", () => {
+  it("rendert standaard Markdown-afbeeldingssyntax als een echt img-element met src en alt", () => {
+    const { container } = render(<KennisMarkdown tekst={"![Schermafbeelding van het dashboard](https://voorbeeld.test/dashboard.png)"} headings={[]} />);
+    const img = container.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute("src", "https://voorbeeld.test/dashboard.png");
+    expect(img).toHaveAttribute("alt", "Schermafbeelding van het dashboard");
+  });
+
+  it("blijft ruwe <img onerror=...>-HTML nog altijd weigeren, ook na het toevoegen van img aan de allowlist", () => {
+    const { container } = render(<KennisMarkdown tekst={'<img src=x onerror="alert(1)">'} headings={[]} />);
+    expect(container.querySelector("img")).toBeNull();
+  });
+});
