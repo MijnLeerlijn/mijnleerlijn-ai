@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Geïmporteerde Gmail-helpdesk-threads (lib/gmail/sync.ts, app/api/gmail/sync)
 // — bevat persoonsgegevens van ouders/leerkrachten die de helpdesk mailen,
@@ -32,10 +33,10 @@ export const SupportThreads: CollectionConfig = {
     },
   },
   access: {
-    read: adminOnly,
+    read: permissieOnly("helpdesk-ai.threads", adminOnly),
     create: () => false,
-    update: adminOnly,
-    delete: adminOnly,
+    update: permissieOnly("helpdesk-ai.threads", adminOnly),
+    delete: permissieOnly("helpdesk-ai.threads", adminOnly),
   },
   indexes: [{ fields: ["gmailThreadId"], unique: true }],
   fields: [

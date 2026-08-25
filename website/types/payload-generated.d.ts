@@ -253,6 +253,22 @@ export interface User {
    * Leeg = centrale redacteur (mag centrale artikelen schrijven). Ingevuld = variant-redacteur (mag uitsluitend afwijkingen voor déze variant schrijven, nooit de centrale boom). Zie docs/CONTENT-MODEL.md.
    */
   variantScope?: (number | null) | Variant;
+  /**
+   * Volledige toegang = ziet alles waar de rol (hiernaast) al recht op geeft — de standaard voor elk account. Beperkt via permissies = uitsluitend de hieronder aangevinkte hoofdmenu's/submenu's, ook al zou de rol méér toestaan. Dit veld van het EIGEN account is nooit wijzigbaar (ook niet door een beheerder) — zo kan niemand zichzelf per ongeluk buitensluiten of de eigen rechten verhogen; alleen een ánder beheerdersaccount kan dit hier aanpassen.
+   */
+  permissionMode?: ('full' | 'restricted') | null;
+  /**
+   * Alleen relevant bij 'Beperkt via permissies'.
+   */
+  permissions?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedAt: string;
   createdAt: string;
   email: string;
@@ -2680,6 +2696,8 @@ export interface UsersSelect<T extends boolean = true> {
   name?: T;
   role?: T;
   variantScope?: T;
+  permissionMode?: T;
+  permissions?: T;
   updatedAt?: T;
   createdAt?: T;
   email?: T;

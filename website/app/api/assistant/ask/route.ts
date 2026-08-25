@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isEditor } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { processQuestion } from "@/lib/assistant/process-question";
 
@@ -27,6 +28,11 @@ export async function POST(request: NextRequest) {
       { error: "Alleen ingelogde gebruikers mogen de assistent gebruiken." },
       { status: 403 }
     );
+  }
+
+  // Admin gebruikersbeheer (2026-08-25) — permissiecheck naast de bestaande rolcheck.
+  if (!heeftAdminPermissie(sessieControle.user, "helpdesk-ai.gesprekken")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   let body: unknown;

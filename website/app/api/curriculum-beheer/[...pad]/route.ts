@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin, type AuthUser } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { stuurCurriculumBeheerVerzoek } from "@/lib/curriculum-beheer/client";
 
@@ -44,6 +45,12 @@ async function geauthenticeerdeBeheerder(request: NextRequest): Promise<AuthUser
   if (!user || !isAdmin(user)) {
     return NextResponse.json(
       { error: "Alleen beheerders mogen Curriculum Werkplaats-omgevingen beheren." },
+      { status: 403 }
+    );
+  }
+  if (!heeftAdminPermissie(user, "curriculum-werkplaats.werkplaats")) {
+    return NextResponse.json(
+      { error: "Onvoldoende rechten voor dit onderdeel." },
       { status: 403 }
     );
   }

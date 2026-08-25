@@ -1,3 +1,4 @@
+import { ToegangMenuField as ToegangMenuField_e94c9c0bec48817ccd5c52154ba16da7 } from '@/payload/components/ToegangMenuField'
 import { RetryTelefonieButton as RetryTelefonieButton_02096cccaa85a3e1eff5e106eeb19372 } from '@/payload/components/RetryTelefonieButton'
 import { DownloadTrainerBestandKnop as DownloadTrainerBestandKnop_10bec0d25d97da480d52ccd5904fbb97 } from '@/payload/components/DownloadTrainerBestandKnop'
 import { VariantOverridesLink as VariantOverridesLink_5a074d4699996afe996da3888537d5f4 } from '@/payload/components/VariantOverridesLink'
@@ -65,6 +66,7 @@ import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } f
 
 /** @type import('payload').ImportMap */
 export const importMap = {
+  "@/payload/components/ToegangMenuField#ToegangMenuField": ToegangMenuField_e94c9c0bec48817ccd5c52154ba16da7,
   "@/payload/components/RetryTelefonieButton#RetryTelefonieButton": RetryTelefonieButton_02096cccaa85a3e1eff5e106eeb19372,
   "@/payload/components/DownloadTrainerBestandKnop#DownloadTrainerBestandKnop": DownloadTrainerBestandKnop_10bec0d25d97da480d52ccd5904fbb97,
   "@/payload/components/VariantOverridesLink#VariantOverridesLink": VariantOverridesLink_5a074d4699996afe996da3888537d5f4,

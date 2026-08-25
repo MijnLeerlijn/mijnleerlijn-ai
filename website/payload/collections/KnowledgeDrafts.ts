@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // AI-gegenereerde conceptkennisartikelen — zie lib/support/analyze.ts (de
 // enige plek die deze collectie aanmaakt, via app/api/support/analyze).
@@ -25,10 +26,10 @@ export const KnowledgeDrafts: CollectionConfig = {
     },
   },
   access: {
-    read: adminOnly,
+    read: permissieOnly("helpdesk-ai.drafts", adminOnly),
     create: () => false,
-    update: adminOnly,
-    delete: adminOnly,
+    update: permissieOnly("helpdesk-ai.drafts", adminOnly),
+    delete: permissieOnly("helpdesk-ai.drafts", adminOnly),
   },
   fields: [
     { name: "title", type: "text", required: true, label: "Titel" },

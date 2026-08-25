@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin, isEditor } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 
 // Haalt één eerder gesprek volledig op (vraag, antwoord, bronnen, feedback)
@@ -20,6 +21,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       { error: "Alleen ingelogde gebruikers mogen gesprekken bekijken." },
       { status: 403 }
     );
+  }
+
+  // Admin gebruikersbeheer (2026-08-25) — permissiecheck naast de rolcheck,
+  // uitsluitend hier (lijstniveau); de eigen-gesprek-of-admin-check verderop
+  // blijft ongemoeid.
+  if (!heeftAdminPermissie(sessieControle.user, "helpdesk-ai.gesprekken")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   const numeriekeId = Number(id);

@@ -56,6 +56,7 @@ import * as migration_20260830_100000_trainer_bestanden_v1 from './20260830_1000
 import * as migration_20260830_120000_trainer_kennisvragen_v1 from './20260830_120000_trainer_kennisvragen_v1';
 import * as migration_20260830_130000_trainer_kennisversies_embedding_chunks from './20260830_130000_trainer_kennisversies_embedding_chunks';
 import * as migration_20260901_090000_gedeelde_chats_v1 from './20260901_090000_gedeelde_chats_v1';
+import * as migration_20260901_100000_admin_gebruikersbeheer_permissies from './20260901_100000_admin_gebruikersbeheer_permissies';
 
 export const migrations = [
   {
@@ -347,5 +348,10 @@ export const migrations = [
     up: migration_20260901_090000_gedeelde_chats_v1.up,
     down: migration_20260901_090000_gedeelde_chats_v1.down,
     name: '20260901_090000_gedeelde_chats_v1',
+  },
+  {
+    up: migration_20260901_100000_admin_gebruikersbeheer_permissies.up,
+    down: migration_20260901_100000_admin_gebruikersbeheer_permissies.down,
+    name: '20260901_100000_admin_gebruikersbeheer_permissies',
   },
 ];

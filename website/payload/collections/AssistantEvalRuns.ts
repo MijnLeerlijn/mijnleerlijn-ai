@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Eén record per keer dat een testvraag (AssistantEvalQuestions) door de
 // volledige RAG-pijplijn is gehaald via de chatbot-evaluatieomgeving — zie
@@ -28,10 +29,10 @@ export const AssistantEvalRuns: CollectionConfig = {
       "Uitkomsten van chatbot-evaluatieruns (/admin/globals/assistant-eval) — diagnostiek + handmatige beoordeling per testvraag.",
   },
   access: {
-    read: adminOnly,
-    create: adminOnly,
-    update: adminOnly,
-    delete: adminOnly,
+    read: permissieOnly("helpdesk-ai.evaluatieruns", adminOnly),
+    create: permissieOnly("helpdesk-ai.evaluatieruns", adminOnly),
+    update: permissieOnly("helpdesk-ai.evaluatieruns", adminOnly),
+    delete: permissieOnly("helpdesk-ai.evaluatieruns", adminOnly),
   },
   fields: [
     {

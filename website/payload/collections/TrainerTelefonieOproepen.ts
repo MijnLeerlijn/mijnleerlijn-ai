@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Traineromgeving V1, Ronde 3.5 (2026-08-25) — telefonische verslaglegging:
 // call-state + admindiagnostiek voor één binnenkomend telefoongesprek (spec
@@ -47,10 +48,10 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
       "Call-state en diagnostiek voor telefonisch ingesproken trainingsverslagen (Ronde 3.5). Bevat nooit de volledige transcriptietekst of audio — die staat (indien geslaagd) in het gekoppelde trainingsverslag. Nooit rechtstreeks bewerken.",
   },
   access: {
-    read: adminOnly,
+    read: permissieOnly("trainers.telefonie", adminOnly),
     create: () => false,
     update: () => false,
-    delete: adminOnly,
+    delete: permissieOnly("trainers.telefonie", adminOnly),
   },
   fields: [
     {

@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { anyEditor, centralEditorOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Zie docs/DATA-MODEL.md §Media. Opslag zelf wordt buiten deze collection om
 // geregeld door lib/media/private-blob-adapter.ts (via
@@ -25,9 +26,9 @@ export const Media: CollectionConfig = {
   },
   access: {
     read: () => true,
-    create: anyEditor,
-    update: anyEditor,
-    delete: centralEditorOnly,
+    create: permissieOnly("algemeen.media", anyEditor),
+    update: permissieOnly("algemeen.media", anyEditor),
+    delete: permissieOnly("algemeen.media", centralEditorOnly),
   },
   upload: {
     mimeTypes: [

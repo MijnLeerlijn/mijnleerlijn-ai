@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { centralEditorOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Redactioneel gecureerde "Net bijgewerkt"-lijst (homepage/updates-pagina) —
 // zie lib/data/updates.ts (Fase 3-dummydata die dit vervangt). Titel/categorie
@@ -17,9 +18,9 @@ export const Updates: CollectionConfig = {
   },
   access: {
     read: () => true,
-    create: centralEditorOnly,
-    update: centralEditorOnly,
-    delete: centralEditorOnly,
+    create: permissieOnly("algemeen.updates", centralEditorOnly),
+    update: permissieOnly("algemeen.updates", centralEditorOnly),
+    delete: permissieOnly("algemeen.updates", centralEditorOnly),
   },
   fields: [
     { name: "article", type: "relationship", relationTo: "articles", required: true, label: "Artikel" },

@@ -1,5 +1,6 @@
 import type { GlobalConfig } from "payload";
 import { anyEditor } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Sales-assistent V1 (2026-08-14) — accountbrede Sales-instellingen, zelfde
 // toegangspatroon als HelpdeskInstellingen.ts. Puur functioneel-gedeelde
@@ -13,8 +14,8 @@ export const SalesInstellingen: GlobalConfig = {
     description: "Accountbrede instellingen voor de Sales-assistent.",
   },
   access: {
-    read: anyEditor,
-    update: anyEditor,
+    read: permissieOnly("sales.instellingen", anyEditor),
+    update: permissieOnly("sales.instellingen", anyEditor),
   },
   fields: [
     {

@@ -31,6 +31,9 @@ interface BeheerDashboardUser {
   id: number | string;
   collection: string;
   name?: string | null;
+  // Admin gebruikersbeheer (2026-08-25) — zie payload/access/menu-permissions.ts.
+  permissionMode?: "full" | "restricted" | null;
+  permissions?: unknown;
 }
 
 interface BeheerDashboardProps {
@@ -42,7 +45,7 @@ interface BeheerDashboardProps {
 export async function BeheerDashboard({ permissions, user, payload }: BeheerDashboardProps) {
   const naam = user?.name?.trim();
   const geselecteerdeHrefs = await getDashboardSelection(payload, user ?? null);
-  const groepen = getSelectedDashboardCards(permissions, geselecteerdeHrefs);
+  const groepen = getSelectedDashboardCards(permissions, user ?? null, geselecteerdeHrefs);
   const heeftKeuze = groepen.length > 0;
 
   return (

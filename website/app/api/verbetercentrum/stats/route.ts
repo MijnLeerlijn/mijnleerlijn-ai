@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { computeStats, type ConversatieVoorStats } from "@/lib/verbetercentrum/compute-stats";
 
@@ -23,6 +24,9 @@ export async function GET(request: NextRequest) {
   );
   if (!isAdmin(sessieControle.user)) {
     return NextResponse.json({ error: "Alleen beheerders mogen dit." }, { status: 403 });
+  }
+  if (!heeftAdminPermissie(sessieControle.user, "helpdesk-ai.verbetercentrum")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   try {

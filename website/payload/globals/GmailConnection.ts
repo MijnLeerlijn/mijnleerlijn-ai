@@ -1,5 +1,6 @@
 import type { GlobalConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Eén Gmail-helpdeskaccount-koppeling (OAuth 2.0) — een Global, geen
 // Collection: er bestaat per definitie precies één koppeling, geen lijst.
@@ -22,8 +23,8 @@ export const GmailConnection: GlobalConfig = {
       "Gmail-helpdeskkoppeling (alleen-lezen toegang). Koppelen/herkoppelen: log in op /admin en open /api/gmail/oauth/start in dezelfde browser.",
   },
   access: {
-    read: adminOnly,
-    update: adminOnly,
+    read: permissieOnly("helpdesk-ai.gmail", adminOnly),
+    update: permissieOnly("helpdesk-ai.gmail", adminOnly),
   },
   fields: [
     {

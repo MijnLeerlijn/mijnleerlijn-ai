@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { verwijderTrainerAccountAlsAdmin, zetTrainerActiefStatus } from "@/lib/trainers/trainer-account";
 
@@ -20,6 +21,7 @@ async function geauthenticeerdeBeheerder(request: NextRequest) {
   const payload = await getPayload({ config });
   const sessieControle = await verifyAdminSessionCookie(payload, request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
   if (!isAdmin(sessieControle.user)) return null;
+  if (!heeftAdminPermissie(sessieControle.user, "trainers.accounts")) return null;
   return payload;
 }
 

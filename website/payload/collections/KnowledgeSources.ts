@@ -1,6 +1,7 @@
 import type { CollectionBeforeValidateHook, CollectionConfig } from "payload";
 import { ValidationError } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 import { bepaalBronrol } from "@/lib/embeddings/bronrol";
 
 function variantIds(waarde: unknown): number[] {
@@ -133,10 +134,10 @@ export const KnowledgeSources: CollectionConfig = {
     },
   },
   access: {
-    read: adminOnly,
-    create: adminOnly,
-    update: adminOnly,
-    delete: adminOnly,
+    read: permissieOnly("helpdesk-ai.kennisbronnen", adminOnly),
+    create: permissieOnly("helpdesk-ai.kennisbronnen", adminOnly),
+    update: permissieOnly("helpdesk-ai.kennisbronnen", adminOnly),
+    delete: permissieOnly("helpdesk-ai.kennisbronnen", adminOnly),
   },
   hooks: {
     beforeValidate: [voorkomDubbeleAchtergrondkennisbasis],

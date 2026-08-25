@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Vaste testvragenset voor de chatbot-evaluatieomgeving (zie
 // payload/collections/AssistantEvalRuns.ts en payload/globals/AssistantEval.ts)
@@ -19,10 +20,10 @@ export const AssistantEvalQuestions: CollectionConfig = {
       "Vaste testvragenset voor de chatbot-evaluatieomgeving (/admin/globals/assistant-eval). Zie payload/seed/eval-questions.ts.",
   },
   access: {
-    read: adminOnly,
-    create: adminOnly,
-    update: adminOnly,
-    delete: adminOnly,
+    read: permissieOnly("helpdesk-ai.evaluatievragen", adminOnly),
+    create: permissieOnly("helpdesk-ai.evaluatievragen", adminOnly),
+    update: permissieOnly("helpdesk-ai.evaluatievragen", adminOnly),
+    delete: permissieOnly("helpdesk-ai.evaluatievragen", adminOnly),
   },
   fields: [
     { name: "question", type: "textarea", required: true, label: "Vraag" },

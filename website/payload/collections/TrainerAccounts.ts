@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 import { normaliseerNederlandsNummer } from "@/lib/trainers/telefonie/nummer";
 
 // Traineromgeving V1, Ronde 1 (2026-08-19) — eigen auth-collectie voor
@@ -52,10 +53,10 @@ export const TrainerAccounts: CollectionConfig = {
     description: "Accounts voor trainers.mijnleerlijn.chat — nooit bruikbaar om in te loggen op de gewone /admin.",
   },
   access: {
-    create: adminOnly,
-    read: adminOnly,
-    update: adminOnly,
-    delete: adminOnly,
+    create: permissieOnly("trainers.accounts", adminOnly),
+    read: permissieOnly("trainers.accounts", adminOnly),
+    update: permissieOnly("trainers.accounts", adminOnly),
+    delete: permissieOnly("trainers.accounts", adminOnly),
   },
   // Herverificatieronde (na oplevering volledig traineraccountbeheer) — live
   // tegen echte Postgres getest en zo ontdekt: Payload's eigen loginOperation

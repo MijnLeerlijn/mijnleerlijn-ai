@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { DefaultTemplate } from "@payloadcms/next/templates";
 import { formatAdminURL } from "payload/shared";
 import { PAYLOAD_SESSION_COOKIE_NAME, verifyAdminSessionCookie } from "@/lib/auth/verify-session";
+import { heeftAdminPermissie, type AuthUserMetPermissies } from "@/payload/access/menu-permissions";
 import { DownloadbeheerView } from "./DownloadbeheerView";
 import { DownloadcategorieenView } from "./DownloadcategorieenView";
 import { VerbetercentrumView } from "./VerbetercentrumView";
@@ -88,10 +89,19 @@ async function InAdminShell({
   children,
   props,
   viewType,
+  requiredPermission,
 }: {
   children: ReactNode;
   props: AdminViewServerProps;
   viewType: string;
+  /**
+   * Admin gebruikersbeheer (2026-08-25) — de permissie-ID (lib/admin-nav/
+   * nav-groups.ts, bv. "trainers.telefonie") die bij DEZE view hoort.
+   * Verplicht voor elke aanroeper hieronder — géén view mag hier ongemerkt
+   * zonder gate blijven staan (opdrachtseis §4: directe-URL-toegang moet net
+   * zo hard afgedwongen worden als de navigatiezichtbaarheid).
+   */
+  requiredPermission: string;
 }) {
   const { initPageResult, params, searchParams } = props;
   const { req } = initPageResult;
@@ -114,6 +124,18 @@ async function InAdminShell({
     redirect(`${loginUrl}?redirect=${encodeURIComponent(huidigePad)}`);
   }
 
+  // Admin gebruikersbeheer (2026-08-25) — dezelfde heeftAdminPermissie() als
+  // de navigatiefilter (lib/admin-nav/nav-groups.ts) en elke API-route/
+  // collectie-access hieronder, hier toegepast op de PAGINA zelf: een
+  // verborgen menu-item mag niet alleen visueel verborgen zijn (opdrachtseis
+  // §4) — directe navigatie naar bv. /admin/curriculum-werkplaats moet voor
+  // een gebruiker zonder die permissie precies zo geweigerd worden. Geen
+  // redirect (dat zou een andere, mogelijk óók ontoegankelijke pagina
+  // kunnen suggereren) — in plaats daarvan hetzelfde "geen toegang"-patroon
+  // dat Payload's EIGEN native collectie-/global-pagina's al tonen wanneer
+  // access.read false teruggeeft (in de shell, geen redirect, geen 500).
+  const magToegang = heeftAdminPermissie(sessieControle.user as AuthUserMetPermissies, requiredPermission);
+
   return (
     <DefaultTemplate
       i18n={req.i18n}
@@ -127,14 +149,23 @@ async function InAdminShell({
       viewType={viewType}
       visibleEntities={initPageResult.visibleEntities}
     >
-      {children}
+      {magToegang ? children : <GeenToegang />}
     </DefaultTemplate>
+  );
+}
+
+function GeenToegang() {
+  return (
+    <div className="ml-geen-toegang">
+      <h1>Geen toegang</h1>
+      <p>Je account heeft geen toegang tot dit onderdeel. Neem contact op met een beheerder als je hier wél toegang toe zou moeten hebben.</p>
+    </div>
   );
 }
 
 export function DownloadbeheerViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="downloadbeheer">
+    <InAdminShell props={props} viewType="downloadbeheer" requiredPermission="algemeen.downloadbeheer">
       <DownloadbeheerView />
     </InAdminShell>
   );
@@ -142,7 +173,7 @@ export function DownloadbeheerViewShell(props: AdminViewServerProps) {
 
 export function DownloadcategorieenViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="downloadcategorieen">
+    <InAdminShell props={props} viewType="downloadcategorieen" requiredPermission="algemeen.downloadcategorieen">
       <DownloadcategorieenView />
     </InAdminShell>
   );
@@ -150,7 +181,7 @@ export function DownloadcategorieenViewShell(props: AdminViewServerProps) {
 
 export function VerbetercentrumViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="verbetercentrum">
+    <InAdminShell props={props} viewType="verbetercentrum" requiredPermission="helpdesk-ai.verbetercentrum">
       <VerbetercentrumView />
     </InAdminShell>
   );
@@ -158,7 +189,7 @@ export function VerbetercentrumViewShell(props: AdminViewServerProps) {
 
 export function HelpdeskVragenViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="helpdeskVragen">
+    <InAdminShell props={props} viewType="helpdeskVragen" requiredPermission="helpdesk-ai.vragen">
       <HelpdeskVragenView />
     </InAdminShell>
   );
@@ -166,7 +197,7 @@ export function HelpdeskVragenViewShell(props: AdminViewServerProps) {
 
 export function VariantenViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="varianten">
+    <InAdminShell props={props} viewType="varianten" requiredPermission="algemeen.varianten">
       <VariantenView />
     </InAdminShell>
   );
@@ -174,7 +205,7 @@ export function VariantenViewShell(props: AdminViewServerProps) {
 
 export function KennisbasisViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="kennisbasis">
+    <InAdminShell props={props} viewType="kennisbasis" requiredPermission="helpdesk-ai.kennisbasis">
       <KennisbasisView />
     </InAdminShell>
   );
@@ -182,7 +213,7 @@ export function KennisbasisViewShell(props: AdminViewServerProps) {
 
 export function CurriculumWerkplaatsViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="curriculumWerkplaats">
+    <InAdminShell props={props} viewType="curriculumWerkplaats" requiredPermission="curriculum-werkplaats.werkplaats">
       <CurriculumWerkplaatsView />
     </InAdminShell>
   );
@@ -190,7 +221,7 @@ export function CurriculumWerkplaatsViewShell(props: AdminViewServerProps) {
 
 export function CreatorViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="creator">
+    <InAdminShell props={props} viewType="creator" requiredPermission="creator.creator">
       <CreatorView />
     </InAdminShell>
   );
@@ -198,7 +229,7 @@ export function CreatorViewShell(props: AdminViewServerProps) {
 
 export function SalesVandaagViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="salesVandaag">
+    <InAdminShell props={props} viewType="salesVandaag" requiredPermission="sales.overzicht">
       <SalesVandaagView />
     </InAdminShell>
   );
@@ -206,15 +237,17 @@ export function SalesVandaagViewShell(props: AdminViewServerProps) {
 
 export function SalesScholenViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="salesScholen">
+    <InAdminShell props={props} viewType="salesScholen" requiredPermission="sales.scholen">
       <SalesScholenView />
     </InAdminShell>
   );
 }
 
+// Drill-down vanaf Sales → Scholen (geen eigen nav-groups.ts-item) — erft de
+// permissie van de lijstpagina waar hij altijd vanuit bereikt wordt.
 export function SalesSchooldetailViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="salesSchooldetail">
+    <InAdminShell props={props} viewType="salesSchooldetail" requiredPermission="sales.scholen">
       <SalesSchooldetailView />
     </InAdminShell>
   );
@@ -222,15 +255,17 @@ export function SalesSchooldetailViewShell(props: AdminViewServerProps) {
 
 export function SalesActiesViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="salesActies">
+    <InAdminShell props={props} viewType="salesActies" requiredPermission="sales.acties">
       <SalesActiesView />
     </InAdminShell>
   );
 }
 
+// TIJDELIJK diagnosescherm, geen eigen nav-groups.ts-item — erft de
+// permissie van het bredere Sales-onderdeel waar het bij hoort.
 export function SalesMondayDiagnoseViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="salesMondayDiagnose">
+    <InAdminShell props={props} viewType="salesMondayDiagnose" requiredPermission="sales.overzicht">
       <SalesMondayDiagnoseView />
     </InAdminShell>
   );
@@ -238,10 +273,11 @@ export function SalesMondayDiagnoseViewShell(props: AdminViewServerProps) {
 
 // Traineromgeving-onderzoek (2026-08-19) — TIJDELIJK, zie
 // TrainersMondayDiagnoseView.tsx se moduletoelichting voor de volledige
-// opruimlijst.
+// opruimlijst. Geen eigen nav-groups.ts-item — erft de permissie van het
+// bredere Trainers-onderdeel waar het bij hoort.
 export function TrainersMondayDiagnoseViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="trainersMondayDiagnose">
+    <InAdminShell props={props} viewType="trainersMondayDiagnose" requiredPermission="trainers.dashboard">
       <TrainersMondayDiagnoseView />
     </InAdminShell>
   );
@@ -250,15 +286,17 @@ export function TrainersMondayDiagnoseViewShell(props: AdminViewServerProps) {
 // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard (spec §1-§3).
 export function TrainersOverzichtViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="trainersOverzicht">
+    <InAdminShell props={props} viewType="trainersOverzicht" requiredPermission="trainers.dashboard">
       <TrainersOverzichtView />
     </InAdminShell>
   );
 }
 
+// Drill-down vanaf het Trainerdashboard (geen eigen nav-groups.ts-item) —
+// erft de permissie van de lijstpagina waar hij altijd vanuit bereikt wordt.
 export function TrainerDetailViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="trainersDetail">
+    <InAdminShell props={props} viewType="trainersDetail" requiredPermission="trainers.dashboard">
       <TrainerDetailView />
     </InAdminShell>
   );
@@ -266,7 +304,7 @@ export function TrainerDetailViewShell(props: AdminViewServerProps) {
 
 export function TrainersTrainingenViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="trainersTrainingen">
+    <InAdminShell props={props} viewType="trainersTrainingen" requiredPermission="trainers.trainingen">
       <TrainersTrainingenView />
     </InAdminShell>
   );
@@ -274,7 +312,7 @@ export function TrainersTrainingenViewShell(props: AdminViewServerProps) {
 
 export function TrainersTodoViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="trainersTodo">
+    <InAdminShell props={props} viewType="trainersTodo" requiredPermission="trainers.todo">
       <TrainersTodoView />
     </InAdminShell>
   );
@@ -282,16 +320,17 @@ export function TrainersTodoViewShell(props: AdminViewServerProps) {
 
 export function TrainersActiviteitViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="trainersActiviteit">
+    <InAdminShell props={props} viewType="trainersActiviteit" requiredPermission="trainers.activiteit">
       <TrainersActiviteitView />
     </InAdminShell>
   );
 }
 
 // Traineromgeving V2, Fase 5 (2026-08-24) — Admin Schooldetail (spec §1).
+// Drill-down vanaf het Trainerdashboard (geen eigen nav-groups.ts-item).
 export function SchoolDetailViewShell(props: AdminViewServerProps) {
   return (
-    <InAdminShell props={props} viewType="trainersSchool">
+    <InAdminShell props={props} viewType="trainersSchool" requiredPermission="trainers.dashboard">
       <SchoolDetailView />
     </InAdminShell>
   );

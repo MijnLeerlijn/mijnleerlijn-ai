@@ -1,5 +1,6 @@
 import type { Access, GlobalConfig } from "payload";
 import { anyEditor } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // TIJDELIJKE DIAGNOSE (2026-08-11) — verwijderen zodra de oorzaak van de
 // "You are not allowed to perform this action"-fout in productie bevestigd
@@ -36,7 +37,7 @@ export const HelpdeskInstellingen: GlobalConfig = {
   },
   access: {
     read: () => true,
-    update: anyEditorMetDiagnose,
+    update: permissieOnly("algemeen.instellingen", anyEditorMetDiagnose),
   },
   fields: [
     {

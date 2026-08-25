@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isEditor } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { maakKennisstukVanMail } from "@/lib/creator/mail-to-knowledge";
 
@@ -16,6 +17,11 @@ export async function POST(request: NextRequest) {
   const sessieControle = await verifyAdminSessionCookie(payload, request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
   if (!isEditor(sessieControle.user)) {
     return NextResponse.json({ error: "Alleen beheerders mogen dit." }, { status: 403 });
+  }
+
+  // Admin gebruikersbeheer (2026-08-25) — permissiecheck naast de bestaande rolcheck.
+  if (!heeftAdminPermissie(sessieControle.user, "creator.creator")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   try {

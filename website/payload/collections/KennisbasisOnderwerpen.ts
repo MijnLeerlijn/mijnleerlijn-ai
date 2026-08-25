@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly, anyEditor } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Kennisbasis MijnLeerlijn — intentiebepaling (2026-07-28): BEWUST een ander
 // brontype dan de bestaande, narratieve achtergrondbron ("Kennisbasis
@@ -33,10 +34,10 @@ export const KennisbasisOnderwerpen: CollectionConfig = {
       "Functiegerichte term- en synoniemkennis voor intentiebepaling door de AI Helpdesk — een ANDER brontype dan de centrale Kennisbasis MijnLeerlijn (het narratieve achtergrondverhaal, zie dat menu-item). Bepaalt welke MijnLeerlijn-functie een leerkracht bedoelt, vóórdat er naar een handleiding gezocht wordt.",
   },
   access: {
-    read: anyEditor,
-    create: anyEditor,
-    update: anyEditor,
-    delete: adminOnly,
+    read: permissieOnly("helpdesk-ai.onderwerpen", anyEditor),
+    create: permissieOnly("helpdesk-ai.onderwerpen", anyEditor),
+    update: permissieOnly("helpdesk-ai.onderwerpen", anyEditor),
+    delete: permissieOnly("helpdesk-ai.onderwerpen", adminOnly),
   },
   fields: [
     {

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { optionalEnv } from "@/config/env";
 import { synchroniseerScholenBoard } from "@/lib/sales/sync";
@@ -32,6 +33,13 @@ async function voerSyncUit(request: NextRequest, vereisAdminBijGeenCron: boolean
     const sessieControle = await verifyAdminSessionCookie(payload, request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
     if (!isAdmin(sessieControle.user)) {
       return NextResponse.json({ error: "Niet geautoriseerd." }, { status: 403 });
+    }
+    // Admin gebruikersbeheer (2026-08-25) — alleen op het admin-sessiepad,
+    // nooit op de Vercel Cron-ingang hierboven (die heeft geen "gebruiker",
+    // dus geen permissie om te checken; CRON_SECRET blijft de enige poort
+    // daarvoor).
+    if (!heeftAdminPermissie(sessieControle.user, "sales.overzicht")) {
+      return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
     }
   }
 

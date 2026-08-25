@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { centralEditorOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Citeerbaar bronmateriaal waar artikelen naar kunnen verwijzen bij
 // bronvermelding — bijv. een interne handleiding, een externe link, een
@@ -20,9 +21,9 @@ export const Sources: CollectionConfig = {
   },
   access: {
     read: () => true,
-    create: centralEditorOnly,
-    update: centralEditorOnly,
-    delete: centralEditorOnly,
+    create: permissieOnly("algemeen.bronnen", centralEditorOnly),
+    update: permissieOnly("algemeen.bronnen", centralEditorOnly),
+    delete: permissieOnly("algemeen.bronnen", centralEditorOnly),
   },
   fields: [
     { name: "title", type: "text", required: true, label: "Titel" },

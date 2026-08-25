@@ -1,5 +1,6 @@
 import type { GlobalConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Eenvoudige testpagina voor semantisch zoeken (Sprint 4) — een Global,
 // geen Collection: er is geen "document" om te bewaren, alleen een
@@ -13,8 +14,8 @@ export const KnowledgeSearch: GlobalConfig = {
     description: "Test semantisch zoeken over kennisbronnen, conceptkennisartikelen en artikelen.",
   },
   access: {
-    read: adminOnly,
-    update: adminOnly,
+    read: permissieOnly("helpdesk-ai.zoektester", adminOnly),
+    update: permissieOnly("helpdesk-ai.zoektester", adminOnly),
   },
   fields: [
     {

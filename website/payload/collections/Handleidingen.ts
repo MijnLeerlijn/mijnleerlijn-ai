@@ -8,6 +8,7 @@ import {
   ParagraphFeature,
 } from "@payloadcms/richtext-lexical";
 import { adminOnly, anyEditor, publishedOverrideOrEditor } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 import { bepaalPublicatieVelden } from "@/lib/knowledge/handleiding-publicatie";
 
 // Handleidingbouwer (livegang-afwerking, zie het gesprek): de PRIMAIRE bron
@@ -41,9 +42,9 @@ export const Handleidingen: CollectionConfig = {
   },
   access: {
     read: publishedOverrideOrEditor,
-    create: anyEditor,
-    update: anyEditor,
-    delete: adminOnly,
+    create: permissieOnly("algemeen.handleidingen", anyEditor),
+    update: permissieOnly("algemeen.handleidingen", anyEditor),
+    delete: permissieOnly("algemeen.handleidingen", adminOnly),
   },
   fields: [
     { name: "internTitel", type: "text", required: true, label: "Interne titel" },

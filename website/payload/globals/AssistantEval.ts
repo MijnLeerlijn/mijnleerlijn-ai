@@ -1,5 +1,6 @@
 import type { GlobalConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Chatbot-evaluatieomgeving — een Global, geen Collection: er is geen
 // "document" om te bewaren, alleen een interactief testscherm. Zelfde
@@ -16,8 +17,8 @@ export const AssistantEval: GlobalConfig = {
       "Test de AI-assistent tegen de vaste vragenset (40 vragen) of een losse vraag, met volledige retrieval-diagnostiek en handmatige beoordeling.",
   },
   access: {
-    read: adminOnly,
-    update: adminOnly,
+    read: permissieOnly("helpdesk-ai.evaluatie", adminOnly),
+    update: permissieOnly("helpdesk-ai.evaluatie", adminOnly),
   },
   fields: [
     {

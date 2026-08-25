@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Traineromgeving V2, Fase 3 (2026-08-23) — Bestanden + Deelgroepen. Eén
 // gedeeld model voor zowel schoolbestanden als algemene trainerbestanden
@@ -42,10 +43,10 @@ export const TrainerBestanden: CollectionConfig = {
     description: "Bestanden die trainers uploaden — bij een school, of algemeen (eventueel gedeeld via een deelgroep). Nooit rechtstreeks bewerken — uitsluitend server-side via lib/trainers/bestanden.ts, behalve door een beheerder hier in de admin.",
   },
   access: {
-    read: adminOnly,
+    read: permissieOnly("trainers.bestanden", adminOnly),
     create: () => false,
-    update: adminOnly,
-    delete: adminOnly,
+    update: permissieOnly("trainers.bestanden", adminOnly),
+    delete: permissieOnly("trainers.bestanden", adminOnly),
   },
   hooks: {
     // Ruimt de daadwerkelijke Blob altijd op bij verwijderen — ongeacht of

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin, isEditor } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 
 const GELDIGE_RATINGS = ["nuttig", "niet_nuttig"] as const;
@@ -26,6 +27,13 @@ export async function POST(request: NextRequest) {
   );
   if (!isEditor(sessieControle.user)) {
     return NextResponse.json({ error: "Alleen ingelogde gebruikers mogen feedback geven." }, { status: 403 });
+  }
+
+  // Admin gebruikersbeheer (2026-08-25) — permissiecheck naast de rolcheck,
+  // uitsluitend hier (editorniveau); de eigen-gesprek-of-admin-check verderop
+  // blijft ongemoeid.
+  if (!heeftAdminPermissie(sessieControle.user, "helpdesk-ai.feedback")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   let body: unknown;

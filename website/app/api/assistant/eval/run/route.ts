@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { runAssistantEvaluation } from "@/lib/assistant/evaluate";
 
@@ -27,6 +28,11 @@ export async function POST(request: NextRequest) {
   );
   if (!isAdmin(sessieControle.user)) {
     return NextResponse.json({ error: "Alleen beheerders mogen de chatbot-evaluatie draaien." }, { status: 403 });
+  }
+
+  // Admin gebruikersbeheer (2026-08-25) — permissiecheck naast de bestaande rolcheck.
+  if (!heeftAdminPermissie(sessieControle.user, "helpdesk-ai.evaluatie")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   let body: unknown;

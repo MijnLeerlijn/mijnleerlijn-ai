@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly, anyEditor } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Traineromgeving V2, Fase 3 (2026-08-23) — Bestanden + Deelgroepen. Een
 // deelgroep bepaalt WELKE trainers een algemeen trainerbestand automatisch
@@ -29,10 +30,10 @@ export const TrainerDeelgroepen: CollectionConfig = {
     description: "Groepen waarmee trainers algemene bestanden kunnen delen (bv. 'Montessori-trainers', 'Regio Zuid'). Alleen beheerders kunnen groepen aanmaken/bewerken.",
   },
   access: {
-    read: anyEditor,
-    create: anyEditor,
-    update: anyEditor,
-    delete: adminOnly,
+    read: permissieOnly("trainers.deelgroepen", anyEditor),
+    create: permissieOnly("trainers.deelgroepen", anyEditor),
+    update: permissieOnly("trainers.deelgroepen", anyEditor),
+    delete: permissieOnly("trainers.deelgroepen", adminOnly),
   },
   fields: [
     { name: "naam", type: "text", required: true, label: "Naam" },

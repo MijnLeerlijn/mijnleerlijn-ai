@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { centralEditorOnly } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Structurele, variant-onafhankelijke indeling van de kennisbank — zie
 // docs/DATA-MODEL.md (Article.category) en lib/data/categories.ts (Fase 3).
@@ -15,9 +16,9 @@ export const Categories: CollectionConfig = {
   },
   access: {
     read: () => true,
-    create: centralEditorOnly,
-    update: centralEditorOnly,
-    delete: centralEditorOnly,
+    create: permissieOnly("algemeen.categorieen", centralEditorOnly),
+    update: permissieOnly("algemeen.categorieen", centralEditorOnly),
+    delete: permissieOnly("algemeen.categorieen", centralEditorOnly),
   },
   fields: [
     { name: "title", type: "text", required: true, label: "Titel" },

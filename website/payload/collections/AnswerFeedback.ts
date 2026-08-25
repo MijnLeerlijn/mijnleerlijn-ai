@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly, anyEditor } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Duim-omhoog/omlaag onder een AI-antwoord (components/molecules/
 // FeedbackControl.tsx) — zie docs/AI-KNOWLEDGE-STRATEGY.md §Kwaliteitsbewaking.
@@ -20,10 +21,10 @@ export const AnswerFeedback: CollectionConfig = {
       "Ja/nee-feedback van bezoekers op AI-antwoorden. Aanmaken kan alleen via de eigen API-route.",
   },
   access: {
-    read: anyEditor,
+    read: permissieOnly("helpdesk-ai.feedback", anyEditor),
     create: () => false,
     update: () => false,
-    delete: adminOnly,
+    delete: permissieOnly("helpdesk-ai.feedback", adminOnly),
   },
   fields: [
     { name: "vraag", type: "text", required: true, label: "Gestelde vraag" },

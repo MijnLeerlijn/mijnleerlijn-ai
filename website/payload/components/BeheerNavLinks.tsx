@@ -61,8 +61,12 @@ function NavLink({ item, pathname, gekleurd = true }: { item: NavItem; pathname:
 
 export function BeheerNavLinks() {
   const pathname = usePathname();
-  const { permissions } = useAuth();
-  const groups = getVisibleNavGroups(permissions);
+  // Admin gebruikersbeheer (2026-08-25): useAuth().user bevat het volledige,
+  // server-voorgevulde gebruikersdocument (incl. permissionMode/permissions,
+  // zie payload/collections/Users.ts) — dezelfde bron als permissions
+  // hieronder, geen extra fetch nodig.
+  const { permissions, user } = useAuth();
+  const groups = getVisibleNavGroups(permissions, user);
 
   return (
     <>

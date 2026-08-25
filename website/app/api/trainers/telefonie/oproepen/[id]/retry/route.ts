@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { verwerkTelefonieHandmatigeRetry } from "@/lib/trainers/telefonie/gesprek";
 import { telnyxProvider } from "@/lib/trainers/telefonie/telnyx-provider";
@@ -26,6 +27,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const sessieControle = await verifyAdminSessionCookie(payload, request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
   if (!isAdmin(sessieControle.user)) {
     return NextResponse.json({ error: "Alleen beheerders mogen een retry starten." }, { status: 403 });
+  }
+  if (!heeftAdminPermissie(sessieControle.user, "trainers.telefonie")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   const { id } = await params;

@@ -2858,3 +2858,131 @@ a.ml-dashboard__card:hover {
   color: var(--ml-admin-accent-hover);
   text-decoration: underline;
 }
+
+/* Admin gebruikersbeheer — "Toegang & menu" (2026-08-25), zie
+   payload/components/ToegangMenuField.tsx. Boom/accordion met checkboxes,
+   gerenderd vanuit lib/admin-nav/nav-groups.ts. */
+.ml-toegang-menu__hint {
+  margin: 2px 0 12px;
+  font-size: 13px;
+  color: var(--theme-elevation-500);
+}
+
+.ml-toegang-menu__hint--waarschuwing {
+  color: var(--theme-warning-500, #9a6700);
+  font-weight: 500;
+}
+
+.ml-toegang-groep__items input:disabled,
+.ml-toegang-groep__summary input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ml-toegang-menu__groepen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 32rem;
+}
+
+.ml-toegang-groep {
+  border: 1px solid var(--theme-elevation-150);
+  border-radius: var(--ml-admin-radius-sm);
+  background: var(--theme-input-bg);
+}
+
+.ml-toegang-groep__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.ml-toegang-groep__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ml-toegang-groep__summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 0.8em;
+  color: var(--theme-elevation-400);
+  transition: transform 0.15s ease;
+}
+
+.ml-toegang-groep[open] > .ml-toegang-groep__summary::before {
+  transform: rotate(90deg);
+}
+
+.ml-toegang-groep__checkbox-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.ml-toegang-groep__icon {
+  color: var(--theme-elevation-500);
+  flex-shrink: 0;
+}
+
+.ml-toegang-groep__label {
+  font-weight: 600;
+  flex: 1;
+}
+
+.ml-toegang-groep__telling {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--theme-elevation-400);
+}
+
+.ml-toegang-groep__items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 10px;
+  padding: 0 12px 0 40px;
+  list-style: none;
+}
+
+.ml-toegang-item label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ml-toegang-groep input[type="checkbox"],
+.ml-toegang-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--ml-admin-accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Admin gebruikersbeheer — "geen toegang"-status voor een custom view
+   (payload/components/AdminViewShell.tsx), zelfde soort melding als
+   Payload's eigen native collectie-/global-pagina's tonen bij een
+   access.read-weigering. */
+.ml-geen-toegang {
+  max-width: 32rem;
+  margin: 48px auto;
+  padding: 32px;
+  text-align: center;
+}
+
+.ml-geen-toegang h1 {
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+
+.ml-geen-toegang p {
+  color: var(--theme-elevation-500);
+  margin: 0;
+}

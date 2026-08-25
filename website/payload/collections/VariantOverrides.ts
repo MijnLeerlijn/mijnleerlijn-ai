@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminFieldOnly, ownVariantOverrideAccess, publishedOverrideOrEditor } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Eén polymorf mechanisme voor alle variant-afwijkingen — zie
 // docs/DATA-MODEL.md §VariantOverride en docs/CONTENT-MODEL.md
@@ -38,9 +39,9 @@ export const VariantOverrides: CollectionConfig = {
   },
   access: {
     read: publishedOverrideOrEditor,
-    create: ownVariantOverrideAccess,
-    update: ownVariantOverrideAccess,
-    delete: ownVariantOverrideAccess,
+    create: permissieOnly("algemeen.overrides", ownVariantOverrideAccess),
+    update: permissieOnly("algemeen.overrides", ownVariantOverrideAccess),
+    delete: permissieOnly("algemeen.overrides", ownVariantOverrideAccess),
   },
   fields: [
     { name: "variant", type: "relationship", relationTo: "variants", required: true, label: "Variant" },

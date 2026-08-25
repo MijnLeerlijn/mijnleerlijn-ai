@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin, type AuthUser } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { haalItemDetail, MONDAY_ID_PATROON } from "@/lib/trainers-diagnose/monday-readonly";
 import { maakRateLimiter } from "@/lib/contact/validate";
@@ -21,6 +22,9 @@ export async function POST(request: NextRequest) {
   const sessieControle = await verifyAdminSessionCookie(payload, request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
   if (!isAdmin(sessieControle.user)) {
     return NextResponse.json({ error: "Alleen voor beheerders." }, { status: 403 });
+  }
+  if (!heeftAdminPermissie(sessieControle.user, "trainers.dashboard")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
   const user = sessieControle.user as AuthUser;
 

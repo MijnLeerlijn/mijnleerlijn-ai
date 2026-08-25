@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isEditor } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { haalAlleTrainerAccounts, haalRecenteVerslagActiviteitVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
 import { haalTrainingenEnScholenVoorAlleTrainers } from "@/lib/trainers/monday-links";
@@ -19,6 +20,9 @@ export async function GET(request: NextRequest) {
   const sessieControle = await verifyAdminSessionCookie(payload, request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
   if (!isEditor(sessieControle.user)) {
     return NextResponse.json({ error: "Alleen beheerders/redacteuren mogen dit." }, { status: 403 });
+  }
+  if (!heeftAdminPermissie(sessieControle.user, "trainers.trainingen")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   const [trainers, mondayOverzicht, verslagenActiviteit] = await Promise.all([

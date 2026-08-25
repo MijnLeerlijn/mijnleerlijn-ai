@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminOnly, isAdmin, type AuthUser } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 
 // Logboek van elke vraag/antwoord-uitwisseling met de AI-assistent
 // (Sprint 5, /assistant) — zie lib/assistant/process-question.ts (de enige
@@ -29,15 +30,15 @@ export const AssistantConversations: CollectionConfig = {
       "Logboek van vraag/antwoord-uitwisselingen met de AI-assistent (/assistant én de publieke helpdesk-homepage).",
   },
   access: {
-    read: ({ req }) => {
+    read: permissieOnly("helpdesk-ai.gesprekken", ({ req }) => {
       const user = req.user as AuthUser | null;
       if (isAdmin(user)) return true;
       if (!user) return false;
       return { user: { equals: user.id } };
-    },
+    }),
     create: () => false,
     update: () => false,
-    delete: adminOnly,
+    delete: permissieOnly("helpdesk-ai.gesprekken", adminOnly),
   },
   fields: [
     {

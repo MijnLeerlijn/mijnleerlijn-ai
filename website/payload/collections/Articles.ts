@@ -1,5 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { adminFieldOnly, adminOnly, centralEditorOnly, publishedOrEditor } from "../access/roles";
+import { permissieOnly } from "../access/menu-permissions";
 import { contentBlocks } from "../blocks";
 
 // De centrale artikelboom — zie docs/DATA-MODEL.md §Article/§Section/
@@ -33,9 +34,9 @@ export const Articles: CollectionConfig = {
   },
   access: {
     read: publishedOrEditor,
-    create: centralEditorOnly,
-    update: centralEditorOnly,
-    delete: adminOnly,
+    create: permissieOnly("algemeen.artikelen", centralEditorOnly),
+    update: permissieOnly("algemeen.artikelen", centralEditorOnly),
+    delete: permissieOnly("algemeen.artikelen", adminOnly),
   },
   versions: {
     drafts: { autosave: { interval: 2000 }, schedulePublish: true },

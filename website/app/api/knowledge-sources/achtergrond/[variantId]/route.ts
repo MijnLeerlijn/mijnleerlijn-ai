@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
 import { vindAchtergrondDocumentenVoorVariant } from "@/lib/assistant/kennisbasis-context";
 import { maakAchtergrondKennisbron } from "@/payload/collections/Variants";
@@ -21,6 +22,7 @@ async function vereisAdmin(request: NextRequest) {
     request.cookies.get(PAYLOAD_SESSION_COOKIE_NAME)?.value
   );
   if (!isAdmin(sessieControle.user)) return { payload, ok: false as const };
+  if (!heeftAdminPermissie(sessieControle.user, "helpdesk-ai.kennisbronnen")) return { payload, ok: false as const };
   return { payload, ok: true as const };
 }
 

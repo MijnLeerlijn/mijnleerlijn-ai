@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { isAdmin, type AuthUser } from "@/payload/access/roles";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { buildGoogleAuthUrl, GMAIL_OAUTH_STATE_COOKIE } from "@/lib/gmail/oauth";
 import { isProduction } from "@/config/env";
 
@@ -23,6 +24,11 @@ export async function GET(request: NextRequest) {
       { error: "Alleen beheerders mogen de Gmail-koppeling starten. Log in op /admin." },
       { status: 403 }
     );
+  }
+
+  // Admin gebruikersbeheer (2026-08-25) — permissiecheck naast de bestaande rolcheck.
+  if (!heeftAdminPermissie(user as AuthUser | null, "helpdesk-ai.gmail")) {
+    return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
   const state = randomBytes(32).toString("base64url");
