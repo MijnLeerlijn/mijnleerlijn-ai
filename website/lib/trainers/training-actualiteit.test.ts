@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { normaliseerMondayId, bouwActueleTrainingIds, isActueleTraining } from "./training-actualiteit";
+import { normaliseerMondayId, bouwActueleTrainingIds, isActueleTraining, bouwActueleTrainingIdsPerTrainer } from "./training-actualiteit";
 
 // Correctieronde Admin Traineromgeving (2026-08-25, spec §1/§3) — dekt de
 // gedeelde "actueel geldige training"-whitelist zelf, los van waar hij wordt
-// toegepast (dashboard.ts/admin/trainers/todo.ts, zie hun eigen tests).
+// toegepast (dashboard.ts/admin/trainers/todo.ts/aandacht.ts, zie hun eigen
+// tests).
 
 describe("normaliseerMondayId", () => {
   it("normaliseert een getal en een string naar dezelfde tekstwaarde — geen fragiele '123' !== 123", () => {
@@ -38,5 +39,33 @@ describe("bouwActueleTrainingIds / isActueleTraining", () => {
     const ids = bouwActueleTrainingIds([{ id: "123" }]);
     expect(isActueleTraining(ids, 123)).toBe(true);
     expect(isActueleTraining(ids, "123")).toBe(true);
+  });
+});
+
+describe("bouwActueleTrainingIdsPerTrainer", () => {
+  it("bouwt per trainer een eigen whitelist, gekoppeld via mondayUitvoerderItemId", () => {
+    const trainers = [
+      { id: 1, mondayUitvoerderItemId: "uitv-1" },
+      { id: 2, mondayUitvoerderItemId: "uitv-2" },
+    ];
+    const trainingenPerTrainer = new Map([
+      ["uitv-1", [{ id: "t1" }]],
+      ["uitv-2", [{ id: "t2" }]],
+    ]);
+    const map = bouwActueleTrainingIdsPerTrainer(trainers, trainingenPerTrainer);
+    expect(isActueleTraining(map.get(1)!, "t1")).toBe(true);
+    expect(isActueleTraining(map.get(1)!, "t2")).toBe(false);
+    expect(isActueleTraining(map.get(2)!, "t2")).toBe(true);
+    expect(isActueleTraining(map.get(2)!, "t1")).toBe(false);
+  });
+
+  it("een trainer zonder vermelding in trainingenPerTrainer krijgt een lege whitelist, geen crash", () => {
+    const map = bouwActueleTrainingIdsPerTrainer([{ id: 1, mondayUitvoerderItemId: "uitv-1" }], new Map());
+    expect(isActueleTraining(map.get(1)!, "t1")).toBe(false);
+  });
+
+  it("normaliseert string/number-ID's ook via deze route", () => {
+    const map = bouwActueleTrainingIdsPerTrainer([{ id: 1, mondayUitvoerderItemId: "uitv-1" }], new Map([["uitv-1", [{ id: "123" }]]]));
+    expect(isActueleTraining(map.get(1)!, 123)).toBe(true);
   });
 });

@@ -131,7 +131,7 @@ export async function haalAdminSchoolAandacht(payload: Payload, schoolId: string
   ]);
   if (!mondayOverzicht.scholen.has(schoolId)) return { soort: "niet_gevonden" };
 
-  const { items } = bouwAdminAandachtOverzicht(openVerslagen, misluktOproepen, trainers);
+  const { items } = bouwAdminAandachtOverzicht(openVerslagen, misluktOproepen, trainers, mondayOverzicht.trainingenPerTrainer);
   return { soort: "ok", data: items.filter((i) => i.schoolId === schoolId) };
 }
 

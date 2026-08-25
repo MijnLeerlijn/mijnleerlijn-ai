@@ -1,4 +1,6 @@
 import type { AdminOpenVerslag, AdminMislukteTelefonieOproep, AdminTrainerAccount } from "./aggregatie";
+import type { TrainingSamenvatting } from "@/lib/trainers/monday-links";
+import { bouwActueleTrainingIdsPerTrainer, isActueleTraining } from "@/lib/trainers/training-actualiteit";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — admin-brede "Aandacht"-sectie
 // (spec §7): "telefonie definitief mislukt; Monday-writeback vastgelopen;
@@ -20,6 +22,19 @@ import type { AdminOpenVerslag, AdminMislukteTelefonieOproep, AdminTrainerAccoun
 // lib/admin/trainers/aggregatie.ts se haalOpenVerslagenVoorAlleTrainers, dat
 // zelf al EXACT de status="concept"/"gedeeltelijk"/"bevestigd"-verzameling
 // mirror't; hier wordt uitsluitend verder gefilterd/gegroepeerd.
+//
+// Correctieronde Admin Traineromgeving, vervolg (2026-08-25, spec §1-vervolg)
+// — "verslag_vastgelopen" en "concept_oud" hebben EXACT dezelfde
+// kwetsbaarheid als de To-do-lijst had: een training-verslagrecord blijft na
+// verwijdering/overdracht van de training in Monday gewoon bestaan
+// (historie, met opzet nooit verwijderd), en zonder toets tegen de actuele
+// Monday-trainingenset van de trainer bleef zo'n record voor altijd als
+// Aandachtspunt zichtbaar. Gebruikt daarom EXACT dezelfde gedeelde whitelist/
+// normalisatielogica als todo.ts (lib/trainers/training-actualiteit.ts) —
+// geen tweede definitie. "telefonie_mislukt" heeft GEEN Monday-training-ID
+// (AdminMislukteTelefonieOproep kent alleen een naam-snapshot,
+// gekozenTrainingNaam, geen ID) en blijft dus bewust ongefilterd — dat is
+// structureel niet aan een specifieke actuele training te toetsen.
 
 /** Spec §7 default-voorstel — hier de ENE plek om aan te passen. */
 export const OUD_CONCEPT_DAGEN = 7;
@@ -58,13 +73,17 @@ export function bouwAdminAandachtOverzicht(
   openVerslagen: AdminOpenVerslag[],
   misluktOproepen: AdminMislukteTelefonieOproep[],
   trainers: AdminTrainerAccount[],
+  trainingenPerTrainer: Map<string, Pick<TrainingSamenvatting, "id">[]>,
   nu: Date = new Date()
 ): AdminAandachtOverzicht {
   const trainerPerId = new Map(trainers.map((t) => [t.id, t]));
   const oudeGrensIso = new Date(nu.getTime() - OUD_CONCEPT_DAGEN * 24 * 60 * 60 * 1000).toISOString();
 
-  const vastgelopenVerslagen = openVerslagen.filter((v) => v.status === "gedeeltelijk" || v.status === "bevestigd");
-  const oudeConcepten = openVerslagen.filter((v) => v.status === "concept" && v.wanneer < oudeGrensIso);
+  const actueleTrainingIdsPerTrainer = bouwActueleTrainingIdsPerTrainer(trainers, trainingenPerTrainer);
+  const isActueelVoorEigenTrainer = (v: AdminOpenVerslag) => isActueleTraining(actueleTrainingIdsPerTrainer.get(v.trainerId) ?? new Set(), v.mondayTrainingId);
+
+  const vastgelopenVerslagen = openVerslagen.filter((v) => (v.status === "gedeeltelijk" || v.status === "bevestigd") && isActueelVoorEigenTrainer(v));
+  const oudeConcepten = openVerslagen.filter((v) => v.status === "concept" && v.wanneer < oudeGrensIso && isActueelVoorEigenTrainer(v));
 
   const dagenOud = (wanneer: string): number => Math.floor((nu.getTime() - new Date(wanneer).getTime()) / (24 * 60 * 60 * 1000));
 
