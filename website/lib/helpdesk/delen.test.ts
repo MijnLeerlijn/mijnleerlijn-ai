@@ -18,6 +18,7 @@ function helpdeskGesprek(overrides: Record<string, unknown> = {}) {
     source: "helpdesk",
     question: "Waar vind ik het leerdoelenoverzicht?",
     answer: "Je vindt het leerdoelenoverzicht via **Instellingen > Overzichten**.",
+    hasAnswer: true,
     sources: [],
     steps: [],
     createdAt: "2026-08-24T09:00:00.000Z",
@@ -31,14 +32,14 @@ const verborgenBron = { id: 11, title: "Interne notitie", type: "intern_document
 describe("maakDeelLink", () => {
   it("weigert een lege lijst conversationId's", async () => {
     const { payload } = maakFakePayload({});
-    const uitkomst = await maakDeelLink(payload, []);
+    const uitkomst = await maakDeelLink(payload, { conversationIds: [] });
     expect(uitkomst.soort).toBe("leeg");
   });
 
   it("weigert meer dan de defensieve bovengrens aan berichten", async () => {
     const { payload } = maakFakePayload({});
     const teVeel = Array.from({ length: MAX_BERICHTEN_PER_DEELLINK + 1 }, (_, i) => i + 1);
-    const uitkomst = await maakDeelLink(payload, teVeel);
+    const uitkomst = await maakDeelLink(payload, { conversationIds: teVeel });
     expect(uitkomst.soort).toBe("te_veel_berichten");
   });
 
@@ -46,13 +47,13 @@ describe("maakDeelLink", () => {
     const { payload } = maakFakePayload({
       "assistant-conversations": [helpdeskGesprek({ id: 1 }), helpdeskGesprek({ id: 2, source: "assistant", question: "Interne beheervraag" })],
     });
-    const uitkomst = await maakDeelLink(payload, [1, 2]);
+    const uitkomst = await maakDeelLink(payload, { conversationIds: [1, 2] });
     expect(uitkomst.soort).toBe("geen_geldige_conversaties");
   });
 
   it("weigert een onbestaand conversationId", async () => {
     const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
-    const uitkomst = await maakDeelLink(payload, [1, 999]);
+    const uitkomst = await maakDeelLink(payload, { conversationIds: [1, 999] });
     expect(uitkomst.soort).toBe("geen_geldige_conversaties");
   });
 
@@ -64,7 +65,7 @@ describe("maakDeelLink", () => {
       ],
     });
     // Bewust in omgekeerde volgorde aangeleverd — de server moet zelf op createdAt sorteren.
-    const gemaakt = await maakDeelLink(payload, [2, 1]);
+    const gemaakt = await maakDeelLink(payload, { conversationIds: [2, 1] });
     if (gemaakt.soort !== "ok") throw new Error("onverwacht mislukt");
 
     const uitkomst = await haalGedeeldeChat(payload, gemaakt.token);
@@ -85,7 +86,7 @@ describe("maakDeelLink", () => {
       ],
       "knowledge-sources": [zichtbareBron, verborgenBron],
     });
-    const gemaakt = await maakDeelLink(payload, [1]);
+    const gemaakt = await maakDeelLink(payload, { conversationIds: [1] });
     if (gemaakt.soort !== "ok") throw new Error("onverwacht mislukt");
 
     const uitkomst = await haalGedeeldeChat(payload, gemaakt.token);
@@ -95,7 +96,7 @@ describe("maakDeelLink", () => {
 
   it("berichten die ná het delen ontstaan, verschijnen niet in de al gemaakte snapshot (spec §A3: snapshot, geen live meekijklink)", async () => {
     const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
-    const gemaakt = await maakDeelLink(payload, [1]);
+    const gemaakt = await maakDeelLink(payload, { conversationIds: [1] });
     if (gemaakt.soort !== "ok") throw new Error("onverwacht mislukt");
 
     // Simuleert dat de bezoeker ná het delen verder praat — een nieuw record in dezelfde "chat".
@@ -112,8 +113,8 @@ describe("maakDeelLink", () => {
 
   it("een tweede share van hetzelfde gesprek levert een eigen, onafhankelijke snapshot/token op", async () => {
     const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
-    const eerste = await maakDeelLink(payload, [1]);
-    const tweede = await maakDeelLink(payload, [1]);
+    const eerste = await maakDeelLink(payload, { conversationIds: [1] });
+    const tweede = await maakDeelLink(payload, { conversationIds: [1] });
     if (eerste.soort !== "ok" || tweede.soort !== "ok") throw new Error("onverwacht mislukt");
 
     expect(eerste.token).not.toBe(tweede.token);
@@ -124,6 +125,112 @@ describe("maakDeelLink", () => {
     const tweedeNa = await haalGedeeldeChat(payload, tweede.token);
     expect(eersteNa.soort).toBe("niet_beschikbaar");
     expect(tweedeNa.soort).toBe("ok");
+  });
+
+  it("legt hasAnswer per bericht vast — een 'geen antwoord'-bericht blijft dat ook in de snapshot", async () => {
+    const { payload } = maakFakePayload({
+      "assistant-conversations": [helpdeskGesprek({ id: 1, hasAnswer: false, answer: "Dat weet ik niet. Er is onvoldoende informatie in de kennisbank." })],
+    });
+    const gemaakt = await maakDeelLink(payload, { conversationIds: [1] });
+    if (gemaakt.soort !== "ok") throw new Error("onverwacht mislukt");
+
+    const uitkomst = await haalGedeeldeChat(payload, gemaakt.token);
+    if (uitkomst.soort !== "ok") throw new Error("onverwacht niet_beschikbaar");
+    expect(uitkomst.data.berichten[0]?.hasAnswer).toBe(false);
+  });
+});
+
+describe("maakDeelLink — verder delen vanuit een al gedeeld gesprek (parentToken, spec-eis §6/§7)", () => {
+  it("een fork erft de bevroren berichten van de ouder-link, vóór de eigen nieuwe berichten, zonder de ouder-rij zelf te wijzigen", async () => {
+    const { payload } = maakFakePayload({
+      "assistant-conversations": [helpdeskGesprek({ id: 1, question: "Eerste vraag", answer: "Eerste antwoord" })],
+    });
+    const ouder = await maakDeelLink(payload, { conversationIds: [1] });
+    if (ouder.soort !== "ok") throw new Error("onverwacht mislukt");
+
+    // De ontvanger stelt zelf een nieuwe vraag (een nieuw, eigen conversationId — nooit de ouder-rij zelf).
+    await payload.create({
+      collection: "assistant-conversations",
+      data: helpdeskGesprek({ id: 2, question: "Vervolgvraag van de ontvanger", answer: "Nieuw antwoord" }),
+    } as Parameters<typeof payload.create>[0]);
+
+    const fork = await maakDeelLink(payload, { conversationIds: [2], parentToken: ouder.token });
+    if (fork.soort !== "ok") throw new Error("onverwacht mislukt");
+    expect(fork.token).not.toBe(ouder.token);
+
+    const forkData = await haalGedeeldeChat(payload, fork.token);
+    if (forkData.soort !== "ok") throw new Error("onverwacht niet_beschikbaar");
+    expect(forkData.data.berichten.map((b) => b.vraag)).toEqual(["Eerste vraag", "Vervolgvraag van de ontvanger"]);
+
+    // De ouder-link zelf blijft ongewijzigd — nooit stilzwijgend bijgewerkt (spec-eis §6: fork, geen wijziging).
+    const ouderDataNa = await haalGedeeldeChat(payload, ouder.token);
+    if (ouderDataNa.soort !== "ok") throw new Error("onverwacht niet_beschikbaar");
+    expect(ouderDataNa.data.berichten.map((b) => b.vraag)).toEqual(["Eerste vraag"]);
+  });
+
+  it("kan zonder eigen nieuwe berichten — puur de ouder opnieuw delen onder een nieuwe token", async () => {
+    const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
+    const ouder = await maakDeelLink(payload, { conversationIds: [1] });
+    if (ouder.soort !== "ok") throw new Error("onverwacht mislukt");
+
+    const fork = await maakDeelLink(payload, { conversationIds: [], parentToken: ouder.token });
+    if (fork.soort !== "ok") throw new Error("onverwacht mislukt");
+
+    const forkData = await haalGedeeldeChat(payload, fork.token);
+    if (forkData.soort !== "ok") throw new Error("onverwacht niet_beschikbaar");
+    expect(forkData.data.berichten).toHaveLength(1);
+  });
+
+  it("een onbekende/ongeldige parentToken levert 'ongeldige_bron' op — nooit stilzwijgend zonder de geërfde inhoud delen", async () => {
+    const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
+    const uitkomst = await maakDeelLink(payload, { conversationIds: [1], parentToken: "een-token-die-nooit-heeft-bestaan" });
+    expect(uitkomst.soort).toBe("ongeldige_bron");
+  });
+
+  it("een fork mag óók vanaf een inmiddels ingetrokken ouder-link — de ontvanger had de inhoud al legitiem, intrekken stopt uitsluitend NIEUWE toegang via de oude link", async () => {
+    const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
+    const ouder = await maakDeelLink(payload, { conversationIds: [1] });
+    if (ouder.soort !== "ok") throw new Error("onverwacht mislukt");
+    await trekDeelLinkIn(payload, ouder.token);
+
+    const fork = await maakDeelLink(payload, { conversationIds: [], parentToken: ouder.token });
+    expect(fork.soort).toBe("ok");
+  });
+
+  it("de opgetelde lengte (geërfd + nieuw) blijft begrensd op MAX_BERICHTEN_PER_DEELLINK", async () => {
+    const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
+    const ouder = await maakDeelLink(payload, { conversationIds: [1] });
+    if (ouder.soort !== "ok") throw new Error("onverwacht mislukt");
+
+    const teVeel = Array.from({ length: MAX_BERICHTEN_PER_DEELLINK }, (_, i) => i + 100);
+    const uitkomst = await maakDeelLink(payload, { conversationIds: teVeel, parentToken: ouder.token });
+    expect(uitkomst.soort).toBe("te_veel_berichten");
+  });
+
+  it("kettingdelen (Wessel deelt zijn fork verder) blijft werken — de tweede fork erft de VOLLEDIGE, al samengevoegde geschiedenis", async () => {
+    const { payload } = maakFakePayload({
+      "assistant-conversations": [helpdeskGesprek({ id: 1, question: "Vraag A", answer: "Antwoord A" })],
+    });
+    const eerste = await maakDeelLink(payload, { conversationIds: [1] });
+    if (eerste.soort !== "ok") throw new Error("onverwacht mislukt");
+
+    await payload.create({
+      collection: "assistant-conversations",
+      data: helpdeskGesprek({ id: 2, question: "Vraag B (Wessel)", answer: "Antwoord B" }),
+    } as Parameters<typeof payload.create>[0]);
+    const tweede = await maakDeelLink(payload, { conversationIds: [2], parentToken: eerste.token });
+    if (tweede.soort !== "ok") throw new Error("onverwacht mislukt");
+
+    await payload.create({
+      collection: "assistant-conversations",
+      data: helpdeskGesprek({ id: 3, question: "Vraag C (nog een ontvanger)", answer: "Antwoord C" }),
+    } as Parameters<typeof payload.create>[0]);
+    const derde = await maakDeelLink(payload, { conversationIds: [3], parentToken: tweede.token });
+    if (derde.soort !== "ok") throw new Error("onverwacht mislukt");
+
+    const derdeData = await haalGedeeldeChat(payload, derde.token);
+    if (derdeData.soort !== "ok") throw new Error("onverwacht niet_beschikbaar");
+    expect(derdeData.data.berichten.map((b) => b.vraag)).toEqual(["Vraag A", "Vraag B (Wessel)", "Vraag C (nog een ontvanger)"]);
   });
 });
 
@@ -136,7 +243,7 @@ describe("haalGedeeldeChat — publieke respons", () => {
 
   it("bevat uitsluitend weergavevelden — nooit tokenHash, bronConversaties, of een intern record-ID", async () => {
     const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
-    const gemaakt = await maakDeelLink(payload, [1]);
+    const gemaakt = await maakDeelLink(payload, { conversationIds: [1] });
     if (gemaakt.soort !== "ok") throw new Error("onverwacht mislukt");
 
     const uitkomst = await haalGedeeldeChat(payload, gemaakt.token);
@@ -151,7 +258,7 @@ describe("haalGedeeldeChat — publieke respons", () => {
 describe("trekDeelLinkIn", () => {
   it("maakt de link onmiddellijk ongeldig", async () => {
     const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
-    const gemaakt = await maakDeelLink(payload, [1]);
+    const gemaakt = await maakDeelLink(payload, { conversationIds: [1] });
     if (gemaakt.soort !== "ok") throw new Error("onverwacht mislukt");
 
     expect((await haalGedeeldeChat(payload, gemaakt.token)).soort).toBe("ok");
@@ -179,7 +286,7 @@ describe("token-security (spec §A4/§E: 'token is niet voorspelbaar')", () => {
 
   it("slaat nooit de ruwe token op — uitsluitend de sha256-hash, en die hash is niet naar de ruwe token terug te rekenen als los veld", async () => {
     const { payload } = maakFakePayload({ "assistant-conversations": [helpdeskGesprek({ id: 1 })] });
-    const gemaakt = await maakDeelLink(payload, [1]);
+    const gemaakt = await maakDeelLink(payload, { conversationIds: [1] });
     if (gemaakt.soort !== "ok") throw new Error("onverwacht mislukt");
 
     const resultaat = await payload.find({ collection: "gedeelde-chats", where: {}, limit: 10 });

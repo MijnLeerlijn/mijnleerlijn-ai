@@ -140,6 +140,45 @@ describe("POST /api/helpdesk/ask", () => {
     expect(mockProcess).not.toHaveBeenCalled();
   });
 
+  // Gesprek delen — vervolgen (2026-09-01, spec-eis §5): de client stuurt bij
+  // het verder praten onder een gedeeld gesprek de tot dan toe gevoerde
+  // vraag/antwoord-paren mee (HelpdeskChat.tsx).
+  it("geeft conversationHistory door aan de pijplijn wanneer meegestuurd", async () => {
+    mockProcess.mockResolvedValue({
+      type: "answered",
+      conversationId: 3,
+      hasAnswer: true,
+      answer: "Vervolgantwoord.",
+      manuals: [],
+      steps: [],
+    });
+    const conversationHistory = [{ question: "Wat is een hoofdgebiedprofiel?", answer: "Een hoofdgebiedprofiel bundelt vakken." }];
+
+    const response = await POST(maakRequest({ body: { question: "en hoe zet ik dat aan?", conversationHistory } }));
+
+    expect(response.status).toBe(200);
+    expect(mockProcess).toHaveBeenCalledWith(expect.anything(), {
+      question: "en hoe zet ik dat aan?",
+      conversationHistory,
+      variant: MOCK_VARIANT,
+    });
+  });
+
+  it("weigert conversationHistory die geen lijst van {question, answer}-paren is, met 400", async () => {
+    const response = await POST(maakRequest({ body: { question: "vraag", conversationHistory: [{ question: "alleen een vraag" }] } }));
+
+    expect(response.status).toBe(400);
+    expect(mockProcess).not.toHaveBeenCalled();
+  });
+
+  it("weigert een te lange conversationHistory (boven MAX_BERICHTEN_PER_DEELLINK) met 400", async () => {
+    const teLang = Array.from({ length: 51 }, (_, i) => ({ question: `vraag ${i}`, answer: `antwoord ${i}` }));
+    const response = await POST(maakRequest({ body: { question: "vraag", conversationHistory: teLang } }));
+
+    expect(response.status).toBe(400);
+    expect(mockProcess).not.toHaveBeenCalled();
+  });
+
   it("geeft een 502 terug wanneer de RAG-pijplijn mislukt", async () => {
     mockProcess.mockResolvedValue({ type: "failed", foutmelding: "OpenAI: server error" });
 

@@ -32,15 +32,24 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Ongeldige aanvraag." }, { status: 400 });
   }
-  const { conversationIds } = (body ?? {}) as { conversationIds?: unknown };
+  const { conversationIds, parentToken } = (body ?? {}) as { conversationIds?: unknown; parentToken?: unknown };
 
   if (!Array.isArray(conversationIds) || conversationIds.some((id) => typeof id !== "number")) {
     return NextResponse.json({ error: "conversationIds moet een lijst getallen zijn." }, { status: 400 });
   }
+  // Gesprek delen — vervolgen (2026-09-01): optioneel — de token van het
+  // gesprek waaronder deze berichten net verder gepraat zijn (zie
+  // lib/helpdesk/delen.ts se maakDeelLink-toelichting).
+  if (parentToken !== undefined && (typeof parentToken !== "string" || !parentToken.trim())) {
+    return NextResponse.json({ error: "parentToken is ongeldig." }, { status: 400 });
+  }
 
   try {
     const payload = await getPayload({ config });
-    const uitkomst = await maakDeelLink(payload, conversationIds as number[]);
+    const uitkomst = await maakDeelLink(payload, {
+      conversationIds: conversationIds as number[],
+      parentToken: parentToken ? (parentToken as string).trim() : undefined,
+    });
 
     switch (uitkomst.soort) {
       case "ok":
@@ -51,6 +60,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Dit gesprek is te lang om in één keer te delen." }, { status: 400 });
       case "geen_geldige_conversaties":
         return NextResponse.json({ error: "Dit gesprek kan niet gedeeld worden." }, { status: 400 });
+      case "ongeldige_bron":
+        return NextResponse.json({ error: "Het oorspronkelijke gedeelde gesprek is niet meer beschikbaar." }, { status: 400 });
     }
   } catch (error) {
     console.error("[api/helpdesk/delen] Aanmaken mislukt:", error);

@@ -302,6 +302,33 @@ async function loggenMislukking(
   });
 }
 
+// Gesprek delen — vervolgen (2026-09-01, spec-eis §5): een gesprek dat via
+// /delen/[token] wordt voortgezet, geeft de AI de tot dan toe gevoerde
+// vraag/antwoord-uitwisseling (het gedeelde snapshot + eventuele eigen
+// nieuwe berichten van deze bezoeker) mee als context — anders zou een
+// vervolgvraag als "en hoe zet ik dat aan?" zonder de eerder gedeelde
+// vraag/antwoord onbegrijpelijk zijn voor zowel intentiebepaling als
+// retrieval. Zelfde bewezen mechaniek als `previousQuestion` hieronder
+// (tekst vóór de vraag plakken, geen apart chat-messages-formaat) —
+// bewust geen tweede/parallel chatsysteem, uitsluitend een generalisatie
+// van "één vorige vraag" naar "N eerdere vraag/antwoord-paren". Begrensd op
+// dezelfde MAX_BERICHTEN_PER_DEELLINK als een deel-link zelf (zie
+// lib/helpdesk/delen.ts) — bewaakt door de aanroeper
+// (app/api/helpdesk/ask/route.ts), niet hier: deze functie vertrouwt op een
+// al gevalideerde aanroep, net als bij `question`/`previousQuestion` al het
+// geval was.
+export interface ConversatieTurn {
+  question: string;
+  answer: string;
+}
+
+function bouwGeschiedenisBlok(geschiedenis: ConversatieTurn[]): string {
+  if (geschiedenis.length === 0) return "";
+  return geschiedenis
+    .map((turn, i) => `Eerdere vraag ${i + 1}: ${turn.question}\nEerder antwoord ${i + 1}: ${turn.answer}`)
+    .join("\n\n");
+}
+
 // Multi-brand variants (2026-07-30): `variant` is verplicht — de publieke
 // Helpdesk-route (app/api/helpdesk/ask/route.ts) heeft 'm altijd via
 // getActiveVariant(). Stuurt retrieval-scoping (searchKnowledgePhased),
@@ -310,7 +337,7 @@ async function loggenMislukking(
 // van een andere variant in dit antwoord terechtkomt.
 export async function processPublicQuestion(
   payload: Payload,
-  opties: { question: string; previousQuestion?: string; variant: Variant }
+  opties: { question: string; previousQuestion?: string; conversationHistory?: ConversatieTurn[]; variant: Variant }
 ): Promise<ProcessPublicQuestionUitkomst> {
   const begin = Date.now();
 
@@ -322,10 +349,11 @@ export async function processPublicQuestion(
   // uiteindelijke antwoord de volledige context hebben — er is bewust maar
   // één verduidelijkingsronde: bepaalIntentie() vraagt zelf nooit twee keer
   // door (zie het commentaar daar), dus deze functie hoeft dat niet apart
-  // te bewaken.
-  const effectieveVraag = opties.previousQuestion
-    ? `${opties.previousQuestion} — ${opties.question}`
-    : opties.question;
+  // te bewaken. `conversationHistory` (zie hierboven) gaat, indien aanwezig,
+  // hier nog vóór te staan.
+  const nieuweVraag = opties.previousQuestion ? `${opties.previousQuestion} — ${opties.question}` : opties.question;
+  const geschiedenisBlok = bouwGeschiedenisBlok(opties.conversationHistory ?? []);
+  const effectieveVraag = geschiedenisBlok ? `${geschiedenisBlok}\n\nNieuwe vraag: ${nieuweVraag}` : nieuweVraag;
 
   const intentie = await bepaalIntentie(payload, effectieveVraag, opties.variant.id);
 

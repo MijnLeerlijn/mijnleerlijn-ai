@@ -1886,6 +1886,7 @@ export interface GedeeldeChat {
   berichten: {
     vraag: string;
     antwoord: string;
+    hasAnswer?: boolean | null;
     manuals?:
       | {
           manualId: number;
@@ -3574,6 +3575,7 @@ export interface GedeeldeChatsSelect<T extends boolean = true> {
     | {
         vraag?: T;
         antwoord?: T;
+        hasAnswer?: T;
         manuals?:
           | T
           | {

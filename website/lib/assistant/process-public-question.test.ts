@@ -350,6 +350,82 @@ describe("processPublicQuestion — question/previousQuestion en AI Verbetercent
   });
 });
 
+// Gesprek delen — vervolgen (2026-09-01, spec-eis §5): conversationHistory
+// generaliseert het bestaande previousQuestion-idioom (één vorige vraag)
+// naar N eerdere vraag/antwoord-paren — dezelfde "plak vóór de vraag"-
+// mechaniek, geen apart chat-messages-formaat (zie process-public-question.ts
+// se bouwGeschiedenisBlok). Test hier specifiek dat de geschiedenis
+// daadwerkelijk in de effectieve vraag terechtkomt — de rest van de
+// pijplijn (retrieval/antwoordgeneratie zelf) is al elders gedekt.
+describe("processPublicQuestion — conversationHistory (Gesprek delen, vervolgen)", () => {
+  it("stuurt eerdere vraag/antwoord-paren mee als context naar zowel de zoekvraag-herschrijving als de AI-aanroep", async () => {
+    mockSearch.mockResolvedValue(
+      maakFaseResultaat([{ type: "knowledge-source", id: 1, title: "Handleiding profielen", similarity: 0.9, reason: "" }])
+    );
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: true, answer: "Vervolgantwoord.", reasoning: "..." }, usage: USAGE });
+    const { payload } = maakFakePayload(maakSeed());
+
+    await processPublicQuestion(payload, {
+      variant: MOCK_VARIANT,
+      question: "en hoe zet ik dat aan?",
+      conversationHistory: [{ question: "Wat is een hoofdgebiedprofiel?", answer: "Een hoofdgebiedprofiel bundelt vakken." }],
+    });
+
+    expect(mockRewrite).toHaveBeenCalledWith(
+      expect.stringContaining("Eerdere vraag 1: Wat is een hoofdgebiedprofiel?\nEerder antwoord 1: Een hoofdgebiedprofiel bundelt vakken.")
+    );
+    expect(mockRewrite).toHaveBeenCalledWith(expect.stringContaining("Nieuwe vraag: en hoe zet ik dat aan?"));
+    const promptAanroep = mockGenerate.mock.calls[0]![0] as { userPrompt: string };
+    expect(promptAanroep.userPrompt).toContain("Eerdere vraag 1: Wat is een hoofdgebiedprofiel?");
+    expect(promptAanroep.userPrompt).toContain("Nieuwe vraag: en hoe zet ik dat aan?");
+  });
+
+  it("houdt meerdere geschiedenisbeurten in de gegeven volgorde, elk met een eigen nummer", async () => {
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+    const { payload } = maakFakePayload(maakSeed());
+
+    await processPublicQuestion(payload, {
+      variant: MOCK_VARIANT,
+      question: "derde vraag",
+      conversationHistory: [
+        { question: "eerste vraag", answer: "eerste antwoord" },
+        { question: "tweede vraag", answer: "tweede antwoord" },
+      ],
+    });
+
+    expect(mockRewrite).toHaveBeenCalledWith(
+      "Eerdere vraag 1: eerste vraag\nEerder antwoord 1: eerste antwoord\n\nEerdere vraag 2: tweede vraag\nEerder antwoord 2: tweede antwoord\n\nNieuwe vraag: derde vraag"
+    );
+  });
+
+  it("logt nog altijd uitsluitend de NIEUWE vraag als question — de geschiedenis zelf komt niet nogmaals als los conversatierecord te staan", async () => {
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+    const { payload, collection } = maakFakePayload(maakSeed());
+
+    await processPublicQuestion(payload, {
+      variant: MOCK_VARIANT,
+      question: "vervolgvraag",
+      conversationHistory: [{ question: "eerdere vraag", answer: "eerder antwoord" }],
+    });
+
+    expect(collection("assistant-conversations")).toHaveLength(1);
+    const record = collection("assistant-conversations")[0]!;
+    expect(record.question).toBe("vervolgvraag");
+  });
+
+  it("zonder conversationHistory (een vers, ongedeeld gesprek) blijft de effectieve vraag ongewijzigd — regressie", async () => {
+    mockSearch.mockResolvedValue(maakFaseResultaat([]));
+    mockGenerate.mockResolvedValue({ object: { hasAnswer: false, answer: "", reasoning: "..." }, usage: USAGE });
+    const { payload } = maakFakePayload(maakSeed());
+
+    await processPublicQuestion(payload, { variant: MOCK_VARIANT, question: "een gewone vraag" });
+
+    expect(mockRewrite).toHaveBeenCalledWith("een gewone vraag");
+  });
+});
+
 // Kennisbasis per variant (2026-07-31): het achtergronddocument van de
 // ACTIEVE variant wordt bij elke (niet-"onduidelijk") vraag opgehaald en,
 // indien aanwezig+gevuld, gegarandeerd meegestuurd + gelogd — los van de

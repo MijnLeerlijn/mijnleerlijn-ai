@@ -1,12 +1,31 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
-import { processPublicQuestion } from "@/lib/assistant/process-public-question";
+import { processPublicQuestion, type ConversatieTurn } from "@/lib/assistant/process-public-question";
 import { maakRateLimiter } from "@/lib/contact/validate";
 import { registreerGesteldeVraag } from "@/lib/helpdesk/registreer-gestelde-vraag";
 import { getActiveVariant } from "@/lib/variant/get-active-variant";
+import { MAX_BERICHTEN_PER_DEELLINK } from "@/lib/helpdesk/delen";
 
 const MAX_VRAAG_LENGTE = 1000;
+// Gesprek delen — vervolgen (2026-09-01): de client stuurt bij het verder
+// praten onder een gedeeld gesprek (HelpdeskChat.tsx se initieleBerichten)
+// de tot dan toe gevoerde vraag/antwoord-paren mee als context (zie
+// process-public-question.ts). Zelfde bovengrens als een deel-link zelf
+// (MAX_BERICHTEN_PER_DEELLINK) — een gesprek kan nooit langer zijn dan wat
+// ooit gedeeld kon worden, en begrenst de promptgrootte.
+function isGeldigeConversatieGeschiedenis(value: unknown): value is ConversatieTurn[] {
+  if (!Array.isArray(value) || value.length > MAX_BERICHTEN_PER_DEELLINK) return false;
+  return value.every(
+    (turn) =>
+      turn &&
+      typeof turn === "object" &&
+      typeof (turn as { question?: unknown }).question === "string" &&
+      typeof (turn as { answer?: unknown }).answer === "string" &&
+      (turn as { question: string }).question.length <= MAX_VRAAG_LENGTE &&
+      (turn as { answer: string }).answer.length <= 8000
+  );
+}
 
 // Publieke, NIET-ingelogde tegenhanger van app/api/assistant/ask/route.ts —
 // Helpdesk MVP 1.0. Bewust GEEN sessiecontrole: een bezoeker die vanuit de
@@ -40,7 +59,11 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Ongeldige aanvraag." }, { status: 400 });
   }
-  const { question, previousQuestion } = (body ?? {}) as { question?: unknown; previousQuestion?: unknown };
+  const { question, previousQuestion, conversationHistory } = (body ?? {}) as {
+    question?: unknown;
+    previousQuestion?: unknown;
+    conversationHistory?: unknown;
+  };
 
   if (typeof question !== "string" || !question.trim()) {
     return NextResponse.json({ error: "question is verplicht." }, { status: 400 });
@@ -53,6 +76,9 @@ export async function POST(request: NextRequest) {
   }
   if (previousQuestion !== undefined && (typeof previousQuestion !== "string" || previousQuestion.length > MAX_VRAAG_LENGTE)) {
     return NextResponse.json({ error: "previousQuestion is ongeldig." }, { status: 400 });
+  }
+  if (conversationHistory !== undefined && !isGeldigeConversatieGeschiedenis(conversationHistory)) {
+    return NextResponse.json({ error: "conversationHistory is ongeldig." }, { status: 400 });
   }
 
   try {
@@ -79,6 +105,7 @@ export async function POST(request: NextRequest) {
       processPublicQuestion(payload, {
         question: question.trim(),
         previousQuestion: previousQuestion ? previousQuestion.trim() : undefined,
+        conversationHistory,
         variant,
       }),
     ]);

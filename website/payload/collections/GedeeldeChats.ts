@@ -49,6 +49,23 @@ export const GedeeldeChats: CollectionConfig = {
         { name: "vraag", type: "textarea", required: true, label: "Vraag" },
         { name: "antwoord", type: "textarea", required: true, label: "Antwoord" },
         {
+          // Gesprek delen — vervolgen (2026-09-01): of dit bericht een echt
+          // antwoord had, of "Dat weet ik niet"/een tussenvraag was — nodig
+          // om een geërfd bericht bij het verder chatten (HelpdeskChat.tsx se
+          // initieleBerichten) exact hetzelfde te laten renderen als het
+          // origineel (bv. het automatische contactformulier-aanbod bij
+          // "geen antwoord"). Ontbreekt op oudere rijen (vóór deze
+          // uitbreiding) — daar valt lezen terug op `true` (zie
+          // haalGedeeldeChat), wat het bestaande, ongewijzigde gedrag exact
+          // reproduceert voor al die rijen (elk bericht toonde altijd al
+          // gewoon het antwoord, ongeacht hasAnswer).
+          name: "hasAnswer",
+          type: "checkbox",
+          defaultValue: true,
+          label: "Had een antwoord",
+          admin: { readOnly: true },
+        },
+        {
           name: "manuals",
           type: "array",
           label: "Handleidingen",

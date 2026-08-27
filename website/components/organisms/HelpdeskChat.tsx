@@ -52,7 +52,8 @@ interface Antwoord {
   steps: PublicStep[];
 }
 
-interface Bericht {
+// Geëxporteerd (Gesprek delen — vervolgen, 2026-09-01): app/(frontend)/(public)/delen/[token]/page.tsx bouwt hiermee initieleBerichten uit een gedeelde-chatsnapshot — geen aparte/dubbele typedefinitie daar.
+export interface Bericht {
   id: string;
   vraag: string;
   status: "laden" | "klaar" | "fout" | "verduidelijking";
@@ -84,11 +85,25 @@ interface Bericht {
 interface HelpdeskChatProps {
   /** Klikbare voorbeeldvragen onder het invoerveld (CMS-beheerd, zie payload/globals/HelpdeskVoorbeeldvragen.ts) — leeg = niets tonen. */
   voorbeeldvragen?: string[];
+  /**
+   * Gesprek delen — vervolgen (2026-09-01, spec-eis §2/§5/§6): vult het
+   * gesprek voor bij openen met de al bevroren, gedeelde berichten (zie
+   * app/(frontend)/(public)/delen/[token]/page.tsx) — dit gesprek is dan een
+   * FORK: verder chatten voegt uitsluitend NIEUWE berichten toe aan DEZE
+   * (client-side) sessie, de oorspronkelijke deel-link/afzender-conversatie
+   * verandert nooit. Bewust hergebruikt i.p.v. een tweede chatcomponent
+   * (spec-eis §5): dit ÍS dezelfde HelpdeskChat als de homepage.
+   */
+  initieleBerichten?: Bericht[];
+  /** De token van het gesprek waaruit initieleBerichten komt — meegegeven bij een latere eigen "Gesprek delen"-klik (spec-eis §7), zodat DIE nieuwe link weer de volledige geschiedenis erft. Leeg = een vers, ongedeeld gesprek (homepage-gedrag, ongewijzigd). */
+  deelParentToken?: string;
+  /** Wanneer het gedeelde gesprek (initieleBerichten) is aangemaakt — puur voor de banner hieronder, geformatteerd door de aanroeper. */
+  deelGedeeldOp?: string;
 }
 
-export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps) {
+export default function HelpdeskChat({ voorbeeldvragen = [], initieleBerichten, deelParentToken, deelGedeeldOp }: HelpdeskChatProps) {
   const variant = useVariant();
-  const [berichten, setBerichten] = useState<Bericht[]>([]);
+  const [berichten, setBerichten] = useState<Bericht[]>(initieleBerichten ?? []);
   const [vraag, setVraag] = useState("");
   const [vergroteAfbeelding, setVergroteAfbeelding] = useState<PublicStepImage | null>(null);
   // Kennisbasis MijnLeerlijn — fase 1 (2026-07-27): onthoudt de vraag die tot
@@ -102,10 +117,19 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
   // Chat delen via URL (2026-08-24) — exact de "klaar"-berichten met een
   // gelogd conversationId: een verduidelijkings-/foutbericht heeft nooit een
   // antwoord.conversationId (zie de Bericht-interface hierboven), dus die
-  // vallen hier vanzelf al buiten — geen aparte uitsluiting nodig.
+  // vallen hier vanzelf al buiten — geen aparte uitsluiting nodig. Een
+  // GEËRFD bericht (initieleBerichten, spec-eis §6/§7) heeft altijd
+  // conversationId: null (het is zelf al een bevroren kopie, geen eigen
+  // /api/helpdesk/ask-aanroep) en valt hier dus ook vanzelf buiten — de
+  // server voegt die apart weer toe via deelParentToken, zie
+  // lib/helpdesk/delen.ts se maakDeelLink.
   const deelbareConversationIds = berichten
     .filter((b) => b.status === "klaar" && b.antwoord?.conversationId != null)
     .map((b) => b.antwoord!.conversationId!);
+  // Delen moet ook kunnen vóórdat de bezoeker zelf iets nieuws vraagt (bv.
+  // gewoon doorsturen) — dan is er geen deelbareConversationId, maar wél al
+  // geërfde inhoud via deelParentToken.
+  const kanDelen = deelbareConversationIds.length > 0 || (Boolean(deelParentToken) && berichten.length > 0);
 
   function samengesteldeUitleg(bericht: Bericht): string {
     const delen = [`Oorspronkelijke vraag:\n${bericht.vraag}`];
@@ -135,6 +159,15 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
     const previousQuestion = pendingClarification;
     setPendingClarification(null);
 
+    // Gesprek delen — vervolgen (2026-09-01, spec-eis §5): alle tot nu toe
+    // beantwoorde berichten (zowel geërfd via initieleBerichten als al in
+    // DEZE sessie zelf gesteld) gaan als context mee — zie
+    // process-public-question.ts. Op een vers, ongedeeld gesprek is dit
+    // gewoon een lege lijst, dus ongewijzigd gedrag voor de homepage.
+    const conversationHistory = berichten
+      .filter((b) => b.status === "klaar" && b.antwoord)
+      .map((b) => ({ question: b.vraag, answer: b.antwoord!.answer }));
+
     const id = crypto.randomUUID();
     setBerichten((huidig) => [...huidig, { id, vraag: schoon, status: "laden", toonContact: false }]);
 
@@ -142,7 +175,11 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
       const res = await fetch("/api/helpdesk/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(previousQuestion ? { question: schoon, previousQuestion } : { question: schoon }),
+        body: JSON.stringify({
+          question: schoon,
+          ...(previousQuestion ? { previousQuestion } : {}),
+          ...(conversationHistory.length > 0 ? { conversationHistory } : {}),
+        }),
       });
       const data = await res.json();
 
@@ -232,9 +269,17 @@ export default function HelpdeskChat({ voorbeeldvragen = [] }: HelpdeskChatProps
 
   return (
     <div className="flex flex-col">
-      {deelbareConversationIds.length > 0 && (
+      {initieleBerichten && initieleBerichten.length > 0 && (
+        <div className="mb-4 rounded-lg border border-grijs-200 bg-grijs-50 px-4 py-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-grijs-500">
+            Gedeeld gesprek{deelGedeeldOp ? ` — gedeeld op ${deelGedeeldOp}` : ""}
+          </p>
+          <p className="mt-0.5 text-xs text-grijs-600">Je kunt hieronder gewoon verder chatten — dit verandert niets aan het gesprek van de afzender.</p>
+        </div>
+      )}
+      {kanDelen && (
         <div className="mb-4 flex justify-end">
-          <DeelGesprekKnop conversationIds={deelbareConversationIds} />
+          <DeelGesprekKnop conversationIds={deelbareConversationIds} parentToken={deelParentToken} />
         </div>
       )}
       <div className="flex flex-col gap-6">

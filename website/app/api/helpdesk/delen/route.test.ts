@@ -45,7 +45,7 @@ describe("POST /api/helpdesk/delen", () => {
     expect(response.status).toBe(200);
     const data = await response.json();
     expect(data.token).toBe("abc123");
-    expect(mockMaakDeelLink).toHaveBeenCalledWith(expect.anything(), [1, 2]);
+    expect(mockMaakDeelLink).toHaveBeenCalledWith(expect.anything(), { conversationIds: [1, 2] });
   });
 
   it("geeft 400 terug wanneer maakDeelLink 'leeg' rapporteert", async () => {
@@ -58,6 +58,34 @@ describe("POST /api/helpdesk/delen", () => {
     mockMaakDeelLink.mockResolvedValue({ soort: "geen_geldige_conversaties" });
     const response = await POST(maakRequest({ body: { conversationIds: [999] } }));
     expect(response.status).toBe(400);
+  });
+
+  // Gesprek delen — vervolgen (2026-09-01, spec-eis §6/§7): de client stuurt
+  // bij het delen vanuit een al gedeeld/vervolgd gesprek de token van dat
+  // ouder-gesprek mee, zodat maakDeelLink() de oorspronkelijke berichten kan
+  // laten voorafgaan aan de nieuwe (zie lib/helpdesk/delen.ts).
+  it("geeft parentToken door aan maakDeelLink wanneer meegestuurd", async () => {
+    mockMaakDeelLink.mockResolvedValue({ soort: "ok", token: "nieuwetoken" });
+    const response = await POST(maakRequest({ body: { conversationIds: [2], parentToken: "ouder-token" } }));
+    expect(response.status).toBe(200);
+    expect(mockMaakDeelLink).toHaveBeenCalledWith(expect.anything(), {
+      conversationIds: [2],
+      parentToken: "ouder-token",
+    });
+  });
+
+  it("weigert een parentToken die geen niet-lege string is, met 400", async () => {
+    const response = await POST(maakRequest({ body: { conversationIds: [2], parentToken: "" } }));
+    expect(response.status).toBe(400);
+    expect(mockMaakDeelLink).not.toHaveBeenCalled();
+  });
+
+  it("geeft 400 terug wanneer maakDeelLink 'ongeldige_bron' rapporteert (ouder-token niet meer beschikbaar)", async () => {
+    mockMaakDeelLink.mockResolvedValue({ soort: "ongeldige_bron" });
+    const response = await POST(maakRequest({ body: { conversationIds: [2], parentToken: "verlopen-token" } }));
+    expect(response.status).toBe(400);
+    const data = await response.json();
+    expect(data.error).toBe("Het oorspronkelijke gedeelde gesprek is niet meer beschikbaar.");
   });
 
   it("blokkeert na te veel pogingen van hetzelfde IP-adres (rate limiting)", async () => {
