@@ -270,12 +270,11 @@ export default function HelpdeskChat({ voorbeeldvragen = [], initieleBerichten, 
   return (
     <div className="flex flex-col">
       {initieleBerichten && initieleBerichten.length > 0 && (
-        <div className="mb-4 rounded-lg border border-grijs-200 bg-grijs-50 px-4 py-2.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-grijs-500">
-            Gedeeld gesprek{deelGedeeldOp ? ` — gedeeld op ${deelGedeeldOp}` : ""}
-          </p>
-          <p className="mt-0.5 text-xs text-grijs-600">Je kunt hieronder gewoon verder chatten — dit verandert niets aan het gesprek van de afzender.</p>
-        </div>
+        <p className="mb-4 text-xs text-grijs-500">
+          <span className="font-medium text-grijs-700">Gedeeld gesprek</span>
+          {deelGedeeldOp ? ` — dit gesprek is gedeeld op ${deelGedeeldOp}.` : "."} Je kunt hieronder gewoon verder
+          chatten.
+        </p>
       )}
       {kanDelen && (
         <div className="mb-4 flex justify-end">

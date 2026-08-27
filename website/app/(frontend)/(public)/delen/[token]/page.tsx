@@ -4,7 +4,8 @@ import { getPayload } from "payload";
 import { ArrowLeft } from "lucide-react";
 import config from "@/payload.config";
 import { haalGedeeldeChat, type GedeeldeChatWeergave } from "@/lib/helpdesk/delen";
-import HelpdeskChat, { type Bericht } from "@/components/organisms/HelpdeskChat";
+import type { Bericht } from "@/components/organisms/HelpdeskChat";
+import HelpdeskPagina from "@/components/organisms/HelpdeskPagina";
 import { getActiveVariant } from "@/lib/variant/get-active-variant";
 
 interface DeelPaginaProps {
@@ -36,6 +37,14 @@ interface DeelPaginaProps {
 // structureel uit: alles wat nodig is om de pagina te tonen komt uitsluitend
 // via het share-token (haalGedeeldeChat hieronder) — geen enkele afhankelijkheid
 // van wie de pagina opent.
+//
+// Zelfde shell als de homepage (2026-09-02, spec-eis "vrijwel de normale
+// Helpdesk-pagina"): de succesvolle weergave hieronder rendert nu
+// components/organisms/HelpdeskPagina.tsx — dezelfde titel/intro,
+// twee-koloms lay-out en rechterkolom (Curriculum Werkplaats +
+// Handleidingen/Downloads) als "/", niet langer een eigen, smalle
+// minimale pagina. Alleen de "niet beschikbaar"-foutweergave verderop
+// blijft een eigen, eenvoudige pagina — die hoeft niet in de volle shell.
 //
 // noindex/nofollow (spec §A8, ongewijzigd): een gedeeld gesprek mag nooit in
 // een zoekmachine terechtkomen.
@@ -105,12 +114,10 @@ export default async function DeelPagina({ params }: DeelPaginaProps) {
   }
 
   return (
-    <div className="mx-auto max-w-[720px] px-4 pb-16 pt-8 sm:px-8 sm:pt-12">
-      <HelpdeskChat
-        initieleBerichten={data.berichten.map(naarBericht)}
-        deelParentToken={token}
-        deelGedeeldOp={formatGedeeldOp(data.gedeeldOp)}
-      />
-    </div>
+    <HelpdeskPagina
+      initieleBerichten={data.berichten.map(naarBericht)}
+      deelParentToken={token}
+      deelGedeeldOp={formatGedeeldOp(data.gedeeldOp)}
+    />
   );
 }
