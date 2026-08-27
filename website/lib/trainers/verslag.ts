@@ -272,6 +272,14 @@ export interface VerslagRecord {
    * hieronder zet dit daarom nu expliciet.
    */
   telefonieOproep?: number | null;
+  /**
+   * Root-cause-fix productie-incident (2026-08-27) — true zodra dit
+   * telefonisch concept NIET via een expliciete, trainerbevestigde '#' is
+   * afgerond (maximale opnameduur bereikt, geen reactie op de vervolgvraag
+   * ná een automatische stilte-stop, of een onverwachte hangup). Zie
+   * upsertConcept() se eigen doc-comment voor hoe dit veld geschreven wordt.
+   */
+  mogelijkOnvolledig?: boolean | null;
 }
 
 /**
@@ -353,12 +361,22 @@ export type VerslagConceptUitkomst =
  * live-bijgewerkt veld — een latere portal-bewerking van een telefonisch
  * concept blijft dus gewoon bron="telefoon" tonen (spec §13 se kleine
  * "Bron: telefonisch ingesproken"-label blijft kloppen).
+ *
+ * `mogelijkOnvolledig` (root-cause-fix productie-incident 2026-08-27) —
+ * ANDERS dan bron/telefonieOproepId hierboven WEL toepasbaar op zowel het
+ * create- als het update-pad: dit veld wordt pas bekend op het moment dat
+ * lib/trainers/telefonie/gesprek.ts een gesprek daadwerkelijk afrondt (kan
+ * ruim ná de eerste fragment-aanmaak liggen, bij meerdere opnamefragmenten
+ * ná "verder inspreken"). `undefined` (het gebruikelijke geval — elke
+ * portal-aanroep, en elke tussentijdse fragment-toevoeging vanuit
+ * gesprek.ts) betekent zoals bij trainerInvoer/definitieveTekst "dit veld
+ * niet aanraken" — nooit stilzwijgend terugzetten naar false.
  */
 export async function upsertConcept(
   payload: Payload,
   trainer: AuthTrainer,
   trainingId: string,
-  invoer: { trainerInvoer?: string; definitieveTekst?: string; bron?: "telefoon"; telefonieOproepId?: number }
+  invoer: { trainerInvoer?: string; definitieveTekst?: string; bron?: "telefoon"; telefonieOproepId?: number; mogelijkOnvolledig?: boolean }
 ): Promise<VerslagConceptUitkomst> {
   const gevonden = await haalTrainingVoorMutatie(trainer, trainingId);
   if (!gevonden) return { soort: "niet_gevonden" };
@@ -381,6 +399,7 @@ export async function upsertConcept(
   // create-pad hieronder, zie upsertConcept() se eigen doc-comment.
   const bron = invoer.bron;
   const telefonieOproepId = invoer.telefonieOproepId ?? null;
+  const mogelijkOnvolledig = invoer.mogelijkOnvolledig; // undefined = "dit veld niet aanraken", zie deze functie se doc-comment
 
   const bestaand = await haalVerslagVoorTraining(payload, trainer, trainingId);
   if (bestaand) {
@@ -394,11 +413,23 @@ export async function upsertConcept(
       return { soort: "bestaat_al", verslag: bestaand };
     }
     if (bestaand.status !== "concept") return { soort: "ok", verslag: bestaand };
+    // Root-cause-fix productie-incident (2026-08-27) — trainerInvoer/
+    // definitieveTekst/mogelijkOnvolledig alleen daadwerkelijk in de
+    // update-data opnemen als de aanroeper ze expliciet meegaf. Payload zelf
+    // behandelt undefined al als "niet aanraken", maar deze functie wordt nu
+    // ook aangeroepen met UITSLUITEND mogelijkOnvolledig gezet
+    // (finaliseerMetFragmenten, gesprek.ts) — expliciet weglaten i.p.v.
+    // op die impliciete conventie leunen voorkomt elke twijfel of een net
+    // samengevoegd trainerInvoer per ongeluk overschreven zou kunnen worden.
+    const updateData: Record<string, unknown> = { schoolNaam, trainingNaam };
+    if (trainerInvoer !== undefined) updateData.trainerInvoer = trainerInvoer;
+    if (definitieveTekst !== undefined) updateData.definitieveTekst = definitieveTekst;
+    if (mogelijkOnvolledig !== undefined) updateData.mogelijkOnvolledig = mogelijkOnvolledig;
     const bijgewerkt = await payload.update({
       collection: "training-verslagen",
       id: bestaand.id,
       overrideAccess: true,
-      data: { trainerInvoer, definitieveTekst, schoolNaam, trainingNaam },
+      data: updateData,
     });
     return { soort: "ok", verslag: bijgewerkt as VerslagRecord };
   }
@@ -426,6 +457,7 @@ export async function upsertConcept(
         // voelt daar natuurlijker), vandaar de naamswisseling op deze ene regel.
         telefonieOproep: telefonieOproepId,
         bron: bron ?? "portal",
+        mogelijkOnvolledig,
       },
     });
     return { soort: "ok", verslag: nieuw as VerslagRecord };
@@ -442,11 +474,17 @@ export async function upsertConcept(
       return { soort: "bestaat_al", verslag: herhaald };
     }
     if (herhaald.status !== "concept") return { soort: "ok", verslag: herhaald };
+    // Zelfde expliciete "alleen meegeven wat daadwerkelijk gezet wordt" als
+    // het update-pad hierboven — zie die toelichting.
+    const herhaaldUpdateData: Record<string, unknown> = { schoolNaam, trainingNaam };
+    if (trainerInvoer !== undefined) herhaaldUpdateData.trainerInvoer = trainerInvoer;
+    if (definitieveTekst !== undefined) herhaaldUpdateData.definitieveTekst = definitieveTekst;
+    if (mogelijkOnvolledig !== undefined) herhaaldUpdateData.mogelijkOnvolledig = mogelijkOnvolledig;
     const bijgewerkt = await payload.update({
       collection: "training-verslagen",
       id: herhaald.id,
       overrideAccess: true,
-      data: { trainerInvoer, definitieveTekst, schoolNaam, trainingNaam },
+      data: herhaaldUpdateData,
     });
     return { soort: "ok", verslag: bijgewerkt as VerslagRecord };
   }

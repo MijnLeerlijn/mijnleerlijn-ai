@@ -2,7 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPayload } from "payload";
 import config from "@/payload.config";
 import { telnyxProvider } from "@/lib/trainers/telefonie/telnyx-provider";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkSpreekAfgerond, verwerkOpnameAfgerond, verwerkOpnameStatus } from "@/lib/trainers/telefonie/gesprek";
+import {
+  verwerkInkomendeCall,
+  verwerkTrainingKeuze,
+  verwerkOpnameToets,
+  verwerkSpreekAfgerond,
+  verwerkOpnameStatus,
+  verwerkVervolgKeuze,
+  verwerkOnverwachteHangup,
+} from "@/lib/trainers/telefonie/gesprek";
 import { maakOfHaalOproep } from "@/lib/trainers/telefonie/oproep-state";
 import { ontleedTelnyxWebhookJson, vlakTelnyxEventAf } from "@/lib/trainers/telefonie/webhook-helpers";
 import { maakRateLimiter } from "@/lib/contact/validate";
@@ -115,31 +123,48 @@ import { maakRateLimiter } from "@/lib/contact/validate";
 //                       het gewone afscheidsbericht) wordt door
 //                       verwerkSpreekAfgerond zelf stil genegeerd, geen
 //                       aparte voorwaarde hier nodig.
-//  call.recording.saved/.error -> verwerkOpnameStatus (ongewijzigd, inclusief
-//                       de bestaande idempotentieclaim/transcriptieherstel/
-//                       audiobewaartermijn uit gate 1) — vervanger van
-//                       opname-status. Zegt DAARNA best-effort alsnog gedag
-//                       (vervanger van opname-afgerond, zelf weer speak-only
-//                       + deferred hangup via call.speak.ended, zie hierboven)
-//                       — Telnyx heeft geen aparte "opname is gestopt"-actie-
-//                       callback zoals Twilio's <Record action>, dus dit
-//                       gebeurt hier, niet vooraf. Productieregressie-
-//                       vervolgronde (2026-08-27): verwerkOpnameAfgerond is nu
-//                       claim-gated (oproep-state.ts se claimAfsluitboodschap)
-//                       — dit is dus BEWUST ook een geldige, eigen trigger
-//                       voor de afsluitboodschap (niet alleen een fallback bij
-//                       het uitblijven van '#'), maar spreekt 'm alleen
-//                       daadwerkelijk uit als de '#'-afhandeling hierboven dat
-//                       nog niet zelf al deed — nooit allebei. voerVoiceInstructiesUit
-//                       faalt bij Telnyx bewust nooit door (zie provider.ts) —
-//                       onschadelijk als het gesprek dan al beëindigd is (bv.
-//                       via de '#'-afhandeling hierboven, of de beller hing
-//                       zelf al op).
-//  alles anders      -> stil genegeerd (bv. call.hangup, call.speak.started,
-//                       call.answered voor een niet-inkomend/onverwacht
-//                       been) — Telnyx stuurt veel meer event_types dan deze
-//                       flow gebruikt, spec §19 se "nooit een onnodige fout":
-//                       een event dat niet in de switch voorkomt is geen fout.
+//  call.recording.saved/.error -> verwerkOpnameStatus — vervanger van
+//                       opname-status, inclusief de bestaande idempotentie-
+//                       claim/transcriptieherstel/audiobewaartermijn uit gate
+//                       1. Root-cause-fix productie-incident (2026-08-27) —
+//                       geeft sinds deze ronde ZELF de juiste
+//                       vervolginstructies terug i.p.v. dat de route hierna
+//                       altijd blind verwerkOpnameAfgerond aanriep: een
+//                       BEWUST ('#') of MAX_DUUR-afsluiting eindigt nog
+//                       steeds met bedanken+ophangen (verwerkOpnameAfgerond,
+//                       claim-gated via oproep-state.ts se
+//                       claimAfsluitboodschap — spreekt dus nooit twee keer,
+//                       ook niet als de '#'-afhandeling in call.gather.ended/
+//                       call.dtmf.received die claim al eerder won); een
+//                       AUTOMATISCHE (stilte-)afsluiting hangt sinds deze
+//                       ronde NIET meer op (spec-eis §6) — de trainer krijgt
+//                       in plaats daarvan de vervolgkeuze-prompt (oproep
+//                       gaat naar status 'opname_onderbroken').
+//  call.gather.ended/
+//  call.dtmf.received
+//  bij status
+//  'opname_onderbroken' -> verwerkVervolgKeuze (root-cause-fix
+//                       productie-incident 2026-08-27, spec-eis §6) — de
+//                       '*'/'#'-keuze op de vervolgkeuze-prompt: '*' start
+//                       een nieuw opnamefragment (poging+1, terug naar
+//                       status 'opname_verwacht'); '#' (of een timeout op
+//                       deze gather) rondt af met wat er tot nu toe aan
+//                       fragmenten is samengevoegd.
+//  call.hangup        -> verwerkOnverwachteHangup (root-cause-fix
+//                       productie-incident 2026-08-27, spec-eis §8) — slaat
+//                       ALTIJD hangup_cause/hangup_source op (beheer-
+//                       diagnostiek), en rondt best-effort af met wat er tot
+//                       nu toe verzameld is als de oproep nog niet was
+//                       afgerond en er op dit moment geen fragment actief
+//                       wordt verwerkt (claimFinalisatieZonderActiefFragment,
+//                       oproep-state.ts — een wél actief fragment laat zijn
+//                       eigen traject gewoon uitlopen). Geen voice-instructies
+//                       (de verbinding is dan al weg).
+//  alles anders      -> stil genegeerd (bv. call.speak.started, call.answered
+//                       voor een niet-inkomend/onverwacht been) — Telnyx
+//                       stuurt veel meer event_types dan deze flow gebruikt,
+//                       spec §19 se "nooit een onnodige fout": een event dat
+//                       niet in de switch voorkomt is geen fout.
 //
 // Signatuurverificatie (spec §17) gebeurt ÉÉN keer, vóór elke dispatch —
 // Telnyx ondertekent de RUWE body-tekst (nooit de vormvelden/URL zoals
@@ -200,9 +225,19 @@ export async function POST(request: NextRequest) {
         if (!beperkPerGesprek.magVerder(callControlId)) break;
         const oproep = await maakOfHaalOproep(payload, callControlId);
         const isOpnameToets = oproep.status === "opname_verwacht";
+        // Root-cause-fix productie-incident (2026-08-27, spec-eis §6) — de
+        // vervolgkeuze-prompt ná een automatische stilte-stop gebruikt
+        // gather_using_speak (zelfde mechaniek als trainingkeuze hieronder,
+        // NIET de parallelle stille opname_toets-gather) — call.gather.ended
+        // is daarvoor, net als bij trainingkeuze, al de betrouwbare trigger
+        // (geen call.dtmf.received-primaire-trigger-nuance nodig, die geldt
+        // uitsluitend voor de stille gather naast een actieve opname).
+        const isVervolgKeuze = oproep.status === "opname_onderbroken";
         const instructies = isOpnameToets
           ? await verwerkOpnameToets(payload, provider, oproep.id, vormVelden)
-          : await verwerkTrainingKeuze(payload, provider, oproep.id, vormVelden);
+          : isVervolgKeuze
+            ? await verwerkVervolgKeuze(payload, provider, oproep.id, vormVelden)
+            : await verwerkTrainingKeuze(payload, provider, oproep.id, vormVelden);
         // TIJDELIJKE DIAGNOSTIEK (live regressie-vervolgronde 2026-08-27/28,
         // spec "*/# doen niets tijdens de opname") — uitsluitend
         // niet-herleidbare technische velden (geen audio/transcriptie/
@@ -213,8 +248,9 @@ export async function POST(request: NextRequest) {
         // een al via call.dtmf.received verwerkte toetsdruk" (zie
         // claimOpnameToetsVerwerking, oproep-state.ts). Verwijderen zodra
         // dit dubbeltriggerpad hard bevestigd stabiel is op live verkeer.
+        const gatherHandlerNaam = isOpnameToets ? "verwerkOpnameToets" : isVervolgKeuze ? "verwerkVervolgKeuze" : "verwerkTrainingKeuze";
         console.log(
-          `[telefonie/diag] event_type=call.gather.ended digits=${vormVelden.digits ?? "(geen)"} oproepStatus=${oproep.status} oproepId=${oproep.id} handler=${isOpnameToets ? "verwerkOpnameToets" : "verwerkTrainingKeuze"} uitkomst=${isOpnameToets ? (instructies.length > 0 ? "verwerkt" : "genegeerd_of_duplicate") : "verwerkt"}`
+          `[telefonie/diag] event_type=call.gather.ended digits=${vormVelden.digits ?? "(geen)"} oproepStatus=${oproep.status} oproepId=${oproep.id} handler=${gatherHandlerNaam} uitkomst=${isOpnameToets ? (instructies.length > 0 ? "verwerkt" : "genegeerd_of_duplicate") : "verwerkt"}`
         );
         await provider.voerVoiceInstructiesUit(callControlId, instructies);
         break;
@@ -262,8 +298,27 @@ export async function POST(request: NextRequest) {
         // toelichting), dus geen zinvolle fijnere sleutel voorhanden.
         if (!beperkPerGesprek.magVerder(callControlId)) break;
         const oproep = await maakOfHaalOproep(payload, callControlId);
-        await verwerkOpnameStatus(payload, provider, oproep.id, vormVelden);
-        await provider.voerVoiceInstructiesUit(callControlId, await verwerkOpnameAfgerond(payload, oproep.id));
+        // Root-cause-fix productie-incident (2026-08-27) — verwerkOpnameStatus
+        // geeft sinds deze ronde zelf de juiste vervolginstructies terug
+        // (bewust/max_duur -> bedanken+ophangen zoals voorheen; automatisch
+        // -> de vervolgkeuze-prompt, GEEN ophangen meer, spec-eis §6) — geen
+        // aparte, altijd-uitgevoerde verwerkOpnameAfgerond-aanroep hier meer
+        // nodig/gewenst (die zou bij een automatische stop alsnog ten
+        // onrechte ophangen).
+        const instructies = await verwerkOpnameStatus(payload, provider, oproep.id, vormVelden);
+        await provider.voerVoiceInstructiesUit(callControlId, instructies);
+        break;
+      }
+
+      case "call.hangup": {
+        // Root-cause-fix productie-incident (2026-08-27, spec-eis §8) — geen
+        // rate limit hier: dit event komt per gesprek hooguit één keer voor
+        // (het gesprek is hierna per definitie voorbij), en moet altijd
+        // verwerkt worden (hangup_cause/hangup_source opslaan + best-effort
+        // afronden met wat er al is) ongeacht hoeveel andere events dit
+        // gesprek al opgebruikt heeft van beperkPerGesprek se budget.
+        const oproep = await maakOfHaalOproep(payload, callControlId);
+        await verwerkOnverwachteHangup(payload, provider, oproep.id, vormVelden);
         break;
       }
 

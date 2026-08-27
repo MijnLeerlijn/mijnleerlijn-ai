@@ -198,7 +198,12 @@ describe("ontleedOpnameStatus", () => {
       duurSeconden: 95,
       ophaalReferentie: "v3:abc",
       clientState: null,
+      recordingStartedAt: "2026-08-25T10:00:00.000Z",
     });
+  });
+
+  it("recordingStartedAt (root-cause-fix 2026-08-27, spec-eis §10) wordt letterlijk doorgegeven — de sleutel waarmee haalOpnameOp/kiesOpname straks DIT specifieke fragment terugvindt tussen meerdere opnames onder hetzelfde call_leg_id", () => {
+    expect(telnyxProvider().ontleedOpnameStatus({ event_type: "call.recording.saved", call_control_id: "v3:abc" }).recordingStartedAt).toBeNull();
   });
 
   it.each(["call.recording.error", "call.hangup", "iets_onbekends"])("event_type=%s -> mislukt, GEEN ophaalReferentie ook al is call_control_id aanwezig", (eventType) => {
@@ -331,8 +336,8 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
   function opnameStartenInstructie(overrides: Partial<{ poging: number }> = {}) {
     return {
       soort: "opname_starten" as const,
-      maxDuurSeconden: 900,
-      stilteTimeoutSeconden: 5,
+      maxDuurSeconden: 1200,
+      stilteTimeoutSeconden: 60,
       stopToets: "#",
       herstartToets: "*",
       poging: 0,
@@ -367,7 +372,7 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     const [recordUrl, recordInit] = fetchMock.mock.calls[0]!;
     expect(recordUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/record_start");
     const recordBody = JSON.parse((recordInit as { body: string }).body);
-    expect(recordBody).toMatchObject({ format: "mp3", channels: "single", max_length: 900, timeout_secs: 5, command_id: "record_start:cc_1:poging0" });
+    expect(recordBody).toMatchObject({ format: "mp3", channels: "single", max_length: 1200, timeout_secs: 60, command_id: "record_start:cc_1:poging0" });
     // client_state draagt het pogingnummer (spec §10/§12/§18) — base64("0").
     expect(recordBody.client_state).toBe(Buffer.from("0", "utf8").toString("base64"));
 
@@ -375,6 +380,29 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     expect(gatherUrl).toBe("https://api.telnyx.com/v2/calls/cc_1/actions/gather");
     const gatherBody = JSON.parse((gatherInit as { body: string }).body);
     expect(gatherBody).toMatchObject({ gather_id: "opname_toets", valid_digits: "#*", minimum_digits: 1, maximum_digits: 1, command_id: "gather:cc_1:poging0" });
+  });
+
+  // Root-cause-fix productie-incident (2026-08-27, opdrachtpunten 1/2: "59
+  // seconden stilte -> opname loopt door" / "60 seconden stilte ->
+  // automatische stop") — Telnyx zelf bewaakt deze grens (de silence-timer
+  // start pas ná gedetecteerde spraak en stopt de opname zodra timeout_secs
+  // ONONDERBROKEN stilte is verstreken, Telnyx' eigen record_start-
+  // documentatie); onze code implementeert geen eigen stilteklok. De enige
+  // eerlijke, lokaal te testen garantie is dus dat de JUISTE grenswaarde
+  // (60, niet de oude 5) daadwerkelijk in het uitgaande record_start-
+  // commando terechtkomt — bewezen hierboven
+  // ("opname_starten -> record_start...", timeout_secs: 60) én hier nogmaals
+  // expliciet geïsoleerd, zodat een toekomstige regressie op DEZE ene waarde
+  // een eigen, direct herkenbare testnaam heeft.
+  it("opdrachtpunten 1/2: record_start se timeout_secs is exact 60 (de nieuwe stilte-grens) — bij 59s ononderbroken stilte stopt Telnyx niet, bij 60s wel; dat gedrag zelf ligt bij Telnyx, niet in deze codebase", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [opnameStartenInstructie()]);
+
+    const recordBody = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body);
+    expect(recordBody.timeout_secs).toBe(60);
+    expect(recordBody.max_length).toBe(1200); // opdrachtpunt 3: 20 minuten, was 15
   });
 
   it("spec §10/§11: een hogere poging (na een '*'-herstart) krijgt een eigen command_id/client_state — nooit gededupliceerd tegen de vorige poging", async () => {
@@ -436,7 +464,7 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
-    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "opname_hervatten", maxDuurSeconden: 900, stopToets: "#", herstartToets: "*", poging: 3, nonce: 12345 }]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "opname_hervatten", maxDuurSeconden: 1200, stopToets: "#", herstartToets: "*", poging: 3, nonce: 12345 }]);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [resumeUrl, resumeInit] = fetchMock.mock.calls[0]!;
@@ -452,8 +480,8 @@ describe("voerVoiceInstructiesUit (Call Control-commando's — spec §16: uitslu
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
-    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "opname_hervatten", maxDuurSeconden: 900, stopToets: "#", herstartToets: "*", poging: 3, nonce: 111 }]);
-    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "opname_hervatten", maxDuurSeconden: 900, stopToets: "#", herstartToets: "*", poging: 3, nonce: 222 }]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "opname_hervatten", maxDuurSeconden: 1200, stopToets: "#", herstartToets: "*", poging: 3, nonce: 111 }]);
+    await telnyxProvider().voerVoiceInstructiesUit("cc_1", [{ soort: "opname_hervatten", maxDuurSeconden: 1200, stopToets: "#", herstartToets: "*", poging: 3, nonce: 222 }]);
 
     const gatherCommandIds = [fetchMock.mock.calls[1]!, fetchMock.mock.calls[3]!].map((call) => JSON.parse((call[1] as { body: string }).body).command_id);
     expect(new Set(gatherCommandIds).size).toBe(2);

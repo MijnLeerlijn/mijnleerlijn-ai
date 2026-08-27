@@ -31,7 +31,7 @@ import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde, w
 import { generateStructuredOutput, transcribeAudio } from "@/services/ai-client";
 import type { AuthTrainer } from "../auth";
 import type { TrainingMetSchool, TrainingVoorMutatie, SchoolDetail } from "../monday-links";
-import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens } from "./provider";
+import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens, HangupGegevens } from "./provider";
 
 vi.mock("./../monday-links", async (importOriginal) => {
   const echt = await importOriginal<typeof import("../monday-links")>();
@@ -115,9 +115,19 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
     ontleedInkomendeCall: vi.fn(() => ({ providerCallId: "CA1", vanNummerRuw: "+31612345678", nummerVerborgen: false }) as InkomendeCallGegevens),
     ontleedGatherResultaat: vi.fn(() => ({ cijfers: null, clientState: null }) as GatherResultaat),
     ontleedOpnameStatus: vi.fn(
-      () => ({ providerCallId: "CA1", providerRecordingId: "RE1", status: "voltooid", duurSeconden: 30, ophaalReferentie: "https://provider.example/RE1", clientState: null }) as OpnameStatusGegevens
+      () =>
+        ({
+          providerCallId: "CA1",
+          providerRecordingId: "RE1",
+          status: "voltooid",
+          duurSeconden: 30,
+          ophaalReferentie: "https://provider.example/RE1",
+          clientState: null,
+          recordingStartedAt: "2026-08-26T10:00:00Z",
+        }) as OpnameStatusGegevens
     ),
     ontleedSpreekAfgerond: vi.fn(() => ({ providerCallId: "CA1", clientState: null })),
+    ontleedHangup: vi.fn(() => ({ providerCallId: "CA1", hangupCause: null, hangupSource: null }) as HangupGegevens),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
@@ -136,6 +146,7 @@ describe.skipIf(!beschikbaar)("Trainertelefonie — ECHTE concurrency tegen echt
   let verwerkTrainingKeuze: typeof import("./gesprek").verwerkTrainingKeuze;
   let verwerkOpnameStatus: typeof import("./gesprek").verwerkOpnameStatus;
   let maakOfHaalOproep: typeof import("./oproep-state").maakOfHaalOproep;
+  let zetBewustGestopt: typeof import("./oproep-state").zetBewustGestopt;
   let adminPool: Pool;
   let volgendTrainerSuffix = 0;
 
@@ -151,7 +162,7 @@ describe.skipIf(!beschikbaar)("Trainertelefonie — ECHTE concurrency tegen echt
     config = (await import("@/payload.config")).default;
     ({ upsertConcept, haalVerslagVoorTraining } = await import("../verslag"));
     ({ verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameStatus } = await import("./gesprek"));
-    ({ maakOfHaalOproep } = await import("./oproep-state"));
+    ({ maakOfHaalOproep, zetBewustGestopt } = await import("./oproep-state"));
 
     draaiPayloadMigrate(scratchUri);
     payload = await getPayload({ config, key: "telefonie-concurrency" });
@@ -309,11 +320,37 @@ describe.skipIf(!beschikbaar)("Trainertelefonie — ECHTE concurrency tegen echt
     // Beide gesprekken hebben nu ONAFHANKELIJK dezelfde training vastgelegd
     // (spec §7 se écht-gelijktijdige-racevenster) — nu (bijna) gelijktijdig
     // de opnamestatus laten binnenkomen, elk met een eigen recordingProviderId.
+    // Beide trainers ronden bewust af met '#' (zetBewustGestopt, poging 0 —
+    // geen van beide deed ooit een '*'-herstart) vóórdat hun recording.saved
+    // binnenkomt: zonder die markering zou bepaalAfsluitreden dit als
+    // "automatisch" (stilte-stop) classificeren en rondt geen van beide kanten
+    // af (spec-eis §6) — dan zou deze race nooit de concept_klaar-vs-
+    // verslag_bestaat_al-uitkomst bereiken die dit scenario juist bewijst.
+    await zetBewustGestopt(payload, oproepA.id, 0);
+    await zetBewustGestopt(payload, oproepB.id, 0);
     const providerOpnameA = maakFakeProvider({
-      ontleedOpnameStatus: () => ({ providerCallId: "CA-RACE-A", providerRecordingId: "RE-A", status: "voltooid", duurSeconden: 30, ophaalReferentie: "https://provider.example/RE-A", clientState: null }),
+      ontleedOpnameStatus: () =>
+        ({
+          providerCallId: "CA-RACE-A",
+          providerRecordingId: "RE-A",
+          status: "voltooid",
+          duurSeconden: 30,
+          ophaalReferentie: "https://provider.example/RE-A",
+          clientState: null,
+          recordingStartedAt: "2026-08-26T10:00:00Z",
+        }) as OpnameStatusGegevens,
     });
     const providerOpnameB = maakFakeProvider({
-      ontleedOpnameStatus: () => ({ providerCallId: "CA-RACE-B", providerRecordingId: "RE-B", status: "voltooid", duurSeconden: 30, ophaalReferentie: "https://provider.example/RE-B", clientState: null }),
+      ontleedOpnameStatus: () =>
+        ({
+          providerCallId: "CA-RACE-B",
+          providerRecordingId: "RE-B",
+          status: "voltooid",
+          duurSeconden: 30,
+          ophaalReferentie: "https://provider.example/RE-B",
+          clientState: null,
+          recordingStartedAt: "2026-08-26T10:00:00Z",
+        }) as OpnameStatusGegevens,
     });
 
     await Promise.all([verwerkOpnameStatus(payload, providerOpnameA, oproepA.id, {}), verwerkOpnameStatus(payload, providerOpnameB, oproepB.id, {})]);

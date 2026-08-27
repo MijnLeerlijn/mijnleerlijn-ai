@@ -1,13 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkSpreekAfgerond, verwerkOpnameAfgerond, verwerkOpnameStatus, verwerkTelefonieOnderhoud, verwerkTelefonieHandmatigeRetry } from "./gesprek";
-import { claimOpnameVerwerking } from "./oproep-state";
+import {
+  verwerkInkomendeCall,
+  verwerkTrainingKeuze,
+  verwerkOpnameToets,
+  verwerkSpreekAfgerond,
+  verwerkOpnameAfgerond,
+  verwerkOpnameStatus,
+  verwerkTelefonieOnderhoud,
+  verwerkTelefonieHandmatigeRetry,
+  verwerkVervolgKeuze,
+  verwerkOnverwachteHangup,
+} from "./gesprek";
+import { claimOpnameFragmentVerwerking, zetBewustGestopt } from "./oproep-state";
 import { haalRecenteTrainingenVoorTelefonie, haalTrainingVoorMutatie, haalSchoolDetail, vandaagIsoAmsterdam } from "../monday-links";
 import { haalUpdatesVoorItem, maakUpdate, leesKolomWaarden, wijzigKolomWaarde, wijzigKolomWaardeJson, haalItemMetKolomWaarden } from "@/lib/sales/monday-client";
 import { generateStructuredOutput, transcribeAudio } from "@/services/ai-client";
 import { haalVerslagVoorTraining } from "../verslag";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 import type { AuthTrainer } from "../auth";
-import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens } from "./provider";
+import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens, HangupGegevens } from "./provider";
 import type { TrainingMetSchool, TrainingVoorMutatie, SchoolDetail } from "../monday-links";
 
 // Traineromgeving V1, Ronde 3.5 (2026-08-25) — dekt lib/trainers/telefonie/
@@ -145,9 +156,11 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
           duurSeconden: 60,
           ophaalReferentie: "https://provider.example/recordings/RE1",
           clientState: Buffer.from("0", "utf8").toString("base64"), // poging 0 — matcht de default heropnamePogingen van een verse oproep
+          recordingStartedAt: "2026-08-27T10:00:00Z",
         }) as OpnameStatusGegevens
     ),
     ontleedSpreekAfgerond: vi.fn(() => ({ providerCallId: "CA1", clientState: null })),
+    ontleedHangup: vi.fn(() => ({ providerCallId: "CA1", hangupCause: null, hangupSource: null }) as HangupGegevens),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
@@ -925,6 +938,7 @@ describe("verwerkOpnameToets — dedup tegen dubbele levering van dezelfde toets
         duurSeconden: 12,
         ophaalReferentie: "https://provider.example/RE-AFGEWEZEN",
         clientState: Buffer.from("0", "utf8").toString("base64"),
+        recordingStartedAt: "2026-08-27T10:05:00Z",
       }),
     });
     await verwerkOpnameStatus(payload, opnameProvider, oproepId, {});
@@ -974,7 +988,7 @@ describe("verwerkSpreekAfgerond", () => {
 
     const instructies = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
 
-    expect(instructies).toEqual([{ soort: "opname_starten", maxDuurSeconden: 900, stilteTimeoutSeconden: 5, stopToets: "#", herstartToets: "*", poging: 0 }]);
+    expect(instructies).toEqual([{ soort: "opname_starten", maxDuurSeconden: 1200, stilteTimeoutSeconden: 60, stopToets: "#", herstartToets: "*", poging: 0 }]);
   });
 
   it("actie=start_opname met een NIET-matchende poging (defensief, structureel onmogelijk) -> genegeerd", async () => {
@@ -989,7 +1003,7 @@ describe("verwerkSpreekAfgerond", () => {
 
     const instructies = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
 
-    expect(instructies).toEqual([{ soort: "opname_hervatten", maxDuurSeconden: 900, stopToets: "#", herstartToets: "*", poging: 3, nonce: 999 }]);
+    expect(instructies).toEqual([{ soort: "opname_hervatten", maxDuurSeconden: 1200, stopToets: "#", herstartToets: "*", poging: 3, nonce: 999 }]);
   });
 
   it("de oproep wacht niet (meer) op een opname -> stil genegeerd", async () => {
@@ -1055,7 +1069,7 @@ describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, da
       oproepId,
       {}
     );
-    expect(hervatInstructies).toEqual([{ soort: "opname_hervatten", maxDuurSeconden: 900, stopToets: "#", herstartToets: "*", poging: 3, nonce: waarschuwing.nonce }]);
+    expect(hervatInstructies).toEqual([{ soort: "opname_hervatten", maxDuurSeconden: 1200, stopToets: "#", herstartToets: "*", poging: 3, nonce: waarschuwing.nonce }]);
 
     // DE KERN VAN DIT SCENARIO: '#' moet nu nog altijd werken (de gather is herbewapend).
     const stopInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) }), oproepId, {});
@@ -1074,6 +1088,7 @@ describe("productieblocker-scenario: 3x '*' (herstart), dan '*' op de limiet, da
         duurSeconden: 45,
         ophaalReferentie: "https://provider.example/RE-FINAL",
         clientState: Buffer.from("3", "utf8").toString("base64"),
+        recordingStartedAt: "2026-08-27T10:10:00Z",
       }),
     });
     await verwerkOpnameStatus(payload, opnameProvider, oproepId, {});
@@ -1184,7 +1199,7 @@ describe("productieregressie: spreek-dan-ophangen sequencing (2026-08-27)", () =
 
     const instructies = await verwerkSpreekAfgerond(payload, provider, oproepId, {});
 
-    expect(instructies).toEqual([{ soort: "opname_starten", maxDuurSeconden: 900, stilteTimeoutSeconden: 5, stopToets: "#", herstartToets: "*", poging: 0 }]);
+    expect(instructies).toEqual([{ soort: "opname_starten", maxDuurSeconden: 1200, stilteTimeoutSeconden: 60, stopToets: "#", herstartToets: "*", poging: 0 }]);
   });
 
   it("8: de '*'-herstartflow blijft werken (heropnamePogingen hoogt op, nieuwe zeg_en_neem_op, geen hangup)", async () => {
@@ -1297,6 +1312,7 @@ describe("productieregressie-vervolgronde: afsluitboodschap na '#' (2026-08-27)"
         duurSeconden: 30,
         ophaalReferentie: "https://provider.example/RE-HEKJE",
         clientState: Buffer.from("0", "utf8").toString("base64"),
+        recordingStartedAt: "2026-08-27T10:15:00Z",
       }),
     });
     await verwerkOpnameStatus(payload, opnameProvider, oproepId, {});
@@ -1318,6 +1334,15 @@ describe("verwerkOpnameStatus", () => {
     await verwerkInkomendeCall(payload, provider, {});
     const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
     await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
+    // Root-cause-fix productie-incident (2026-08-27, spec-eis §6) — deze
+    // helper simuleert het NORMALE '#'-happy-path (poging 0, nog geen enkele
+    // '*'-herstart): zonder deze markering zou bepaalAfsluitreden elk
+    // hierna binnenkomend fragment als "automatisch" (stilte-stop)
+    // classificeren en NIET afronden (spec-eis §6) — de tests in dit blok
+    // gaan expliciet over retry-/idempotentie-/AI-degradatiegedrag NA een
+    // voltooide, afgeronde opname, niet over de stilte-stop-classificatie
+    // zelf (die heeft haar eigen dedicated tests elders in dit bestand).
+    await zetBewustGestopt(payload, oproepId, 0);
     return oproepId;
   }
 
@@ -1333,7 +1358,7 @@ describe("verwerkOpnameStatus", () => {
   it("scenario 10: mislukte/lege opname -> mislukt met foutcode opname_mislukt, geen transcriptiepoging", async () => {
     const oproepId = await oproepKlaarVoorOpname();
     const provider = maakFakeProvider({
-      ontleedOpnameStatus: () => ({ providerCallId: "CA1", providerRecordingId: "RE1", status: "mislukt", duurSeconden: null, ophaalReferentie: null, clientState: null }),
+      ontleedOpnameStatus: () => ({ providerCallId: "CA1", providerRecordingId: "RE1", status: "mislukt", duurSeconden: null, ophaalReferentie: null, clientState: null, recordingStartedAt: null }),
     });
     await verwerkOpnameStatus(payload, provider, oproepId, {});
     expect(mockTranscribeAudio).not.toHaveBeenCalled();
@@ -1461,7 +1486,7 @@ describe("verwerkOpnameStatus", () => {
     // Simuleer een serverless-crash: de claim is doorgevoerd (status +
     // ophaalreferentie liggen al vast) maar de container stierf vóór de
     // transcriptie kon starten/eindigen. updatedAt ligt ver in het verleden.
-    await claimOpnameVerwerking(payload, oproepId, "RE1", "https://provider.example/recordings/RE1");
+    await claimOpnameFragmentVerwerking(payload, oproepId, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: "https://provider.example/recordings/RE1", recordingStartedAt: "2026-08-27T10:00:00Z" });
     const vastgelopen = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     vastgelopen.updatedAt = new Date(Date.now() - 30 * 60 * 1000).toISOString(); // > STUCK_TIMEOUT_MS
 
@@ -1518,7 +1543,7 @@ describe("verwerkOpnameStatus", () => {
 
   it("scenario 11/24 vervolg: een reeds elders geclaimde opname (bv. race met een net iets snellere gelijktijdige callback) wordt door DEZE aanroep stil overgeslagen", async () => {
     const oproepId = await oproepKlaarVoorOpname();
-    const gewonnen = await claimOpnameVerwerking(payload, oproepId, "RE1", "https://provider.example/recordings/RE1");
+    const gewonnen = await claimOpnameFragmentVerwerking(payload, oproepId, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: "https://provider.example/recordings/RE1", recordingStartedAt: "2026-08-27T10:00:00Z" });
     expect(gewonnen).toBe(true);
 
     await verwerkOpnameStatus(payload, maakFakeProvider(), oproepId, {});
@@ -1566,6 +1591,237 @@ describe("verwerkOpnameStatus", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Root-cause-fix productie-incident (2026-08-27) — de 10 expliciet gevraagde
+// scenario's uit de opdracht. Opdrachtpunten 1/2 (de 59s/60s-stiltegrens
+// zelf) zijn gedekt in telnyx-provider.test.ts — Telnyx zelf bewaakt die
+// grens (de silence-timer is server-side bij Telnyx, niet in deze
+// codebase), onze verantwoordelijkheid is uitsluitend de JUISTE
+// configuratiewaarde versturen (bewezen daar) én correct REAGEREN op wat
+// Telnyx terugmeldt (bewezen hier). Opdrachtpunt 10 (hangup_cause/
+// hangup_source zichtbaar voor beheer) is daarnaast gedekt in
+// oproep-state.test.ts (zetHangupInfo, incl. null-veiligheid) en via
+// TrainerTelefonieOproepen.ts se defaultColumns (hangupCause nu ook in de
+// admin-lijstweergave, niet uitsluitend op de detailpagina).
+// ---------------------------------------------------------------------------
+
+describe("Root-cause-fix productie-incident 2026-08-27 — de 10 opdrachtpunten (stilte-timeout/max-duur/hangup/dubbele-webhook)", () => {
+  async function oproepKlaarVoorOpname() {
+    mockHaalRecenteTrainingen.mockResolvedValue([training()]);
+    const provider = maakFakeProvider();
+    await verwerkInkomendeCall(payload, provider, {});
+    const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
+    await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
+    // Bewust GEEN zetBewustGestopt hier (i.t.t. het gelijknamige helper in
+    // het verwerkOpnameStatus-blok hierboven) — dit blok test juist de
+    // automatische (niet-'#') paden zelf.
+    return oproepId;
+  }
+
+  function opnameStatusProvider(overrides: Partial<OpnameStatusGegevens> = {}) {
+    return maakFakeProvider({
+      ontleedOpnameStatus: () =>
+        ({
+          providerCallId: "CA1",
+          providerRecordingId: "RE-opdracht",
+          status: "voltooid",
+          duurSeconden: 30,
+          ophaalReferentie: "https://provider.example/recordings/RE-opdracht",
+          clientState: null,
+          recordingStartedAt: "2026-08-27T09:00:00Z",
+          ...overrides,
+        }) as OpnameStatusGegevens,
+    });
+  }
+
+  it("opdrachtpunt 3: een automatische (stilte-)stop hangt niet op — geen zeg_en_ophangen/hangup_uitvoeren in het resultaat, oproep gaat naar opname_onderbroken", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    mockTranscribeAudio.mockResolvedValue("Eerste stuk van het verslag.");
+
+    const instructies = await verwerkOpnameStatus(payload, opnameStatusProvider(), oproepId, {});
+
+    expect(instructies.some((i) => i.soort === "zeg_en_ophangen" || i.soort === "hangup_uitvoeren")).toBe(false);
+    expect(instructies).toEqual([
+      expect.objectContaining({
+        soort: "zeg_en_kies_cijfers",
+        tekst: "Ik heb een tijdje niets meer gehoord. Wil je verder inspreken? Druk dan op het sterretje. Ben je klaar met je verslag? Druk dan op het hekje.",
+        maxCijfers: 1,
+        timeoutSeconden: 30,
+        geldigeCijfers: "*#",
+      }),
+    ]);
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("opname_onderbroken");
+    // Het fragment zelf staat al veilig, ook al is de oproep als geheel nog niet af.
+    expect(collection("training-verslagen")).toHaveLength(1);
+    expect(collection("training-verslagen")[0]!.trainerInvoer).toBe("Eerste stuk van het verslag.");
+  });
+
+  it("opdrachtpunt 4: 'verder inspreken' (*) na een automatische stop start een NIEUW fragment — poging+1, terug naar opname_verwacht, geen afronding", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    mockTranscribeAudio.mockResolvedValue("Eerste stuk.");
+    await verwerkOpnameStatus(payload, opnameStatusProvider(), oproepId, {});
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("opname_onderbroken");
+
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) });
+    const instructies = await verwerkVervolgKeuze(payload, provider, oproepId, {});
+
+    expect(instructies).toEqual([
+      expect.objectContaining({
+        soort: "zeg_en_neem_op",
+        tekst: "Oké, spreek verder in na de piep en sluit af met een hekje.",
+        stopToets: "#",
+        herstartToets: "*",
+        poging: 1,
+      }),
+    ]);
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("opname_verwacht");
+    expect(rij.heropnamePogingen).toBe(1);
+    // Geen enkele afronding — geen tweede/gewijzigd concept, geen AI-structurering.
+    expect(collection("training-verslagen")).toHaveLength(1);
+    expect(mockGenerateStructuredOutput).not.toHaveBeenCalled();
+  });
+
+  it("opdrachtpunt 5: meerdere fragmenten (automatische stop -> verder inspreken -> #) vormen samen ÉÉN verslag met beide teksten, nooit een tweede rij, nooit een verloren fragment", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    mockTranscribeAudio.mockResolvedValue("Eerste deel van het verhaal.");
+    await verwerkOpnameStatus(payload, opnameStatusProvider(), oproepId, {});
+
+    await verwerkVervolgKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "*", clientState: null }) }), oproepId, {});
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.heropnamePogingen).toBe(1);
+
+    // Tweede fragment: trainer rondt nu bewust af met '#'.
+    await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) }), oproepId, {});
+    mockTranscribeAudio.mockResolvedValue("Tweede deel van het verhaal.");
+    const tweedeFragmentProvider = opnameStatusProvider({
+      providerRecordingId: "RE-opdracht-tweede",
+      ophaalReferentie: "https://provider.example/recordings/RE-opdracht-tweede",
+      recordingStartedAt: "2026-08-27T09:05:00Z",
+    });
+    await verwerkOpnameStatus(payload, tweedeFragmentProvider, oproepId, {});
+
+    expect(collection("training-verslagen")).toHaveLength(1); // nooit een tweede rij
+    const verslag = collection("training-verslagen")[0]!;
+    expect(verslag.trainerInvoer).toBe("Eerste deel van het verhaal.\n\nTweede deel van het verhaal.");
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("concept_klaar");
+  });
+
+  it("opdrachtpunt 6: '#' rondt de oproep normaal af — concept_klaar, GEEN mogelijkOnvolledig (een bevestigde afronding door de trainer)", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    // De afsluitboodschap gaat al hier uit (spec: '#' moet meteen hoorbaar
+    // reageren) — de latere call.recording.saved-afhandeling mag 'm NOOIT
+    // nogmaals uitspreken (productieregressie-vervolgronde hierboven,
+    // claimAfsluitboodschap is een eenmalige claim), dus verwerkOpnameStatus
+    // hieronder levert terecht [] terug voor de spraak zelf.
+    const toetsInstructies = await verwerkOpnameToets(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) }), oproepId, {});
+    expect(toetsInstructies).toEqual([
+      { soort: "stop_opname", poging: 0 },
+      { soort: "zeg_en_ophangen", tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.", reden: "opname_afgerond" },
+    ]);
+    mockTranscribeAudio.mockResolvedValue("Volledig verslag in één keer ingesproken.");
+
+    const instructies = await verwerkOpnameStatus(payload, opnameStatusProvider(), oproepId, {});
+
+    expect(instructies).toEqual([]); // afsluitboodschap was al uitgesproken, geen dubbele
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("concept_klaar");
+    expect(Boolean(collection("training-verslagen")[0]!.mogelijkOnvolledig)).toBe(false);
+  });
+
+  it("opdrachtpunt 7: de maximale opnameduur (20 min = 1200s) is bereikt -> het opgenomen deel wordt alsnog veilig verwerkt (concept_klaar), trainer krijgt de EXPLICIETE 'maximale opnameduur bereikt'-boodschap, mogelijkOnvolledig=true", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    mockTranscribeAudio.mockResolvedValue("Verslag afgekapt op de maximale duur.");
+
+    const instructies = await verwerkOpnameStatus(payload, opnameStatusProvider({ duurSeconden: 1199 }), oproepId, {});
+
+    expect(instructies).toEqual([
+      { soort: "zeg_en_ophangen", tekst: "Je hebt de maximale opnameduur bereikt. Je verslag tot dit punt is opgeslagen en wordt verwerkt.", reden: "max_opnameduur_bereikt" },
+    ]);
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("concept_klaar");
+    expect(rij.mogelijkOnvolledig).toBe(true);
+    expect(collection("training-verslagen")[0]!.mogelijkOnvolledig).toBe(true);
+    expect(collection("training-verslagen")[0]!.trainerInvoer).toBe("Verslag afgekapt op de maximale duur.");
+  });
+
+  it("opdrachtpunt 8a: een onverwachte hangup ná een automatische stop rondt af met het reeds opgenomen materiaal — niets gaat verloren, mogelijkOnvolledig=true, hangup_cause/hangup_source opgeslagen", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    mockTranscribeAudio.mockResolvedValue("Materiaal dat al veilig stond vóór de hangup.");
+    await verwerkOpnameStatus(payload, opnameStatusProvider(), oproepId, {});
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("opname_onderbroken");
+
+    const provider = maakFakeProvider({ ontleedHangup: () => ({ providerCallId: "CA1", hangupCause: "normal_clearing", hangupSource: "caller" }) as HangupGegevens });
+    await verwerkOnverwachteHangup(payload, provider, oproepId, {});
+
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.status).toBe("concept_klaar");
+    expect(rij.mogelijkOnvolledig).toBe(true);
+    expect(rij.hangupCause).toBe("normal_clearing");
+    expect(rij.hangupSource).toBe("caller");
+    expect(collection("training-verslagen")).toHaveLength(1);
+    expect(collection("training-verslagen")[0]!.trainerInvoer).toBe("Materiaal dat al veilig stond vóór de hangup.");
+  });
+
+  it("opdrachtpunt 8b: een hangup TERWIJL een fragment nog actief wordt verwerkt (transcriptie_bezig) grijpt niet in het lopende traject in — dat rondt zelf af — maar hangup_cause/hangup_source worden alsnog onvoorwaardelijk vastgelegd", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    // Claimt het fragment (status -> opname_ontvangen) zonder de transcriptie zelf al af te ronden — simuleert "nog actief bezig".
+    await claimOpnameFragmentVerwerking(payload, oproepId, {
+      poging: 0,
+      recordingProviderId: "RE-actief",
+      ophaalReferentie: "https://provider.example/recordings/RE-actief",
+      recordingStartedAt: "2026-08-27T09:00:00Z",
+    });
+    expect(collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!.status).toBe("opname_ontvangen");
+
+    const provider = maakFakeProvider({ ontleedHangup: () => ({ providerCallId: "CA1", hangupCause: "call_rejected", hangupSource: "callee" }) as HangupGegevens });
+    await verwerkOnverwachteHangup(payload, provider, oproepId, {});
+
+    const rijNa = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rijNa.status).toBe("opname_ontvangen"); // ongewijzigd — het lopende fragment mag zelf uitlopen
+    expect(rijNa.hangupCause).toBe("call_rejected"); // toch onvoorwaardelijk vastgelegd
+    expect(rijNa.hangupSource).toBe("callee");
+    expect(collection("training-verslagen")).toHaveLength(0); // nog geen fragment succesvol afgerond
+  });
+
+  it("opdrachtpunt 9a: een dubbele call.hangup-webhook (bv. Telnyx-redelivery) rondt maar ÉÉN keer af — geen tweede AI-structurering, geen tweede/gewijzigde afronding", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    mockTranscribeAudio.mockResolvedValue("Eenmalig materiaal.");
+    await verwerkOpnameStatus(payload, opnameStatusProvider(), oproepId, {});
+
+    const provider = maakFakeProvider();
+    await verwerkOnverwachteHangup(payload, provider, oproepId, {});
+    await verwerkOnverwachteHangup(payload, provider, oproepId, {}); // exacte herhaling
+
+    expect(mockGenerateStructuredOutput).toHaveBeenCalledTimes(1);
+    expect(collection("training-verslagen")).toHaveLength(1);
+  });
+
+  it("opdrachtpunt 9b: een dubbele '#'-vervolgkeuze (bv. call.gather.ended + call.dtmf.received voor dezelfde toetsdruk) rondt maar ÉÉN keer af", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    mockTranscribeAudio.mockResolvedValue("Materiaal vóór de vervolgkeuze.");
+    await verwerkOpnameStatus(payload, opnameStatusProvider(), oproepId, {});
+
+    const provider = maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "#", clientState: null }) });
+    await verwerkVervolgKeuze(payload, provider, oproepId, {});
+    await verwerkVervolgKeuze(payload, provider, oproepId, {}); // exacte herhaling
+
+    expect(mockGenerateStructuredOutput).toHaveBeenCalledTimes(1);
+    expect(collection("training-verslagen")).toHaveLength(1);
+  });
+
+  it("opdrachtpunt 10: hangup_cause/hangup_source ontbreken netjes (null) als Telnyx ze niet meegeeft — nooit een crash, nooit een verzonnen waarde", async () => {
+    const oproepId = await oproepKlaarVoorOpname();
+    const provider = maakFakeProvider({ ontleedHangup: () => ({ providerCallId: "CA1", hangupCause: null, hangupSource: null }) as HangupGegevens });
+
+    await verwerkOnverwachteHangup(payload, provider, oproepId, {});
+
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
+    expect(rij.hangupCause ?? null).toBeNull();
+    expect(rij.hangupSource ?? null).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // verwerkTelefonieHandmatigeRetry — admin-getriggerde "probeer nu opnieuw"
 // (2026-08-25, admin-detailscherm, RetryTelefonieButton.tsx). Hergebruikt
 // dezelfde claimEnVerwerkOnderhoudsKandidaat als verwerkTelefonieOnderhoud
@@ -1583,6 +1839,15 @@ describe("verwerkTelefonieHandmatigeRetry", () => {
     await verwerkInkomendeCall(payload, provider, {});
     const oproepId = collection("trainer-telefonie-oproepen")[0]!.id as number;
     await verwerkTrainingKeuze(payload, maakFakeProvider({ ontleedGatherResultaat: () => ({ cijfers: "1", clientState: null }) }), oproepId, {});
+    // Root-cause-fix productie-incident (2026-08-27, spec-eis §6) — deze
+    // helper simuleert het NORMALE '#'-happy-path (poging 0, nog geen enkele
+    // '*'-herstart): zonder deze markering zou bepaalAfsluitreden elk
+    // hierna binnenkomend fragment als "automatisch" (stilte-stop)
+    // classificeren en NIET afronden (spec-eis §6) — de tests in dit blok
+    // gaan expliciet over retry-/idempotentie-/AI-degradatiegedrag NA een
+    // voltooide, afgeronde opname, niet over de stilte-stop-classificatie
+    // zelf (die heeft haar eigen dedicated tests elders in dit bestand).
+    await zetBewustGestopt(payload, oproepId, 0);
     return oproepId;
   }
 
@@ -1650,7 +1915,7 @@ describe("verwerkTelefonieHandmatigeRetry", () => {
   // claimt de beheerderknop NIET.
   it("een 'vastgelopen' rij (status='opname_ontvangen', oud updatedAt) -> 'niet_van_toepassing' via het handmatige pad, ook al zou de cron 'm wel claimen", async () => {
     const oproepId = await oproepKlaarVoorOpname();
-    const gewonnen = await claimOpnameVerwerking(payload, oproepId, "RE1", "https://provider.example/recordings/RE1");
+    const gewonnen = await claimOpnameFragmentVerwerking(payload, oproepId, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: "https://provider.example/recordings/RE1", recordingStartedAt: "2026-08-27T10:00:00Z" });
     expect(gewonnen).toBe(true);
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproepId)!;
     expect(rij.status).toBe("opname_ontvangen");

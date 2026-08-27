@@ -539,6 +539,10 @@ export interface TrainingVerslagen {
    */
   definitieveTekst?: string | null;
   aiGegenereerd?: boolean | null;
+  /**
+   * Uitsluitend relevant bij bron=telefoon: true als het gesprek niet via een expliciete '#'-bevestiging is afgerond (maximale opnameduur bereikt, geen reactie op de vervolgvraag, of een onverwachte hangup). Controleer de tekst voordat dit verslag definitief bevestigd wordt.
+   */
+  mogelijkOnvolledig?: boolean | null;
   status: 'concept' | 'gedeeltelijk' | 'bevestigd' | 'voltooid';
   /**
    * 'Bezig' is een kortstondige claim (zie trainingUpdateClaimedAt) — nooit een eindstatus. Alleen server-side via een atomische conditional UPDATE gezet, nooit hier handmatig.
@@ -609,6 +613,7 @@ export interface TrainerTelefonieOproepen {
     | 'trainer_herkend'
     | 'training_gekozen'
     | 'opname_verwacht'
+    | 'opname_onderbroken'
     | 'opname_ontvangen'
     | 'transcriptie_bezig'
     | 'transcriptie_mislukt_herstelbaar'
@@ -689,6 +694,42 @@ export interface TrainerTelefonieOproepen {
    * De client_state van de laatst geclaimde #/*-toetsdruk tijdens een actieve opname — atomaire dedup-garantie tegen dubbele verwerking van dezelfde toetsdruk via zowel call.dtmf.received als call.gather.ended. Leeg = nog geen toetsdruk geclaimd voor de huidige opnamepoging.
    */
   opnameToetsClaimClientState?: string | null;
+  /**
+   * Leeg = nog geen enkele poging bewust via '#' gestopt. Zodra gezet: deze specifieke opnamepoging was een bewuste afronding door de trainer, geen automatische stilte-/duurlimiet-stop.
+   */
+  bewustGestoptPoging?: number | null;
+  /**
+   * Array van opnamepoging-nummers waarvan de call.recording.saved-verwerking al is geclaimd — atomaire, poging-scoped dedup tegen een dubbel afgeleverd Telnyx-webhookevent (nooit hetzelfde fragment twee keer transcriberen/toevoegen). Uitsluitend diagnostiek, geen bron van waarheid voor de verslagtekst zelf.
+   */
+  opnameFragmentClaims?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Welke specifieke opnamepoging opnameOphaalReferentie/recordingProviderId op dit moment vertegenwoordigen — nodig omdat er bij meerdere fragmenten (na 'verder inspreken') meerdere opnameresources onder hetzelfde call_leg_id kunnen staan bij Telnyx.
+   */
+  opnameHuidigePoging?: number | null;
+  /**
+   * Telnyx' eigen recording_started_at van het fragment dat opnameHuidigePoging hierboven vertegenwoordigt — gebruikt om bij een automatische retry precies DIT fragment te herselecteren bij Telnyx (i.p.v. diens 'meest recente opname'-heuristiek, die bij meerdere fragmenten het verkeerde fragment zou kunnen kiezen).
+   */
+  opnameHuidigeRecordingStartedAt?: string | null;
+  /**
+   * Rechtstreeks van Telnyx' call.hangup-webhookevent, indien ontvangen — uitsluitend voor beheerdiagnostiek.
+   */
+  hangupCause?: string | null;
+  /**
+   * Rechtstreeks van Telnyx' call.hangup-webhookevent (wie hing op: beller/callee/provider), indien ontvangen — uitsluitend voor beheerdiagnostiek.
+   */
+  hangupSource?: string | null;
+  /**
+   * True zodra dit gesprek NIET via een expliciete, door de trainer bevestigde '#' is afgerond (maximale opnameduur bereikt, geen reactie op de vervolgvraag ná een stilte-stop, of een onverwachte hangup) — zelfde vlag als op het resulterende trainingsverslag; controleer het transcript voordat dit als definitief verslag wordt beschouwd.
+   */
+  mogelijkOnvolledig?: boolean | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2792,6 +2833,7 @@ export interface TrainingVerslagenSelect<T extends boolean = true> {
   trainerInvoer?: T;
   definitieveTekst?: T;
   aiGegenereerd?: T;
+  mogelijkOnvolledig?: T;
   status?: T;
   trainingUpdateStatus?: T;
   trainingUpdateClaimedAt?: T;
@@ -2838,6 +2880,13 @@ export interface TrainerTelefonieOproepenSelect<T extends boolean = true> {
   afgerondOp?: T;
   afsluitboodschapGestartOp?: T;
   opnameToetsClaimClientState?: T;
+  bewustGestoptPoging?: T;
+  opnameFragmentClaims?: T;
+  opnameHuidigePoging?: T;
+  opnameHuidigeRecordingStartedAt?: T;
+  hangupCause?: T;
+  hangupSource?: T;
+  mogelijkOnvolledig?: T;
   updatedAt?: T;
   createdAt?: T;
 }

@@ -76,6 +76,35 @@ export interface OpnameStatusGegevens {
    * client_state teruggaf (bv. een oud/ongebruikelijk event).
    */
   clientState: string | null;
+  /**
+   * Root-cause-fix productie-incident (2026-08-27, spec-eis §10) — Telnyx'
+   * eigen recording_started_at van DIT specifieke fragment, ONGEWIJZIGD
+   * doorgegeven. Nodig omdat er bij Telnyx meerdere opnameresources onder
+   * hetzelfde call_leg_id kunnen staan zodra een gesprek meerdere fragmenten
+   * heeft (ná "verder inspreken") — dit is de sleutel waarmee haalOpnameOp
+   * hieronder precies DIT fragment terugvindt, i.p.v. providers.ts se oude
+   * "meest recente opname"-heuristiek (die bij meerdere fragmenten het
+   * verkeerde fragment zou kunnen kiezen, bv. bij een automatische retry van
+   * een EERDER fragment terwijl er inmiddels al een NIEUWER fragment loopt).
+   */
+  recordingStartedAt: string | null;
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §8) — het
+ * call.hangup-webhookevent: de beller/callee/provider heeft de verbinding
+ * beëindigd. Providerneutraal opgeslagen voor beheerdiagnostiek (spec-eis:
+ * "sla hangup_cause/hangup_source op waar mogelijk") — gesprek.ts gebruikt
+ * dit event ZELF ook als laatste redmiddel om reeds opgenomen/getranscribeerd
+ * materiaal alsnog te verwerken als de oproep nog niet was afgerond (spec-eis
+ * §8: "maak de flow bestand tegen een onverwachte call.hangup").
+ */
+export interface HangupGegevens {
+  providerCallId: string;
+  /** Telnyx' eigen, providerspecifieke hangup-oorzaakcode (bv. "normal_clearing", "timeout") — nooit vertaald/geïnterpreteerd, uitsluitend opgeslagen voor beheer. Null als de provider dit veld niet meegaf. */
+  hangupCause: string | null;
+  /** Telnyx' eigen aanduiding van wie ophing (bv. "caller"/"callee"). Null als de provider dit veld niet meegaf. */
+  hangupSource: string | null;
 }
 
 /**
@@ -127,7 +156,23 @@ export type VoiceInstructie =
        */
       reden: string;
     }
-  | { soort: "zeg_en_kies_cijfers"; tekst: string; actieUrl: string; maxCijfers: number; timeoutSeconden: number }
+  | {
+      soort: "zeg_en_kies_cijfers";
+      tekst: string;
+      actieUrl: string;
+      maxCijfers: number;
+      timeoutSeconden: number;
+      /**
+       * Root-cause-fix productie-incident (2026-08-27, spec-eis §6) —
+       * optioneel: welke toetsen geldig zijn (Telnyx' valid_digits).
+       * Ontbreekt (bestaande aanroepers, o.a. trainingkeuze): "0123456789",
+       * ongewijzigd gedrag. De vervolgkeuze-prompt ná een automatische
+       * stilte-stop (gesprek.ts se verwerkVervolgKeuze) geeft hier
+       * VERVOLG_DOORGAAN_TOETS+VERVOLG_AFRONDEN_TOETS ('*'/'#') mee — die
+       * horen niet bij een numerieke keuze.
+       */
+      geldigeCijfers?: string;
+    }
   | {
       /**
        * Productieblocker-ronde (2026-08-26) — spreekt UITSLUITEND de tekst
@@ -285,6 +330,8 @@ export interface TelefonieProvider {
   ontleedOpnameStatus(vormVelden: Record<string, string>): OpnameStatusGegevens;
   /** Productieblocker-ronde (2026-08-26) — het call.speak.ended-event: dé deterministische bevestiging dat een eerder speak-commando volledig is afgespeeld. */
   ontleedSpreekAfgerond(vormVelden: Record<string, string>): SpreekAfgerondGegevens;
+  /** Root-cause-fix productie-incident (2026-08-27, spec-eis §8) — het call.hangup-event. */
+  ontleedHangup(vormVelden: Record<string, string>): HangupGegevens;
 
   /**
    * Voert de instructies uit en geeft terug wat de webhookroute zelf als
@@ -311,8 +358,22 @@ export interface TelefonieProvider {
    */
   beantwoordOproep(providerCallId: string): Promise<void>;
 
-  /** Providerauthenticatie geregeld door de adapter zelf (spec §9: "provider-authenticated downloads") — geeft de ruwe audiobytes terug, nooit een tussenliggende publieke URL. */
-  haalOpnameOp(ophaalReferentie: string): Promise<ArrayBuffer>;
+  /**
+   * Providerauthenticatie geregeld door de adapter zelf (spec §9:
+   * "provider-authenticated downloads") — geeft de ruwe audiobytes terug,
+   * nooit een tussenliggende publieke URL.
+   *
+   * `fragmentSelectie` (root-cause-fix productie-incident 2026-08-27,
+   * spec-eis §10) — optioneel: welke SPECIFIEKE opnameresource opgehaald
+   * moet worden (Telnyx' eigen recording_started_at van dat fragment, zie
+   * OpnameStatusGegevens hierboven) — nodig zodra een gesprek meerdere
+   * fragmenten heeft (ná "verder inspreken"), anders zou een automatische
+   * retry van een OUDER fragment per ongeluk het nieuwste/meest recente
+   * fragment kunnen ophalen. Weggelaten (of geen match gevonden): valt terug
+   * op de bestaande "meest recent gestarte opname"-heuristiek — ongewijzigd
+   * gedrag voor het enkelvoudige-fragment-geval.
+   */
+  haalOpnameOp(ophaalReferentie: string, fragmentSelectie?: { recordingStartedAt: string | null }): Promise<ArrayBuffer>;
 
   /** Best-effort opruiming bij de provider zelf (spec §9: "audio verwijderen zodra transcriptie succesvol + concept veilig opgeslagen is") — MAG falen zonder de aanroeper te blokkeren; aanroepers loggen een mislukking, gooien 'm nooit door. */
   verwijderOpname(providerRecordingId: string): Promise<void>;

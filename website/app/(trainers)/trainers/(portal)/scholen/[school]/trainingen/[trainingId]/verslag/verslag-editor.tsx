@@ -36,6 +36,15 @@ export interface VerslagInitieel {
   weergaveTekst?: string;
   /** Ronde 3.5 (telefonie) — spec §13: "Toon klein: Bron: telefonisch ingesproken." */
   bron?: "portal" | "telefoon" | null;
+  /**
+   * Root-cause-fix productie-incident (2026-08-27) — true zodra dit
+   * telefonisch concept NIET via een expliciete '#'-bevestiging is
+   * afgerond (maximale opnameduur bereikt, geen reactie op de vervolgvraag
+   * ná een automatische stilte-stop, of een onverwachte hangup). Ongewijzigd
+   * gezet, nooit hier client-side herberekend — zie
+   * payload/collections/TrainingVerslagen.ts.
+   */
+  mogelijkOnvolledig?: boolean | null;
 }
 
 const DENKHULP = [
@@ -119,6 +128,10 @@ export function VerslagEditor({
   // herschreven (zie payload/collections/TrainingVerslagen.ts) — geen state
   // nodig, blijft voor de levensduur van dit component identiek.
   const bron = verslagInitieel?.bron ?? null;
+  // Root-cause-fix productie-incident (2026-08-27) — zelfde onveranderlijke
+  // aanpak als bron hierboven: uitsluitend bij afronding server-side gezet,
+  // nooit hier herberekend.
+  const mogelijkOnvolledig = verslagInitieel?.mogelijkOnvolledig ?? false;
 
   const [fase, setFase] = useState<"invoer" | "concept">(verslagInitieel?.definitieveTekst ? "concept" : "invoer");
 
@@ -277,6 +290,7 @@ export function VerslagEditor({
     return (
       <div className="flex flex-col gap-4">
         <BronBadge bron={bron} />
+        {mogelijkOnvolledig && <MogelijkOnvolledigBanner />}
         <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50/60 px-4 py-3 text-body-sm font-medium text-green-800">
           <CheckCircle2 size={18} />
           Verslag ingevuld — opgeslagen bij de training en in het schoollogboek.
@@ -291,6 +305,7 @@ export function VerslagEditor({
     return (
       <div className="flex flex-col gap-4">
         <BronBadge bron={bron} />
+        {mogelijkOnvolledig && <MogelijkOnvolledigBanner />}
         <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
           <div className="flex items-start gap-2 text-body-sm font-medium text-amber-800">
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
@@ -349,6 +364,8 @@ export function VerslagEditor({
         <StapIndicator fase={fase} />
         <BronBadge bron={bron} />
       </div>
+
+      {mogelijkOnvolledig && <MogelijkOnvolledigBanner />}
 
       {fase === "invoer" ? (
         <section className="rounded-xl border border-grijs-200 bg-white p-4 shadow-sm">
@@ -549,6 +566,27 @@ function BronBadge({ bron }: { bron: "portal" | "telefoon" | null }) {
       <PhoneIncoming size={11} />
       Bron: telefonisch ingesproken
     </span>
+  );
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27) — zichtbaar zodra
+ * mogelijkOnvolledig=true staat (nooit hier bepaald, uitsluitend server-side
+ * gezet, zie payload/collections/TrainingVerslagen.ts). Bewust opvallender
+ * dan BronBadge hierboven (amber, met tekst i.p.v. een kleine pil): dit is
+ * een actieve vraag om te controleren, geen neutrale herkomstinfo.
+ */
+function MogelijkOnvolledigBanner() {
+  return (
+    <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-body-sm text-amber-800">
+      <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+      <div>
+        <p className="font-medium">Mogelijk onvolledig</p>
+        <p className="mt-0.5 text-amber-700">
+          Dit telefonisch ingesproken verslag is niet met een bewuste afronding beëindigd (bv. de maximale opnameduur was bereikt, of de verbinding werd onverwacht verbroken). Controleer de tekst voordat je hem bevestigt.
+        </p>
+      </div>
+    </div>
   );
 }
 

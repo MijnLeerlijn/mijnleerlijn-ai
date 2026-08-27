@@ -240,26 +240,59 @@ export function maakFakePayload(seed: Record<string, FakeDoc[]>): FakePayload {
             return { rows: [{ id }] };
           }
 
-          // Ronde 3.5 (telefonie) — claimOpnameVerwerking se atomische
-          // conditionele UPDATE (lib/trainers/telefonie/oproep-state.ts):
-          // zelfde claimprincipe als training_update_status/school_update_
-          // status hierboven, maar op trainer_telefonie_oproepen, met een
-          // vaste doelstatus i.p.v. een "bezig"-lease (Twilio's
-          // recordingStatusCallback komt nooit gelijktijdig-parallel binnen,
-          // wél soms herhaald ná de eerste, al-verwerkte aanroep — vandaar
-          // "claimbaar zolang er nog geen ANDERE recordingProviderId
-          // geclaimd heeft", i.p.v. een tijd-gebaseerde lease). Slaat sinds
-          // gate 1 ook opnameOphaalReferentie + updatedAt op, in dezelfde
-          // atomische stap als de echte SQL.
-          if (tekst.includes("SET status = 'opname_ontvangen'")) {
-            const [recordingProviderId, ophaalReferentie, id] = params as [string, string | null, number, string];
+          // Root-cause-fix productie-incident (2026-08-27) —
+          // claimOpnameFragmentVerwerking se atomische conditionele UPDATE
+          // (lib/trainers/telefonie/oproep-state.ts, verving claimOpname-
+          // Verwerking): zelfde claimprincipe als training_update_status/
+          // school_update_status hierboven, maar nu ook POGING-SCOPED
+          // (opname_fragment_claims @> jsonb_build_array(poging)) — een
+          // gesprek kan sinds deze ronde meerdere legitieme fragmenten
+          // hebben (spec-eis §6/§10), dus "was er al ÜBERHAUPT een
+          // recording_provider_id" (de oude voorwaarde) volstaat niet meer.
+          // Bewust gecontroleerd via een specifieke, unieke deeltekst
+          // ("opname_fragment_claims = opname_fragment_claims ||") — ELKE
+          // interpolatie wordt door ontleedRaweSql een eigen "?"-param, ook
+          // bij een herhaalde JS-waarde, dus params-volgorde is hier exact
+          // [recordingProviderId, ophaalReferentie, poging, recordingStartedAt,
+          // poging (nogmaals, in de SET-clausule se jsonb_build_array),
+          // oproepId, poging (nogmaals, in de WHERE-clausule se NOT-check)].
+          if (tekst.includes("opname_fragment_claims = opname_fragment_claims ||")) {
+            const [recordingProviderId, ophaalReferentie, poging, recordingStartedAt, , id] = params as [string, string | null, number, string | null, number, number];
             const oproepen = arr("trainer-telefonie-oproepen");
             const doc = oproepen.find((d) => d.id === id);
             if (!doc) return { rows: [] };
             const statusOk = doc.status === "training_gekozen" || doc.status === "opname_verwacht";
-            const recordingOk = doc.recordingProviderId === undefined || doc.recordingProviderId === null || doc.recordingProviderId === recordingProviderId;
-            if (!statusOk || !recordingOk) return { rows: [] };
-            Object.assign(doc, { status: "opname_ontvangen", recordingProviderId, opnameOphaalReferentie: ophaalReferentie, updatedAt: new Date().toISOString() });
+            const bestaandeClaims: number[] = Array.isArray(doc.opnameFragmentClaims) ? (doc.opnameFragmentClaims as number[]) : [];
+            const algGeclaimd = bestaandeClaims.includes(poging);
+            if (!statusOk || algGeclaimd) return { rows: [] };
+            Object.assign(doc, {
+              status: "opname_ontvangen",
+              recordingProviderId,
+              opnameOphaalReferentie: ophaalReferentie,
+              opnameHuidigePoging: poging,
+              opnameHuidigeRecordingStartedAt: recordingStartedAt,
+              opnameFragmentClaims: [...bestaandeClaims, poging],
+              updatedAt: new Date().toISOString(),
+            });
+            return { rows: [{ id }] };
+          }
+
+          // Root-cause-fix productie-incident (2026-08-27) —
+          // claimFinalisatieZonderActiefFragment se atomische conditionele
+          // UPDATE (oproep-state.ts): claimbaar vanuit 'training_gekozen'/
+          // 'opname_verwacht'/'opname_onderbroken'. BEWUST VÓÓR de generieke
+          // "SET status = 'transcriptie_bezig'"-tak hieronder gecontroleerd
+          // (claimTranscriptieRetry) — beide queries beginnen met dezelfde
+          // SET-clausuletekst, deze WHERE-clausule (met 'opname_onderbroken')
+          // is uniek voor deze functie.
+          if (tekst.includes("AND status IN ('training_gekozen', 'opname_verwacht', 'opname_onderbroken')")) {
+            const [id] = params as [number];
+            const oproepen = arr("trainer-telefonie-oproepen");
+            const doc = oproepen.find((d) => d.id === id);
+            if (!doc) return { rows: [] };
+            const claimbaar = doc.status === "training_gekozen" || doc.status === "opname_verwacht" || doc.status === "opname_onderbroken";
+            if (!claimbaar) return { rows: [] };
+            Object.assign(doc, { status: "transcriptie_bezig", updatedAt: new Date().toISOString() });
             return { rows: [{ id }] };
           }
 

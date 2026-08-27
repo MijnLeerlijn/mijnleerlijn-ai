@@ -1,6 +1,6 @@
 import { createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { requireEnv } from "@/config/env";
-import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens, SpreekAfgerondGegevens, VoiceInstructie, VoiceWebhookRespons } from "./provider";
+import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens, SpreekAfgerondGegevens, HangupGegevens, VoiceInstructie, VoiceWebhookRespons } from "./provider";
 
 // Traineromgeving V1, Ronde 3.5 vervolg (2026-08-25) — providermigratie
 // Twilio -> Telnyx. Dit is de ENIGE plek waar Telnyx-specifieke concepten
@@ -236,7 +236,7 @@ async function voerInstructieUit(callControlId: string, instructie: VoiceInstruc
         voice: TELNYX_TTS_VOICE,
         language: TELNYX_TTS_TAAL,
         service_level: TELNYX_TTS_SERVICE_LEVEL,
-        valid_digits: "0123456789",
+        valid_digits: instructie.geldigeCijfers ?? "0123456789",
         minimum_digits: instructie.maxCijfers,
         maximum_digits: instructie.maxCijfers,
         inter_digit_timeout_millis: instructie.timeoutSeconden * 1000,
@@ -653,8 +653,22 @@ async function haalOpnames(callLegId: string): Promise<TelnyxOpnameResource[]> {
  * dubbele opnames, het oorspronkelijke scenario hierboven). Elk geval met
  * meer dan één kandidaat wordt nog altijd expliciet gelogd (uitsluitend
  * id's/tijden/duur, nooit audio-inhoud, spec §9).
+ *
+ * `gewensteRecordingStartedAt` (root-cause-fix productie-incident 2026-08-27,
+ * spec-eis §10) — sinds "verder inspreken" bestaan er structureel vaker
+ * MEERDERE, INHOUDELIJK VERSCHILLENDE, allemaal geaccepteerde fragmenten
+ * onder hetzelfde call_leg_id (elk eigen fragment, geen afgewezen pogingen)
+ * — "meest recent gestart" is dan voor een RETRY van een OUDER fragment
+ * ronduit fout (zou het nieuwste fragment kiezen, niet het fragment dat
+ * daadwerkelijk opnieuw geprobeerd moet worden). Bij een meegegeven waarde
+ * die EXACT overeenkomt met een kandidaat se eigen recording_started_at
+ * (Telnyx' eigen, ongewijzigd doorgegeven waarde — zie provider.ts se
+ * OpnameStatusGegevens) wordt die precies gekozen, geen heuristiek nodig.
+ * Geen match (of geen waarde meegegeven): terugval op de bestaande
+ * "meest recent gestart"-heuristiek — ongewijzigd gedrag voor het
+ * enkelvoudige-fragment-geval.
  */
-function kiesOpname(opnames: TelnyxOpnameResource[], callLegId: string): TelnyxOpnameResource {
+function kiesOpname(opnames: TelnyxOpnameResource[], callLegId: string, gewensteRecordingStartedAt?: string | null): TelnyxOpnameResource {
   if (opnames.length === 0) {
     // Kan structureel voorkomen zolang Telnyx de opname nog niet volledig
     // heeft verwerkt (call.recording.saved kan iets vóór de lijst-indexering
@@ -662,11 +676,15 @@ function kiesOpname(opnames: TelnyxOpnameResource[], callLegId: string): TelnyxO
     // dit vanzelf een volgende ronde opnieuw.
     throw new Error(`Geen opname gevonden bij Telnyx voor call_leg_id=${callLegId}.`);
   }
+  if (gewensteRecordingStartedAt) {
+    const precies = opnames.find((opname) => opname.recording_started_at === gewensteRecordingStartedAt);
+    if (precies) return precies;
+  }
   if (opnames.length > 1) {
     console.error(
       `[telefonie/telnyx] meerdere opnames gevonden voor één gesprek (call_leg_id=${callLegId}): ${opnames
         .map((opname) => `${opname.id}(duur=${opnameDuurMs(opname)}ms,start=${opname.recording_started_at ?? "onbekend"})`)
-        .join(", ")} — meest recent gestarte gekozen.`
+        .join(", ")} — geen exacte fragmentmatch, meest recent gestarte gekozen.`
     );
   }
   return [...opnames].sort((a, b) => {
@@ -737,6 +755,25 @@ export function telnyxProvider(): TelefonieProvider {
         // vlakTelnyxEventAf (webhook-helpers.ts) slaat elk top-level
         // payloadveld al plat op — geen aparte parsing hier nodig.
         clientState: vormVelden.client_state ?? null,
+        // Root-cause-fix productie-incident (2026-08-27, spec-eis §10) —
+        // ONGEWIJZIGD doorgegeven, zodat haalOpnameOp bij een retry precies
+        // DIT fragment kan terugvinden (zie provider.ts se doc-comment).
+        recordingStartedAt: vormVelden.recording_started_at ?? null,
+      };
+    },
+
+    ontleedHangup(vormVelden): HangupGegevens {
+      // Root-cause-fix productie-incident (2026-08-27, spec-eis §8) —
+      // call.hangup se payload bevat, net als call.speak.ended, rechtstreeks
+      // call_control_id (geen call_leg_id-terugval nodig). hangup_cause/
+      // hangup_source zijn Telnyx' eigen, providerspecifieke velden —
+      // vlakTelnyxEventAf slaat ze al generiek plat op, dus uitsluitend
+      // doorgeven hier, nooit vertalen/interpreteren (spec: uitsluitend
+      // beheerdiagnostiek).
+      return {
+        providerCallId: vormVelden.call_control_id ?? "",
+        hangupCause: vormVelden.hangup_cause ?? null,
+        hangupSource: vormVelden.hangup_source ?? null,
       };
     },
 
@@ -772,8 +809,8 @@ export function telnyxProvider(): TelefonieProvider {
       await telnyxCommando(providerCallId, "answer", {});
     },
 
-    async haalOpnameOp(ophaalReferentie): Promise<ArrayBuffer> {
-      const opname = kiesOpname(await haalOpnames(ophaalReferentie), ophaalReferentie);
+    async haalOpnameOp(ophaalReferentie, fragmentSelectie): Promise<ArrayBuffer> {
+      const opname = kiesOpname(await haalOpnames(ophaalReferentie), ophaalReferentie, fragmentSelectie?.recordingStartedAt);
       const mp3Url = opname.download_urls?.mp3;
       if (!mp3Url) {
         throw new Error(`Opname ${opname.id} heeft geen mp3-downloadlink (download_urls.mp3 ontbreekt).`);

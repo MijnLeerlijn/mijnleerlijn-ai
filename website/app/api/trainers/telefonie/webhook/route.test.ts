@@ -2,7 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { telnyxProvider } from "@/lib/trainers/telefonie/telnyx-provider";
-import { verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameToets, verwerkSpreekAfgerond, verwerkOpnameAfgerond, verwerkOpnameStatus } from "@/lib/trainers/telefonie/gesprek";
+import {
+  verwerkInkomendeCall,
+  verwerkTrainingKeuze,
+  verwerkOpnameToets,
+  verwerkSpreekAfgerond,
+  verwerkOpnameAfgerond,
+  verwerkOpnameStatus,
+  verwerkVervolgKeuze,
+  verwerkOnverwachteHangup,
+} from "@/lib/trainers/telefonie/gesprek";
 import { maakOfHaalOproep } from "@/lib/trainers/telefonie/oproep-state";
 import type { TelefonieProvider } from "@/lib/trainers/telefonie/provider";
 
@@ -29,6 +38,8 @@ vi.mock("@/lib/trainers/telefonie/gesprek", async (importOriginal) => {
     verwerkSpreekAfgerond: vi.fn(),
     verwerkOpnameAfgerond: vi.fn(),
     verwerkOpnameStatus: vi.fn(),
+    verwerkVervolgKeuze: vi.fn(),
+    verwerkOnverwachteHangup: vi.fn(),
   };
 });
 vi.mock("@/lib/trainers/telefonie/oproep-state", () => ({ maakOfHaalOproep: vi.fn() }));
@@ -40,6 +51,8 @@ const mockVerwerkOpnameToets = vi.mocked(verwerkOpnameToets);
 const mockVerwerkSpreekAfgerond = vi.mocked(verwerkSpreekAfgerond);
 const mockVerwerkOpnameAfgerond = vi.mocked(verwerkOpnameAfgerond);
 const mockVerwerkOpnameStatus = vi.mocked(verwerkOpnameStatus);
+const mockVerwerkVervolgKeuze = vi.mocked(verwerkVervolgKeuze);
+const mockVerwerkOnverwachteHangup = vi.mocked(verwerkOnverwachteHangup);
 const mockMaakOfHaalOproep = vi.mocked(maakOfHaalOproep);
 
 function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): TelefonieProvider {
@@ -50,6 +63,7 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
     ontleedGatherResultaat: vi.fn(),
     ontleedOpnameStatus: vi.fn(),
     ontleedSpreekAfgerond: vi.fn(),
+    ontleedHangup: vi.fn(),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn(),
@@ -76,7 +90,9 @@ beforeEach(() => {
   mockVerwerkOpnameToets.mockReset().mockResolvedValue([]);
   mockVerwerkSpreekAfgerond.mockReset().mockResolvedValue([]);
   mockVerwerkOpnameAfgerond.mockReset().mockResolvedValue([{ soort: "zeg_en_ophangen", tekst: "Dank je.", reden: "opname_afgerond" }]);
-  mockVerwerkOpnameStatus.mockReset().mockResolvedValue(undefined);
+  mockVerwerkOpnameStatus.mockReset().mockResolvedValue([]);
+  mockVerwerkVervolgKeuze.mockReset().mockResolvedValue([]);
+  mockVerwerkOnverwachteHangup.mockReset().mockResolvedValue(undefined);
   mockMaakOfHaalOproep.mockReset().mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
   mockTelnyxProvider.mockReset();
 });
@@ -259,7 +275,7 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
     mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_verwacht" } as never);
-    const instructies = [{ soort: "opname_starten" as const, maxDuurSeconden: 900, stilteTimeoutSeconden: 5, stopToets: "#", herstartToets: "*", poging: 0 }];
+    const instructies = [{ soort: "opname_starten" as const, maxDuurSeconden: 1200, stilteTimeoutSeconden: 60, stopToets: "#", herstartToets: "*", poging: 0 }];
     mockVerwerkSpreekAfgerond.mockResolvedValue(instructies);
 
     await POST(maakRequest({ data: { event_type: "call.speak.ended", payload: { call_control_id: "cc_1", client_state: "c3RhcnRfb3BuYW1lOjA=" } } }));
@@ -268,15 +284,40 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", instructies);
   });
 
-  it("call.recording.saved -> verwerkOpnameStatus aangeroepen mét de opgeloste oproepId, daarna best-effort afsluitend bericht", async () => {
+  it("call.recording.saved -> verwerkOpnameStatus aangeroepen mét de opgeloste oproepId, en DIENS EIGEN teruggegeven instructies rechtstreeks uitgevoerd (root-cause-fix 2026-08-27, spec-eis §6 — geen aparte altijd-uitgevoerde verwerkOpnameAfgerond hier meer, die zou een automatische stop alsnog ten onrechte laten ophangen)", async () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
     mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_ontvangen" } as never);
+    const instructies = [{ soort: "zeg_en_ophangen" as const, tekst: "Bedankt.", reden: "opname_afgerond" as const }];
+    mockVerwerkOpnameStatus.mockResolvedValue(instructies);
 
     await POST(maakRequest({ data: { event_type: "call.recording.saved", payload: { call_control_id: "cc_1", recording_id: "rec_1" } } }));
 
     expect(mockVerwerkOpnameStatus).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ recording_id: "rec_1" }));
-    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", [{ soort: "zeg_en_ophangen", tekst: "Dank je.", reden: "opname_afgerond" }]);
+    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", instructies);
+    expect(mockVerwerkOpnameAfgerond).not.toHaveBeenCalled(); // uitsluitend nog aangeroepen VANUIT gesprek.ts zelf, nooit meer los door de route
+  });
+
+  it("call.recording.saved met een automatische (stilte-)stop -> verwerkOpnameStatus se vervolgkeuze-prompt wordt uitgevoerd, GEEN ophangen (spec-eis §6, hier op dispatchniveau: de route voert blind uit wat verwerkOpnameStatus teruggeeft)", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_ontvangen" } as never);
+    const vervolgkeuzePrompt = [
+      {
+        soort: "zeg_en_kies_cijfers" as const,
+        tekst: "Ik heb een tijdje niets meer gehoord. Wil je verder inspreken? Druk dan op het sterretje. Ben je klaar met je verslag? Druk dan op het hekje.",
+        actieUrl: "/api/trainers/telefonie/webhook/vervolgkeuze?oproepId=42",
+        maxCijfers: 1,
+        timeoutSeconden: 30,
+        geldigeCijfers: "*#",
+      },
+    ];
+    mockVerwerkOpnameStatus.mockResolvedValue(vervolgkeuzePrompt);
+
+    await POST(maakRequest({ data: { event_type: "call.recording.saved", payload: { call_control_id: "cc_1", recording_id: "rec_1" } } }));
+
+    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_1", vervolgkeuzePrompt);
+    expect(provider.voerVoiceInstructiesUit).not.toHaveBeenCalledWith("cc_1", expect.arrayContaining([expect.objectContaining({ soort: "zeg_en_ophangen" })]));
   });
 
   it("call.recording.error -> ook doorgezet naar verwerkOpnameStatus (dezelfde functie handelt de mislukte status zelf af)", async () => {
@@ -304,17 +345,67 @@ describe("POST /api/trainers/telefonie/webhook — event_type-dispatch", () => {
     expect(mockVerwerkOpnameStatus).toHaveBeenNthCalledWith(2, expect.anything(), provider, 99, expect.anything());
   });
 
-  it("een onbekend/niet-gebruikt event_type (bv. call.hangup) -> stil genegeerd, 200, geen enkele dispatch", async () => {
+  it("een onbekend/niet-gebruikt event_type (bv. call.speak.started) -> stil genegeerd, 200, geen enkele dispatch", async () => {
     const provider = maakFakeProvider();
     mockTelnyxProvider.mockReturnValue(provider);
 
-    const response = await POST(maakRequest({ data: { event_type: "call.hangup", payload: { call_control_id: "cc_1" } } }));
+    const response = await POST(maakRequest({ data: { event_type: "call.speak.started", payload: { call_control_id: "cc_1" } } }));
 
     expect(response.status).toBe(200);
     expect(provider.beantwoordOproep).not.toHaveBeenCalled();
     expect(mockVerwerkInkomendeCall).not.toHaveBeenCalled();
     expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
     expect(mockVerwerkOpnameStatus).not.toHaveBeenCalled();
+  });
+
+  // Root-cause-fix productie-incident (2026-08-27, spec-eis §8) — call.hangup
+  // is sinds deze ronde GEEN onbekend/genegeerd event meer: het moet ALTIJD
+  // hangup_cause/hangup_source vastleggen en, waar nog relevant, best-effort
+  // afronden met wat er al verzameld is (verwerkOnverwachteHangup zelf, met
+  // de echte gesprek.ts-logica, is al gedekt in gesprek.test.ts) — dit
+  // bestand bewijst uitsluitend de dispatch zelf.
+  it("call.hangup -> dispatcht naar verwerkOnverwachteHangup met de opgeloste oproepId, GEEN voice-instructies (de verbinding is al weg) en GEEN rate limit", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_onderbroken" } as never);
+
+    const response = await POST(maakRequest({ data: { event_type: "call.hangup", payload: { call_control_id: "cc_hangup_1", hangup_cause: "normal_clearing", hangup_source: "callee" } } }));
+
+    expect(response.status).toBe(200);
+    expect(mockVerwerkOnverwachteHangup).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ hangup_cause: "normal_clearing", hangup_source: "callee" }));
+    expect(provider.voerVoiceInstructiesUit).not.toHaveBeenCalled();
+  });
+
+  // Unieke call_control_id ("cc_hangup_ratelimit") — beperkPerGesprek is een
+  // module-scoped teller die niet ververst tussen tests in dit bestand; dit
+  // scenario verbruikt hier zelf al 20 aanvragen voor DIT gesprek, dus een
+  // gedeeld id met andere tests zou hun eigen rate-limitbudget besmetten.
+  it("call.hangup blijft verwerkt ook ná 20 eerdere events voor hetzelfde gesprek — geen rate limit op dit event (spec-eis §8: moet altijd hangup_cause/hangup_source kunnen vastleggen)", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_onderbroken" } as never);
+
+    for (let i = 0; i < 20; i++) {
+      await POST(maakRequest({ data: { event_type: "call.dtmf.received", payload: { call_control_id: "cc_hangup_ratelimit", digit: "1" } } }));
+    }
+    await POST(maakRequest({ data: { event_type: "call.hangup", payload: { call_control_id: "cc_hangup_ratelimit" } } }));
+
+    expect(mockVerwerkOnverwachteHangup).toHaveBeenCalledTimes(1);
+  });
+
+  it("call.gather.ended met oproep.status='opname_onderbroken' -> dispatcht naar verwerkVervolgKeuze (root-cause-fix 2026-08-27, spec-eis §6 — de vervolgkeuze-prompt ná een automatische stilte-stop)", async () => {
+    const provider = maakFakeProvider();
+    mockTelnyxProvider.mockReturnValue(provider);
+    mockMaakOfHaalOproep.mockResolvedValue({ id: 42, status: "opname_onderbroken" } as never);
+    const instructies = [{ soort: "opname_starten" as const, maxDuurSeconden: 1200, stilteTimeoutSeconden: 60, stopToets: "#", herstartToets: "*", poging: 1 }];
+    mockVerwerkVervolgKeuze.mockResolvedValue(instructies);
+
+    await POST(maakRequest({ data: { event_type: "call.gather.ended", payload: { call_control_id: "cc_vervolgkeuze", digits: "*" } } }));
+
+    expect(mockVerwerkVervolgKeuze).toHaveBeenCalledWith(expect.anything(), provider, 42, expect.objectContaining({ digits: "*" }));
+    expect(mockVerwerkOpnameToets).not.toHaveBeenCalled();
+    expect(mockVerwerkTrainingKeuze).not.toHaveBeenCalled();
+    expect(provider.voerVoiceInstructiesUit).toHaveBeenCalledWith("cc_vervolgkeuze", instructies);
   });
 
   it("lege/ontbrekende event_type of call_control_id -> 200, stil genegeerd", async () => {

@@ -96,6 +96,7 @@ export default async function VerslagPagina({ params }: VerslagPaginaProps) {
                       definitieveTekst: verslag.definitieveTekst,
                     }) ?? undefined,
                   bron: verslag.bron ?? null,
+                  mogelijkOnvolledig: verslag.mogelijkOnvolledig ?? false,
                 }
               : null
           }

@@ -251,19 +251,32 @@ export async function zetVerslagBestaatAl(payload: Payload, oproepId: number, be
  * (spec §12/§18/§24, testscenario 24) — atomische conditionele UPDATE,
  * bewust GEEN payload.update(). Alleen claimbaar vanuit 'opname_verwacht'
  * (of 'training_gekozen', voor het geval de opnamecallback sneller
- * binnenkomt dan de eigen zetOpnameVerwacht-stap 'm bijwerkte) — zodra een
- * eerste aanroep hier wint, ziet elke volgende (dubbele) aanroep voor
- * dezelfde recordingProviderId 0 geraakte rijen en slaat het volledige
- * download+transcribeer+concept-traject over. Retourneert of DEZE aanroep de
- * claim won.
+ * binnenkomt dan de eigen zetOpnameVerwacht-stap 'm bijwerkte).
  *
- * Slaat sinds de transcriptieherstelronde (2026-08-25) ook meteen
- * ophaalReferentie op, in DEZELFDE atomische stap — sluit een eerder
- * mogelijk gat: een crash tussen deze claim en de latere zetTranscriptieBezig
- * liet de referentie voorheen ongeschreven achter, waardoor een automatische
- * retry de opname nooit meer had kunnen terugvinden.
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §10) — UITGEBREID
+ * met een poging-scoped claim: sinds een gesprek na "verder inspreken"
+ * (§6) meerdere, onafhankelijke opnamefragmenten kan hebben, volstaat
+ * "was er al ÜBERHAUPT een recording_provider_id" niet meer als
+ * dedup-sleutel (recordingProviderId/call_leg_id is voor het HELE gesprek
+ * hetzelfde, ongeacht het fragment) — de conditie hieronder test daarom
+ * expliciet OOK of DIT poging-nummer al in opname_fragment_claims voorkomt
+ * (jsonb-array-containment op primitieve waarden, officieel gedocumenteerd
+ * Postgres-gedrag: '[1,2,3]'::jsonb @> '[3]'::jsonb). Zo blijft de garantie
+ * hetzelfde als voorheen (nooit hetzelfde fragment twee keer verwerken) mét
+ * ondersteuning voor meerdere legitieme fragmenten ná elkaar.
+ *
+ * Legt in dezelfde atomische stap ook vast WELKE opnameresource dit is
+ * (poging + Telnyx' eigen recording_started_at) — nodig omdat er bij Telnyx
+ * inmiddels meerdere opnames onder hetzelfde call_leg_id kunnen staan; een
+ * latere automatische retry (verwerkTelefonieOnderhoud) moet exact DEZE
+ * kunnen terugvinden, niet "de meest recente" (telnyx-provider.ts se
+ * kiesOpname-heuristiek, ontworpen voor het oude enkelvoudige-opname-model).
  */
-export async function claimOpnameVerwerking(payload: Payload, oproepId: number, recordingProviderId: string, ophaalReferentie: string | null): Promise<boolean> {
+export async function claimOpnameFragmentVerwerking(
+  payload: Payload,
+  oproepId: number,
+  gegevens: { poging: number; recordingProviderId: string; ophaalReferentie: string | null; recordingStartedAt: string | null }
+): Promise<boolean> {
   // Live root cause (2026-08-25, gevonden via Vercel-log bij call.recording.saved):
   // een ";" ná de WHERE-clausule beëindigde het UPDATE-statement vóórdat
   // RETURNING werd bereikt -> "syntax error at or near RETURNING" bij ELKE
@@ -271,12 +284,28 @@ export async function claimOpnameVerwerking(payload: Payload, oproepId: number, 
   // hoort bij hetzelfde statement als UPDATE/WHERE — geen ";" ertussen, zie
   // het al langer bewezen patroon in lib/trainers/verslag.ts se
   // claimUpdateSlot (de enige ";" staat daar pas ná "RETURNING id").
+  //
+  // ::numeric op ${gegevens.poging} binnen jsonb_build_array() is verplicht:
+  // Postgres' extended query protocol moet het type van elke parameter al
+  // bij Parse kennen, vóór het de waarde ziet. Bij een directe
+  // kolomtoewijzing (zoals opname_huidige_poging hierboven) leidt Postgres
+  // dat af uit de kolom; als argument van de variadic jsonb_build_array(any)
+  // is er geen kolom om uit af te leiden, dus faalt dat met "could not
+  // determine data type of parameter" (42P18) zonder expliciete cast —
+  // gevonden via de real-Postgres-tests (fake-payload.ts se regex-simulator
+  // kan dit type SQL-foutklasse niet detecteren).
   const resultaat = await payload.db.drizzle.execute(sql`
     UPDATE trainer_telefonie_oproepen
-    SET status = 'opname_ontvangen', recording_provider_id = ${recordingProviderId}, opname_ophaal_referentie = ${ophaalReferentie}, updated_at = now()
+    SET status = 'opname_ontvangen',
+        recording_provider_id = ${gegevens.recordingProviderId},
+        opname_ophaal_referentie = ${gegevens.ophaalReferentie},
+        opname_huidige_poging = ${gegevens.poging},
+        opname_huidige_recording_started_at = ${gegevens.recordingStartedAt},
+        opname_fragment_claims = opname_fragment_claims || jsonb_build_array(${gegevens.poging}::numeric),
+        updated_at = now()
     WHERE id = ${oproepId}
       AND status IN ('training_gekozen', 'opname_verwacht')
-      AND (recording_provider_id IS NULL OR recording_provider_id = ${recordingProviderId})
+      AND NOT (opname_fragment_claims @> jsonb_build_array(${gegevens.poging}::numeric))
     RETURNING id;
   `);
   return resultaat.rows.length > 0;
@@ -286,11 +315,85 @@ export async function zetTranscriptieBezig(payload: Payload, oproepId: number, r
   return schrijfOproepVelden(payload, oproepId, { status: "transcriptie_bezig", recording_duur_seconden: recordingDuurSeconden });
 }
 
-export async function zetConceptKlaar(payload: Payload, oproepId: number, gegevens: { verslagId: number; transcriptieLengte: number }): Promise<TrainerTelefonieOproepen> {
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §6) — de oproep
+ * wacht op de vervolgkeuze van de trainer ná een automatisch (stilte-timeout)
+ * gestopt fragment: het al getranscribeerde deel staat inmiddels veilig op
+ * trainerInvoer (via gesprek.ts se voegFragmentToeAanConcept), maar de oproep
+ * is NOG NIET afgerond — geen concept_klaar/mislukt, geen ophangen.
+ */
+export async function zetOpnameOnderbroken(payload: Payload, oproepId: number): Promise<TrainerTelefonieOproepen> {
+  return schrijfOproepVelden(payload, oproepId, { status: "opname_onderbroken" });
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §4/§5) — markeert
+ * DEZE opnamepoging als bewust door de trainer met '#' beëindigd. Gezet
+ * VOORDAT het stop_opname-commando naar Telnyx gaat (verwerkOpnameToets,
+ * gesprek.ts) — race-vrij t.o.v. de resulterende call.recording.saved: onze
+ * eigen databaseschrijving hier gebeurt causaal áltijd vóór Telnyx het
+ * stopcommando zelfs maar ontvangt, laat staan vóór Telnyx' eigen
+ * call.recording.saved-webhook ervoor terugkomt. Ontbreekt deze markering
+ * voor de poging waarvoor call.recording.saved binnenkomt, dan was de stop
+ * automatisch (stilte-timeout/max. duur) — zie gesprek.ts se
+ * bepaalAfsluitreden.
+ */
+export async function zetBewustGestopt(payload: Payload, oproepId: number, poging: number): Promise<TrainerTelefonieOproepen> {
+  return schrijfOproepVelden(payload, oproepId, { bewust_gestopt_poging: poging });
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §8) — slaat
+ * Telnyx' eigen call.hangup-diagnostiek op. Altijd onvoorwaardelijk
+ * uitgevoerd (geen claim/statuscheck nodig): dit raakt uitsluitend twee
+ * diagnostische velden, nooit status/verslag, dus een dubbel afgeleverd
+ * call.hangup-event is hier vanzelf al onschadelijk (idempotent — dezelfde
+ * waarden opnieuw wegschrijven verandert niets).
+ */
+export async function zetHangupInfo(payload: Payload, oproepId: number, gegevens: { hangupCause: string | null; hangupSource: string | null }): Promise<TrainerTelefonieOproepen> {
+  return schrijfOproepVelden(payload, oproepId, { hangup_cause: gegevens.hangupCause, hangup_source: gegevens.hangupSource });
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §6/§8) — DE
+ * atomaire claim voor "wie mag dit gesprek afronden zonder dat er nog een
+ * fragment actief wordt opgenomen/verwerkt" — twee onafhankelijke triggers
+ * kunnen dit near-simultaan proberen: de trainer drukt '#' op de
+ * vervolgkeuze-prompt (verwerkVervolgKeuze), OF de beller hangt onverwacht op
+ * terwijl de oproep al op 'opname_onderbroken' stond (call.hangup-fallback,
+ * gesprek.ts se verwerkOnverwachteHangup). Claimbaar vanuit
+ * 'opname_onderbroken' zelf, én vanuit 'training_gekozen'/'opname_verwacht'
+ * (de hangup-fallback: er was nog geen enkel fragment automatisch gestopt,
+ * maar de beller is wel weg — best-effort afronden met wat er eventueel al
+ * aan trainerInvoer staat, of anders 'mislukt'). Bewust NIET claimbaar vanuit
+ * 'opname_ontvangen'/'transcriptie_bezig': daar is al een fragmentclaim
+ * actief (claimOpnameFragmentVerwerking) — die laat zijn eigen traject
+ * gewoon uitlopen, geen tussentijdse onderbreking. Zelfde bewezen
+ * atomische-conditionele-UPDATE-vorm als de rest van dit bestand. Retourneert
+ * of DEZE aanroep de claim won — alleen de winnaar mag daadwerkelijk
+ * afronden (upsertConcept/structureerVerslag + concept_klaar, of mislukt).
+ */
+export async function claimFinalisatieZonderActiefFragment(payload: Payload, oproepId: number): Promise<boolean> {
+  const resultaat = await payload.db.drizzle.execute(sql`
+    UPDATE trainer_telefonie_oproepen
+    SET status = 'transcriptie_bezig', updated_at = now()
+    WHERE id = ${oproepId}
+      AND status IN ('training_gekozen', 'opname_verwacht', 'opname_onderbroken')
+    RETURNING id;
+  `);
+  return resultaat.rows.length > 0;
+}
+
+export async function zetConceptKlaar(
+  payload: Payload,
+  oproepId: number,
+  gegevens: { verslagId: number; transcriptieLengte: number; mogelijkOnvolledig: boolean }
+): Promise<TrainerTelefonieOproepen> {
   return schrijfOproepVelden(payload, oproepId, {
     status: "concept_klaar",
     verslag_id: gegevens.verslagId,
     transcriptie_lengte: gegevens.transcriptieLengte,
+    mogelijk_onvolledig: gegevens.mogelijkOnvolledig,
     afgerond_op: new Date().toISOString(),
   });
 }

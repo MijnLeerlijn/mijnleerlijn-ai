@@ -108,6 +108,24 @@ export const TrainingVerslagen: CollectionConfig = {
     },
     { name: "aiGegenereerd", type: "checkbox", defaultValue: false, label: "AI gebruikt bij opstellen" },
     {
+      // Root-cause-fix productie-incident (2026-08-27, spec-eis §9) — gezet
+      // door lib/trainers/verslag.ts se upsertConcept op het moment dat een
+      // telefonisch concept NIET via een expliciete, trainerbevestigde '#' is
+      // afgerond (maximale opnameduur bereikt, geen reactie op de
+      // vervolgvraag ná een stilte-stop, of een onverwachte hangup) — nooit
+      // later stilzwijgend teruggezet. Zichtbaar voor zowel de trainer
+      // (portal-verslageditor) als beheer, zodat iemand het transcript
+      // controleert vóórdat dit als definitief verslag wordt beschouwd.
+      name: "mogelijkOnvolledig",
+      type: "checkbox",
+      defaultValue: false,
+      label: "Mogelijk onvolledig (telefonisch ingesproken)",
+      admin: {
+        description:
+          "Uitsluitend relevant bij bron=telefoon: true als het gesprek niet via een expliciete '#'-bevestiging is afgerond (maximale opnameduur bereikt, geen reactie op de vervolgvraag, of een onverwachte hangup). Controleer de tekst voordat dit verslag definitief bevestigd wordt.",
+      },
+    },
+    {
       name: "status",
       type: "select",
       required: true,

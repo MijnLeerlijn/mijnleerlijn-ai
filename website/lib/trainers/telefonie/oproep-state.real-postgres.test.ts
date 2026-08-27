@@ -28,7 +28,7 @@ import { Pool } from "pg";
 import { sql } from "@payloadcms/db-postgres";
 import type { Payload } from "payload";
 import type { AuthTrainer } from "../auth";
-import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens } from "./provider";
+import type { TelefonieProvider, InkomendeCallGegevens, GatherResultaat, OpnameStatusGegevens, HangupGegevens } from "./provider";
 import type { TrainingMetSchool, TrainingVoorMutatie, SchoolDetail } from "../monday-links";
 
 // Alleen de externe LEESrand gemockt (Monday-leeslaag + AI-client) — zelfde
@@ -141,9 +141,11 @@ function maakFakeProvider(overrides: Partial<TelefonieProvider> = {}): Telefonie
           duurSeconden: 60,
           ophaalReferentie: "https://provider.example/recordings/RE1",
           clientState: null,
+          recordingStartedAt: "2026-08-27T10:00:00Z",
         }) as OpnameStatusGegevens
     ),
     ontleedSpreekAfgerond: vi.fn(() => ({ providerCallId: "CA1", clientState: null })),
+    ontleedHangup: vi.fn(() => ({ providerCallId: "CA1", hangupCause: null, hangupSource: null }) as HangupGegevens),
     voerVoiceInstructiesUit: vi.fn().mockResolvedValue({ status: 200, contentType: null, body: null }),
     beantwoordOproep: vi.fn().mockResolvedValue(undefined),
     haalOpnameOp: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
@@ -159,7 +161,8 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
   let zetTrainerHerkend: typeof import("./oproep-state").zetTrainerHerkend;
   let zetTrainingGekozen: typeof import("./oproep-state").zetTrainingGekozen;
   let zetOpnameVerwacht: typeof import("./oproep-state").zetOpnameVerwacht;
-  let claimOpnameVerwerking: typeof import("./oproep-state").claimOpnameVerwerking;
+  let claimOpnameFragmentVerwerking: typeof import("./oproep-state").claimOpnameFragmentVerwerking;
+  let zetBewustGestopt: typeof import("./oproep-state").zetBewustGestopt;
   let zetTranscriptieBezig: typeof import("./oproep-state").zetTranscriptieBezig;
   let zetTranscriptieHerstelbaarMislukt: typeof import("./oproep-state").zetTranscriptieHerstelbaarMislukt;
   let claimTranscriptieRetry: typeof import("./oproep-state").claimTranscriptieRetry;
@@ -179,8 +182,17 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
 
     const { getPayload } = await import("payload");
     const config = (await import("@/payload.config")).default;
-    ({ maakOfHaalOproep, zetTrainerHerkend, zetTrainingGekozen, zetOpnameVerwacht, claimOpnameVerwerking, zetTranscriptieBezig, zetTranscriptieHerstelbaarMislukt, claimTranscriptieRetry } =
-      await import("./oproep-state"));
+    ({
+      maakOfHaalOproep,
+      zetTrainerHerkend,
+      zetTrainingGekozen,
+      zetOpnameVerwacht,
+      claimOpnameFragmentVerwerking,
+      zetBewustGestopt,
+      zetTranscriptieBezig,
+      zetTranscriptieHerstelbaarMislukt,
+      claimTranscriptieRetry,
+    } = await import("./oproep-state"));
     ({ verwerkInkomendeCall, verwerkTrainingKeuze, verwerkOpnameStatus } = await import("./gesprek"));
 
     draaiPayloadMigrate(scratchUri);
@@ -277,17 +289,18 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
   }
 
   // ---------------------------------------------------------------------------
-  // claimOpnameVerwerking — de exacte live call.recording.saved-toestand
+  // claimOpnameFragmentVerwerking (was claimOpnameVerwerking) — de exacte
+  // live call.recording.saved-toestand
   // ---------------------------------------------------------------------------
 
-  describe("claimOpnameVerwerking — de exacte live call.recording.saved-toestand", () => {
+  describe("claimOpnameFragmentVerwerking — de exacte live call.recording.saved-toestand", () => {
     it("status='training_gekozen', recording_provider_id leeg -> claim slaagt zonder syntax error, RETURNING geeft precies 1 rij, status wordt opname_ontvangen", async () => {
       const trainer = await maakTrainerRow();
       const oproep = await maakOproepBijStatus(trainer, "training_gekozen");
       expect(oproep.status).toBe("training_gekozen");
       expect(oproep.recordingProviderId ?? null).toBeNull();
 
-      const gewonnen = await claimOpnameVerwerking(payload, oproep.id, "RE1", "https://provider.example/recordings/RE1");
+      const gewonnen = await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: "https://provider.example/recordings/RE1", recordingStartedAt: "2026-08-27T10:00:00Z" });
       expect(gewonnen).toBe(true); // RETURNING id gaf precies 1 rij terug (rows.length > 0)
 
       const bijgewerkt = await herlees(oproep.id);
@@ -301,7 +314,7 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
       const oproep = await maakOproepBijStatus(trainer, "opname_verwacht");
       expect(oproep.status).toBe("opname_verwacht");
 
-      const gewonnen = await claimOpnameVerwerking(payload, oproep.id, "RE2", "https://provider.example/recordings/RE2");
+      const gewonnen = await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE2", ophaalReferentie: "https://provider.example/recordings/RE2", recordingStartedAt: "2026-08-27T10:00:00Z" });
       expect(gewonnen).toBe(true);
 
       const bijgewerkt = await herlees(oproep.id);
@@ -312,8 +325,8 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
       const trainer = await maakTrainerRow();
       const oproep = await maakOproepBijStatus(trainer, "opname_verwacht");
 
-      expect(await claimOpnameVerwerking(payload, oproep.id, "RE3", "https://provider.example/recordings/RE3")).toBe(true);
-      expect(await claimOpnameVerwerking(payload, oproep.id, "RE3", "https://provider.example/recordings/RE3")).toBe(false);
+      expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE3", ophaalReferentie: "https://provider.example/recordings/RE3", recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(true);
+      expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE3", ophaalReferentie: "https://provider.example/recordings/RE3", recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(false);
 
       const bijgewerkt = await herlees(oproep.id);
       expect(bijgewerkt.status).toBe("opname_ontvangen"); // ongewijzigd, niet nogmaals "verwerkt"
@@ -322,10 +335,10 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
     it("een rij die al voorbij opname_ontvangen is (bv. concept_klaar) is nooit meer claimbaar — 0 rijen, geen syntax error", async () => {
       const trainer = await maakTrainerRow();
       const oproep = await maakOproepBijStatus(trainer, "opname_verwacht");
-      await claimOpnameVerwerking(payload, oproep.id, "RE4", "https://provider.example/recordings/RE4");
+      await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE4", ophaalReferentie: "https://provider.example/recordings/RE4", recordingStartedAt: "2026-08-27T10:00:00Z" });
       await zetTranscriptieBezig(payload, oproep.id, 60);
 
-      const dubbeleWebhookNaAfronding = await claimOpnameVerwerking(payload, oproep.id, "RE4", "https://provider.example/recordings/RE4");
+      const dubbeleWebhookNaAfronding = await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE4", ophaalReferentie: "https://provider.example/recordings/RE4", recordingStartedAt: "2026-08-27T10:00:00Z" });
       expect(dubbeleWebhookNaAfronding).toBe(false);
     });
   });
@@ -338,7 +351,7 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
     it("herstelbare rij met verstreken 'volgende poging'-tijdstip -> claim slaagt zonder syntax error", async () => {
       const trainer = await maakTrainerRow();
       const oproep = await maakOproepBijStatus(trainer, "opname_verwacht");
-      await claimOpnameVerwerking(payload, oproep.id, "RE5", "https://provider.example/recordings/RE5");
+      await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE5", ophaalReferentie: "https://provider.example/recordings/RE5", recordingStartedAt: "2026-08-27T10:00:00Z" });
       await zetTranscriptieHerstelbaarMislukt(payload, oproep.id, {
         pogingen: 1,
         volgendePogingOp: new Date(Date.now() - 1000).toISOString(),
@@ -355,7 +368,7 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
     it("vastgelopen rij (updated_at ouder dan de vastgelopen-grens) vanuit opname_ontvangen -> claim slaagt via het crashherstelpad", async () => {
       const trainer = await maakTrainerRow();
       const oproep = await maakOproepBijStatus(trainer, "opname_verwacht");
-      await claimOpnameVerwerking(payload, oproep.id, "RE6", "https://provider.example/recordings/RE6");
+      await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE6", ophaalReferentie: "https://provider.example/recordings/RE6", recordingStartedAt: "2026-08-27T10:00:00Z" });
 
       // Backdateert updated_at rechtstreeks — payload.update() zou het bewust
       // altijd zelf weer op "nu" zetten, dus geen bruikbare weg om een
@@ -370,7 +383,7 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
     it("een dubbele onderhoudsronde-claim voor dezelfde rij wint maar één keer — idempotent bij overlappende cronruns", async () => {
       const trainer = await maakTrainerRow();
       const oproep = await maakOproepBijStatus(trainer, "opname_verwacht");
-      await claimOpnameVerwerking(payload, oproep.id, "RE7", "https://provider.example/recordings/RE7");
+      await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE7", ophaalReferentie: "https://provider.example/recordings/RE7", recordingStartedAt: "2026-08-27T10:00:00Z" });
       await zetTranscriptieHerstelbaarMislukt(payload, oproep.id, {
         pogingen: 1,
         volgendePogingOp: new Date(Date.now() - 1000).toISOString(),
@@ -412,8 +425,16 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
             status: "voltooid",
             duurSeconden: 42,
             ophaalReferentie: "https://provider.example/recordings/RE-E2E",
+            recordingStartedAt: "2026-08-27T10:00:00Z",
           }) as OpnameStatusGegevens,
       });
+      // Simuleert dat de trainer bewust '#' indrukte vóór deze recording.saved
+      // (zoals verwerkOpnameToets in gesprek.ts doet, race-vrij vóór het
+      // stop_opname-commando) — zonder deze markering classificeert
+      // bepaalAfsluitreden dit fragment als "automatisch" (stilte-stop) en
+      // eindigt de oproep in opname_onderbroken i.p.v. concept_klaar, spec-eis
+      // §6. Dit end-to-end-pad test bewust de '#'-happy-flow.
+      await zetBewustGestopt(payload, oproepId, 0);
       await verwerkOpnameStatus(payload, opnameProvider, oproepId, {});
 
       const afgerond = await herlees(oproepId);
@@ -443,6 +464,7 @@ describe.skipIf(!beschikbaar)("telefonie/oproep-state — ECHTE Postgres (reprod
             status: "voltooid",
             duurSeconden: 42,
             ophaalReferentie: "https://provider.example/recordings/RE-DUP",
+            recordingStartedAt: "2026-08-27T10:00:00Z",
           }) as OpnameStatusGegevens,
       });
 

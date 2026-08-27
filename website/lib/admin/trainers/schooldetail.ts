@@ -231,6 +231,8 @@ export interface AdminSchoolVerslagRegel {
   definitieveTekst: string | null;
   /** Oorspronkelijke, door de trainer getypte invoer — alleen-lezen context, nooit door de admin bewerkbaar (zie lib/trainers/verslag.ts se wijzigVerslagAlsAdmin). */
   trainerInvoer: string | null;
+  /** Root-cause-fix productie-incident (2026-08-27) — zie TrainingVerslagen.ts. */
+  mogelijkOnvolledig: boolean;
 }
 
 export async function haalAdminSchoolVerslagenTab(payload: Payload, schoolId: string): Promise<SchoolDetailTabUitkomst<AdminSchoolVerslagRegel[]>> {
@@ -264,6 +266,7 @@ export async function haalAdminSchoolVerslagenTab(payload: Payload, schoolId: st
         schoolUpdateStatus: doc.schoolUpdateStatus as VerslagRecord["schoolUpdateStatus"],
         definitieveTekst: doc.definitieveTekst ?? null,
         trainerInvoer: doc.trainerInvoer ?? null,
+        mogelijkOnvolledig: Boolean(doc.mogelijkOnvolledig),
       };
     }),
   };

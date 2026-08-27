@@ -170,6 +170,8 @@ export interface AdminTrainerVerslagRegel {
   /** Vervolgronde (Verslagen: volledige inhoud lezen/bewerken) — zie schooldetail.ts se AdminSchoolVerslagRegel voor dezelfde velden/reden. */
   definitieveTekst: string | null;
   trainerInvoer: string | null;
+  /** Root-cause-fix productie-incident (2026-08-27) — zie TrainingVerslagen.ts. */
+  mogelijkOnvolledig: boolean;
 }
 
 export async function haalAdminTrainerVerslagenTab(payload: Payload, trainerId: number): Promise<TrainerDetailTabUitkomst<AdminTrainerVerslagRegel[]>> {
@@ -199,6 +201,7 @@ export async function haalAdminTrainerVerslagenTab(payload: Payload, trainerId: 
     wanneer: doc.updatedAt,
     definitieveTekst: doc.definitieveTekst ?? null,
     trainerInvoer: doc.trainerInvoer ?? null,
+    mogelijkOnvolledig: Boolean(doc.mogelijkOnvolledig),
   }));
   return { soort: "ok", data };
 }

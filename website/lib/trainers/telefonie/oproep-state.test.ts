@@ -6,13 +6,17 @@ import {
   zetKandidatenAangeboden,
   zetTrainingGekozen,
   zetOpnameVerwacht,
-  claimOpnameVerwerking,
+  claimOpnameFragmentVerwerking,
   zetTranscriptieBezig,
   zetConceptKlaar,
   zetTranscriptieHerstelbaarMislukt,
   zetOpnameVerwijderd,
   claimTranscriptieRetry,
   vindOnderhoudsKandidaten,
+  zetBewustGestopt,
+  zetOpnameOnderbroken,
+  zetHangupInfo,
+  claimFinalisatieZonderActiefFragment,
 } from "./oproep-state";
 import { maakFakePayload } from "@/lib/support/fake-payload";
 
@@ -127,7 +131,7 @@ describe("zetKandidatenAangeboden / zetTrainingGekozen — jsonb-rondgang", () =
   });
 });
 
-describe("claimOpnameVerwerking — idempotentiegarantie (spec §12/§18/§24)", () => {
+describe("claimOpnameFragmentVerwerking — idempotentiegarantie (spec §12/§18/§24, root-cause-fix §10)", () => {
   async function oproepMetStatus(status: string) {
     const { payload, collection } = maakFakePayload({});
     const oproep = await maakOfHaalOproep(payload, "CA1");
@@ -144,44 +148,48 @@ describe("claimOpnameVerwerking — idempotentiegarantie (spec §12/§18/§24)",
 
   it("scenario 9: claimbaar vanuit 'opname_verwacht', winnaar krijgt true", async () => {
     const { payload, oproep } = await oproepMetStatus("opname_verwacht");
-    expect(await claimOpnameVerwerking(payload, oproep.id, "RE1", REF1)).toBe(true);
+    expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: REF1, recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(true);
   });
 
-  it("scenario 11/24: een tweede, dubbele webhook voor dezelfde recordingProviderId verliest de claim (false), geen enkele state-wijziging extra", async () => {
+  it("scenario 11/24: een tweede, dubbele webhook voor DEZELFDE poging verliest de claim (false), geen enkele state-wijziging extra", async () => {
     const { payload, oproep, collection } = await oproepMetStatus("opname_verwacht");
-    expect(await claimOpnameVerwerking(payload, oproep.id, "RE1", REF1)).toBe(true);
-    expect(await claimOpnameVerwerking(payload, oproep.id, "RE1", REF1)).toBe(false);
+    expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: REF1, recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(true);
+    expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: REF1, recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(false);
 
     const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproep.id)!;
     expect(rij.status).toBe("opname_ontvangen");
   });
 
-  it("een andere recordingProviderId op een reeds-geclaimde rij wint ook niet (voorkomt een tweede opname over de eerste heen)", async () => {
+  it("root-cause-fix §10: een ANDERE poging op dezelfde oproep (na 'verder inspreken') is wél apart claimbaar — meerdere legitieme fragmenten", async () => {
     const { payload, oproep } = await oproepMetStatus("opname_verwacht");
-    expect(await claimOpnameVerwerking(payload, oproep.id, "RE1", REF1)).toBe(true);
-    expect(await claimOpnameVerwerking(payload, oproep.id, "RE-ANDERS", REF_ANDERS)).toBe(false);
+    expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: REF1, recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(true);
+    // Status moet weer 'opname_verwacht' zijn voordat het volgende fragment claimbaar is (net als in de echte flow, via zetOpnameVerwacht ná de vervolgkeuze).
+    await zetOpnameVerwacht(payload, oproep.id, 1);
+    expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 1, recordingProviderId: "RE1", ophaalReferentie: REF_ANDERS, recordingStartedAt: "2026-08-27T10:05:00Z" })).toBe(true);
   });
 
   it("ook claimbaar vanuit 'training_gekozen' (opnamecallback sneller dan de eigen zetOpnameVerwacht-stap)", async () => {
     const { payload, oproep } = await oproepMetStatus("training_gekozen");
-    expect(await claimOpnameVerwerking(payload, oproep.id, "RE1", REF1)).toBe(true);
+    expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: REF1, recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(true);
   });
 
   it("een rij die al 'concept_klaar' of 'mislukt' is, is nooit meer claimbaar", async () => {
     const { payload, oproep } = await oproepMetStatus("concept_klaar");
-    expect(await claimOpnameVerwerking(payload, oproep.id, "RE1", REF1)).toBe(false);
+    expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: REF1, recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(false);
   });
 
   it("een niet-bestaand oproepId claimt nooit iets (defensief, kan structureel niet via de echte actieUrl gebeuren)", async () => {
     const { payload } = maakFakePayload({});
-    expect(await claimOpnameVerwerking(payload, 999999, "RE1", REF1)).toBe(false);
+    expect(await claimOpnameFragmentVerwerking(payload, 999999, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: REF1, recordingStartedAt: null })).toBe(false);
   });
 
-  it("legt de opname-ophaalreferentie atomair vast bij het claimen (crash-veiligheid: nodig voor een latere retry)", async () => {
+  it("legt de opname-ophaalreferentie + poging + recordingStartedAt atomair vast bij het claimen (crash-veiligheid: nodig voor een latere precieze retry)", async () => {
     const { payload, oproep } = await oproepMetStatus("opname_verwacht");
-    expect(await claimOpnameVerwerking(payload, oproep.id, "RE1", REF1)).toBe(true);
+    expect(await claimOpnameFragmentVerwerking(payload, oproep.id, { poging: 0, recordingProviderId: "RE1", ophaalReferentie: REF1, recordingStartedAt: "2026-08-27T10:00:00Z" })).toBe(true);
     const opnieuw = await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproep.id });
     expect(opnieuw.opnameOphaalReferentie).toBe(REF1);
+    expect(opnieuw.opnameHuidigePoging).toBe(0);
+    expect(opnieuw.opnameHuidigeRecordingStartedAt).toBe("2026-08-27T10:00:00Z");
   });
 });
 
@@ -190,13 +198,95 @@ describe("zetTranscriptieBezig / zetConceptKlaar", () => {
     const { payload } = maakFakePayload({});
     const oproep = await maakOfHaalOproep(payload, "CA1");
     await zetTranscriptieBezig(payload, oproep.id, 95);
-    const afgerond = await zetConceptKlaar(payload, oproep.id, { verslagId: 555, transcriptieLengte: 240 });
+    const afgerond = await zetConceptKlaar(payload, oproep.id, { verslagId: 555, transcriptieLengte: 240, mogelijkOnvolledig: false });
 
     expect(afgerond.status).toBe("concept_klaar");
     expect(afgerond.recordingDuurSeconden).toBe(95);
     expect(afgerond.verslag).toBe(555);
     expect(afgerond.transcriptieLengte).toBe(240);
+    expect(afgerond.mogelijkOnvolledig).toBe(false);
     expect(afgerond.afgerondOp).toBeTruthy();
+  });
+
+  it("root-cause-fix productie-incident (2026-08-27) — kan mogelijkOnvolledig=true vastleggen", async () => {
+    const { payload } = maakFakePayload({});
+    const oproep = await maakOfHaalOproep(payload, "CA1");
+    const afgerond = await zetConceptKlaar(payload, oproep.id, { verslagId: 555, transcriptieLengte: 240, mogelijkOnvolledig: true });
+    expect(afgerond.mogelijkOnvolledig).toBe(true);
+  });
+});
+
+describe("Root-cause-fix productie-incident (2026-08-27) — zetBewustGestopt / zetOpnameOnderbroken / zetHangupInfo / claimFinalisatieZonderActiefFragment", () => {
+  it("zetBewustGestopt legt het poging-nummer vast", async () => {
+    const { payload } = maakFakePayload({});
+    const oproep = await maakOfHaalOproep(payload, "CA1");
+    const bijgewerkt = await zetBewustGestopt(payload, oproep.id, 2);
+    expect(bijgewerkt.bewustGestoptPoging).toBe(2);
+  });
+
+  it("zetOpnameOnderbroken zet uitsluitend de status, laat andere velden ongemoeid", async () => {
+    const { payload } = maakFakePayload({});
+    const oproep = await maakOfHaalOproep(payload, "CA1");
+    await zetTranscriptieBezig(payload, oproep.id, 42);
+    const bijgewerkt = await zetOpnameOnderbroken(payload, oproep.id);
+    expect(bijgewerkt.status).toBe("opname_onderbroken");
+    expect(bijgewerkt.recordingDuurSeconden).toBe(42);
+  });
+
+  it("zetHangupInfo slaat hangup_cause/hangup_source op", async () => {
+    const { payload } = maakFakePayload({});
+    const oproep = await maakOfHaalOproep(payload, "CA1");
+    const bijgewerkt = await zetHangupInfo(payload, oproep.id, { hangupCause: "normal_clearing", hangupSource: "caller" });
+    expect(bijgewerkt.hangupCause).toBe("normal_clearing");
+    expect(bijgewerkt.hangupSource).toBe("caller");
+  });
+
+  it("zetHangupInfo is veilig met null-waarden (provider gaf niets mee)", async () => {
+    const { payload } = maakFakePayload({});
+    const oproep = await maakOfHaalOproep(payload, "CA1");
+    const bijgewerkt = await zetHangupInfo(payload, oproep.id, { hangupCause: null, hangupSource: null });
+    expect(bijgewerkt.hangupCause ?? null).toBeNull();
+    expect(bijgewerkt.hangupSource ?? null).toBeNull();
+  });
+
+  it("claimFinalisatieZonderActiefFragment: claimbaar vanuit 'opname_onderbroken', 'training_gekozen' en 'opname_verwacht'", async () => {
+    const { payload, collection } = maakFakePayload({});
+    for (const status of ["training_gekozen", "opname_verwacht", "opname_onderbroken"]) {
+      const oproep = await maakOfHaalOproep(payload, `CA-${status}`);
+      const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproep.id)!;
+      rij.status = status;
+      expect(await claimFinalisatieZonderActiefFragment(payload, oproep.id)).toBe(true);
+      expect(rij.status).toBe("transcriptie_bezig");
+    }
+  });
+
+  it("claimFinalisatieZonderActiefFragment: NIET claimbaar vanuit 'opname_ontvangen'/'transcriptie_bezig' (een fragment wordt daar al actief verwerkt — laat dat traject uitlopen)", async () => {
+    const { payload, collection } = maakFakePayload({});
+    for (const status of ["opname_ontvangen", "transcriptie_bezig"]) {
+      const oproep = await maakOfHaalOproep(payload, `CA-${status}`);
+      const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproep.id)!;
+      rij.status = status;
+      expect(await claimFinalisatieZonderActiefFragment(payload, oproep.id)).toBe(false);
+    }
+  });
+
+  it("claimFinalisatieZonderActiefFragment: een dubbele aanroep wint maar één keer (spec-eis: geen dubbele verwerking bij een dubbel afgeleverd event)", async () => {
+    const { payload, collection } = maakFakePayload({});
+    const oproep = await maakOfHaalOproep(payload, "CA1");
+    const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproep.id)!;
+    rij.status = "opname_onderbroken";
+    expect(await claimFinalisatieZonderActiefFragment(payload, oproep.id)).toBe(true);
+    expect(await claimFinalisatieZonderActiefFragment(payload, oproep.id)).toBe(false);
+  });
+
+  it("claimFinalisatieZonderActiefFragment: niet claimbaar vanuit een al-terminale status ('concept_klaar'/'mislukt')", async () => {
+    const { payload, collection } = maakFakePayload({});
+    for (const status of ["concept_klaar", "mislukt", "verslag_bestaat_al"]) {
+      const oproep = await maakOfHaalOproep(payload, `CA-${status}`);
+      const rij = collection("trainer-telefonie-oproepen").find((d) => d.id === oproep.id)!;
+      rij.status = status;
+      expect(await claimFinalisatieZonderActiefFragment(payload, oproep.id)).toBe(false);
+    }
   });
 });
 

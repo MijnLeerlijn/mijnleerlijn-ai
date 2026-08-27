@@ -36,10 +36,12 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
       "gekozenSchoolNaam",
       "gekozenTrainingNaam",
       "status",
+      "mogelijkOnvolledig",
       "heropnamePogingen",
       "transcriptiePogingen",
       "foutcode",
       "foutmelding",
+      "hangupCause",
       "opnameVerwijderdOp",
       "verslag",
     ],
@@ -94,6 +96,18 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
         { label: "Trainer herkend", value: "trainer_herkend" },
         { label: "Training gekozen", value: "training_gekozen" },
         { label: "Opname verwacht", value: "opname_verwacht" },
+        {
+          // Root-cause-fix productie-incident (2026-08-27) — een fragment is
+          // automatisch (stilte-timeout) gestopt en de oproep wacht op de
+          // vervolgkeuze van de trainer: verder inspreken ('*', terug naar
+          // 'opname_verwacht' voor een nieuw fragment) of afronden ('#',
+          // finaliseren met wat er al is). Bewust een eigen status, niet
+          // hergebruik van 'opname_ontvangen' — die laatste blijft
+          // uitsluitend de kortstondige download/transcriptiefase van één
+          // fragment markeren (zie gesprek.ts se STUCK_TIMEOUT_MS-toelichting).
+          label: "Opname onderbroken (wacht op verder inspreken of afronden)",
+          value: "opname_onderbroken",
+        },
         { label: "Opname ontvangen", value: "opname_ontvangen" },
         { label: "Transcriptie bezig", value: "transcriptie_bezig" },
         {
@@ -265,6 +279,69 @@ export const TrainerTelefonieOproepen: CollectionConfig = {
       admin: {
         description:
           "De client_state van de laatst geclaimde #/*-toetsdruk tijdens een actieve opname — atomaire dedup-garantie tegen dubbele verwerking van dezelfde toetsdruk via zowel call.dtmf.received als call.gather.ended. Leeg = nog geen toetsdruk geclaimd voor de huidige opnamepoging.",
+      },
+    },
+    {
+      // Root-cause-fix productie-incident (2026-08-27, spec-eis §4/§5) — welke
+      // opnamepoging bewust door de trainer met '#' is beëindigd. Onderscheidt
+      // "trainer is klaar" (normale afsluiting: bedanken + ophangen) van "Telnyx
+      // stopte zelf" (stilte-timeout/max. duur — niet meer automatisch
+      // ophangen, zie opnameFragmentClaims/status "Opname onderbroken"
+      // hierboven). Gezet dóór verwerkOpnameToets (gesprek.ts) VOORDAT het
+      // stop_opname-commando naar Telnyx gaat — race-vrij t.o.v. de resulterende
+      // call.recording.saved, zie het opleverrapport voor de volledige
+      // redenering.
+      name: "bewustGestoptPoging",
+      type: "number",
+      label: "Bewust gestopt via # (poging-nummer)",
+      admin: { description: "Leeg = nog geen enkele poging bewust via '#' gestopt. Zodra gezet: deze specifieke opnamepoging was een bewuste afronding door de trainer, geen automatische stilte-/duurlimiet-stop." },
+    },
+    {
+      name: "opnameFragmentClaims",
+      type: "json",
+      defaultValue: [],
+      label: "Geclaimde opnamefragmenten (poging-nummers)",
+      admin: {
+        description:
+          "Array van opnamepoging-nummers waarvan de call.recording.saved-verwerking al is geclaimd — atomaire, poging-scoped dedup tegen een dubbel afgeleverd Telnyx-webhookevent (nooit hetzelfde fragment twee keer transcriberen/toevoegen). Uitsluitend diagnostiek, geen bron van waarheid voor de verslagtekst zelf.",
+      },
+    },
+    {
+      name: "opnameHuidigePoging",
+      type: "number",
+      label: "Op dit moment te verwerken poging-nummer",
+      admin: {
+        description: "Welke specifieke opnamepoging opnameOphaalReferentie/recordingProviderId op dit moment vertegenwoordigen — nodig omdat er bij meerdere fragmenten (na 'verder inspreken') meerdere opnameresources onder hetzelfde call_leg_id kunnen staan bij Telnyx.",
+      },
+    },
+    {
+      name: "opnameHuidigeRecordingStartedAt",
+      type: "text",
+      label: "Op dit moment te verwerken opname — Telnyx' eigen starttijd",
+      admin: {
+        description: "Telnyx' eigen recording_started_at van het fragment dat opnameHuidigePoging hierboven vertegenwoordigt — gebruikt om bij een automatische retry precies DIT fragment te herselecteren bij Telnyx (i.p.v. diens 'meest recente opname'-heuristiek, die bij meerdere fragmenten het verkeerde fragment zou kunnen kiezen).",
+      },
+    },
+    {
+      name: "hangupCause",
+      type: "text",
+      label: "Hangup-oorzaak (Telnyx)",
+      admin: { description: "Rechtstreeks van Telnyx' call.hangup-webhookevent, indien ontvangen — uitsluitend voor beheerdiagnostiek." },
+    },
+    {
+      name: "hangupSource",
+      type: "text",
+      label: "Hangup-bron (Telnyx)",
+      admin: { description: "Rechtstreeks van Telnyx' call.hangup-webhookevent (wie hing op: beller/callee/provider), indien ontvangen — uitsluitend voor beheerdiagnostiek." },
+    },
+    {
+      name: "mogelijkOnvolledig",
+      type: "checkbox",
+      defaultValue: false,
+      label: "Mogelijk onvolledig",
+      admin: {
+        description:
+          "True zodra dit gesprek NIET via een expliciete, door de trainer bevestigde '#' is afgerond (maximale opnameduur bereikt, geen reactie op de vervolgvraag ná een stilte-stop, of een onverwachte hangup) — zelfde vlag als op het resulterende trainingsverslag; controleer het transcript voordat dit als definitief verslag wordt beschouwd.",
       },
     },
   ],

@@ -6,7 +6,7 @@ import type { AuthTrainer } from "../auth";
 import { normaliseerNederlandsNummer } from "./nummer";
 import { haalRecenteTrainingenVoorTelefonie, vandaagIsoAmsterdam } from "../monday-links";
 import { haalTelefonieKandidaten, labelKandidaten, type TelefonieKandidaat, type TelefonieKandidatenResultaat } from "./kandidaten";
-import { upsertConcept, structureerVerslag, haalVerslagVoorTraining } from "../verslag";
+import { upsertConcept, structureerVerslag, haalVerslagVoorTraining, type VerslagConceptUitkomst } from "../verslag";
 import { transcribeAudio } from "@/services/ai-client";
 import {
   maakOfHaalOproep,
@@ -16,7 +16,7 @@ import {
   zetTrainingGekozen,
   zetOpnameVerwacht,
   zetVerslagBestaatAl,
-  claimOpnameVerwerking,
+  claimOpnameFragmentVerwerking,
   zetTranscriptieBezig,
   zetConceptKlaar,
   zetTranscriptieHerstelbaarMislukt,
@@ -26,6 +26,10 @@ import {
   claimOpnameToetsVerwerking,
   vindOnderhoudsKandidaten,
   ontleedOpgeslagenKandidaten,
+  zetBewustGestopt,
+  zetOpnameOnderbroken,
+  zetHangupInfo,
+  claimFinalisatieZonderActiefFragment,
   type OproepFoutcode,
   type OpgeslagenKandidaat,
   type KandidatenFase,
@@ -76,15 +80,43 @@ import type { TrainerTelefonieOproepen } from "@/types/payload-generated";
 
 const MAX_KANDIDATEN_VOOR_KEUZE = 9; // één DTMF-cijfer per keuze
 const GATHER_TIMEOUT_SECONDEN = 8;
-const MAX_OPNAME_DUUR_SECONDEN = 900; // 15 minuten — bovengrens spec §8 ("10-15 minuten")
-const OPNAME_STILTE_TIMEOUT_SECONDEN = 5;
+// Root-cause-fix productie-incident (2026-08-27, "verbinding werd opeens
+// verbroken tijdens het inspreken") — zie het bijbehorende onderzoeksrapport.
+// MAX_OPNAME_DUUR_SECONDEN: 900 -> 1200 (20 minuten, op eigen verzoek iets
+// ruimer dan spec §8 se oorspronkelijke "10-15 minuten"). OPNAME_STILTE_
+// TIMEOUT_SECONDEN: 5 -> 60 — DE eigenlijke oorzaak: Telnyx' timeout_secs op
+// record_start start pas ZODRA er al spraak gedetecteerd is en stopt de
+// opname bij de eerstvolgende stilte van die lengte (Telnyx' eigen
+// documentatie, recording-start endpoint) — 5 seconden is korter dan een
+// normale denk-/adempauze tijdens het inspreken van een verslag, en elke
+// zo'n stop werd vervolgens (vóór deze ronde) altijd behandeld als "trainer
+// is klaar" -> bedanken + ophangen. 60 seconden is ruim boven een normale
+// pauze, met Telnyx' eigen bovengrens (14.400s) als context ruim voldoende
+// marge. Zie verder gesprek.ts se bepaalOpnameAfsluitreden/verwerkOpnameStatus
+// hieronder: een stilte-stop hangt sinds deze ronde sowieso niet meer
+// automatisch op (spec-eis §6 van de opdracht), dus deze waarde is vooral nog
+// relevant als "hoelang duurt het voordat er ÜBERHAUPT een vervolgvraag komt".
+const MAX_OPNAME_DUUR_SECONDEN = 1200; // 20 minuten — expliciete opdracht (was 900/15 min)
+const OPNAME_STILTE_TIMEOUT_SECONDEN = 60; // was 5 — de root cause van het productie-incident
 export const OPNAME_STOP_TOETS = "#"; // direct stoppen + verwerken (spec §9)
-export const OPNAME_HERSTART_TOETS = "*"; // huidige opname afwijzen, opnieuw beginnen (spec §10)
+export const OPNAME_HERSTART_TOETS = "*"; // huidige opname afwijzen, opnieuw beginnen (spec §10) — TIJDENS een actieve opname
+// '*'/'#' in reactie op de vervolgkeuze-prompt ná een automatische
+// stilte-stop (zie verwerkVervolgKeuze) — bewust DEZELFDE toetsen als
+// hierboven (minder om te onthouden voor de trainer), maar functioneel een
+// ANDER, apart gedispatcht keuzemoment (oproep.status ===
+// "opname_onderbroken", niet "opname_verwacht") — geen actieve opname om te
+// discarden, dus geen samenloop met MAX_HEROPNAME_POGINGEN hieronder.
+export const VERVOLG_DOORGAAN_TOETS = "*";
+export const VERVOLG_AFRONDEN_TOETS = "#";
+const VERVOLGKEUZE_TIMEOUT_SECONDEN = 30; // ruimer dan GATHER_TIMEOUT_SECONDEN: dit is een inhoudelijke beslissing ("verder of afronden"), geen simpel menucijfer
 const OUDERE_TRAININGEN_TOETS = "9"; // escape naar de oudere laag (spec §3) — uitsluitend geldig bij fase="vandaag" mét een niet-lege oudere laag
 // Spec §11 — "optioneel maximaliseren op een redelijk aantal (bv. 3)":
 // staat 3 herstarts toe (opnamepoging 0 t/m 3, dus max. 4 daadwerkelijke
 // opnames per gesprek) — een 4e '*'-druk wordt genegeerd (zie
-// verwerkOpnameToets), expliciet gerapporteerd in het opleverrapport.
+// verwerkOpnameToets), expliciet gerapporteerd in het opleverrapport. Geldt
+// uitsluitend voor '*' TIJDENS een actieve opname (bewust afwijzen+opnieuw) —
+// niet voor "doorgaan" ná een automatische stilte-stop (verwerkVervolgKeuze),
+// dat is geen discard/herstart maar een voortzetting van hetzelfde verslag.
 const MAX_HEROPNAME_POGINGEN = 3;
 
 // Production-readiness-gate 1 (2026-08-25) — transcriptieherstel +
@@ -110,16 +142,32 @@ const MAX_HEROPNAME_POGINGEN = 3;
 // persoonsgegevens over trainers/scholen niet langer dan één etmaal ergens
 // te laten staan zonder dat er ooit een bruikbaar concept uit is gekomen.
 //
-// STUCK_TIMEOUT_MS = 20 minuten — hoelang een rij in 'opname_ontvangen'/
-// 'transcriptie_bezig' mag blijven staan vóór de onderhoudsronde 'm als
-// vastgelopen (bv. een gecrashte/time-outende serverless-aanroep) beschouwt
-// en alsnog in het herstelpad trekt. Ruim boven de realistische duur van een
-// download+Whisper-transcriptie van een 15-minuten-opname, kort genoeg om
-// een echt vastgelopen rij niet dagenlang onopgemerkt te laten hangen.
+// STUCK_TIMEOUT_MS = 25 minuten (was 20) — hoelang een rij in
+// 'opname_ontvangen'/'transcriptie_bezig' mag blijven staan vóór de
+// onderhoudsronde 'm als vastgelopen (bv. een gecrashte/time-outende
+// serverless-aanroep) beschouwt en alsnog in het herstelpad trekt.
+// Root-cause-fix productie-incident (2026-08-27) — meegeschaald met
+// MAX_OPNAME_DUUR_SECONDEN (900 -> 1200s hierboven): de oorspronkelijke 20
+// minuten was expliciet gemotiveerd als "15 minuten (toenmalige max.
+// opnameduur) + 5 minuten marge voor download+Whisper-transcriptie+
+// verwerking". Dezelfde 5-minuten-marge (geen vermenigvuldigingsfactor —
+// download-/transcriptietijd schaalt met het VERSCHIL in audiolengte, niet
+// met de limiet zelf) bovenop de nieuwe 20-minuten-limiet geeft 25 minuten.
+// Dit blijft ruim boven de realistische verwerkingsduur (Whisper verwerkt
+// doorgaans een veelvoud sneller dan realtime; zelfs een volle 20-minuten-
+// opname verwerkt normaliter in hooguit enkele tientallen seconden), en kort
+// genoeg om een écht vastgelopen rij niet dagenlang onopgemerkt te laten
+// hangen. Geldt ONGEWIJZIGD per fragment (elke opnamepoging doorloopt
+// opname_ontvangen/transcriptie_bezig zelf opnieuw, zie
+// claimOpnameFragmentVerwerking in oproep-state.ts) — een gesprek met
+// meerdere fragmenten na "verder inspreken" (spec-eis §6) maakt deze marge
+// dus niet krapper: tussen fragmenten in staat de oproep op
+// 'opname_onderbroken'/'opname_verwacht', nooit op de twee hier bewaakte
+// statussen.
 const MAX_TRANSCRIPTIE_POGINGEN = 5;
 const TRANSCRIPTIE_RETRY_DELAY_MS = 10 * 60 * 1000;
 const MAX_BEWAARTERMIJN_MS = 24 * 60 * 60 * 1000;
-const STUCK_TIMEOUT_MS = 20 * 60 * 1000;
+const STUCK_TIMEOUT_MS = 25 * 60 * 1000;
 const ONDERHOUD_LIMIET_PER_CATEGORIE = 50; // begrenzing per onderhoudsronde-aanroep, voorkomt een onbegrensde cronrun
 
 function telefonieIsActief(): boolean {
@@ -504,6 +552,14 @@ export async function verwerkOpnameToets(
   }
 
   if (cijfers === OPNAME_STOP_TOETS) {
+    // Root-cause-fix productie-incident (2026-08-27, spec-eis §4/§5) —
+    // markeer DEZE poging als bewust gestopt VOORDAT het stop_opname-
+    // commando naar Telnyx gaat: race-vrij t.o.v. de resulterende
+    // call.recording.saved (zie oproep-state.ts se zetBewustGestopt-
+    // doc-comment voor de volledige redenering). Zonder deze markering zou
+    // verwerkOpnameStatus dit niet kunnen onderscheiden van een automatische
+    // stilte-/duurlimiet-stop.
+    await zetBewustGestopt(payload, oproepId, huidigePoging);
     return [{ soort: "stop_opname", poging: huidigePoging }, ...(await verwerkOpnameAfgerond(payload, oproepId))];
   }
 
@@ -667,31 +723,129 @@ export async function verwerkSpreekAfgerond(
  * spreekt de boodschap daadwerkelijk uit — de andere krijgt stil `[]`, geen
  * fout, geen tweede speak-poging.
  */
-export async function verwerkOpnameAfgerond(payload: Payload, oproepId: number): Promise<VoiceInstructie[]> {
+export async function verwerkOpnameAfgerond(
+  payload: Payload,
+  oproepId: number,
+  boodschap?: string,
+  reden: string = "opname_afgerond"
+): Promise<VoiceInstructie[]> {
   if (!telefonieIsActief()) return NIET_BESCHIKBAAR;
   const gewonnen = await claimAfsluitboodschap(payload, oproepId);
   if (!gewonnen) return [];
   return [
     {
       soort: "zeg_en_ophangen",
-      tekst: "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.",
-      reden: "opname_afgerond",
+      // Root-cause-fix productie-incident (2026-08-27, spec-eis §7) —
+      // optionele boodschap/reden, uitsluitend gebruikt voor de
+      // max-opnameduur-afsluiting hieronder ("je hebt de limiet bereikt" is
+      // een andere boodschap dan het gewone "bedankt"). Alle bestaande
+      // aanroepers (bewuste '#'-afronding, de vervolgkeuze-afronding) laten
+      // dit weg en krijgen exact de oorspronkelijke tekst — ongewijzigd
+      // gedrag.
+      tekst: boodschap ?? "Bedankt. Je verslag wordt verwerkt en staat straks voor je klaar om te controleren.",
+      reden,
     },
   ];
 }
 
 /**
- * De recordingStatusCallback — spec §1 stap 8-11: opname ophalen,
- * transcriberen, koppelen aan bestaande Ronde-3-verslag-AI. Retourneert
- * niets aan de beller (die heeft al opgehangen/de goodbye-boodschap gehad
- * via verwerkOpnameAfgerond) — Twilio verwacht hier alleen een 200-status,
- * geen TwiML-inhoud.
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §4/§5/§7) —
+ * bepaalt WAAROM een opnamefragment stopte: "bewust" (trainer drukte '#'),
+ * "max_duur" (de opnamelimiet is bereikt) of "automatisch" (Telnyx' eigen
+ * stilte-timeout — geen van beide andere twee). Bewust en max_duur zijn
+ * beide EINDE-gesprek-triggers (spec §5/§7); automatisch is dat NIET meer
+ * sinds deze ronde (spec §6) — zie verwerkTranscriptiepoging hieronder.
+ *
+ * Tolerantie van 1 seconde op de max-duur-vergelijking: Telnyx' eigen
+ * recording_ended_at kan door afrondingsverschillen een fractie vóór de
+ * exacte limiet liggen zonder dat dit feitelijk een stilte-stop was.
  */
-export async function verwerkOpnameStatus(payload: Payload, provider: TelefonieProvider, oproepId: number, vormVelden: Record<string, string>): Promise<void> {
-  if (!telefonieIsActief()) return;
+export type OpnameAfsluitreden = "bewust" | "max_duur" | "automatisch";
+
+function bepaalAfsluitreden(oproep: TrainerTelefonieOproepen, poging: number, duurSeconden: number | null): OpnameAfsluitreden {
+  if (oproep.bewustGestoptPoging === poging) return "bewust";
+  if (duurSeconden !== null && duurSeconden >= MAX_OPNAME_DUUR_SECONDEN - 1) return "max_duur";
+  return "automatisch";
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §6/§10) — voegt
+ * een zojuist getranscribeerd fragment toe aan het (eventueel al bestaande)
+ * concept van DEZE oproep, in plaats van het te overschrijven. Hergebruikt
+ * upsertConcept() se BESTAANDE race-bescherming volledig ongewijzigd (een
+ * concept dat bij een ANDERE oproep hoort wordt hier nooit aangeraakt, zie
+ * verslag.ts): als er al trainerInvoer van DEZE oproep staat, wordt het
+ * nieuwe fragment er met een lege regel achter geplakt; anders is dit het
+ * eerste (en voor een enkelvoudig gesprek: enige) fragment. Nooit een
+ * eerder fragment overschrijven — uitsluitend toevoegen.
+ */
+async function voegFragmentToeAanConcept(payload: Payload, trainer: AuthTrainer, trainingId: string, oproepId: number, nieuweTekst: string): Promise<VerslagConceptUitkomst> {
+  const bestaand = await haalVerslagVoorTraining(payload, trainer, trainingId);
+  const samengevoegd = bestaand && bestaand.telefonieOproep === oproepId && bestaand.trainerInvoer ? `${bestaand.trainerInvoer}\n\n${nieuweTekst}` : nieuweTekst;
+  return upsertConcept(payload, trainer, trainingId, { trainerInvoer: samengevoegd, bron: "telefoon", telefonieOproepId: oproepId });
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §6/§7/§8) — de
+ * daadwerkelijke afronding zodra er GEEN fragment meer actief opgenomen/
+ * getranscribeerd wordt: AI-structurering op de VOLLEDIGE, tot dan toe
+ * samengevoegde trainerInvoer (dus over eventueel meerdere fragmenten heen),
+ * concept_klaar, en pas dan audio-opruiming (spec §9: nooit vóórdat de
+ * concepttekst al veilig staat). Aanroeper is zelf verantwoordelijk voor de
+ * eenmalige claim hiervóór (claimFinalisatieZonderActiefFragment, of de
+ * per-fragment-claim gevolgd door een bewuste/max_duur-uitkomst) — deze
+ * functie claimt zelf niets, matcht daarmee verwerkTranscriptiepoging se
+ * bestaande contract.
+ *
+ * Geen bruikbare trainerInvoer gevonden (bv. een hangup vóórdat ook maar één
+ * fragment succesvol was) -> 'mislukt', geen lege verslagconcept aanmaken.
+ */
+async function finaliseerMetFragmenten(
+  payload: Payload,
+  provider: TelefonieProvider,
+  trainer: AuthTrainer,
+  oproep: TrainerTelefonieOproepen,
+  mogelijkOnvolledig: boolean
+): Promise<void> {
+  const rij = await haalVerslagVoorTraining(payload, trainer, oproep.gekozenMondayTrainingId as string);
+  if (!rij || rij.telefonieOproep !== oproep.id || !rij.trainerInvoer) {
+    await zetMislukt(payload, oproep.id, "opname_mislukt", "Geen bruikbare inhoud verzameld vóór afronding.");
+    return;
+  }
+
+  // Best-effort — zelfde degradatiepad als altijd: mislukte AI-structurering
+  // laat trainerInvoer gewoon staan, de trainer kan in de portal alsnog zelf
+  // op "Maak verslag" klikken.
+  await structureerVerslag(payload, trainer, oproep.gekozenMondayTrainingId as string, rij.trainerInvoer);
+  if (mogelijkOnvolledig) {
+    await upsertConcept(payload, trainer, oproep.gekozenMondayTrainingId as string, { mogelijkOnvolledig: true });
+  }
+  await zetConceptKlaar(payload, oproep.id, { verslagId: rij.id, transcriptieLengte: rij.trainerInvoer.length, mogelijkOnvolledig });
+
+  if (oproep.recordingProviderId) {
+    try {
+      await provider.verwijderOpname(oproep.recordingProviderId);
+      await zetOpnameVerwijderd(payload, oproep.id);
+    } catch (error) {
+      console.error("[telefonie] opname verwijderen bij provider mislukt (concept staat al veilig lokaal):", error);
+    }
+  }
+}
+
+/**
+ * De recordingStatusCallback — spec §1 stap 8-11: opname ophalen,
+ * transcriberen, koppelen aan bestaande Ronde-3-verslag-AI. Root-cause-fix
+ * productie-incident (2026-08-27) — geeft sinds deze ronde de vervolg-
+ * VoiceInstructies terug (voorheen void): bij een automatische (stilte-)stop
+ * moet de call NIET meer ophangen, maar een vervolgvraag stellen (spec-eis
+ * §6), dus kan de webhookroute niet langer blind altijd hetzelfde
+ * "bedankt+ophangen" na afloop aanroepen.
+ */
+export async function verwerkOpnameStatus(payload: Payload, provider: TelefonieProvider, oproepId: number, vormVelden: Record<string, string>): Promise<VoiceInstructie[]> {
+  if (!telefonieIsActief()) return NIET_BESCHIKBAAR;
 
   const vooraf = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
-  if (!vooraf) return; // kan structureel niet gebeuren via maakOfHaalOproep, defensief
+  if (!vooraf || !vooraf.trainer || !vooraf.gekozenMondayTrainingId) return []; // kan structureel niet gebeuren via de eigen flow, defensief
 
   const status = provider.ontleedOpnameStatus(vormVelden);
 
@@ -710,35 +864,53 @@ export async function verwerkOpnameStatus(payload: Payload, provider: TelefonieP
   const huidigePoging = vooraf.heropnamePogingen ?? 0;
   if (status.clientState) {
     const pogingVanEvent = Number.parseInt(Buffer.from(status.clientState, "base64").toString("utf8"), 10);
-    if (Number.isInteger(pogingVanEvent) && pogingVanEvent !== huidigePoging) return;
+    if (Number.isInteger(pogingVanEvent) && pogingVanEvent !== huidigePoging) return [];
+  }
+
+  const trainer = await haalAuthTrainerVoorId(payload, vooraf.trainer as number);
+  if (!trainer) {
+    await zetMislukt(payload, oproepId, "onbekende_fout", "Trainer niet meer vindbaar op het moment van opnameverwerking.");
+    return await verwerkOpnameAfgerond(payload, oproepId);
   }
 
   if (status.status === "mislukt" || !status.ophaalReferentie) {
-    await zetMislukt(payload, oproepId, "opname_mislukt", "Provider meldde een mislukte/lege opname.");
-    return;
+    // Root-cause-fix productie-incident (2026-08-27, spec-eis §10) — anders
+    // dan vóór deze ronde: als er al een eerder fragment succesvol is
+    // toegevoegd (bv. fragment 2 mislukt bij Telnyx nadat fragment 1 al
+    // veilig staat), gaat dat fragment niet verloren — afronden met wat er
+    // al is (mogelijkOnvolledig), i.p.v. de hele oproep als mislukt te
+    // markeren. Zelfde eenmalige claim als de vervolgkeuze-afronding
+    // hieronder (claimFinalisatieZonderActiefFragment) — voorkomt dubbele
+    // afronding bij een dubbel afgeleverd call.recording.error-event.
+    const gewonnen = await claimFinalisatieZonderActiefFragment(payload, oproepId);
+    if (!gewonnen) return [];
+    const bestaandFragment = await haalVerslagVoorTraining(payload, trainer, vooraf.gekozenMondayTrainingId as string);
+    if (bestaandFragment && bestaandFragment.telefonieOproep === oproepId && bestaandFragment.trainerInvoer) {
+      await finaliseerMetFragmenten(payload, provider, trainer, vooraf, true);
+    } else {
+      await zetMislukt(payload, oproepId, "opname_mislukt", "Provider meldde een mislukte/lege opname.");
+    }
+    return await verwerkOpnameAfgerond(payload, oproepId);
   }
 
-  const gewonnen = await claimOpnameVerwerking(payload, oproepId, status.providerRecordingId, status.ophaalReferentie);
-  if (!gewonnen) return; // al (in behandeling) verwerkt door een eerdere/duplicaat-aanroep — spec §12/§18/§24, stil, geen fout
+  const gewonnen = await claimOpnameFragmentVerwerking(payload, oproepId, {
+    poging: huidigePoging,
+    recordingProviderId: status.providerRecordingId,
+    ophaalReferentie: status.ophaalReferentie,
+    recordingStartedAt: status.recordingStartedAt,
+  });
+  if (!gewonnen) return []; // al (in behandeling) verwerkt door een eerdere/duplicaat-aanroep — spec §12/§18/§24/§10, stil, geen fout
+
+  const afsluitreden = bepaalAfsluitreden(vooraf, huidigePoging, status.duurSeconden);
+  await zetTranscriptieBezig(payload, oproepId, status.duurSeconden);
 
   // Her-lezen NA de claim (ONGEWIJZIGD t.o.v. vóór deze ronde) — claimOpname-
-  // Verwerking schrijft opnameOphaalReferentie/recordingProviderId atomisch
-  // mee; de "vooraf"-snapshot hierboven is daarvoor dus stale en mag nooit
-  // gebruikt worden om te transcriberen.
-  const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
-  if (!oproep || !oproep.trainer || !oproep.gekozenMondayTrainingId) {
-    await zetMislukt(payload, oproepId, "onbekende_fout", "Opnamestatus ontvangen zonder een eerder gekozen training/trainer op de oproeprij.");
-    return;
-  }
-
-  const trainer = await haalAuthTrainerVoorId(payload, oproep.trainer as number);
-  if (!trainer) {
-    await zetMislukt(payload, oproepId, "onbekende_fout", "Trainer niet meer vindbaar op het moment van opnameverwerking.");
-    return;
-  }
-
-  await zetTranscriptieBezig(payload, oproepId, status.duurSeconden);
-  await verwerkTranscriptiepoging(payload, provider, oproep, trainer);
+  // FragmentVerwerking schrijft opnameOphaalReferentie/recordingProviderId/
+  // opnameHuidigePoging/opnameHuidigeRecordingStartedAt atomisch mee; de
+  // "vooraf"-snapshot hierboven is daarvoor dus stale en mag nooit gebruikt
+  // worden om te transcriberen.
+  const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen;
+  return await verwerkTranscriptiepoging(payload, provider, oproep, trainer, afsluitreden);
 }
 
 /**
@@ -746,84 +918,226 @@ export async function verwerkOpnameStatus(payload: Payload, provider: TelefonieP
  * gebruikt door zowel de recordingStatus-webhook (verwerkOpnameStatus
  * hierboven) als de onderhoudsronde (verwerkTelefonieOnderhoud hieronder).
  * Eén pad garandeert dat een automatische retry zich exact hetzelfde
- * gedraagt als de eerste poging: dezelfde upsertConcept()-aanroep, dus
- * dezelfde find-or-create-garantie op [trainer, mondayTrainingId] — een
- * retry kan structureel geen tweede concept maken, precies zoals een gewone
- * dubbele webhook dat al niet kon (spec-eis gate 1: "retries mogen nooit een
- * tweede concept maken").
+ * gedraagt als de eerste poging: dezelfde upsertConcept()-aanroep (via
+ * voegFragmentToeAanConcept), dus dezelfde find-or-create-garantie op
+ * [trainer, mondayTrainingId] — een retry kan structureel geen tweede
+ * concept maken, precies zoals een gewone dubbele webhook dat al niet kon
+ * (spec-eis gate 1: "retries mogen nooit een tweede concept maken").
  *
  * oproep MOET al door de aanroeper geclaimd zijn naar status
- * 'transcriptie_bezig' (via claimOpnameVerwerking resp.
+ * 'transcriptie_bezig' (via claimOpnameFragmentVerwerking resp.
  * claimTranscriptieRetry) — deze functie claimt zelf niets.
+ *
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §6/§10) — geeft
+ * sinds deze ronde VoiceInstructies terug i.p.v. void, en vertakt op
+ * `afsluitreden`: "automatisch" (stilte-stop) rondt NIET af — het fragment
+ * wordt toegevoegd, de oproep gaat naar 'opname_onderbroken' en de trainer
+ * krijgt de vervolgkeuze-prompt (spec-eis §6). "bewust"/"max_duur" zijn wél
+ * eindtriggers — audio wordt dan pas opgeruimd (spec §9: nooit eerder dan de
+ * concepttekst zelf al veilig staat).
  */
-async function verwerkTranscriptiepoging(payload: Payload, provider: TelefonieProvider, oproep: TrainerTelefonieOproepen, trainer: AuthTrainer): Promise<void> {
+async function verwerkTranscriptiepoging(
+  payload: Payload,
+  provider: TelefonieProvider,
+  oproep: TrainerTelefonieOproepen,
+  trainer: AuthTrainer,
+  afsluitreden: OpnameAfsluitreden
+): Promise<VoiceInstructie[]> {
   if (!oproep.opnameOphaalReferentie || !oproep.recordingProviderId) {
-    // Structureel zeldzaam sinds claimOpnameVerwerking de ophaalreferentie
-    // atomisch mét de claim zelf opslaat — defensief nooit een download
-    // proberen zonder referentie (kan alleen nog bij zeer oude, vóór deze
-    // ronde geclaimde rijen).
+    // Structureel zeldzaam sinds claimOpnameFragmentVerwerking de
+    // ophaalreferentie atomisch mét de claim zelf opslaat — defensief nooit
+    // een download proberen zonder referentie (kan alleen nog bij zeer oude,
+    // vóór deze ronde geclaimde rijen).
     await verwerkTranscriptieMislukking(payload, provider, oproep, new Error("Geen opname-ophaalreferentie bekend."));
-    return;
+    return [];
   }
 
   let transcript: string;
   try {
-    const audio = await provider.haalOpnameOp(oproep.opnameOphaalReferentie);
+    // fragmentSelectie (spec-eis §10) — precieze herselectie via Telnyx' eigen
+    // recording_started_at van DIT fragment, i.p.v. de "meest recente
+    // opname"-heuristiek die bij meerdere fragmenten het verkeerde fragment
+    // zou kunnen kiezen (zie provider.ts/telnyx-provider.ts se toelichting).
+    const audio = await provider.haalOpnameOp(oproep.opnameOphaalReferentie, { recordingStartedAt: oproep.opnameHuidigeRecordingStartedAt ?? null });
     transcript = await transcribeAudio(audio);
   } catch (error) {
     await verwerkTranscriptieMislukking(payload, provider, oproep, error);
+    return [];
+  }
+
+  const conceptUitkomst = await voegFragmentToeAanConcept(payload, trainer, oproep.gekozenMondayTrainingId as string, oproep.id, transcript);
+  if (conceptUitkomst.soort === "bestaat_al") {
+    // Spec §7 — de zeldzame, écht gelijktijdige race die laag 1
+    // (kiesTrainingEnStartOpname se voorcontrole) niet ving: een ANDER
+    // gesprek (of de portal) legde de training tussen kiezen en dit
+    // transcriptiemoment alsnog vast. Geen technische fout — zie
+    // TrainerTelefonieOproepen.ts se status "verslag_bestaat_al".
+    await zetVerslagBestaatAl(payload, oproep.id, conceptUitkomst.verslag.id);
+    return await verwerkOpnameAfgerond(payload, oproep.id);
+  }
+  if (conceptUitkomst.soort !== "ok") {
+    await zetMislukt(payload, oproep.id, "onbekende_fout", `upsertConcept: ${conceptUitkomst.soort} — ${"boodschap" in conceptUitkomst ? conceptUitkomst.boodschap : ""}`);
+    return await verwerkOpnameAfgerond(payload, oproep.id);
+  }
+
+  if (afsluitreden === "automatisch") {
+    // Spec-eis §6 — GEEN afronding: het fragment staat veilig, de oproep
+    // wacht nu op de vervolgkeuze van de trainer (verwerkVervolgKeuze
+    // hieronder). Audio blijft bewust bij Telnyx staan (er kan nog een
+    // fragment bijkomen) — opgeruimd wordt pas bij de daadwerkelijke
+    // afronding (finaliseerMetFragmenten), nooit tussentijds: een
+    // tussentijdse opruiming zou bij Telnyx alle opnames van dit call_leg_id
+    // verwijderen (verwijderOpname se documented gedrag), dus mogelijk ook
+    // een op dat moment nog actieve/net gestarte volgende opname.
+    await zetOpnameOnderbroken(payload, oproep.id);
+    return [
+      {
+        soort: "zeg_en_kies_cijfers",
+        tekst: "Ik heb een tijdje niets meer gehoord. Wil je verder inspreken? Druk dan op het sterretje. Ben je klaar met je verslag? Druk dan op het hekje.",
+        actieUrl: pad(`vervolgkeuze?oproepId=${oproep.id}`),
+        maxCijfers: 1,
+        timeoutSeconden: VERVOLGKEUZE_TIMEOUT_SECONDEN,
+        geldigeCijfers: `${VERVOLG_DOORGAAN_TOETS}${VERVOLG_AFRONDEN_TOETS}`,
+      },
+    ];
+  }
+
+  // afsluitreden is hier "bewust" of "max_duur" — dit was het laatste
+  // fragment: AI-structurering op de VOLLEDIGE (eventueel samengevoegde)
+  // trainerInvoer, nooit uitsluitend dit ene fragment (spec-eis §10).
+  const volledigeTekst = conceptUitkomst.verslag.trainerInvoer ?? transcript;
+  const mogelijkOnvolledig = afsluitreden === "max_duur";
+  await structureerVerslag(payload, trainer, oproep.gekozenMondayTrainingId as string, volledigeTekst);
+  if (mogelijkOnvolledig) {
+    // Zonder deze aparte schrijving zou uitsluitend de OPROEP-rij (technisch
+    // beheer) mogelijkOnvolledig=true krijgen via zetConceptKlaar hieronder —
+    // de trainerportal (verslag-editor.tsx) en AdminVerslagLogboek.tsx lezen
+    // echter het veld op de training-verslagen-rij zelf (spec-eis §9), zelfde
+    // patroon als finaliseerMetFragmenten hierboven.
+    await upsertConcept(payload, trainer, oproep.gekozenMondayTrainingId as string, { mogelijkOnvolledig: true });
+  }
+  await zetConceptKlaar(payload, oproep.id, {
+    verslagId: conceptUitkomst.verslag.id,
+    transcriptieLengte: volledigeTekst.length,
+    mogelijkOnvolledig,
+  });
+
+  // Spec §9: audio bewaren zolang nodig voor transcriptie, daarna
+  // verwijderen zodra transcriptie + concept veilig staan — best-effort,
+  // MAG nooit de al-geslaagde conceptaanmaak alsnog als mislukt melden.
+  try {
+    await provider.verwijderOpname(oproep.recordingProviderId);
+    await zetOpnameVerwijderd(payload, oproep.id);
+  } catch (error) {
+    console.error("[telefonie] opname verwijderen bij provider mislukt (concept staat al veilig lokaal):", error);
+  }
+
+  if (afsluitreden === "max_duur") {
+    // Spec-eis §7 — expliciet ANDERE boodschap dan de gewone afronding: de
+    // trainer moet weten dát de limiet is bereikt, niet alleen dat "het
+    // verslag wordt verwerkt".
+    return await verwerkOpnameAfgerond(
+      payload,
+      oproep.id,
+      "Je hebt de maximale opnameduur bereikt. Je verslag tot dit punt is opgeslagen en wordt verwerkt.",
+      "max_opnameduur_bereikt"
+    );
+  }
+  return await verwerkOpnameAfgerond(payload, oproep.id);
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §6) — de '*'/'#'-
+ * keuze in reactie op de vervolgkeuze-prompt ná een automatische
+ * (stilte-)stop. Uitsluitend relevant zolang de oproep daadwerkelijk op deze
+ * keuze wacht (status 'opname_onderbroken') — een laat/dubbel afgeleverd
+ * event voor een inmiddels al afgeronde oproep wordt stil genegeerd, zelfde
+ * patroon als verwerkOpnameToets.
+ *
+ * '*' (verder inspreken) start een NIEUW fragment (poging+1) — GEEN eigen
+ * dedup-claim nodig: zetOpnameVerwacht herschrijft bij een dubbele aanroep
+ * hooguit dezelfde waarde (idempotent), en het bijbehorende speak-commando
+ * krijgt een deterministisch command_id per poging (telnyx-provider.ts),
+ * dus Telnyx' eigen commando-deduplicatie voorkomt een dubbele uitspraak.
+ * '#' (afronden) — of geen/ongeldig cijfer (timeout, spec-eis "nooit
+ * eindeloos in stilte laten hangen") — rondt af via
+ * claimFinalisatieZonderActiefFragment, DE atomaire eenmalige-claim tegen
+ * een dubbel afgeleverd gather/dtmf-event.
+ */
+export async function verwerkVervolgKeuze(payload: Payload, provider: TelefonieProvider, oproepId: number, vormVelden: Record<string, string>): Promise<VoiceInstructie[]> {
+  if (!telefonieIsActief()) return NIET_BESCHIKBAAR;
+
+  const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
+  if (!oproep || oproep.status !== "opname_onderbroken" || !oproep.trainer) return [];
+
+  const { cijfers } = provider.ontleedGatherResultaat(vormVelden);
+
+  if (cijfers === VERVOLG_DOORGAAN_TOETS) {
+    const volgendePoging = (oproep.heropnamePogingen ?? 0) + 1;
+    await zetOpnameVerwacht(payload, oproepId, volgendePoging);
+    return [
+      {
+        soort: "zeg_en_neem_op",
+        tekst: "Oké, spreek verder in na de piep en sluit af met een hekje.",
+        actieUrl: pad(`opname-afgerond?oproepId=${oproepId}`),
+        statusCallbackUrl: pad(`opname-status?oproepId=${oproepId}`),
+        stopToets: OPNAME_STOP_TOETS,
+        herstartToets: OPNAME_HERSTART_TOETS,
+        poging: volgendePoging,
+      },
+    ];
+  }
+
+  const trainer = await haalAuthTrainerVoorId(payload, oproep.trainer as number);
+  if (!trainer) {
+    await zetMislukt(payload, oproepId, "onbekende_fout", "Trainer niet meer vindbaar bij vervolgkeuze.");
+    return await verwerkOpnameAfgerond(payload, oproepId);
+  }
+
+  // cijfers === VERVOLG_AFRONDEN_TOETS ('#', expliciete bevestiging) OF geen/
+  // ongeldig cijfer (gather-timeout) — in beide gevallen niets meer om op te
+  // wachten. Alleen bij een expliciete '#' is dit een door de trainer
+  // bevestigde afronding (spec-eis §9: dan NIET mogelijkOnvolledig); bij een
+  // timeout is er geen bevestiging geweest.
+  const gewonnen = await claimFinalisatieZonderActiefFragment(payload, oproepId);
+  if (!gewonnen) return [];
+  await finaliseerMetFragmenten(payload, provider, trainer, oproep, cijfers !== VERVOLG_AFRONDEN_TOETS);
+  return await verwerkOpnameAfgerond(payload, oproepId);
+}
+
+/**
+ * Root-cause-fix productie-incident (2026-08-27, spec-eis §8) — het
+ * call.hangup-event: de beller (of Telnyx zelf) beëindigde de verbinding.
+ * Slaat ALTIJD (onvoorwaardelijk) hangup_cause/hangup_source op, ongeacht of
+ * de oproep verder nog iets te doen heeft (spec-eis: "sla op waar
+ * mogelijk"). Rondt DAARNA best-effort af met wat er tot nu toe aan
+ * trainerInvoer verzameld is, als de oproep nog niet was afgerond en er op
+ * dit moment geen fragment actief wordt verwerkt (claimFinalisatieZonder-
+ * ActiefFragment — laat een wél actief fragment gewoon zijn eigen traject
+ * uitlopen, dat rondt zelf al af via verwerkTranscriptiepoging/
+ * verwerkOpnameStatus). Geeft bewust GEEN VoiceInstructies terug — de
+ * verbinding is op dit moment al weg, er valt niets meer te zeggen.
+ */
+export async function verwerkOnverwachteHangup(payload: Payload, provider: TelefonieProvider, oproepId: number, vormVelden: Record<string, string>): Promise<void> {
+  if (!telefonieIsActief()) return;
+
+  const gegevens = provider.ontleedHangup(vormVelden);
+  await zetHangupInfo(payload, oproepId, { hangupCause: gegevens.hangupCause, hangupSource: gegevens.hangupSource });
+
+  const oproep = (await payload.findByID({ collection: "trainer-telefonie-oproepen", id: oproepId, overrideAccess: true, depth: 0 })) as unknown as TrainerTelefonieOproepen | null;
+  if (!oproep || !oproep.trainer || !oproep.gekozenMondayTrainingId) return; // niets af te ronden zonder trainer/training (bv. de beller hing al op vóór een training gekozen was)
+
+  const gewonnen = await claimFinalisatieZonderActiefFragment(payload, oproepId);
+  if (!gewonnen) return; // al afgerond, of een fragment wordt nog actief verwerkt — spec-eis "geen dubbele verwerking"
+
+  const trainer = await haalAuthTrainerVoorId(payload, oproep.trainer as number);
+  if (!trainer) {
+    await zetMislukt(payload, oproepId, "onbekende_fout", "Trainer niet meer vindbaar bij onverwachte hangup.");
     return;
   }
-
-  try {
-    const conceptUitkomst = await upsertConcept(payload, trainer, oproep.gekozenMondayTrainingId as string, {
-      trainerInvoer: transcript,
-      bron: "telefoon",
-      telefonieOproepId: oproep.id,
-    });
-    if (conceptUitkomst.soort === "bestaat_al") {
-      // Spec §7 — de zeldzame, écht gelijktijdige race die laag 1
-      // (kiesTrainingEnStartOpname se voorcontrole) niet ving: een ANDER
-      // gesprek (of de portal) legde de training tussen kiezen en dit
-      // transcriptiemoment alsnog vast. Geen technische fout — zie
-      // TrainerTelefonieOproepen.ts se status "verslag_bestaat_al". Het
-      // gesprek is op dit punt altijd al beëindigd (transcriptie loopt async
-      // ná ophangen), dus geen gesproken boodschap meer mogelijk — de
-      // trainer ziet de juiste staat bij een volgende blik in de
-      // traineromgeving of een volgend telefoontje (spec §6 sluit deze
-      // training dan vanzelf al uit).
-      await zetVerslagBestaatAl(payload, oproep.id, conceptUitkomst.verslag.id);
-      return;
-    }
-    if (conceptUitkomst.soort !== "ok") {
-      await zetMislukt(payload, oproep.id, "onbekende_fout", `upsertConcept: ${conceptUitkomst.soort} — ${"boodschap" in conceptUitkomst ? conceptUitkomst.boodschap : ""}`);
-      return;
-    }
-
-    // Best-effort — spec §14 se bekende degradatiepad: mislukt AI-structurering
-    // (bv. tijdelijk onbereikbaar) laat trainerInvoer (de transcriptie) altijd
-    // gewoon staan, de trainer kan in de portal alsnog zelf op "Maak verslag"
-    // klikken (verslag-editor.tsx, ongewijzigde bestaande functionaliteit).
-    // Nooit een fout hier de héle telefonieflow als mislukt markeren.
-    await structureerVerslag(payload, trainer, oproep.gekozenMondayTrainingId as string, transcript);
-
-    await zetConceptKlaar(payload, oproep.id, { verslagId: conceptUitkomst.verslag.id, transcriptieLengte: transcript.length });
-  } finally {
-    // Spec §9: audio bewaren zolang nodig voor transcriptie, daarna
-    // verwijderen zodra transcriptie + concept veilig staan — best-effort,
-    // MAG nooit de al-geslaagde conceptaanmaak alsnog als mislukt melden.
-    // zetOpnameVerwijderd is de admin-zichtbaarheidseis uit gate 1: hierna
-    // staat expliciet vast dat de audio weg is, niet alleen impliciet.
-    // Ruimt sinds V1-afronding (2026-08-26) ALLE opnames van dit gesprek op
-    // (dus ook eventuele via '*' afgewezen eerdere pogingen, spec §10/§18),
-    // zie telnyx-provider.ts se verwijderOpname.
-    try {
-      await provider.verwijderOpname(oproep.recordingProviderId);
-      await zetOpnameVerwijderd(payload, oproep.id);
-    } catch (error) {
-      console.error("[telefonie] opname verwijderen bij provider mislukt (concept staat al veilig lokaal):", error);
-    }
-  }
+  // mogelijkOnvolledig=true — een hangup is per definitie nooit een door de
+  // trainer bevestigde afronding (spec-eis §9).
+  await finaliseerMetFragmenten(payload, provider, trainer, oproep, true);
 }
 
 /**
@@ -902,7 +1216,17 @@ async function claimEnVerwerkOnderhoudsKandidaat(payload: Payload, provider: Tel
     return true;
   }
 
-  await verwerkTranscriptiepoging(payload, provider, oproep, trainer);
+  // Root-cause-fix productie-incident (2026-08-27, spec-eis §10) —
+  // afsluitreden wordt hier herberekend uit wat de OORSPRONKELIJKE claim al
+  // atomisch had vastgelegd (opnameHuidigePoging/bewustGestoptPoging/
+  // recordingDuurSeconden) — een retry heeft zelf geen vers webhookevent,
+  // dus geen eigen client_state/duurSeconden om uit te lezen. Het
+  // resultaat van deze retry heeft (per constructie, zie de doc-comment bij
+  // verwerkTelefonieOnderhoud/STUCK_TIMEOUT_MS) geen live gesprek meer om op
+  // te reageren — de teruggegeven VoiceInstructies worden hier bewust
+  // genegeerd, zelfde gedrag als vóór deze ronde.
+  const afsluitreden = bepaalAfsluitreden(oproep, oproep.opnameHuidigePoging ?? oproep.heropnamePogingen ?? 0, oproep.recordingDuurSeconden ?? null);
+  await verwerkTranscriptiepoging(payload, provider, oproep, trainer, afsluitreden);
   return true;
 }
 

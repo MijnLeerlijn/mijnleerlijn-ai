@@ -74,6 +74,14 @@ export interface VerslagWeergaveRegel {
   schoolUpdateStatus: "niet_verzonden" | "bezig" | "geschreven" | "mislukt" | "niet_geactiveerd";
   definitieveTekst: string | null;
   trainerInvoer: string | null;
+  /**
+   * Root-cause-fix productie-incident (2026-08-27) — uitsluitend relevant
+   * bij bron="telefoon": true als het gesprek niet via een expliciete
+   * '#'-bevestiging is afgerond (maximale opnameduur bereikt, geen reactie
+   * op de vervolgvraag, of een onverwachte hangup). Zie
+   * payload/collections/TrainingVerslagen.ts.
+   */
+  mogelijkOnvolledig?: boolean | null;
 }
 
 export function VerslagenLijst<T extends VerslagWeergaveRegel>({
@@ -120,7 +128,14 @@ export function VerslagenLijst<T extends VerslagWeergaveRegel>({
                 <td>
                   <AdminStatusBadge label={VERSLAG_STATUS_LABEL[v.status]} kleur={VERSLAG_STATUS_KLEUR[v.status]} />
                 </td>
-                <td>{v.bron === "telefoon" ? "Telefonisch" : "Portal"}</td>
+                <td>
+                  {v.bron === "telefoon" ? "Telefonisch" : "Portal"}
+                  {v.bron === "telefoon" && v.mogelijkOnvolledig && (
+                    <span style={{ marginLeft: 6 }}>
+                      <AdminStatusBadge label="Mogelijk onvolledig" kleur="orange" />
+                    </span>
+                  )}
+                </td>
                 <td>
                   <AdminStatusBadge label={WRITEBACK_STATUS_LABEL[v.trainingUpdateStatus]} kleur={WRITEBACK_STATUS_KLEUR[v.trainingUpdateStatus]} />
                 </td>
@@ -252,6 +267,11 @@ function VerslagDetailModal({
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <strong>Status:</strong> <AdminStatusBadge label={VERSLAG_STATUS_LABEL[verslag.status]} kleur={VERSLAG_STATUS_KLEUR[verslag.status]} />
           </div>
+          {verslag.bron === "telefoon" && verslag.mogelijkOnvolledig && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <strong>Let op:</strong> <AdminStatusBadge label="Mogelijk onvolledig — niet bewust afgerond" kleur="orange" />
+            </div>
+          )}
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <strong>Monday — training-update:</strong> <AdminStatusBadge label={WRITEBACK_STATUS_LABEL[verslag.trainingUpdateStatus]} kleur={WRITEBACK_STATUS_KLEUR[verslag.trainingUpdateStatus]} />
           </div>
