@@ -4,7 +4,12 @@ import config from "@/payload.config";
 import { isEditor } from "@/payload/access/roles";
 import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
-import { haalAlleTrainerAccounts, haalOpenVerslagenVoorAlleTrainers, haalMislukteTelefonieOproepenVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
+import {
+  haalAlleTrainerAccounts,
+  haalOpenVerslagenVoorAlleTrainers,
+  haalMislukteTelefonieOproepenVoorAlleTrainers,
+  haalAlleOpenStartActiesVoorAlleTrainers,
+} from "@/lib/admin/trainers/aggregatie";
 import { bouwAdminAandachtOverzicht } from "@/lib/admin/trainers/aandacht";
 import { haalTrainingenEnScholenVoorAlleTrainers } from "@/lib/trainers/monday-links";
 
@@ -28,13 +33,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
-  const [trainers, openVerslagen, misluktOproepen, mondayOverzicht] = await Promise.all([
+  const [trainers, openVerslagen, misluktOproepen, mondayOverzicht, openStartActies] = await Promise.all([
     haalAlleTrainerAccounts(payload),
     haalOpenVerslagenVoorAlleTrainers(payload),
     haalMislukteTelefonieOproepenVoorAlleTrainers(payload),
     haalTrainingenEnScholenVoorAlleTrainers(),
+    haalAlleOpenStartActiesVoorAlleTrainers(payload),
   ]);
 
-  const aandacht = bouwAdminAandachtOverzicht(openVerslagen, misluktOproepen, trainers, mondayOverzicht.trainingenPerTrainer);
+  const aandacht = bouwAdminAandachtOverzicht(openVerslagen, misluktOproepen, trainers, mondayOverzicht.trainingenPerTrainer, new Date(), openStartActies);
   return NextResponse.json(aandacht);
 }

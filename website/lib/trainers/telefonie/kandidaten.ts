@@ -2,6 +2,7 @@ import type { Payload } from "payload";
 import { haalRecenteTrainingenVoorTelefonie, vandaagIsoAmsterdam, TELEFONIE_RECENTE_DAGEN, type TrainingMetSchool } from "../monday-links";
 import { haalVerslagenPerTraining } from "../verslag";
 import { haalAanvullendeTrainingenAlsSamenvattingen } from "../aanvullende-trainingen";
+import { haalStartactiesAlsSamenvattingen } from "../startbegeleiding";
 import type { AuthTrainer } from "../auth";
 
 // Trainertelefonie V1-afronding (2026-08-26) — spec §6/§16: "Centraliseer
@@ -31,8 +32,8 @@ export interface TelefonieKandidaat {
   schoolId: string;
   trainerboardItemId: string | null;
   datum: string | null;
-  /** Upsell-ronde (2026-09-02, spec §A5) — laat portal/admin/transcript altijd kunnen onderscheiden om welke soort training het ging. */
-  bron: "mijnleerlijn" | "aanvullend";
+  /** Upsell-ronde (2026-09-02, spec §A5) — laat portal/admin/transcript altijd kunnen onderscheiden om welke soort training het ging. Startbegeleiding-ronde (2026-09-02, spec §E.1) voegt "startactie" toe — zelfde reden, zie TrainingSamenvatting.bron (monday-links.ts). */
+  bron: "mijnleerlijn" | "aanvullend" | "startactie";
 }
 
 export interface TelefonieKandidatenResultaat {
@@ -55,14 +56,18 @@ function naarKandidaat(t: TrainingMetSchool): TelefonieKandidaat {
  * splitsen in vandaag/ouder (spec §1-§6).
  */
 export async function haalTelefonieKandidaten(payload: Payload, trainer: AuthTrainer): Promise<TelefonieKandidatenResultaat> {
-  const [recentMonday, recentAanvullend] = await Promise.all([
+  const [recentMonday, recentAanvullend, recentStartacties] = await Promise.all([
     haalRecenteTrainingenVoorTelefonie(trainer),
     // Upsell-ronde (2026-09-02, spec §A5) — een aanvullende training met
     // datum moet hier net zo goed als kandidaat kunnen voorkomen als een
     // MijnLeerlijn-training, zelfde recentheidsvenster (TELEFONIE_RECENTE_DAGEN).
     haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer, { maxDagenGeleden: TELEFONIE_RECENTE_DAGEN }),
+    // Startbegeleiding-ronde (2026-09-02, spec §E.1) — zelfde reden/venster:
+    // een startactie-gesprek met een gespreksDatum moet net zo goed
+    // telefonisch afgehandeld kunnen worden.
+    haalStartactiesAlsSamenvattingen(payload, trainer, { maxDagenGeleden: TELEFONIE_RECENTE_DAGEN }),
   ]);
-  const recent = [...recentMonday, ...recentAanvullend];
+  const recent = [...recentMonday, ...recentAanvullend, ...recentStartacties];
   if (recent.length === 0) return { vandaag: [], ouder: [] };
 
   const verslagen = await haalVerslagenPerTraining(

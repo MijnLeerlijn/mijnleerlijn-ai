@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { GET } from "./route";
 import { verifyAdminSessionCookie } from "@/lib/auth/verify-session";
-import { haalAlleTrainerAccounts, haalOpenVerslagenVoorAlleTrainers, haalMislukteTelefonieOproepenVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
+import { haalAlleTrainerAccounts, haalOpenVerslagenVoorAlleTrainers, haalMislukteTelefonieOproepenVoorAlleTrainers, haalAlleOpenStartActiesVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
 import { haalTrainingenEnScholenVoorAlleTrainers } from "@/lib/trainers/monday-links";
 
 vi.mock("payload", () => ({ getPayload: vi.fn().mockResolvedValue({}) }));
@@ -15,6 +15,7 @@ vi.mock("@/lib/admin/trainers/aggregatie", () => ({
   haalAlleTrainerAccounts: vi.fn(),
   haalOpenVerslagenVoorAlleTrainers: vi.fn(),
   haalMislukteTelefonieOproepenVoorAlleTrainers: vi.fn(),
+  haalAlleOpenStartActiesVoorAlleTrainers: vi.fn(),
 }));
 vi.mock("@/lib/trainers/monday-links", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/trainers/monday-links")>();
@@ -25,6 +26,7 @@ const mockVerify = vi.mocked(verifyAdminSessionCookie);
 const mockTrainers = vi.mocked(haalAlleTrainerAccounts);
 const mockOpenVerslagen = vi.mocked(haalOpenVerslagenVoorAlleTrainers);
 const mockMislukt = vi.mocked(haalMislukteTelefonieOproepenVoorAlleTrainers);
+const mockOpenStartActies = vi.mocked(haalAlleOpenStartActiesVoorAlleTrainers);
 const mockMonday = vi.mocked(haalTrainingenEnScholenVoorAlleTrainers);
 
 function maakRequest() {
@@ -38,11 +40,13 @@ beforeEach(() => {
   mockTrainers.mockReset();
   mockOpenVerslagen.mockReset();
   mockMislukt.mockReset();
+  mockOpenStartActies.mockReset();
   mockMonday.mockReset();
   mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
   mockTrainers.mockResolvedValue([]);
   mockOpenVerslagen.mockResolvedValue([]);
   mockMislukt.mockResolvedValue([]);
+  mockOpenStartActies.mockResolvedValue([]);
   mockMonday.mockResolvedValue({ trainingenPerTrainer: new Map(), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() });
 });
 
@@ -94,5 +98,32 @@ describe("GET /api/admin/trainers/aandacht — inhoud", () => {
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.items).toHaveLength(0);
+  });
+
+  // Startbegeleiding-ronde (2026-09-02, spec §F) — een open startactie met
+  // een reeds verstreken deadline moet ook via deze route zichtbaar worden
+  // (naast de To-do-route) — de uitputtende open/net-verstreken-matrix staat
+  // in lib/admin/trainers/aandacht.test.ts, hier alleen de end-to-end
+  // bevestiging dat de route de nieuwe bron ook echt doorgeeft.
+  it("neemt een verlopen open startactie mee als aandachtspunt", async () => {
+    mockOpenStartActies.mockResolvedValue([
+      {
+        id: 9,
+        trainerId: 1,
+        trainerNaam: "Trainer A",
+        mondaySchoolId: "s3",
+        schoolNaam: "School C",
+        actieType: "intake",
+        instructie: null,
+        deadline: "2000-01-01T00:00:00.000Z",
+        gespreksDatum: null,
+        createdAt: "1999-12-01T00:00:00.000Z",
+      },
+    ]);
+    const response = await GET(maakRequest());
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({ soort: "startactie_verlopen", trainerId: 1, schoolId: "s3", schoolNaam: "School C" });
   });
 });

@@ -7,6 +7,7 @@ import {
   haalMislukteTelefonieOproepenVoorAlleTrainers,
   haalLogboekitemsVoorAlleTrainers,
   haalRecenteVerslagActiviteitVoorAlleTrainers,
+  haalAlleOpenStartActiesVoorAlleTrainers,
 } from "./aggregatie";
 import { bouwAdminTodoLijst } from "./todo";
 
@@ -71,16 +72,17 @@ export interface AdminTrainersOverzicht {
 }
 
 export async function haalAdminTrainersOverzicht(payload: Payload): Promise<AdminTrainersOverzicht> {
-  const [trainers, mondayOverzicht, openVerslagen, misluktOproepen, logboekitems, verslagActiviteit] = await Promise.all([
+  const [trainers, mondayOverzicht, openVerslagen, misluktOproepen, logboekitems, verslagActiviteit, openStartActies] = await Promise.all([
     haalAlleTrainerAccounts(payload),
     haalTrainingenEnScholenVoorAlleTrainers(),
     haalOpenVerslagenVoorAlleTrainers(payload),
     haalMislukteTelefonieOproepenVoorAlleTrainers(payload),
     haalLogboekitemsVoorAlleTrainers(payload),
     haalRecenteVerslagActiviteitVoorAlleTrainers(payload),
+    haalAlleOpenStartActiesVoorAlleTrainers(payload),
   ]);
 
-  const todo = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers);
+  const todo = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers, openStartActies);
 
   const vandaag = vandaagIsoAmsterdam();
   const huidigeMaand = vandaag.slice(0, 7); // "YYYY-MM"

@@ -67,6 +67,10 @@ export const AANDACHT_SOORT_KLEUR: Record<AdminAandachtSoort, NavColor> = {
   telefonie_mislukt: "red",
   verslag_vastgelopen: "orange",
   concept_oud: "orange",
+  // Zelfde paarse Startbegeleiding-familie als TODO_SOORT_KLEUR.startactie
+  // hieronder — herkenbaar als "iets van Startbegeleiding", niet de
+  // bestaande oranje "verslag-actie nodig"-betekenis.
+  startactie_verlopen: "purple",
 };
 
 export const TODO_SOORT_KLEUR: Record<TodoItem["soort"], NavColor> = {
@@ -74,6 +78,11 @@ export const TODO_SOORT_KLEUR: Record<TodoItem["soort"], NavColor> = {
   verslag_vastgelopen: "orange",
   concept_gestart: "orange",
   verslag_ontbreekt: "orange",
+  // Startbegeleiding-ronde (2026-09-02) — paars, zelfde kleur als de
+  // "Aanvullend"-badge/Upsell-accent (Upsell-ronde): een eigen, herkenbare
+  // kleurfamilie voor "iets nieuws van Startbegeleiding", niet de bestaande
+  // oranje "actie nodig op een bestaand verslag"-betekenis.
+  startactie: "purple",
 };
 
 // Bewust rustig: alleen de ene echte foutstatus (telefonie_mislukt) krijgt

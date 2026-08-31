@@ -74,6 +74,7 @@ export interface Config {
     'trainer-ai-log-events': TrainerAiLogEvent;
     'training-verslagen': TrainingVerslagen;
     'aanvullende-trainingen': AanvullendeTrainingen;
+    'start-acties': StartActy;
     'trainer-telefonie-oproepen': TrainerTelefonieOproepen;
     'trainer-logboek-items': TrainerLogboekItem;
     'trainer-kennisversies': TrainerKennisversy;
@@ -124,6 +125,7 @@ export interface Config {
     'trainer-ai-log-events': TrainerAiLogEventsSelect<false> | TrainerAiLogEventsSelect<true>;
     'training-verslagen': TrainingVerslagenSelect<false> | TrainingVerslagenSelect<true>;
     'aanvullende-trainingen': AanvullendeTrainingenSelect<false> | AanvullendeTrainingenSelect<true>;
+    'start-acties': StartActiesSelect<false> | StartActiesSelect<true>;
     'trainer-telefonie-oproepen': TrainerTelefonieOproepenSelect<false> | TrainerTelefonieOproepenSelect<true>;
     'trainer-logboek-items': TrainerLogboekItemsSelect<false> | TrainerLogboekItemsSelect<true>;
     'trainer-kennisversies': TrainerKennisversiesSelect<false> | TrainerKennisversiesSelect<true>;
@@ -525,9 +527,9 @@ export interface TrainingVerslagen {
    */
   telefonieOproep?: (number | null) | TrainerTelefonieOproepen;
   /**
-   * Upsell-ronde (2026-09-02) — of dit verslag bij een Monday-training hoort of bij een lokale aanvullende training (aanvullende-trainingen). Bepaalt of de Monday-statusafronding (werkTrainingBij) geprobeerd wordt — een aanvullende training heeft niets op Monday om af te ronden.
+   * Upsell-ronde (2026-09-02) — of dit verslag bij een Monday-training hoort, een lokale aanvullende training, of (Startbegeleiding-ronde, 2026-09-02) een startactie-gesprek (start-acties). Bepaalt of de Monday-statusafronding (werkTrainingBij) geprobeerd wordt — alleen 'mijnleerlijn' heeft iets op Monday om af te ronden.
    */
-  trainingBron: 'mijnleerlijn' | 'aanvullend';
+  trainingBron: 'mijnleerlijn' | 'aanvullend' | 'startactie';
   /**
    * Server-side afgeleid via haalTrainingVoorMutatie/haalAanvullendeTrainingVoorMutatie — nooit door de client aangeleverd. Bij trainingBron='aanvullend' is dit een lokale sleutel ("aanvullend:<id>"), geen echt Monday-item-ID.
    */
@@ -758,6 +760,32 @@ export interface AanvullendeTrainingen {
   schoolNaam?: string | null;
   naam: string;
   datum: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Startbegeleidingsacties (spec §E.1) — 'nog iets nodig voor de start'. Nooit rechtstreeks bewerken — uitsluitend server-side via lib/trainers/startbegeleiding.ts.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "start-acties".
+ */
+export interface StartActy {
+  id: number;
+  mondaySchoolId: string;
+  schoolNaam?: string | null;
+  trainer: number | TrainerAccount;
+  actieType: 'intake' | 'laatste_gesprek' | 'implementatieplan' | 'curriculum' | 'start_voorbereiden' | 'anders';
+  instructie?: string | null;
+  deadline: string;
+  /**
+   * Indien ingevuld: de trainer kan na deze datum een verslag maken (telefonisch of handmatig) voor dit gesprek — zie lib/trainers/startbegeleiding.ts se haalStartactieVoorMutatie.
+   */
+  gespreksDatum?: string | null;
+  status: 'open' | 'afgerond' | 'vervallen';
+  /**
+   * Gezet zodra status naar 'afgerond' gaat — handmatig door beheer, of automatisch zodra de trainer het gekoppelde verslag bevestigt.
+   */
+  afgerondOp?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2579,6 +2607,10 @@ export interface PayloadLockedDocument {
         value: number | AanvullendeTrainingen;
       } | null)
     | ({
+        relationTo: 'start-acties';
+        value: number | StartActy;
+      } | null)
+    | ({
         relationTo: 'trainer-telefonie-oproepen';
         value: number | TrainerTelefonieOproepen;
       } | null)
@@ -2903,6 +2935,23 @@ export interface AanvullendeTrainingenSelect<T extends boolean = true> {
   schoolNaam?: T;
   naam?: T;
   datum?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "start-acties_select".
+ */
+export interface StartActiesSelect<T extends boolean = true> {
+  mondaySchoolId?: T;
+  schoolNaam?: T;
+  trainer?: T;
+  actieType?: T;
+  instructie?: T;
+  deadline?: T;
+  gespreksDatum?: T;
+  status?: T;
+  afgerondOp?: T;
   updatedAt?: T;
   createdAt?: T;
 }

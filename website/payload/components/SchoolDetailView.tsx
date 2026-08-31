@@ -76,6 +76,7 @@ const AANDACHT_LABEL: Record<AdminAandachtSoort, string> = {
   telefonie_mislukt: "Telefonie mislukt",
   verslag_vastgelopen: "Verslag vastgelopen",
   concept_oud: "Oud concept",
+  startactie_verlopen: "Startactie verlopen",
 };
 
 function labelVoorActiviteit(soort: AdminActiviteitSoort): string {

@@ -8,6 +8,7 @@ import {
   haalMislukteTelefonieOproepenVoorAlleTrainers,
   haalLogboekitemsVoorAlleTrainers,
   haalAlleAanvullendeTrainingen,
+  haalAlleOpenStartActiesVoorAlleTrainers,
   type AdminTrainerAccount,
   type AdminLogboekItem,
 } from "./aggregatie";
@@ -78,12 +79,13 @@ export interface AdminSchoolBasis {
 }
 
 export async function haalAdminSchoolBasis(payload: Payload, schoolId: string): Promise<SchoolDetailTabUitkomst<AdminSchoolBasis>> {
-  const [mondayOverzicht, trainers, openVerslagen, verslagenActiviteit, logboekitems] = await Promise.all([
+  const [mondayOverzicht, trainers, openVerslagen, verslagenActiviteit, logboekitems, openStartActies] = await Promise.all([
     haalTrainingenEnScholenVoorAlleTrainers(),
     haalAlleTrainerAccounts(payload),
     haalOpenVerslagenVoorAlleTrainers(payload),
     haalRecenteVerslagActiviteitVoorAlleTrainers(payload),
     haalLogboekitemsVoorAlleTrainers(payload),
+    haalAlleOpenStartActiesVoorAlleTrainers(payload),
   ]);
   const school = mondayOverzicht.scholen.get(schoolId);
   if (!school) return { soort: "niet_gevonden" };
@@ -93,7 +95,7 @@ export async function haalAdminSchoolBasis(payload: Payload, schoolId: string): 
   const trainingen = mondayOverzicht.trainingenPerSchool.get(schoolId) ?? [];
   const aantalOpenTrainingen = trainingen.filter((t) => t.status === "open" || (t.status === "gepland" && (t.datum ?? "") >= vandaag)).length;
 
-  const todo = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers).filter((t) => t.schoolId === schoolId);
+  const todo = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers, openStartActies).filter((t) => t.schoolId === schoolId);
   const openVerslagenSchool = openVerslagen.filter((v) => v.schoolId === schoolId);
 
   const activiteitWanneer = [...verslagenActiviteit.filter((v) => v.schoolId === schoolId).map((v) => v.wanneer), ...logboekitems.filter((l) => l.mondaySchoolId === schoolId).map((l) => l.occurredAt)];
@@ -124,15 +126,16 @@ export async function haalAdminSchoolBasis(payload: Payload, schoolId: string): 
 // ---------------------------------------------------------------------------
 
 export async function haalAdminSchoolAandacht(payload: Payload, schoolId: string): Promise<SchoolDetailTabUitkomst<AdminAandachtItem[]>> {
-  const [mondayOverzicht, trainers, openVerslagen, misluktOproepen] = await Promise.all([
+  const [mondayOverzicht, trainers, openVerslagen, misluktOproepen, openStartActies] = await Promise.all([
     haalTrainingenEnScholenVoorAlleTrainers(),
     haalAlleTrainerAccounts(payload),
     haalOpenVerslagenVoorAlleTrainers(payload),
     haalMislukteTelefonieOproepenVoorAlleTrainers(payload),
+    haalAlleOpenStartActiesVoorAlleTrainers(payload),
   ]);
   if (!mondayOverzicht.scholen.has(schoolId)) return { soort: "niet_gevonden" };
 
-  const { items } = bouwAdminAandachtOverzicht(openVerslagen, misluktOproepen, trainers, mondayOverzicht.trainingenPerTrainer);
+  const { items } = bouwAdminAandachtOverzicht(openVerslagen, misluktOproepen, trainers, mondayOverzicht.trainingenPerTrainer, new Date(), openStartActies);
   return { soort: "ok", data: items.filter((i) => i.schoolId === schoolId) };
 }
 
@@ -153,7 +156,7 @@ export interface AdminSchoolOverzichtTab {
 const MAX_ACTIVITEIT_OVERZICHT = 20;
 
 export async function haalAdminSchoolOverzichtTab(payload: Payload, schoolId: string): Promise<SchoolDetailTabUitkomst<AdminSchoolOverzichtTab>> {
-  const [mondayOverzicht, trainers, openVerslagen, verslagenActiviteit, misluktOproepen, logboekitems, aanvullendeTrainingen] = await Promise.all([
+  const [mondayOverzicht, trainers, openVerslagen, verslagenActiviteit, misluktOproepen, logboekitems, aanvullendeTrainingen, openStartActies] = await Promise.all([
     haalTrainingenEnScholenVoorAlleTrainers(),
     haalAlleTrainerAccounts(payload),
     haalOpenVerslagenVoorAlleTrainers(payload),
@@ -161,6 +164,7 @@ export async function haalAdminSchoolOverzichtTab(payload: Payload, schoolId: st
     haalMislukteTelefonieOproepenVoorAlleTrainers(payload),
     haalLogboekitemsVoorAlleTrainers(payload),
     haalAlleAanvullendeTrainingen(payload),
+    haalAlleOpenStartActiesVoorAlleTrainers(payload),
   ]);
   const school = mondayOverzicht.scholen.get(schoolId);
   if (!school) return { soort: "niet_gevonden" };
@@ -168,7 +172,7 @@ export async function haalAdminSchoolOverzichtTab(payload: Payload, schoolId: st
   const alleRijen = bouwAdminTrainingenLijst(mondayOverzicht, trainers, verslagenActiviteit, aanvullendeTrainingen).filter((r) => r.schoolId === schoolId);
   const komendeTrainingen = alleRijen.filter((r) => r.weergaveStatus === "komend" || r.weergaveStatus === "vandaag").sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? ""));
 
-  const openTodos = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers).filter((t) => t.schoolId === schoolId);
+  const openTodos = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers, openStartActies).filter((t) => t.schoolId === schoolId);
   const recenteActiviteit = bouwAdminActiviteitFeed(verslagenActiviteit, logboekitems, misluktOproepen, trainers, MAX_ACTIVITEIT_OVERZICHT * 10)
     .filter((a) => a.schoolId === schoolId)
     .slice(0, MAX_ACTIVITEIT_OVERZICHT);

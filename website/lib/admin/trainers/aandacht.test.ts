@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { bouwAdminAandachtOverzicht, OUD_CONCEPT_DAGEN, VEEL_OUDE_VERSLAGEN_DREMPEL } from "./aandacht";
-import type { AdminOpenVerslag, AdminMislukteTelefonieOproep, AdminTrainerAccount } from "./aggregatie";
+import type { AdminOpenVerslag, AdminMislukteTelefonieOproep, AdminTrainerAccount, AdminOpenStartactie } from "./aggregatie";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — spec §7/§18: "telefonie
 // definitief mislukt; Monday-writeback vastgelopen; oude open concepten;
@@ -46,6 +46,22 @@ function misluktOproep(overrides: Partial<AdminMislukteTelefonieOproep> = {}): A
 
 function dagenGeleden(dagen: number): string {
   return new Date(NU.getTime() - dagen * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function startactie(overrides: Partial<AdminOpenStartactie> = {}): AdminOpenStartactie {
+  return {
+    id: 1,
+    trainerId: 1,
+    trainerNaam: "Anne Trainer",
+    mondaySchoolId: "school-9",
+    schoolNaam: "School Negen",
+    actieType: "intake",
+    instructie: null,
+    deadline: dagenGeleden(-1), // standaard: 1 dag in de toekomst (nog niet verlopen)
+    gespreksDatum: null,
+    createdAt: dagenGeleden(5),
+    ...overrides,
+  };
 }
 
 /** Whitelist-fixture: trainer "uitv-1" heeft precies de meegegeven trainingId's actueel in Monday. */
@@ -171,5 +187,46 @@ describe("bouwAdminAandachtOverzicht — actuele-trainingenwhitelist (spec §1-v
     const overzicht = bouwAdminAandachtOverzicht(verslagen, [], [trainer()], trainingenVoorUitv1("t0", "t1"), NU);
     expect(overzicht.items).toHaveLength(2); // t-verwijderd telt niet mee
     expect(overzicht.trainersMetVeelOudeVerslagen).toEqual([]); // 2 < VEEL_OUDE_VERSLAGEN_DREMPEL (3)
+  });
+});
+
+// Startbegeleiding-ronde (2026-09-02, spec §F) — vierde categorie:
+// "startactie_verlopen" = een open startactie waarvan de deadline al
+// verstreken is (t.o.v. `nu`). Geen whitelist-toets nodig (een startactie is
+// geen Monday-trainingrecord) en telt bewust NIET mee in
+// trainersMetVeelOudeVerslagen (dat blijft uitsluitend over verslagen gaan).
+describe("bouwAdminAandachtOverzicht — startacties (spec §F)", () => {
+  it("een startactie met een deadline in de toekomst levert GEEN aandachtspunt op", () => {
+    const overzicht = bouwAdminAandachtOverzicht([], [], [trainer()], GEEN_TRAININGEN, NU, [startactie({ deadline: dagenGeleden(-1) })]);
+    expect(overzicht.items).toHaveLength(0);
+  });
+
+  it("een startactie met een verstreken deadline levert een startactie_verlopen-aandachtspunt op", () => {
+    const overzicht = bouwAdminAandachtOverzicht([], [], [trainer()], GEEN_TRAININGEN, NU, [startactie({ id: 5, deadline: dagenGeleden(2), mondaySchoolId: "s5", schoolNaam: "School Vijf" })]);
+    expect(overzicht.items).toHaveLength(1);
+    expect(overzicht.items[0]).toMatchObject({ soort: "startactie_verlopen", trainerId: 1, trainerNaam: "Anne Trainer", schoolId: "s5", schoolNaam: "School Vijf" });
+  });
+
+  it("een deadline exact op 'nu' telt nog niet als verlopen (strikt kleiner dan)", () => {
+    const overzicht = bouwAdminAandachtOverzicht([], [], [trainer()], GEEN_TRAININGEN, NU, [startactie({ deadline: NU.toISOString() })]);
+    expect(overzicht.items).toHaveLength(0);
+  });
+
+  it("telt NIET mee in trainersMetVeelOudeVerslagen (dat blijft uitsluitend over verslagen gaan)", () => {
+    const verlopenStartActies = Array.from({ length: VEEL_OUDE_VERSLAGEN_DREMPEL }, (_, i) => startactie({ id: i, deadline: dagenGeleden(2) }));
+    const overzicht = bouwAdminAandachtOverzicht([], [], [trainer()], GEEN_TRAININGEN, NU, verlopenStartActies);
+    expect(overzicht.items).toHaveLength(VEEL_OUDE_VERSLAGEN_DREMPEL);
+    expect(overzicht.trainersMetVeelOudeVerslagen).toEqual([]);
+  });
+
+  it("een verlopen startactie neemt deel aan de gedeelde langst-verstreken-eerst-sortering", () => {
+    const netVerlopen = startactie({ id: 1, deadline: dagenGeleden(1) });
+    const langVerlopen = startactie({ id: 2, deadline: dagenGeleden(10) });
+    const overzicht = bouwAdminAandachtOverzicht([], [], [trainer()], GEEN_TRAININGEN, NU, [netVerlopen, langVerlopen]);
+    expect(overzicht.items.map((i) => i.wanneer)).toEqual([langVerlopen.deadline, netVerlopen.deadline]);
+  });
+
+  it("weglaten van het 6de argument (bestaande aanroepers) breekt niet — default lege lijst", () => {
+    expect(() => bouwAdminAandachtOverzicht([], [], [trainer()], GEEN_TRAININGEN, NU)).not.toThrow();
   });
 });

@@ -14,6 +14,7 @@ import { TrainerLogEvents } from "./payload/collections/TrainerLogEvents";
 import { TrainerAiLogEvents } from "./payload/collections/TrainerAiLogEvents";
 import { TrainingVerslagen } from "./payload/collections/TrainingVerslagen";
 import { AanvullendeTrainingen } from "./payload/collections/AanvullendeTrainingen";
+import { StartActies } from "./payload/collections/StartActies";
 import { TrainerTelefonieOproepen } from "./payload/collections/TrainerTelefonieOproepen";
 import { TrainerLogboekItems } from "./payload/collections/TrainerLogboekItems";
 import { TrainerKennisversies } from "./payload/collections/TrainerKennisversies";
@@ -309,6 +310,20 @@ export default buildConfig({
           path: "/trainers/upsell",
           exact: true,
         },
+        // Startbegeleiding-ronde (2026-09-02, spec §D) — scholenlijst + eigen
+        // schooldetail-drill-down (geen eigen nav-groups.ts-item, zelfde
+        // reden als trainersSchool hierboven), zelfde exact:true-reden als
+        // elke andere "/trainers/*"-registratie.
+        trainersStartbegeleiding: {
+          Component: "@/payload/components/AdminViewShell#TrainersStartbegeleidingViewShell",
+          path: "/trainers/startbegeleiding",
+          exact: true,
+        },
+        trainersStartbegeleidingSchool: {
+          Component: "@/payload/components/AdminViewShell#TrainersStartbegeleidingSchoolViewShell",
+          path: "/trainers/startbegeleiding/school",
+          exact: true,
+        },
       },
     },
   },
@@ -319,6 +334,7 @@ export default buildConfig({
     TrainerAiLogEvents,
     TrainingVerslagen,
     AanvullendeTrainingen,
+    StartActies,
     TrainerTelefonieOproepen,
     TrainerLogboekItems,
     TrainerKennisversies,

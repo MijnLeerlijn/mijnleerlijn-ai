@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { GET } from "./route";
 import { verifyAdminSessionCookie } from "@/lib/auth/verify-session";
-import { haalAlleTrainerAccounts, haalOpenVerslagenVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
+import { haalAlleTrainerAccounts, haalOpenVerslagenVoorAlleTrainers, haalAlleOpenStartActiesVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
 import { haalTrainingenEnScholenVoorAlleTrainers } from "@/lib/trainers/monday-links";
 
 vi.mock("payload", () => ({ getPayload: vi.fn().mockResolvedValue({}) }));
@@ -11,7 +11,7 @@ vi.mock("@/lib/auth/verify-session", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/auth/verify-session")>();
   return { ...echt, verifyAdminSessionCookie: vi.fn() };
 });
-vi.mock("@/lib/admin/trainers/aggregatie", () => ({ haalAlleTrainerAccounts: vi.fn(), haalOpenVerslagenVoorAlleTrainers: vi.fn() }));
+vi.mock("@/lib/admin/trainers/aggregatie", () => ({ haalAlleTrainerAccounts: vi.fn(), haalOpenVerslagenVoorAlleTrainers: vi.fn(), haalAlleOpenStartActiesVoorAlleTrainers: vi.fn() }));
 vi.mock("@/lib/trainers/monday-links", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/trainers/monday-links")>();
   return { ...echt, haalTrainingenEnScholenVoorAlleTrainers: vi.fn() };
@@ -20,6 +20,7 @@ vi.mock("@/lib/trainers/monday-links", async (importOriginal) => {
 const mockVerify = vi.mocked(verifyAdminSessionCookie);
 const mockTrainers = vi.mocked(haalAlleTrainerAccounts);
 const mockOpenVerslagen = vi.mocked(haalOpenVerslagenVoorAlleTrainers);
+const mockOpenStartActies = vi.mocked(haalAlleOpenStartActiesVoorAlleTrainers);
 const mockMonday = vi.mocked(haalTrainingenEnScholenVoorAlleTrainers);
 
 function maakRequest(query = "") {
@@ -32,9 +33,11 @@ beforeEach(() => {
   mockVerify.mockReset();
   mockTrainers.mockReset();
   mockOpenVerslagen.mockReset();
+  mockOpenStartActies.mockReset();
   mockMonday.mockReset();
   mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
   mockTrainers.mockResolvedValue([trainerA]);
+  mockOpenStartActies.mockResolvedValue([]);
   // Correctieronde Admin Traineromgeving (2026-08-25) — de actuele-
   // trainingenwhitelist (training-actualiteit.ts) vereist dat "t1" ook echt
   // in de (mock-)Monday-trainingenset van trainer A voorkomt, anders wordt
@@ -93,5 +96,40 @@ describe("GET /api/admin/trainers/todo — inhoud en filters", () => {
     expect((await responseMatch.json()).todo).toHaveLength(1);
     const responseGeenMatch = await GET(maakRequest("?soort=concept_gestart"));
     expect((await responseGeenMatch.json()).todo).toHaveLength(0);
+  });
+
+  // Startbegeleiding-ronde (2026-09-02, spec §E.1/§F) — een open startactie
+  // moet ook in de admin-brede To-do-lijst verschijnen, met trainerId/
+  // trainerNaam rechtstreeks van AdminOpenStartactie (geen aparte lookup).
+  it("neemt een open startactie mee als to-do-item", async () => {
+    mockOpenStartActies.mockResolvedValue([
+      {
+        id: 7,
+        trainerId: 1,
+        trainerNaam: "Trainer A",
+        mondaySchoolId: "s2",
+        schoolNaam: "School B",
+        actieType: "intake",
+        instructie: "Bel de directeur",
+        deadline: "2026-09-10T00:00:00.000Z",
+        gespreksDatum: null,
+        createdAt: "2026-09-01T00:00:00.000Z",
+      },
+    ]);
+    const response = await GET(maakRequest());
+    const body = await response.json();
+    expect(body.todo).toHaveLength(2);
+    const startactieItem = body.todo.find((t: { soort: string }) => t.soort === "startactie");
+    expect(startactieItem).toMatchObject({ trainerId: 1, trainerNaam: "Trainer A", schoolId: "s2", schoolNaam: "School B", trainingId: "startactie:7" });
+  });
+
+  it("filtert een open startactie mee op trainerId/soort", async () => {
+    mockOpenStartActies.mockResolvedValue([
+      { id: 7, trainerId: 1, trainerNaam: "Trainer A", mondaySchoolId: "s2", schoolNaam: "School B", actieType: "intake", instructie: null, deadline: "2026-09-10T00:00:00.000Z", gespreksDatum: null, createdAt: "2026-09-01T00:00:00.000Z" },
+    ]);
+    const response = await GET(maakRequest("?soort=startactie"));
+    const body = await response.json();
+    expect(body.todo).toHaveLength(1);
+    expect(body.todo[0].trainingId).toBe("startactie:7");
   });
 });

@@ -27,6 +27,8 @@ import { TrainersTodoView } from "./TrainersTodoView";
 import { TrainersActiviteitView } from "./TrainersActiviteitView";
 import { SchoolDetailView } from "./SchoolDetailView";
 import { TrainersUpsellView } from "./TrainersUpsellView";
+import { TrainersStartbegeleidingView } from "./TrainersStartbegeleidingView";
+import { TrainersStartbegeleidingSchoolView } from "./TrainersStartbegeleidingSchoolView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -343,6 +345,25 @@ export function TrainersUpsellViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="trainersUpsell" requiredPermission="trainers.upsell">
       <TrainersUpsellView />
+    </InAdminShell>
+  );
+}
+
+// Startbegeleiding-ronde (2026-09-02, spec §D) — eigen nav-groups.ts-item met
+// eigen permissie; de schooldetail-drill-down hieronder erft diezelfde
+// permissie (zelfde patroon als SchoolDetailViewShell hierboven).
+export function TrainersStartbegeleidingViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersStartbegeleiding" requiredPermission="trainers.startbegeleiding">
+      <TrainersStartbegeleidingView />
+    </InAdminShell>
+  );
+}
+
+export function TrainersStartbegeleidingSchoolViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersStartbegeleidingSchool" requiredPermission="trainers.startbegeleiding">
+      <TrainersStartbegeleidingSchoolView />
     </InAdminShell>
   );
 }

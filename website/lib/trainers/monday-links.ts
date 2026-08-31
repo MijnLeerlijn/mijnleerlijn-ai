@@ -35,17 +35,26 @@ export function vandaagIsoAmsterdam(): string {
 // Board-/kolom-ID's — LIVE GEVERIFIEERD (Michels live Monday-diagnose,
 // architectuurrapport §A) — nooit wijzigen zonder herbevestiging tegen een
 // echt board via /admin/trainers-diagnose/monday.
-const MASTER_DATA_BOARD_ID = "18420120365"; // 1: Scholen (Master Data)
+// Startbegeleiding-ronde (2026-09-02, spec §D/§E) — MASTER_DATA_BOARD_ID/
+// MD_TRAINER_KOLOM/MD_TYPE_SCHOOL_KOLOM/MD_LOCATION_KOLOM geëxporteerd (waren
+// privé), zelfde additieve reden als UITVOERING_BOARD_ID hieronder al was:
+// lib/trainers/startbegeleiding.ts (nieuw) heeft dit echte board-ID + deze
+// kolom-ID's nodig — als leesdoel (SCHOLEN_KOLOM.relatiestatus, lib/sales/
+// monday-columns.ts, leest hetzelfde board al voor Sales) én als schrijfdoel
+// (MD_TRAINER_KOLOM, voor "Koppel een trainer", spec §E.2). Zuiver additief
+// (export-keywords), geen enkele waarde of het bestaande leespad hier
+// verandert — dit bestand blijft zelf 100% read-only richting Monday.
+export const MASTER_DATA_BOARD_ID = "18420120365"; // 1: Scholen (Master Data)
 // Ronde 2 (2026-08-19) — geëxporteerd (was privé): lib/trainers/monday-
 // columns.ts/writeback.ts hebben het echte board-ID + de bestaande kolom-
 // ID's nodig als schrijfdoel voor de centrale training. Zuiver additief (een
 // export-keyword), geen enkele waarde of het leespad hier verandert.
 export const UITVOERING_BOARD_ID = "18420120466"; // 4: Uitvoering (Trainingen)
 
-const MD_TRAINER_KOLOM = "board_relation_mm5r2jy1";
+export const MD_TRAINER_KOLOM = "board_relation_mm5r2jy1";
 const MD_HOOFDCONTACTPERSOON_KOLOM = "board_relation_mm4v8fpm";
-const MD_TYPE_SCHOOL_KOLOM = "dropdown_mm4v9rvg";
-const MD_LOCATION_KOLOM = "text_mm5r9kn2";
+export const MD_TYPE_SCHOOL_KOLOM = "dropdown_mm4v9rvg";
+export const MD_LOCATION_KOLOM = "text_mm5r9kn2";
 const MD_IMPLEMENTATIEFASE_KOLOM = "color_mm5q790a";
 
 const UV_SCHOOL_KOLOM = "board_relation_mm5tyc40";
@@ -265,8 +274,18 @@ export interface TrainingSamenvatting {
    * daar). Eén robuust veld i.p.v. uitsluitend een visueel label
    * (opdrachtseis §A3), zodat elke consument (dashboard/schooldetail/
    * telefonie/upsell-tellingen) hetzelfde, betrouwbare onderscheid gebruikt.
+   *
+   * Startbegeleiding-ronde (2026-09-02, spec §E.1) — "startactie" wordt
+   * UITSLUITEND door lib/trainers/startbegeleiding.ts gezet, bij het omzetten
+   * van een startactie-gesprek naar dit type (zelfde reden/patroon als
+   * "aanvullend" hierboven) — telt bewust NOOIT mee in de upsell-tellingen
+   * (lib/admin/trainers/trainingen.ts se bouwAdminTrainingenLijst voedt zich
+   * nooit met startacties, alleen met echte Monday-trainingen + aanvullende
+   * trainingen) — een startactie-gesprek is geen "training" in die zin, puur
+   * een lichte hergebruikte verslag-drager (spec §E.1: "geen compleet tweede
+   * verslagmodel").
    */
-  bron: "mijnleerlijn" | "aanvullend";
+  bron: "mijnleerlijn" | "aanvullend" | "startactie";
 }
 
 export interface TrainerSchoolBron {

@@ -8,6 +8,7 @@ import {
   haalKennisvragenSinds,
   haalAlleTrainerAccounts,
   haalAlleAanvullendeTrainingen,
+  haalAlleOpenStartActiesVoorAlleTrainers,
 } from "./aggregatie";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — bewijst dat elke admin-brede
@@ -198,5 +199,29 @@ describe("haalAlleAanvullendeTrainingen", () => {
     });
     const [regel] = await haalAlleAanvullendeTrainingen(payload);
     expect(regel?.schoolNaam).toBeNull();
+  });
+});
+
+// Startbegeleiding-ronde (2026-09-02, spec §F) — admin-brede open startacties,
+// zelfde depth:1-trainernaam-populatiereden als haalOpenVerslagenVoorAlleTrainers.
+describe("haalAlleOpenStartActiesVoorAlleTrainers", () => {
+  it("geeft uitsluitend status=open terug, over alle trainers", async () => {
+    const { payload } = maakFakePayload({
+      "start-acties": [
+        { id: 1, trainer: { id: 10, name: "Trainer A" }, mondaySchoolId: "s1", schoolNaam: "School A", actieType: "intake", instructie: null, deadline: "2026-09-10T00:00:00.000Z", gespreksDatum: null, status: "open", afgerondOp: null, createdAt: "2026-09-01T00:00:00.000Z" },
+        { id: 2, trainer: { id: 20, name: "Trainer B" }, mondaySchoolId: "s2", schoolNaam: "School B", actieType: "anders", instructie: null, deadline: "2026-09-11T00:00:00.000Z", gespreksDatum: null, status: "afgerond", afgerondOp: "2026-09-02T00:00:00.000Z", createdAt: "2026-09-01T00:00:00.000Z" },
+        { id: 3, trainer: { id: 10, name: "Trainer A" }, mondaySchoolId: "s1", schoolNaam: "School A", actieType: "curriculum", instructie: null, deadline: "2026-09-12T00:00:00.000Z", gespreksDatum: null, status: "vervallen", afgerondOp: null, createdAt: "2026-09-01T00:00:00.000Z" },
+      ],
+    });
+    const resultaat = await haalAlleOpenStartActiesVoorAlleTrainers(payload);
+    expect(resultaat.map((r) => r.id)).toEqual([1]);
+  });
+
+  it("leidt trainerId/trainerNaam af uit het gepopuleerde trainer-object", async () => {
+    const { payload } = maakFakePayload({
+      "start-acties": [{ id: 1, trainer: { id: 42, name: "Wessel" }, mondaySchoolId: "s1", schoolNaam: "School A", actieType: "intake", instructie: "Bel", deadline: "2026-09-10T00:00:00.000Z", gespreksDatum: null, status: "open", afgerondOp: null, createdAt: "2026-09-01T00:00:00.000Z" }],
+    });
+    const [regel] = await haalAlleOpenStartActiesVoorAlleTrainers(payload);
+    expect(regel).toMatchObject({ trainerId: 42, trainerNaam: "Wessel", schoolNaam: "School A", actieType: "intake", instructie: "Bel" });
   });
 });

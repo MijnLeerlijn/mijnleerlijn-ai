@@ -2,7 +2,8 @@ import { groepeerOpWeergaveStatus } from "@/lib/trainers/training-weergave";
 import { vandaagIsoAmsterdam, type AdminTrainerMondayOverzicht } from "@/lib/trainers/monday-links";
 import type { TodoItem } from "@/lib/trainers/dashboard";
 import { bouwActueleTrainingIdsPerTrainer, isActueleTraining } from "@/lib/trainers/training-actualiteit";
-import type { AdminOpenVerslag, AdminTrainerAccount } from "./aggregatie";
+import { codeerStartactieId, STARTACTIE_LABEL } from "@/lib/trainers/startbegeleiding";
+import type { AdminOpenVerslag, AdminTrainerAccount, AdminOpenStartactie } from "./aggregatie";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — admin-brede To-do-lijst. Spec §5:
 // "hergebruik EXACT de bestaande to-do-logica uit lib/trainers/dashboard.ts,
@@ -40,8 +41,25 @@ export type AdminTodoItem = TodoItem & { trainerId: number; trainerNaam: string 
  * een net aangemaakt telefonisch concept liggen beide vrijwel altijd op
  * hetzelfde moment, en de GETOONDE "wanneer" (telefonieOntvangenOp) blijft in
  * beide gevallen exact hetzelfde, betrouwbare gespreksmoment.
+ *
+ * `openStartActies` (Startbegeleiding-ronde, 2026-09-02, spec §E.1/§F) —
+ * optioneel, admin-brede lijst uit aggregatie.ts se
+ * haalAlleOpenStartActiesVoorAlleTrainers. Elke aanroeper die de bestaande
+ * lijst zonder startacties wil kan dit weglaten — geen bestaande
+ * aanroepplek breekt. Net als bij dashboard.ts se trainer-gescoped variant:
+ * een open startactie hoort ALTIJD in To do, ongeacht of de deadline al
+ * verstreken is (er bestaat geen aparte "verlopen"-status, spec §F noemt
+ * uitsluitend open/afgerond/vervallen) — de verstreken subgroep verschijnt
+ * DAARNAAST ook in Aandacht (aandacht.ts): dezelfde open startactie mag in
+ * beide secties voorkomen, precies zoals verslag_vastgelopen dat vandaag
+ * ook al doet.
  */
-export function bouwAdminTodoLijst(mondayOverzicht: AdminTrainerMondayOverzicht, openVerslagen: AdminOpenVerslag[], trainers: AdminTrainerAccount[]): AdminTodoItem[] {
+export function bouwAdminTodoLijst(
+  mondayOverzicht: AdminTrainerMondayOverzicht,
+  openVerslagen: AdminOpenVerslag[],
+  trainers: AdminTrainerAccount[],
+  openStartActies: AdminOpenStartactie[] = []
+): AdminTodoItem[] {
   const trainerPerMondayId = new Map(trainers.map((t) => [t.mondayUitvoerderItemId, t]));
   const vandaag = vandaagIsoAmsterdam();
 
@@ -126,6 +144,27 @@ export function bouwAdminTodoLijst(mondayOverzicht: AdminTrainerMondayOverzicht,
       })
     ),
     ...verlopenZonderVerslag,
+    // Startbegeleiding-ronde (2026-09-02, spec §E.1/§F) — laatste categorie,
+    // zelfde volgorde/reden als dashboard.ts se trainer-gescoped variant:
+    // trainerId/trainerNaam staan al op AdminOpenStartactie zelf (depth:1 in
+    // aggregatie.ts), dus geen aparte trainer-lookup nodig zoals bij de
+    // andere vier categorieën hierboven.
+    ...openStartActies.map(
+      (a): AdminTodoItem => ({
+        soort: "startactie",
+        schoolId: a.mondaySchoolId,
+        schoolNaam: a.schoolNaam ?? "Onbekende school",
+        trainingNaam: STARTACTIE_LABEL[a.actieType],
+        trainingId: codeerStartactieId(a.id),
+        wanneer: a.deadline,
+        actieType: a.actieType,
+        instructie: a.instructie,
+        deadline: a.deadline,
+        gespreksDatum: a.gespreksDatum,
+        trainerId: a.trainerId,
+        trainerNaam: a.trainerNaam,
+      })
+    ),
   ];
 
   const gezienTrainingIds = new Set<string>();

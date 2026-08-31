@@ -7,6 +7,7 @@ import { haalUpdatesVoorItem, maakUpdate, type MondayUpdate } from "@/lib/sales/
 import { haalTrainingVoorMutatie, haalSchoolDetail, type TrainingSamenvatting, type SchoolDetail } from "./monday-links";
 import { werkTrainingBij, type TrainingWriteBackResultaat } from "./writeback";
 import { haalAanvullendeTrainingVoorMutatie, isAanvullendeTrainingId } from "./aanvullende-trainingen";
+import { haalStartactieVoorMutatie, isStartactieId, markeerStartactieAfgerondNaVerslag } from "./startbegeleiding";
 import type { AuthTrainer } from "./auth";
 
 // Upsell-ronde (2026-09-02) — één training-mutatie-resolutie voor beide
@@ -25,6 +26,14 @@ interface TrainingVoorMutatieGeneriek {
 
 export async function resolveerTrainingVoorMutatie(payload: Payload, trainer: AuthTrainer, trainingId: string): Promise<TrainingVoorMutatieGeneriek | null> {
   if (isAanvullendeTrainingId(trainingId)) return haalAanvullendeTrainingVoorMutatie(payload, trainer, trainingId);
+  // Startbegeleiding-ronde (2026-09-02, spec §E.1) — derde tak, zelfde
+  // patroon: een startactie-gesprek ("startactie:<id>") wordt lokaal
+  // opgezocht (eigen trainer + gespreksDatum gezet), elke andere trainingId
+  // blijft de bestaande Monday-resolutie hieronder.
+  if (isStartactieId(trainingId)) {
+    const gevonden = await haalStartactieVoorMutatie(payload, trainer, trainingId);
+    return gevonden ? { training: gevonden.training, schoolId: gevonden.schoolId, schoolNaam: gevonden.schoolNaam } : null;
+  }
   return haalTrainingVoorMutatie(trainer, trainingId);
 }
 
@@ -244,8 +253,8 @@ export async function structureerVerslag(
  */
 export interface VerslagRecord {
   id: number;
-  /** Upsell-ronde (2026-09-02) — "mijnleerlijn" (default, elk bestaand verslag) of "aanvullend". Bepaalt of bevestigVerslag de Monday-statusafronding (werkTrainingBij) probeert. */
-  trainingBron: "mijnleerlijn" | "aanvullend";
+  /** Upsell-ronde (2026-09-02) — "mijnleerlijn" (default, elk bestaand verslag), "aanvullend", of (Startbegeleiding-ronde, 2026-09-02) "startactie". Bepaalt of bevestigVerslag de Monday-statusafronding (werkTrainingBij) probeert — uitsluitend voor "mijnleerlijn". */
+  trainingBron: "mijnleerlijn" | "aanvullend" | "startactie";
   mondayTrainingId: string;
   mondaySchoolId: string;
   mondayTrainerboardItemId: string | null;
@@ -1192,15 +1201,19 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
   werkrij = await schrijfVerslagVelden(payload, rij.id, { status: "bevestigd" });
 
   // Stap 4 (was stap 6) — uitsluitend voor MijnLeerlijn-trainingen: een
-  // aanvullende training heeft geen trainerboard-item en dus niets om op
-  // Monday af te ronden (spec §A4/§H — verder een normale training, maar
-  // deze ene afrondingsstap bestaat voor een aanvullende training simpelweg
-  // niet). Smalle, geaccepteerde TOCTOU-marge tussen stap 1/2 en hier (geen
-  // Monday-transactie beschikbaar, zelfde klasse race als de rest van dit
-  // bestand) — werkTrainingBij herverifieert eigendom bovendien opnieuw,
-  // zelf.
+  // aanvullende training/startactie-gesprek heeft geen trainerboard-item en
+  // dus niets om op Monday af te ronden (spec §A4/§H/§E.1 — verder een
+  // normale training, maar deze ene afrondingsstap bestaat voor die twee
+  // bronnen simpelweg niet). Expliciet "=== mijnleerlijn" i.p.v. "!==
+  // aanvullend" (Startbegeleiding-ronde, 2026-09-02) — met een derde
+  // mogelijke bron zou "niet aanvullend" een startactie-gesprek ten onrechte
+  // WEL naar werkTrainingBij sturen, dat vervolgens niets zou vinden om af
+  // te ronden. Smalle, geaccepteerde TOCTOU-marge tussen stap 1/2 en hier
+  // (geen Monday-transactie beschikbaar, zelfde klasse race als de rest van
+  // dit bestand) — werkTrainingBij herverifieert eigendom bovendien
+  // opnieuw, zelf.
   let afronding: TrainingWriteBackResultaat | undefined;
-  if (werkrij.trainingBron !== "aanvullend") {
+  if (werkrij.trainingBron === "mijnleerlijn") {
     const afrondingUitkomst = await werkTrainingBij(payload, trainer, rij.mondayTrainingId, {
       status: { nieuweWaarde: "gedaan", verwachteHuidigeRuweTekst: gevonden.training.ruweStatusTekst },
       logboek: { nieuweWaarde: true },
@@ -1219,6 +1232,15 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
     ...(afronding !== undefined ? { afronding_resultaat: JSON.stringify(afronding) } : {}),
     status: afrondingVolledigGeslaagd ? "voltooid" : "bevestigd",
   });
+
+  // Startbegeleiding-ronde (2026-09-02, spec §E.1) — een bevestigd
+  // startactie-gesprek rondt de bijbehorende taak automatisch af, zonder
+  // aparte admin-handeling. Best-effort (zie markeerStartactieAfgerondNaVerslag
+  // se eigen doc-comment): een falende afronding van de STARTACTIE mag het al
+  // geslaagde verslag nooit alsnog als mislukt laten terugkomen.
+  if (afrondingVolledigGeslaagd && isStartactieId(rij.mondayTrainingId)) {
+    await markeerStartactieAfgerondNaVerslag(payload, rij.mondayTrainingId);
+  }
 
   return { soort: "resultaat", verslag: werkrij, afronding, weergaveTekst: updateTekst };
 }

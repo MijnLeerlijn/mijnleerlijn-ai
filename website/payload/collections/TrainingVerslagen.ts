@@ -96,10 +96,11 @@ export const TrainingVerslagen: CollectionConfig = {
       options: [
         { label: "MijnLeerlijn (Monday)", value: "mijnleerlijn" },
         { label: "Aanvullend (lokaal)", value: "aanvullend" },
+        { label: "Startactie-gesprek (lokaal)", value: "startactie" },
       ],
       admin: {
         description:
-          "Upsell-ronde (2026-09-02) — of dit verslag bij een Monday-training hoort of bij een lokale aanvullende training (aanvullende-trainingen). Bepaalt of de Monday-statusafronding (werkTrainingBij) geprobeerd wordt — een aanvullende training heeft niets op Monday om af te ronden.",
+          "Upsell-ronde (2026-09-02) — of dit verslag bij een Monday-training hoort, een lokale aanvullende training, of (Startbegeleiding-ronde, 2026-09-02) een startactie-gesprek (start-acties). Bepaalt of de Monday-statusafronding (werkTrainingBij) geprobeerd wordt — alleen 'mijnleerlijn' heeft iets op Monday om af te ronden.",
       },
     },
     {

@@ -7,6 +7,7 @@ import { normaliseerNederlandsNummer } from "./nummer";
 import { haalRecenteTrainingenVoorTelefonie, vandaagIsoAmsterdam, TELEFONIE_RECENTE_DAGEN } from "../monday-links";
 import { haalTelefonieKandidaten, labelKandidaten, type TelefonieKandidaat, type TelefonieKandidatenResultaat } from "./kandidaten";
 import { haalAanvullendeTrainingenAlsSamenvattingen } from "../aanvullende-trainingen";
+import { haalStartactiesAlsSamenvattingen } from "../startbegeleiding";
 import { upsertConcept, structureerVerslag, haalVerslagVoorTraining, type VerslagConceptUitkomst } from "../verslag";
 import { transcribeAudio } from "@/services/ai-client";
 import {
@@ -403,17 +404,19 @@ async function kiesTrainingEnStartOpname(
   // gesproken menu op te bouwen).
   //
   // Upsell-ronde (2026-09-02, spec §A5) — deze her-lezing moet exact
-  // dezelfde TWEE bronnen samenvoegen als haalTelefonieKandidaten hierboven
+  // dezelfde bronnen samenvoegen als haalTelefonieKandidaten hierboven
   // (bewust niet die functie zelf hergebruikt: die filtert ook meteen op
   // "heeft al een verslag", wat vlak hieronder al apart en explicieter
   // gebeurt) — anders zou een gekozen AANVULLENDE training hier nooit
   // teruggevonden worden en de trainer ten onrechte "niet meer beschikbaar"
-  // te horen krijgen.
-  const [recentMonday, recentAanvullend] = await Promise.all([
+  // te horen krijgen. Startbegeleiding-ronde (2026-09-02, spec §E.1) voegt
+  // een derde bron toe (startactie-gesprekken), zelfde reden.
+  const [recentMonday, recentAanvullend, recentStartacties] = await Promise.all([
     haalRecenteTrainingenVoorTelefonie(trainer),
     haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer, { maxDagenGeleden: TELEFONIE_RECENTE_DAGEN }),
+    haalStartactiesAlsSamenvattingen(payload, trainer, { maxDagenGeleden: TELEFONIE_RECENTE_DAGEN }),
   ]);
-  const alleKandidaten = [...recentMonday, ...recentAanvullend];
+  const alleKandidaten = [...recentMonday, ...recentAanvullend, ...recentStartacties];
   const bevestigd = alleKandidaten.find((t) => t.id === gekozen.id);
   if (!bevestigd) {
     // Training bestaat niet meer in de verse resolutie (bv. inmiddels

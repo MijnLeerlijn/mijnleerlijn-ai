@@ -2,6 +2,7 @@ import type { Payload } from "payload";
 import type { VerslagRecord } from "@/lib/trainers/verslag";
 import type { LogboekType } from "@/lib/trainers/logboek";
 import type { OproepFoutcode } from "@/lib/trainers/telefonie/oproep-state";
+import type { StartactieType } from "@/lib/trainers/startbegeleiding";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard: dit
 // bestand is UITSLUITEND admin-brede, read-only Payload-aggregatie (spec §1/
@@ -336,6 +337,66 @@ export async function haalAlleAanvullendeTrainingen(payload: Payload): Promise<A
     naam: doc.naam,
     datum: new Date(doc.datum).toISOString().slice(0, 10),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Startacties — admin-breed, alleen open (spec §F: "verlopen/open actie
+// zichtbaar onder Aandacht/To do")
+// ---------------------------------------------------------------------------
+
+/** Defensieve bovengrens (spec §13) — ruim boven wat dit platform ooit tegelijk aan open startacties zal hebben. */
+const MAX_OPEN_START_ACTIES = 500;
+
+export interface AdminOpenStartactie {
+  id: number;
+  trainerId: number;
+  trainerNaam: string;
+  mondaySchoolId: string;
+  schoolNaam: string | null;
+  actieType: StartactieType;
+  instructie: string | null;
+  deadline: string;
+  gespreksDatum: string | null;
+  createdAt: string;
+}
+
+/**
+ * Alle open startacties, over alle trainers, in één query — de
+ * Startbegeleiding-tegenhanger van haalOpenVerslagenVoorAlleTrainers
+ * hierboven (zelfde depth:1-reden: trainer.naam is de enige populatie die
+ * dit bestand hier nodig heeft om een rij aan een trainer toe te wijzen).
+ * Voedt lib/admin/trainers/todo.ts (elke open startactie hoort in To do,
+ * ongeacht deadline) én aandacht.ts (uitsluitend de reeds-verlopen
+ * subgroep). Alleen status="open": afgeronde/vervallen startacties zijn per
+ * definitie geen actiepunt meer, zelfde grens als
+ * haalOpenStartactiesVoorTrainer (lib/trainers/startbegeleiding.ts) hanteert
+ * voor de trainer-gescoped variant — geen tweede interpretatie van "open".
+ */
+export async function haalAlleOpenStartActiesVoorAlleTrainers(payload: Payload): Promise<AdminOpenStartactie[]> {
+  const resultaat = await payload.find({
+    collection: "start-acties",
+    where: { status: { equals: "open" } },
+    overrideAccess: true,
+    depth: 1,
+    sort: "deadline",
+    limit: MAX_OPEN_START_ACTIES,
+  });
+  return resultaat.docs.map((doc) => {
+    const trainerVeld = doc.trainer as unknown;
+    const trainerGepopuleerd = typeof trainerVeld === "object" && trainerVeld !== null ? (trainerVeld as { id: number; name?: string | null }) : null;
+    return {
+      id: doc.id as number,
+      trainerId: trainerGepopuleerd ? trainerGepopuleerd.id : (trainerVeld as number),
+      trainerNaam: trainerGepopuleerd?.name ?? "Onbekende trainer",
+      mondaySchoolId: doc.mondaySchoolId,
+      schoolNaam: doc.schoolNaam ?? null,
+      actieType: doc.actieType as StartactieType,
+      instructie: doc.instructie ?? null,
+      deadline: doc.deadline,
+      gespreksDatum: doc.gespreksDatum ?? null,
+      createdAt: doc.createdAt,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -83,7 +83,17 @@ export function bouwAdminTrainingenLijst(
         ruweStatusTekst: training.ruweStatusTekst,
         verslagStatus: verslag?.status ?? null,
         verslagBron: verslag?.bron ?? null,
-        bron: training.bron,
+        // Startbegeleiding-ronde (2026-09-02) — TrainingSamenvatting.bron is
+        // inmiddels breder ("startactie" erbij, monday-links.ts), maar elk
+        // item in mondayOverzicht.trainingenPerTrainer is per constructie
+        // altijd Monday-native (nooit een startactie-gesprek, die bestaan
+        // uitsluitend in start-acties en worden hier bewust NOOIT ingevoegd —
+        // zie de aparte lus voor aanvullende trainingen hieronder, die geen
+        // startactie-equivalent heeft: een startactie-gesprek is geen
+        // "training" in upsell-zin, spec §H). Letterlijke waarde i.p.v.
+        // training.bron doorgeven houdt AdminTrainingRegel.bron doelbewust
+        // op precies deze twee upsell-relevante waarden.
+        bron: "mijnleerlijn",
       });
     }
   }

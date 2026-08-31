@@ -4,7 +4,7 @@ import config from "@/payload.config";
 import { isEditor } from "@/payload/access/roles";
 import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
-import { haalAlleTrainerAccounts, haalOpenVerslagenVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
+import { haalAlleTrainerAccounts, haalOpenVerslagenVoorAlleTrainers, haalAlleOpenStartActiesVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
 import { haalTrainingenEnScholenVoorAlleTrainers } from "@/lib/trainers/monday-links";
 import { bouwAdminTodoLijst, type AdminTodoItem } from "@/lib/admin/trainers/todo";
 
@@ -23,13 +23,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
-  const [trainers, mondayOverzicht, openVerslagen] = await Promise.all([
+  const [trainers, mondayOverzicht, openVerslagen, openStartActies] = await Promise.all([
     haalAlleTrainerAccounts(payload),
     haalTrainingenEnScholenVoorAlleTrainers(),
     haalOpenVerslagenVoorAlleTrainers(payload),
+    haalAlleOpenStartActiesVoorAlleTrainers(payload),
   ]);
 
-  let todo: AdminTodoItem[] = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers);
+  let todo: AdminTodoItem[] = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers, openStartActies);
 
   const params = request.nextUrl.searchParams;
 

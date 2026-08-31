@@ -35,6 +35,7 @@ const SOORT_LABEL: Record<AdminTodoItem["soort"], string> = {
   verslag_vastgelopen: "Verslag vastgelopen",
   concept_gestart: "Concept gestart",
   verslag_ontbreekt: "Verslag ontbreekt",
+  startactie: "Startactie",
 };
 
 export function TrainersTodoView() {

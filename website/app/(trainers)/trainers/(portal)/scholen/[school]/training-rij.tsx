@@ -18,8 +18,19 @@ interface TrainingProps {
   ruweStatusTekst: string | null;
   datum: string | null;
   trainerboardItemId: string | null;
-  /** Upsell-ronde (2026-09-02, spec §A3/§A5) — bepaalt hier uitsluitend of het "Aanvullend"-label getoond wordt en of de verslag-CTA los van trainerboardItemId beschikbaar is (zie kanVerslagMaken hieronder), nooit een tweede visuele stijl. */
-  bron: "mijnleerlijn" | "aanvullend";
+  /**
+   * Upsell-ronde (2026-09-02, spec §A3/§A5) — bepaalt hier uitsluitend of het
+   * "Aanvullend"-label getoond wordt en of de verslag-CTA los van
+   * trainerboardItemId beschikbaar is (zie kanVerslagMaken hieronder), nooit
+   * een tweede visuele stijl. Startbegeleiding-ronde (2026-09-02) voegt
+   * "startactie" toe aan de bredere TrainingSamenvatting.bron (monday-links.ts)
+   * — komt hier STRUCTUREEL nooit binnen (een startactie-gesprek wordt nooit
+   * in de schoolpagina se trainingenlijst opgenomen, alleen bereikbaar via
+   * een directe verslag-URL vanuit de To-do), maar het bredere brontype moet
+   * hier wél toewijsbaar blijven (TrainingSecties geeft de volledige
+   * TrainingSamenvatting door).
+   */
+  bron: "mijnleerlijn" | "aanvullend" | "startactie";
 }
 
 // Eigen, losse frontend-vorm (geen import van server-only code in een

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { bouwAdminTodoLijst } from "./todo";
-import type { AdminOpenVerslag, AdminTrainerAccount } from "./aggregatie";
+import type { AdminOpenVerslag, AdminTrainerAccount, AdminOpenStartactie } from "./aggregatie";
 import type { AdminTrainerMondayOverzicht, TrainingMetSchool } from "@/lib/trainers/monday-links";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — spec §5/§18: "exact dezelfde
@@ -51,6 +51,22 @@ function verslag(overrides: Partial<AdminOpenVerslag> = {}): AdminOpenVerslag {
     bron: "telefoon",
     wanneer: "2026-08-20T10:00:00.000Z",
     telefonieOntvangenOp: "2026-08-20T09:55:00.000Z",
+    ...overrides,
+  };
+}
+
+function startactie(overrides: Partial<AdminOpenStartactie> = {}): AdminOpenStartactie {
+  return {
+    id: 1,
+    trainerId: 1,
+    trainerNaam: "Anne Trainer",
+    mondaySchoolId: "school-9",
+    schoolNaam: "School Negen",
+    actieType: "intake",
+    instructie: "Bel de directeur",
+    deadline: "2026-09-10T00:00:00.000Z",
+    gespreksDatum: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -249,5 +265,52 @@ describe("bouwAdminTodoLijst — actuele-trainingenwhitelist (spec §1)", () => 
     const v = verslag({ status: "concept", bron: "telefoon", mondayTrainingId: 123 as unknown as string });
     const todo = bouwAdminTodoLijst(overzichtMet("uitv-1", ["123"]), [v], [trainer()]);
     expect(todo.some((t) => t.soort === "telefonisch_concept")).toBe(true);
+  });
+});
+
+// Startbegeleiding-ronde (2026-09-02, spec §E.1/§F) — vijfde categorie: een
+// open startactie hoort ALTIJD in To do (ongeacht deadline), trainerId/
+// trainerNaam komen rechtstreeks van AdminOpenStartactie (geen aparte
+// lookup nodig, i.t.t. de vier verslag-/Monday-afgeleide categorieën
+// hierboven).
+describe("bouwAdminTodoLijst — startacties (spec §E.1/§F)", () => {
+  it("een open startactie levert een to-do-item op met de gecodeerde 'startactie:<id>'-trainingId", () => {
+    const todo = bouwAdminTodoLijst(legeMondayOverzicht, [], [trainer()], [startactie({ id: 42 })]);
+    expect(todo).toHaveLength(1);
+    expect(todo[0]).toMatchObject({
+      soort: "startactie",
+      trainingId: "startactie:42",
+      schoolId: "school-9",
+      schoolNaam: "School Negen",
+      trainerId: 1,
+      trainerNaam: "Anne Trainer",
+      deadline: "2026-09-10T00:00:00.000Z",
+      instructie: "Bel de directeur",
+    });
+  });
+
+  it("weglaten van het 4de argument (bestaande aanroepers) breekt niet — default lege lijst", () => {
+    expect(() => bouwAdminTodoLijst(legeMondayOverzicht, [], [trainer()])).not.toThrow();
+    expect(bouwAdminTodoLijst(legeMondayOverzicht, [], [trainer()])).toEqual([]);
+  });
+
+  it("meerdere startacties van verschillende trainers blijven correct toegewezen (trainerisolatie)", () => {
+    const trainerA = trainer({ id: 1, naam: "Trainer A" });
+    const trainerB = trainer({ id: 2, naam: "Trainer B" });
+    const todo = bouwAdminTodoLijst(legeMondayOverzicht, [], [trainerA, trainerB], [startactie({ id: 1, trainerId: 1, trainerNaam: "Trainer A" }), startactie({ id: 2, trainerId: 2, trainerNaam: "Trainer B" })]);
+    expect(todo.find((t) => t.trainingId === "startactie:1")).toMatchObject({ trainerId: 1, trainerNaam: "Trainer A" });
+    expect(todo.find((t) => t.trainingId === "startactie:2")).toMatchObject({ trainerId: 2, trainerNaam: "Trainer B" });
+  });
+
+  it("staat als laatste categorie ná verslag_ontbreekt (laagste prioriteit, zelfde volgorde als dashboard.ts)", () => {
+    const ontbreektTraining = training({ id: "t-ontbreekt", datum: "2020-01-01", logboekIngevuld: false });
+    const overzicht: AdminTrainerMondayOverzicht = {
+      trainingenPerTrainer: new Map([["uitv-1", [ontbreektTraining]]]),
+      scholenPerTrainer: new Map(),
+      scholen: new Map(),
+      trainingenPerSchool: new Map(),
+    };
+    const todo = bouwAdminTodoLijst(overzicht, [], [trainer()], [startactie({ id: 1 })]);
+    expect(todo.map((t) => t.soort)).toEqual(["verslag_ontbreekt", "startactie"]);
   });
 });

@@ -1,6 +1,7 @@
-import type { AdminOpenVerslag, AdminMislukteTelefonieOproep, AdminTrainerAccount } from "./aggregatie";
+import type { AdminOpenVerslag, AdminMislukteTelefonieOproep, AdminTrainerAccount, AdminOpenStartactie } from "./aggregatie";
 import type { TrainingSamenvatting } from "@/lib/trainers/monday-links";
 import { bouwActueleTrainingIdsPerTrainer, isActueleTraining } from "@/lib/trainers/training-actualiteit";
+import { STARTACTIE_LABEL } from "@/lib/trainers/startbegeleiding";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — admin-brede "Aandacht"-sectie
 // (spec §7): "telefonie definitief mislukt; Monday-writeback vastgelopen;
@@ -35,6 +36,16 @@ import { bouwActueleTrainingIdsPerTrainer, isActueleTraining } from "@/lib/train
 // (AdminMislukteTelefonieOproep kent alleen een naam-snapshot,
 // gekozenTrainingNaam, geen ID) en blijft dus bewust ongefilterd — dat is
 // structureel niet aan een specifieke actuele training te toetsen.
+//
+// Startbegeleiding-ronde (2026-09-02, spec §F) — vierde categorie,
+// "startactie_verlopen": een open startactie waarvan de deadline al
+// verstreken is. Zelfde soort leeftijdstoets als concept_oud, maar dan tegen
+// de deadline zelf i.p.v. een vaste dagengrens (een startactie heeft al een
+// eigen, door beheer gekozen deadline — geen tweede, arbitraire drempel
+// nodig). Geen whitelist-toets nodig (i.t.t. de verslag-categorieën
+// hierboven): een startactie is GEEN Monday-trainingrecord, kent dus niet
+// het "training verwijderd/overgedragen in Monday"-risico waar die toets
+// voor bestaat.
 
 /** Spec §7 default-voorstel — hier de ENE plek om aan te passen. */
 export const OUD_CONCEPT_DAGEN = 7;
@@ -42,7 +53,7 @@ export const OUD_CONCEPT_DAGEN = 7;
 /** Vanaf hoeveel oude/vastgelopen verslagen een trainer zelf als aandachtspunt geldt — eveneens hier centraal aanpasbaar. */
 export const VEEL_OUDE_VERSLAGEN_DREMPEL = 3;
 
-export type AdminAandachtSoort = "telefonie_mislukt" | "verslag_vastgelopen" | "concept_oud";
+export type AdminAandachtSoort = "telefonie_mislukt" | "verslag_vastgelopen" | "concept_oud" | "startactie_verlopen";
 
 export interface AdminAandachtItem {
   soort: AdminAandachtSoort;
@@ -74,7 +85,8 @@ export function bouwAdminAandachtOverzicht(
   misluktOproepen: AdminMislukteTelefonieOproep[],
   trainers: AdminTrainerAccount[],
   trainingenPerTrainer: Map<string, Pick<TrainingSamenvatting, "id">[]>,
-  nu: Date = new Date()
+  nu: Date = new Date(),
+  openStartActies: AdminOpenStartactie[] = []
 ): AdminAandachtOverzicht {
   const trainerPerId = new Map(trainers.map((t) => [t.id, t]));
   const oudeGrensIso = new Date(nu.getTime() - OUD_CONCEPT_DAGEN * 24 * 60 * 60 * 1000).toISOString();
@@ -84,6 +96,7 @@ export function bouwAdminAandachtOverzicht(
 
   const vastgelopenVerslagen = openVerslagen.filter((v) => (v.status === "gedeeltelijk" || v.status === "bevestigd") && isActueelVoorEigenTrainer(v));
   const oudeConcepten = openVerslagen.filter((v) => v.status === "concept" && v.wanneer < oudeGrensIso && isActueelVoorEigenTrainer(v));
+  const verlopenStartActies = openStartActies.filter((a) => a.deadline < nu.toISOString());
 
   const dagenOud = (wanneer: string): number => Math.floor((nu.getTime() - new Date(wanneer).getTime()) / (24 * 60 * 60 * 1000));
 
@@ -124,6 +137,18 @@ export function bouwAdminAandachtOverzicht(
         titel: v.trainingNaam,
         wanneer: v.wanneer,
         detail: `Al ${dagenOud(v.wanneer)} dagen niet bevestigd`,
+      })
+    ),
+    ...verlopenStartActies.map(
+      (a): AdminAandachtItem => ({
+        soort: "startactie_verlopen",
+        trainerId: a.trainerId,
+        trainerNaam: a.trainerNaam,
+        schoolId: a.mondaySchoolId,
+        schoolNaam: a.schoolNaam ?? "Onbekende school",
+        titel: STARTACTIE_LABEL[a.actieType],
+        wanneer: a.deadline,
+        detail: `Deadline al ${dagenOud(a.deadline)} dagen verstreken`,
       })
     ),
   ].sort((a, b) => a.wanneer.localeCompare(b.wanneer)); // langst-lopende/oudste eerst — meest urgent

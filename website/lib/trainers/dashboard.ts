@@ -5,6 +5,7 @@ import { haalActiviteitVoorTrainer, type ActiviteitItem } from "./activiteit";
 import { bouwActueleTrainingIds, isActueleTraining } from "./training-actualiteit";
 import { groepeerOpWeergaveStatus } from "./training-weergave";
 import { haalAanvullendeTrainingenAlsSamenvattingen } from "./aanvullende-trainingen";
+import { haalOpenStartactiesVoorTrainer, codeerStartactieId, STARTACTIE_LABEL, type StartactieType } from "./startbegeleiding";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V2, Fase 1 (2026-08-28) — Dashboard V2: "Wat moet ik
@@ -33,7 +34,17 @@ export type TodoItem =
   | { soort: "telefonisch_concept"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string | null }
   | { soort: "verslag_vastgelopen"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string; verslagStatus: "gedeeltelijk" | "bevestigd" }
   | { soort: "concept_gestart"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string }
-  | { soort: "verslag_ontbreekt"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string };
+  | { soort: "verslag_ontbreekt"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string }
+  /**
+   * Startbegeleiding-ronde (2026-09-02, spec §E.1/§F) — een door beheer
+   * toegewezen startactie ("Nog iets nodig voor de start"). `wanneer` is de
+   * deadline (zelfde rol als bij de andere varianten: primair sorteer-/
+   * weergavemoment). `trainingId` is de gecodeerde "startactie:<id>"-vorm
+   * (lib/trainers/startbegeleiding.ts) — alleen bruikbaar voor een
+   * verslag-CTA als gespreksDatum gezet is; zonder gespreksDatum toont de UI
+   * uitsluitend de instructie, geen verslag-link.
+   */
+  | { soort: "startactie"; schoolId: string; schoolNaam: string; trainingNaam: string; trainingId: string; wanneer: string; actieType: StartactieType; instructie: string | null; deadline: string; gespreksDatum: string | null };
 
 export interface DashboardV2Statistieken {
   totaalTrainingen: number;
@@ -81,7 +92,7 @@ const ACTIVITEIT_LIMIET = 5; // spec: "Bijvoorbeeld de laatste 5."
  * hoeveel categorieën een training tegelijk raakt.
  */
 export async function haalDashboardV2Data(payload: Payload, trainer: AuthTrainer): Promise<DashboardV2Data> {
-  const [mondayData, aanvullendeTrainingen, telefonischeConcepten, vastgelopenVerslagen, gestarteConcepten, recenteActiviteit, verslagenAfgerond] = await Promise.all([
+  const [mondayData, aanvullendeTrainingen, telefonischeConcepten, vastgelopenVerslagen, gestarteConcepten, recenteActiviteit, verslagenAfgerond, openStartacties] = await Promise.all([
     haalDashboardData(trainer),
     haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer),
     haalTelefonischeConceptenVoorTrainer(payload, trainer),
@@ -89,6 +100,11 @@ export async function haalDashboardV2Data(payload: Payload, trainer: AuthTrainer
     haalGestarteConceptenVoorTrainer(payload, trainer),
     haalActiviteitVoorTrainer(payload, trainer, ACTIVITEIT_LIMIET),
     telVoltooideVerslagen(payload, trainer),
+    // Startbegeleiding-ronde (2026-09-02, spec §F) — een open startactie moet
+    // altijd onder To do zichtbaar zijn, ongeacht of de deadline al verstreken
+    // is (verstreken/open blijft gewoon "open" — er bestaat geen aparte
+    // "verlopen"-status, spec §F noemt uitsluitend open/afgerond/vervallen).
+    haalOpenStartactiesVoorTrainer(payload, trainer),
   ]);
 
   // Upsell-ronde (2026-09-02) — aanvullende trainingen (lib/trainers/
@@ -154,6 +170,24 @@ export async function haalDashboardV2Data(payload: Payload, trainer: AuthTrainer
       .filter((c) => isActueleTraining(actueleTrainingIds, c.mondayTrainingId))
       .map((c): TodoItem => ({ soort: "concept_gestart", schoolId: c.schoolId, schoolNaam: c.schoolNaam, trainingNaam: c.trainingNaam, trainingId: c.mondayTrainingId, wanneer: c.wanneer })),
     ...verlopenZonderVerslag.map((t): TodoItem => ({ soort: "verslag_ontbreekt", schoolId: t.schoolId, schoolNaam: t.schoolNaam, trainingNaam: t.naam, trainingId: t.id, wanneer: t.datum ?? "" })),
+    // Startbegeleiding-ronde (2026-09-02, spec §E.1/§F) — laatste categorie:
+    // een door beheer toegewezen taak, geen verslag-vervolgstap zoals de vier
+    // hierboven. trainingId is de gecodeerde startactie-vorm, telt dus mee in
+    // de dedup hieronder (kan nooit met een echte trainingId botsen).
+    ...openStartacties.map(
+      (a): TodoItem => ({
+        soort: "startactie",
+        schoolId: a.mondaySchoolId,
+        schoolNaam: a.schoolNaam ?? "Onbekende school",
+        trainingNaam: STARTACTIE_LABEL[a.actieType],
+        trainingId: codeerStartactieId(a.id),
+        wanneer: a.deadline,
+        actieType: a.actieType,
+        instructie: a.instructie,
+        deadline: a.deadline,
+        gespreksDatum: a.gespreksDatum,
+      })
+    ),
   ];
 
   const gezienTrainingIds = new Set<string>();

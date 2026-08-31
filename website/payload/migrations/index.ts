@@ -62,6 +62,8 @@ import * as migration_20260901_120000_gedeelde_chats_vervolgen from './20260901_
 import * as migration_20260901_130000_aanvullende_trainingen_v1 from './20260901_130000_aanvullende_trainingen_v1';
 import * as migration_20260901_140000_training_verslagen_aanvullend from './20260901_140000_training_verslagen_aanvullend';
 import * as migration_20260901_150000_trainer_logboek_items_monday_writeback from './20260901_150000_trainer_logboek_items_monday_writeback';
+import * as migration_20260902_100000_start_acties_v1 from './20260902_100000_start_acties_v1';
+import * as migration_20260902_110000_training_verslagen_startactie_bron from './20260902_110000_training_verslagen_startactie_bron';
 
 export const migrations = [
   {
@@ -383,5 +385,15 @@ export const migrations = [
     up: migration_20260901_150000_trainer_logboek_items_monday_writeback.up,
     down: migration_20260901_150000_trainer_logboek_items_monday_writeback.down,
     name: '20260901_150000_trainer_logboek_items_monday_writeback',
+  },
+  {
+    up: migration_20260902_100000_start_acties_v1.up,
+    down: migration_20260902_100000_start_acties_v1.down,
+    name: '20260902_100000_start_acties_v1',
+  },
+  {
+    up: migration_20260902_110000_training_verslagen_startactie_bron.up,
+    down: migration_20260902_110000_training_verslagen_startactie_bron.down,
+    name: '20260902_110000_training_verslagen_startactie_bron',
   },
 ];

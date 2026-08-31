@@ -34,6 +34,7 @@ const AANDACHT_LABEL: Record<AdminAandachtOverzicht["items"][number]["soort"], s
   telefonie_mislukt: "Telefonie mislukt",
   verslag_vastgelopen: "Verslag vastgelopen",
   concept_oud: "Oud concept",
+  startactie_verlopen: "Startactie verlopen",
 };
 
 export function TrainersOverzichtView() {
