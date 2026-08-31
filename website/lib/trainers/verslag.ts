@@ -24,7 +24,47 @@ interface TrainingVoorMutatieGeneriek {
   schoolNaam: string;
 }
 
-export async function resolveerTrainingVoorMutatie(payload: Payload, trainer: AuthTrainer, trainingId: string): Promise<TrainingVoorMutatieGeneriek | null> {
+/**
+ * Productiebug (2026-08-31) — Next.js 16.2.10/Turbopack geeft een dynamisch
+ * routesegment met een letterlijke ":" (zowel `.../aanvullend:5/...` als een
+ * al vooraf geëncodeerde `.../aanvullend%3A5/...`) LETTERLIJK als
+ * "aanvullend%3A5" door aan `params` — nooit teruggedecodeerd naar
+ * "aanvullend:5", empirisch bevestigd met curl --path-as-is (dus geen
+ * browser-/Playwright-artefact) tegen zowel de pagina als elke API-route
+ * onder trainingen/[id]. `isAanvullendeTrainingId`/`isStartactieId`
+ * herkenden die ge-encodeerde vorm niet (startsWith("aanvullend:") is dan
+ * false), dus viel dit altijd door naar de Monday-only resolutie ->
+ * "niet gevonden" voor een training die wél bestaat.
+ *
+ * Aangeroepen op VIER plekken, niet alleen hier: resolveerTrainingVoorMutatie
+ * hieronder (de dispatch-beslissing), én als allereerste regel in elk van
+ * upsertConcept/structureerVerslag/bevestigVerslag verderop in dit bestand.
+ * Dat is bewust geen overdreven voorzichtigheid — elk van die drie
+ * gebruikt zijn eigen trainingId-parameter OOK rechtstreeks om
+ * training-verslagen.mondayTrainingId te lezen/schrijven (haalVerslagVoor
+ * Training, en bij upsertConcept de create-data zelf), los van wat
+ * resolveerTrainingVoorMutatie ervan terugkrijgt. Zonder normalisatie op
+ * al die plekken zou een verslag dat ontstaat via de door Next.js
+ * ge-encodeerde URL de VUILE "aanvullend%3A<id>"-vorm in de database
+ * krijgen — die matcht daarna nooit meer met codeerAanvullendeTrainingId()
+ * elders (bv. aanvullende-trainingen.ts se haalBevestigdeVerslagTrainingIds),
+ * dus "is dit verslag al bevestigd" zou stil corrupt raken. Veilig no-op
+ * voor een gewoon numeriek Monday-ID (bevat nooit "%"). try/catch:
+ * decodeURIComponent gooit op een ongeldige %-reeks; dan blijft de ruwe
+ * tekst staan en loopt de bestaande "niet gevonden"-afhandeling gewoon
+ * door, geen crash.
+ */
+function genormaliseerTrainingId(trainingId: string): string {
+  if (!trainingId.includes("%")) return trainingId;
+  try {
+    return decodeURIComponent(trainingId);
+  } catch {
+    return trainingId;
+  }
+}
+
+export async function resolveerTrainingVoorMutatie(payload: Payload, trainer: AuthTrainer, trainingIdRuw: string): Promise<TrainingVoorMutatieGeneriek | null> {
+  const trainingId = genormaliseerTrainingId(trainingIdRuw);
   if (isAanvullendeTrainingId(trainingId)) return haalAanvullendeTrainingVoorMutatie(payload, trainer, trainingId);
   // Startbegeleiding-ronde (2026-09-02, spec §E.1) — derde tak, zelfde
   // patroon: een startactie-gesprek ("startactie:<id>") wordt lokaal
@@ -202,6 +242,7 @@ export async function structureerVerslag(
   trainingId: string,
   trainerInvoer: string
 ): Promise<VerslagStructureerUitkomst> {
+  trainingId = genormaliseerTrainingId(trainingId);
   const rij = await haalVerslagVoorTraining(payload, trainer, trainingId);
   if (!rij) return { soort: "niet_gevonden" };
   if (rij.status !== "concept") {
@@ -409,6 +450,16 @@ export async function upsertConcept(
   trainingId: string,
   invoer: { trainerInvoer?: string; definitieveTekst?: string; bron?: "telefoon"; telefonieOproepId?: number; mogelijkOnvolledig?: boolean }
 ): Promise<VerslagConceptUitkomst> {
+  // Zelfde normalisatie als resolveerTrainingVoorMutatie hierboven, hier
+  // BOVENDIEN nodig omdat trainingId verderop ook rechtstreeks als
+  // training-verslagen.mondayTrainingId wordt weggeschreven/opgezocht
+  // (regel "mondayTrainingId: trainingId" en de twee haalVerslagVoorTraining
+  // -aanroepen hieronder) — zonder deze regel zou een concept dat via de
+  // door Next.js geëncodeerde URL ontstaat, de VUILE "aanvullend%3A<id>"-
+  // vorm in de database krijgen i.p.v. de canonieke "aanvullend:<id>", en
+  // dus nooit meer matchen met codeerAanvullendeTrainingId() elders (bv.
+  // aanvullende-trainingen.ts se haalBevestigdeVerslagTrainingIds).
+  trainingId = genormaliseerTrainingId(trainingId);
   const gevonden = await resolveerTrainingVoorMutatie(payload, trainer, trainingId);
   if (!gevonden) return { soort: "niet_gevonden" };
   const trainingBron = gevonden.training.bron;
@@ -1110,6 +1161,7 @@ export type BevestigVerslagUitkomst =
  *     wijzigen via werkTrainingBij — nooit eerder (spec §9/§10 punt 5)
  */
 export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, trainingId: string, definitieveTekst?: string): Promise<BevestigVerslagUitkomst> {
+  trainingId = genormaliseerTrainingId(trainingId);
   const rij = await haalVerslagVoorTraining(payload, trainer, trainingId);
   if (!rij) return { soort: "niet_gevonden" };
   if (rij.status === "voltooid") {

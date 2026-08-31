@@ -99,6 +99,15 @@ export type MaakAanvullendeTrainingUitkomst =
   | { soort: "ongeldige_invoer"; boodschap: string }
   | { soort: "ok"; training: AanvullendeTrainingRecord };
 
+/** Gedeeld door aanmaken en wijzigen — dezelfde regel mag nooit op twee plekken uit de pas lopen. */
+function valideerNaamEnDatum(naamRuw: string, datumRuw: string): { soort: "ongeldig"; boodschap: string } | { soort: "ok"; naam: string; datum: Date } {
+  const naam = naamRuw.trim().slice(0, MAX_NAAM_LENGTE);
+  if (!naam) return { soort: "ongeldig", boodschap: "Vul een trainingnaam in." };
+  const datum = new Date(datumRuw);
+  if (Number.isNaN(datum.getTime())) return { soort: "ongeldig", boodschap: "Ongeldige datum." };
+  return { soort: "ok", naam, datum };
+}
+
 /**
  * Eigendom van de school wordt live tegen Monday geverifieerd (haalSchoolDetail
  * — zelfde architectuurprincipe/anti-enumeratie als elders in lib/trainers/):
@@ -110,10 +119,9 @@ export async function maakAanvullendeTraining(
   trainer: AuthTrainer,
   invoer: { mondaySchoolId: string; naam: string; datum: string }
 ): Promise<MaakAanvullendeTrainingUitkomst> {
-  const naam = invoer.naam.trim().slice(0, MAX_NAAM_LENGTE);
-  if (!naam) return { soort: "ongeldige_invoer", boodschap: "Vul een trainingnaam in." };
-  const datum = new Date(invoer.datum);
-  if (Number.isNaN(datum.getTime())) return { soort: "ongeldige_invoer", boodschap: "Ongeldige datum." };
+  const validatie = valideerNaamEnDatum(invoer.naam, invoer.datum);
+  if (validatie.soort === "ongeldig") return { soort: "ongeldige_invoer", boodschap: validatie.boodschap };
+  const { naam, datum } = validatie;
 
   const school = await haalSchoolDetail(trainer, invoer.mondaySchoolId);
   if (!school) return { soort: "niet_gevonden" };
@@ -125,6 +133,51 @@ export async function maakAanvullendeTraining(
   });
   const rij = nieuw as AanvullendeTrainingRij;
   return { soort: "ok", training: { id: rij.id, naam: rij.naam, datum: naarDatumIso(rij.datum), mondaySchoolId: rij.mondaySchoolId, schoolNaam: rij.schoolNaam ?? null } };
+}
+
+// ---------------------------------------------------------------------------
+// Wijzigen (productiecheck-bugfix, 2026-08-31) — trainer kan naam/datum van
+// een al aangemaakte aanvullende training achteraf corrigeren. Zelfde
+// zichtbaarheids-/toegangsregel als haalAanvullendeTrainingVoorMutatie
+// hieronder (niet hierboven verplaatst, om die functie's eigen, ongewijzigde
+// vorm niet aan te raken): de aanmakende trainer altijd, en verder elke
+// trainer met live-geverifieerde toegang tot de school — "alleen een trainer
+// die toegang heeft tot de betreffende school/aanvullende training mag hem
+// gebruiken", nooit alleen de aanmaker (zelfde principe als een verslag
+// mogen maken voor andermans aanvullende training bij dezelfde school).
+// Payload's update() wijzigt nooit de primary key — het ID (en dus elke
+// "aanvullend:<id>"-verwijzing vanuit een verslag/logboekitem) blijft dus
+// gegarandeerd hetzelfde vóór en na deze wijziging.
+// ---------------------------------------------------------------------------
+export type WijzigAanvullendeTrainingUitkomst =
+  | { soort: "niet_gevonden" }
+  | { soort: "ongeldige_invoer"; boodschap: string }
+  | { soort: "ok"; training: AanvullendeTrainingRecord };
+
+export async function wijzigAanvullendeTraining(
+  payload: Payload,
+  trainer: AuthTrainer,
+  id: number,
+  invoer: { naam: string; datum: string }
+): Promise<WijzigAanvullendeTrainingUitkomst> {
+  const validatie = valideerNaamEnDatum(invoer.naam, invoer.datum);
+  if (validatie.soort === "ongeldig") return { soort: "ongeldige_invoer", boodschap: validatie.boodschap };
+  const { naam, datum } = validatie;
+
+  const rij = (await payload.findByID({ collection: "aanvullende-trainingen", id, overrideAccess: true, depth: 0 }).catch(() => null)) as AanvullendeTrainingRij | null;
+  if (!rij) return { soort: "niet_gevonden" };
+
+  if (rij.trainer !== trainer.id) {
+    const school = await haalSchoolDetail(trainer, rij.mondaySchoolId);
+    if (!school) return { soort: "niet_gevonden" };
+  }
+
+  const bijgewerkt = await payload.update({ collection: "aanvullende-trainingen", id, overrideAccess: true, data: { naam, datum: datum.toISOString() } });
+  const rijBijgewerkt = bijgewerkt as AanvullendeTrainingRij;
+  return {
+    soort: "ok",
+    training: { id: rijBijgewerkt.id, naam: rijBijgewerkt.naam, datum: naarDatumIso(rijBijgewerkt.datum), mondaySchoolId: rijBijgewerkt.mondaySchoolId, schoolNaam: rijBijgewerkt.schoolNaam ?? null },
+  };
 }
 
 // ---------------------------------------------------------------------------

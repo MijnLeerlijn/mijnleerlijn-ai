@@ -14,6 +14,7 @@ import {
   telVoltooideVerslagen,
   wijzigVerslagAlsAdmin,
   verwijderVerslagAlsAdmin,
+  resolveerTrainingVoorMutatie,
   type VerslagStructuur,
 } from "./verslag";
 import { haalTrainingVoorMutatie, haalSchoolDetail, parseCheckboxIngevuld } from "./monday-links";
@@ -529,6 +530,108 @@ describe("bevestigVerslag", () => {
     expect(mockHaalTrainingVoorMutatie).not.toHaveBeenCalled();
     expect(uitkomst.weergaveTekst).toContain("Trainer: Wessel Kok");
     expect(uitkomst.weergaveTekst).toContain("Training: Extra oefensessie");
+  });
+
+  // Productiecheck-bugfix (2026-08-31, bug 2) — GEEN test van de schone
+  // "aanvullend:<id>"-string (die werkte via resolveerTrainingVoorMutatie
+  // altijd al correct, ook vóór deze fix). Deze test gebruikt letterlijk
+  // "aanvullend%3A<id>" — empirisch bevestigd met `curl --path-as-is` tegen
+  // een draaiende dev-server (geen browser-/Playwright-artefact) als de
+  // EXACTE string die Next.js 16.2.10/Turbopack aan de verslagpagina's
+  // params.trainingId doorgeeft zodra de URL een letterlijke ":" bevat —
+  // zowel bij een rauwe ":" in de link als bij een al vooraf geëncodeerde
+  // "%3A", in geen van beide gevallen decodeerde Next 'm terug. Zonder de
+  // genormaliseerTrainingId-fix in resolveerTrainingVoorMutatie viel dit
+  // altijd door naar de Monday-only resolutie en kreeg de trainer "Training
+  // niet gevonden" voor een training die wél bestaat — precies de live bug.
+  describe("Productiecheck-bugfix (2026-08-31, bug 2) — Next.js decodeert ':' niet terug in dynamische routesegmenten", () => {
+    it("resolveerTrainingVoorMutatie herkent een aanvullende training via de door Next.js geleverde 'aanvullend%3A<id>'-vorm", async () => {
+      const { payload } = maakFakePayload({
+        "aanvullende-trainingen": [{ id: 42, trainer: TRAINER.id, mondaySchoolId: SCHOOL_ID, schoolNaam: "Montessori Gorinchem", naam: "Coachgesprek", datum: "2026-08-31T00:00:00.000Z" }],
+      });
+
+      const gevonden = await resolveerTrainingVoorMutatie(payload, TRAINER, "aanvullend%3A42");
+
+      expect(gevonden).not.toBeNull();
+      expect(gevonden?.training.naam).toBe("Coachgesprek");
+      expect(gevonden?.training.bron).toBe("aanvullend");
+      // Nooit doorgevallen naar de Monday-only resolutie voor een lokale training.
+      expect(mockHaalTrainingVoorMutatie).not.toHaveBeenCalled();
+    });
+
+    it("resolveerTrainingVoorMutatie herkent een startactie-gesprek via dezelfde 'startactie%3A<id>'-vorm (zelfde colon-architectuur, zelfde bug, zelfde fix)", async () => {
+      const { payload } = maakFakePayload({
+        "start-acties": [{ id: 9, trainer: TRAINER.id, mondaySchoolId: SCHOOL_ID, schoolNaam: "Montessori Gorinchem", actieType: "intake", status: "open", gespreksDatum: "2026-08-31T00:00:00.000Z" }],
+      });
+
+      const gevonden = await resolveerTrainingVoorMutatie(payload, TRAINER, "startactie%3A9");
+
+      expect(gevonden).not.toBeNull();
+      expect(gevonden?.training.bron).toBe("startactie");
+      expect(mockHaalTrainingVoorMutatie).not.toHaveBeenCalled();
+    });
+
+    it("upsertConcept (het pad achter de 'Concept opslaan'-autosave) werkt ook met de door Next.js geleverde geëncodeerde vorm — niet alleen de resolver in isolatie — EN slaat mondayTrainingId schoon op (niet 'aanvullend%3A43')", async () => {
+      const { payload } = maakFakePayload({
+        "aanvullende-trainingen": [{ id: 43, trainer: TRAINER.id, mondaySchoolId: SCHOOL_ID, schoolNaam: "Montessori Gorinchem", naam: "Coachgesprek", datum: "2026-08-31T00:00:00.000Z" }],
+      });
+
+      const uitkomst = await upsertConcept(payload, TRAINER, "aanvullend%3A43", { trainerInvoer: "Notities" });
+
+      expect(uitkomst.soort).toBe("ok");
+      if (uitkomst.soort !== "ok") return;
+      // Kern van de datazuiverheidsfix: zonder normalisatie op elk van deze
+      // drie functies afzonderlijk zou dit veld de vuile "aanvullend%3A43"
+      // bevatten — dat matcht daarna NOOIT meer met codeerAanvullendeTrainingId(43)
+      // elders (bv. de "is dit al bevestigd"-check in aanvullende-trainingen.ts).
+      expect(uitkomst.verslag.mondayTrainingId).toBe("aanvullend:43");
+    });
+
+    it("een tweede aanroep met de SCHONE vorm ('aanvullend:43') vindt exact dezelfde rij als de eerste aanroep met de vuile vorm — bewijst dat er geen dubbele/vervuilde rij ontstaat", async () => {
+      const { payload } = maakFakePayload({
+        "aanvullende-trainingen": [{ id: 45, trainer: TRAINER.id, mondaySchoolId: SCHOOL_ID, schoolNaam: "Montessori Gorinchem", naam: "Coachgesprek", datum: "2026-08-31T00:00:00.000Z" }],
+      });
+
+      const eerste = await upsertConcept(payload, TRAINER, "aanvullend%3A45", { trainerInvoer: "Notities ronde 1" });
+      const tweede = await upsertConcept(payload, TRAINER, "aanvullend:45", { trainerInvoer: "Notities ronde 2" });
+
+      expect(eerste.soort).toBe("ok");
+      expect(tweede.soort).toBe("ok");
+      if (eerste.soort !== "ok" || tweede.soort !== "ok") return;
+      expect(tweede.verslag.id).toBe(eerste.verslag.id);
+      expect(tweede.verslag.trainerInvoer).toBe("Notities ronde 2");
+    });
+
+    it("bevestigVerslag (het pad achter de 'Verslag maken'-knop) rondt een aanvullende training ook af via de geëncodeerde vorm", async () => {
+      const { payload } = maakFakePayload({
+        "aanvullende-trainingen": [{ id: 44, trainer: TRAINER.id, mondaySchoolId: SCHOOL_ID, schoolNaam: "Montessori Gorinchem", naam: "Coachgesprek", datum: "2026-08-31T00:00:00.000Z" }],
+      });
+      await upsertConcept(payload, TRAINER, "aanvullend%3A44", { trainerInvoer: "Notities" });
+
+      const uitkomst = await bevestigVerslag(payload, TRAINER, "aanvullend%3A44", "Wat is behandeld:\nRekenen");
+
+      expect(uitkomst.soort).toBe("resultaat");
+      if (uitkomst.soort !== "resultaat") return;
+      expect(uitkomst.verslag.status).toBe("voltooid");
+    });
+
+    it("een gewoon numeriek Monday-ID blijft ongewijzigd werken (bevat nooit '%', dus geen decode-overhead of -risico)", async () => {
+      mockHaalTrainingVoorMutatie.mockResolvedValue(gevondenTraining());
+
+      const gevonden = await resolveerTrainingVoorMutatie({} as never, TRAINER, CENTRALE_TRAINING_ID);
+
+      expect(gevonden?.training.id).toBe(CENTRALE_TRAINING_ID);
+      expect(mockHaalTrainingVoorMutatie).toHaveBeenCalledWith(TRAINER, CENTRALE_TRAINING_ID);
+    });
+
+    it("een ongeldige %-reeks crasht niet, valt veilig terug op de ruwe tekst (dan gewoon niet_gevonden via de Monday-tak)", async () => {
+      mockHaalTrainingVoorMutatie.mockResolvedValue(null);
+
+      const gevonden = await resolveerTrainingVoorMutatie({} as never, TRAINER, "aanvullend%zz1");
+
+      expect(gevonden).toBeNull();
+      expect(mockHaalTrainingVoorMutatie).toHaveBeenCalledWith(TRAINER, "aanvullend%zz1");
+    });
   });
 
   it("KOPNAAM IS ALTIJD SERVER-SIDE (opdrachtseis): een poging om een andere trainernaam via de vrije verslagtekst te smokkelen verschijnt nooit in de koplijn — die komt uitsluitend uit het server-geverifieerde trainer-object (trainer-accounts), nooit uit client-/vrije invoer", async () => {
