@@ -12,6 +12,7 @@ import type {
   AdminSchoolVerslagRegel,
   AdminSchoolLogboekRegel,
   AdminSchoolBestandRegel,
+  AdminSchoolUpsell,
 } from "@/lib/admin/trainers/schooldetail";
 import type { AdminTrainingRegel } from "@/lib/admin/trainers/trainingen";
 import type { AdminAandachtItem, AdminAandachtSoort } from "@/lib/admin/trainers/aandacht";
@@ -41,12 +42,13 @@ import { VerslagenLijst, LogboekLijst, VERSLAG_STATUS_LABEL } from "./AdminVersl
 // voor HANDMATIGE logboekitems op de Logboek-tab (LogboekTab hieronder) — de
 // enige mutatie in deze view. Elke andere tab blijft ongewijzigd read-only.
 
-const TABS = ["overzicht", "trainers", "trainingen", "verslagen", "logboek", "bestanden"] as const;
+const TABS = ["overzicht", "trainers", "trainingen", "upsell", "verslagen", "logboek", "bestanden"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   overzicht: "Overzicht",
   trainers: "Trainers",
   trainingen: "Trainingen",
+  upsell: "Upsell",
   verslagen: "Verslagen",
   logboek: "Logboek",
   bestanden: "Bestanden",
@@ -109,6 +111,7 @@ function DetailVoorSchool({ schoolId, initialTab }: { schoolId: string; initialT
   const [overzicht, setOverzicht] = useState<AdminSchoolOverzichtTab | null>(null);
   const [trainers, setTrainers] = useState<AdminSchoolTrainerRegel[] | null>(null);
   const [trainingen, setTrainingen] = useState<AdminTrainingRegel[] | null>(null);
+  const [upsell, setUpsell] = useState<AdminSchoolUpsell | null>(null);
   const [verslagen, setVerslagen] = useState<AdminSchoolVerslagRegel[] | null>(null);
   const [logboek, setLogboek] = useState<AdminSchoolLogboekRegel[] | null>(null);
   const [bestanden, setBestanden] = useState<AdminSchoolBestandRegel[] | null>(null);
@@ -165,6 +168,9 @@ function DetailVoorSchool({ schoolId, initialTab }: { schoolId: string; initialT
             break;
           case "trainingen":
             setTrainingen(data as AdminTrainingRegel[]);
+            break;
+          case "upsell":
+            setUpsell(data as AdminSchoolUpsell);
             break;
           case "verslagen":
             setVerslagen(data as AdminSchoolVerslagRegel[]);
@@ -262,6 +268,7 @@ function DetailVoorSchool({ schoolId, initialTab }: { schoolId: string; initialT
       {!tabLaden && tab === "overzicht" && (overzicht ? <OverzichtTab data={overzicht} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "trainers" && (trainers ? <TrainersTab data={trainers} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "trainingen" && (trainingen ? <TrainingenTab data={trainingen} /> : <TabFoutmelding />)}
+      {!tabLaden && tab === "upsell" && (upsell ? <UpsellTab data={upsell} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "verslagen" && (verslagen ? (
         <VerslagenLijst
           data={verslagen}
@@ -428,7 +435,14 @@ function TrainingenTab({ data }: { data: AdminTrainingRegel[] }) {
               <td>
                 <Link href={`/admin/trainers/detail?id=${t.trainerId}`}>{t.trainerNaam}</Link>
               </td>
-              <td>{t.trainingNaam}</td>
+              <td>
+                {t.trainingNaam}
+                {t.bron === "aanvullend" && (
+                  <span style={{ marginLeft: 7 }}>
+                    <AdminStatusBadge label="Aanvullend" kleur="purple" />
+                  </span>
+                )}
+              </td>
               <td>
                 <AdminStatusBadge label={WEERGAVE_STATUS_LABEL[t.weergaveStatus]} kleur={WEERGAVE_STATUS_KLEUR[t.weergaveStatus]} />
               </td>
@@ -438,6 +452,55 @@ function TrainingenTab({ data }: { data: AdminTrainingRegel[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function UpsellTab({ data }: { data: AdminSchoolUpsell }) {
+  return (
+    <>
+      <div className="ml-sales__kaarten-rij" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+        <MiniKpiKaart waarde={data.aantalMijnleerlijn} label="MijnLeerlijn-trainingen" kleur="blue" />
+        <MiniKpiKaart waarde={data.aantalAanvullend} label="Aanvullende trainingen" kleur="purple" />
+        <MiniKpiKaart waarde={data.totaal} label="Totaal" kleur="teal" />
+      </div>
+      <div className="ml-sales__section">
+        <h2>Aanvullende trainingen ({data.aanvullendeTrainingen.length})</h2>
+        {data.aanvullendeTrainingen.length === 0 ? (
+          <p className="ml-sales__kaart-tekst">Nog geen aanvullende trainingen bij deze school.</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="ml-sales__tabel">
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Training</th>
+                  <th>Trainer</th>
+                  <th>Verslagstatus</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.aanvullendeTrainingen.map((t) => (
+                  <tr key={t.trainingId}>
+                    <td className={t.datum ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(t.datum)}</td>
+                    <td>{t.trainingNaam}</td>
+                    <td>
+                      <Link href={`/admin/trainers/detail?id=${t.trainerId}`}>{t.trainerNaam}</Link>
+                    </td>
+                    <td>
+                      {t.verslagStatus ? (
+                        <AdminStatusBadge label={VERSLAG_STATUS_LABEL[t.verslagStatus]} kleur={VERSLAG_STATUS_KLEUR[t.verslagStatus]} />
+                      ) : (
+                        <span className="ml-sales__ontbrekend">Nog geen verslag</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

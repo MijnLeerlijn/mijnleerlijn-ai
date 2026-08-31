@@ -295,6 +295,50 @@ export async function haalKennisvragenSinds(payload: Payload, sinds: Date): Prom
 }
 
 // ---------------------------------------------------------------------------
+// Aanvullende trainingen — admin-breed (spec §10/§11/§12, Upsell-inzicht)
+// ---------------------------------------------------------------------------
+
+/** Defensieve bovengrens (spec §13) — ruim boven wat dit platform ooit aan lokaal geregistreerde aanvullende trainingen zal bevatten. */
+const MAX_AANVULLENDE_TRAININGEN = 5000;
+
+export interface AdminAanvullendeTraining {
+  id: number;
+  trainerId: number;
+  mondaySchoolId: string;
+  schoolNaam: string | null;
+  naam: string;
+  /** Genormaliseerd tot kale YYYY-MM-DD — zelfde reden als lib/trainers/aanvullende-trainingen.ts se naarDatumIso: het opgeslagen veld is een volledige ISO-datetime, maar elke vergelijking hierop (bepaalWeergaveStatus, maandgroepering) verwacht dezelfde kale datumvorm als een Monday-trainingdatum. */
+  datum: string;
+}
+
+/**
+ * Alle aanvullende trainingen, over alle trainers, in één query — de
+ * upsell-tegenhanger van haalAlleTrainerAccounts/haalLogboekitemsVoorAlleTrainers
+ * hierboven (zelfde principe: nooit een lus over trainers). Voedt
+ * lib/admin/trainers/trainingen.ts se bouwAdminTrainingenLijst (zodat
+ * aanvullende trainingen automatisch meelopen in elke bestaande
+ * trainingenlijst — school-/trainerdetail, "Alle trainingen") en de
+ * schooldetail-/trainerdetail-/overzicht-upsellfuncties.
+ */
+export async function haalAlleAanvullendeTrainingen(payload: Payload): Promise<AdminAanvullendeTraining[]> {
+  const resultaat = await payload.find({
+    collection: "aanvullende-trainingen",
+    overrideAccess: true,
+    depth: 0,
+    sort: "-datum",
+    limit: MAX_AANVULLENDE_TRAININGEN,
+  });
+  return resultaat.docs.map((doc) => ({
+    id: doc.id as number,
+    trainerId: doc.trainer as number,
+    mondaySchoolId: doc.mondaySchoolId,
+    schoolNaam: doc.schoolNaam ?? null,
+    naam: doc.naam,
+    datum: new Date(doc.datum).toISOString().slice(0, 10),
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Trainer-accounts — admin-breed (basis voor elke kaart/detailweergave)
 // ---------------------------------------------------------------------------
 

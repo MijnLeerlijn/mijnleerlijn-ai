@@ -9,6 +9,7 @@ import {
   haalAdminSchoolVerslagenTab,
   haalAdminSchoolLogboekTab,
   haalAdminSchoolBestandenTab,
+  haalAdminSchoolUpsell,
 } from "./schooldetail";
 import {
   haalTrainingenEnScholenVoorAlleTrainers,
@@ -105,6 +106,7 @@ describe("elk tabblad geeft 'niet_gevonden' terug voor een onbestaand school-ID"
     ["verslagen", haalAdminSchoolVerslagenTab],
     ["logboek", haalAdminSchoolLogboekTab],
     ["bestanden", haalAdminSchoolBestandenTab],
+    ["upsell", haalAdminSchoolUpsell],
   ] as const)("%s", async (_naam, fn) => {
     const { payload } = maakFakePayload({});
     const uitkomst = await fn(payload, "s999");
@@ -202,7 +204,45 @@ describe("haalAdminSchoolTrainingenTab — filtering op school", () => {
     const uitkomst = await haalAdminSchoolTrainingenTab(payload, "s1");
     if (uitkomst.soort !== "ok") throw new Error("onverwacht niet_gevonden");
     expect(uitkomst.data).toHaveLength(1);
-    expect(uitkomst.data[0]).toMatchObject({ trainingId: "tr1", schoolId: "s1", trainerId: 1, trainerNaam: "Trainer A" });
+    expect(uitkomst.data[0]).toMatchObject({ trainingId: "tr1", schoolId: "s1", trainerId: 1, trainerNaam: "Trainer A", bron: "mijnleerlijn" });
+  });
+
+  it("Upsell-ronde: aanvullende trainingen van deze school lopen automatisch mee, met bron='aanvullend'", async () => {
+    const { payload } = maakFakePayload({
+      "trainer-accounts": [trainerA, trainerB],
+      "aanvullende-trainingen": [{ id: 9, trainer: 1, mondaySchoolId: "s1", schoolNaam: "School A", naam: "Rekenen coaching", datum: "2026-09-05T00:00:00.000Z" }],
+    });
+    const uitkomst = await haalAdminSchoolTrainingenTab(payload, "s1");
+    if (uitkomst.soort !== "ok") throw new Error("onverwacht niet_gevonden");
+    expect(uitkomst.data).toHaveLength(2);
+    expect(uitkomst.data.find((r) => r.bron === "aanvullend")).toMatchObject({ trainingNaam: "Rekenen coaching", trainerNaam: "Trainer A" });
+  });
+});
+
+describe("haalAdminSchoolUpsell", () => {
+  it("telt MijnLeerlijn/aanvullend/totaal correct en levert uitsluitend de aanvullende trainingen als lijst", async () => {
+    const { payload } = maakFakePayload({
+      "trainer-accounts": [trainerA, trainerB],
+      "aanvullende-trainingen": [
+        { id: 9, trainer: 1, mondaySchoolId: "s1", schoolNaam: "School A", naam: "Rekenen coaching", datum: "2026-09-05T00:00:00.000Z" },
+        { id: 10, trainer: 1, mondaySchoolId: "s1", schoolNaam: "School A", naam: "Taal verdieping", datum: "2026-09-06T00:00:00.000Z" },
+        { id: 11, trainer: 2, mondaySchoolId: "s2", schoolNaam: "School B", naam: "Andere school", datum: "2026-09-07T00:00:00.000Z" },
+      ],
+    });
+    const uitkomst = await haalAdminSchoolUpsell(payload, "s1");
+    if (uitkomst.soort !== "ok") throw new Error("onverwacht niet_gevonden");
+    expect(uitkomst.data.aantalMijnleerlijn).toBe(1); // de standaard tr1 uit standaardMondayOverzicht()
+    expect(uitkomst.data.aantalAanvullend).toBe(2);
+    expect(uitkomst.data.totaal).toBe(3);
+    expect(uitkomst.data.aanvullendeTrainingen).toHaveLength(2);
+    expect(uitkomst.data.aanvullendeTrainingen.every((t) => t.schoolId === "s1")).toBe(true);
+  });
+
+  it("zonder aanvullende trainingen: aantalAanvullend 0, lege lijst, aantalMijnleerlijn ongewijzigd", async () => {
+    const { payload } = maakFakePayload({ "trainer-accounts": [trainerA] });
+    const uitkomst = await haalAdminSchoolUpsell(payload, "s1");
+    if (uitkomst.soort !== "ok") throw new Error("onverwacht niet_gevonden");
+    expect(uitkomst.data).toMatchObject({ aantalMijnleerlijn: 1, aantalAanvullend: 0, totaal: 1, aanvullendeTrainingen: [] });
   });
 });
 

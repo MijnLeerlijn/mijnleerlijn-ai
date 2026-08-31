@@ -13,6 +13,7 @@ import {
   haalAdminSchoolVerslagenTab,
   haalAdminSchoolLogboekTab,
   haalAdminSchoolBestandenTab,
+  haalAdminSchoolUpsell,
 } from "@/lib/admin/trainers/schooldetail";
 
 // Traineromgeving V2, Fase 5 (2026-08-24) — Admin Schooldetail (spec §1).
@@ -21,7 +22,7 @@ import {
 // (het Monday-item-ID van de school in Master Data), nooit een Number()-cast:
 // scholen leven in Monday, niet in Payload, dus er is geen numeriek
 // Payload-ID om naar te casten (in tegenstelling tot trainerId hierboven).
-const TABS = ["basis", "aandacht", "overzicht", "trainers", "trainingen", "verslagen", "logboek", "bestanden"] as const;
+const TABS = ["basis", "aandacht", "overzicht", "trainers", "trainingen", "verslagen", "logboek", "bestanden", "upsell"] as const;
 type Tab = (typeof TABS)[number];
 
 function isTab(waarde: string | null): waarde is Tab {
@@ -66,6 +67,8 @@ export async function GET(request: NextRequest) {
         return haalAdminSchoolLogboekTab(payload, schoolId);
       case "bestanden":
         return haalAdminSchoolBestandenTab(payload, schoolId);
+      case "upsell":
+        return haalAdminSchoolUpsell(payload, schoolId);
     }
   })();
 

@@ -4,7 +4,7 @@ import config from "@/payload.config";
 import { isEditor } from "@/payload/access/roles";
 import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 import { verifyAdminSessionCookie, PAYLOAD_SESSION_COOKIE_NAME } from "@/lib/auth/verify-session";
-import { haalAlleTrainerAccounts, haalRecenteVerslagActiviteitVoorAlleTrainers } from "@/lib/admin/trainers/aggregatie";
+import { haalAlleTrainerAccounts, haalRecenteVerslagActiviteitVoorAlleTrainers, haalAlleAanvullendeTrainingen } from "@/lib/admin/trainers/aggregatie";
 import { haalTrainingenEnScholenVoorAlleTrainers } from "@/lib/trainers/monday-links";
 import { bouwAdminTrainingenLijst, type AdminTrainingRegel } from "@/lib/admin/trainers/trainingen";
 
@@ -25,15 +25,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Onvoldoende rechten voor dit onderdeel." }, { status: 403 });
   }
 
-  const [trainers, mondayOverzicht, verslagenActiviteit] = await Promise.all([
+  const [trainers, mondayOverzicht, verslagenActiviteit, aanvullendeTrainingen] = await Promise.all([
     haalAlleTrainerAccounts(payload),
     haalTrainingenEnScholenVoorAlleTrainers(),
     haalRecenteVerslagActiviteitVoorAlleTrainers(payload),
+    haalAlleAanvullendeTrainingen(payload),
   ]);
 
-  let trainingen: AdminTrainingRegel[] = bouwAdminTrainingenLijst(mondayOverzicht, trainers, verslagenActiviteit);
+  let trainingen: AdminTrainingRegel[] = bouwAdminTrainingenLijst(mondayOverzicht, trainers, verslagenActiviteit, aanvullendeTrainingen);
 
   const params = request.nextUrl.searchParams;
+
+  const bron = params.get("bron");
+  if (bron === "mijnleerlijn" || bron === "aanvullend") trainingen = trainingen.filter((t) => t.bron === bron);
 
   const trainerIdParam = params.get("trainerId");
   if (trainerIdParam) {

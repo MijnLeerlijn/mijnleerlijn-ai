@@ -7,6 +7,7 @@ import {
   haalLogboekitemsVoorAlleTrainers,
   haalKennisvragenSinds,
   haalAlleTrainerAccounts,
+  haalAlleAanvullendeTrainingen,
 } from "./aggregatie";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — bewijst dat elke admin-brede
@@ -164,5 +165,38 @@ describe("haalAlleTrainerAccounts", () => {
     const resultaat = await haalAlleTrainerAccounts(payload);
     expect(resultaat).toHaveLength(2);
     expect(resultaat.find((t) => t.id === 2)?.actief).toBe(false);
+  });
+});
+
+// Upsell-ronde (2026-09-02, spec §10/§11/§12) — admin-brede aanvullende
+// trainingen, zelfde ÉÉN-query-nooit-een-lus-over-trainers-principe als elke
+// andere functie hierboven.
+describe("haalAlleAanvullendeTrainingen", () => {
+  it("geeft alle aanvullende trainingen terug, over alle trainers, in één query", async () => {
+    const { payload } = maakFakePayload({
+      "aanvullende-trainingen": [
+        { id: 1, trainer: 10, mondaySchoolId: "s1", schoolNaam: "School A", naam: "Rekenen coaching", datum: "2026-09-05T00:00:00.000Z" },
+        { id: 2, trainer: 20, mondaySchoolId: "s2", schoolNaam: "School B", naam: "Taal verdieping", datum: "2026-09-06T00:00:00.000Z" },
+      ],
+    });
+    const resultaat = await haalAlleAanvullendeTrainingen(payload);
+    expect(resultaat).toHaveLength(2);
+    expect(resultaat.map((r) => r.trainerId).sort()).toEqual([10, 20]);
+  });
+
+  it("normaliseert datum tot een kale YYYY-MM-DD (net als een Monday-trainingdatum)", async () => {
+    const { payload } = maakFakePayload({
+      "aanvullende-trainingen": [{ id: 1, trainer: 10, mondaySchoolId: "s1", schoolNaam: "School A", naam: "Rekenen coaching", datum: "2026-09-05T00:00:00.000Z" }],
+    });
+    const [regel] = await haalAlleAanvullendeTrainingen(payload);
+    expect(regel?.datum).toBe("2026-09-05");
+  });
+
+  it("schoolNaam valt terug op null wanneer die niet is opgeslagen", async () => {
+    const { payload } = maakFakePayload({
+      "aanvullende-trainingen": [{ id: 1, trainer: 10, mondaySchoolId: "s1", schoolNaam: null, naam: "Rekenen coaching", datum: "2026-09-05T00:00:00.000Z" }],
+    });
+    const [regel] = await haalAlleAanvullendeTrainingen(payload);
+    expect(regel?.schoolNaam).toBeNull();
   });
 });

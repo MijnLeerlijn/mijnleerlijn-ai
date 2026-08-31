@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { GET } from "./route";
 import { verifyAdminSessionCookie } from "@/lib/auth/verify-session";
-import { haalAdminTrainerBasis, haalAdminTrainerOverzichtTab, haalAdminTrainerVerslagenTab } from "@/lib/admin/trainers/trainerdetail";
+import { haalAdminTrainerBasis, haalAdminTrainerOverzichtTab, haalAdminTrainerVerslagenTab, haalAdminTrainerUpsell } from "@/lib/admin/trainers/trainerdetail";
 
 vi.mock("payload", () => ({ getPayload: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/payload.config", () => ({ default: {} }));
@@ -19,12 +19,14 @@ vi.mock("@/lib/admin/trainers/trainerdetail", () => ({
   haalAdminTrainerLogboekTab: vi.fn(),
   haalAdminTrainerTelefonieTab: vi.fn(),
   haalAdminTrainerBestandenTab: vi.fn(),
+  haalAdminTrainerUpsell: vi.fn(),
 }));
 
 const mockVerify = vi.mocked(verifyAdminSessionCookie);
 const mockBasis = vi.mocked(haalAdminTrainerBasis);
 const mockOverzicht = vi.mocked(haalAdminTrainerOverzichtTab);
 const mockVerslagen = vi.mocked(haalAdminTrainerVerslagenTab);
+const mockUpsell = vi.mocked(haalAdminTrainerUpsell);
 
 function maakRequest(query: string) {
   return new NextRequest(`http://localhost:3000/api/admin/trainers/detail${query}`);
@@ -35,6 +37,7 @@ beforeEach(() => {
   mockBasis.mockReset();
   mockOverzicht.mockReset();
   mockVerslagen.mockReset();
+  mockUpsell.mockReset();
   mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
 });
 
@@ -96,5 +99,12 @@ describe("GET /api/admin/trainers/detail — tab-dispatch", () => {
     mockVerslagen.mockResolvedValue({ soort: "niet_gevonden" });
     const response = await GET(maakRequest("?id=999&tab=verslagen"));
     expect(response.status).toBe(404);
+  });
+
+  it("dispatcht tab=upsell naar haalAdminTrainerUpsell (Upsell-ronde, 2026-09-02)", async () => {
+    mockUpsell.mockResolvedValue({ soort: "ok", data: { aantalMijnleerlijn: 1, aantalAanvullend: 0, aantalScholenMetAanvullend: 0, verhouding: 0 } });
+    const response = await GET(maakRequest("?id=7&tab=upsell"));
+    expect(response.status).toBe(200);
+    expect(mockUpsell).toHaveBeenCalledWith(expect.anything(), 7);
   });
 });

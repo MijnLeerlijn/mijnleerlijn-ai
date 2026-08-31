@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { bouwAdminTrainingenLijst } from "./trainingen";
-import type { AdminVerslagActiviteit, AdminTrainerAccount } from "./aggregatie";
+import { codeerAanvullendeTrainingId } from "@/lib/trainers/aanvullende-trainingen";
+import type { AdminVerslagActiviteit, AdminTrainerAccount, AdminAanvullendeTraining } from "./aggregatie";
 import type { AdminTrainerMondayOverzicht, TrainingMetSchool } from "@/lib/trainers/monday-links";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — spec §4/§18: "trainers
@@ -36,6 +37,10 @@ function training(overrides: Partial<TrainingMetSchool> = {}): TrainingMetSchool
     schoolNaam: "School Een",
     ...overrides,
   };
+}
+
+function aanvullendeTraining(overrides: Partial<AdminAanvullendeTraining> = {}): AdminAanvullendeTraining {
+  return { id: 1, trainerId: 1, mondaySchoolId: "school-1", schoolNaam: "School Een", naam: "Aanvullende training", datum: "2026-09-01", ...overrides };
 }
 
 function verslagActiviteit(overrides: Partial<AdminVerslagActiviteit> = {}): AdminVerslagActiviteit {
@@ -130,5 +135,64 @@ describe("bouwAdminTrainingenLijst", () => {
     };
     const rijen = bouwAdminTrainingenLijst(overzicht, [trainer()], []);
     expect(rijen.map((r) => r.trainingId)).toEqual(["nieuw", "midden", "oud"]);
+  });
+
+  it("elke mijnleerlijn-rij krijgt bron='mijnleerlijn' (van de Monday-training zelf, niet hardcoded)", () => {
+    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["uitv-1", [training()]]]), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() };
+    const rijen = bouwAdminTrainingenLijst(overzicht, [trainer()], []);
+    expect(rijen[0]?.bron).toBe("mijnleerlijn");
+  });
+});
+
+// Upsell-ronde (2026-09-02, spec §10/§11/§12) — het optionele vierde
+// argument (aanvullende trainingen, aggregatie.ts se
+// haalAlleAanvullendeTrainingen). Bewust een los describe-blok: dit is een
+// TWEEDE, onafhankelijke lus binnen bouwAdminTrainingenLijst (aanvullende
+// trainingen bestaan niet in mondayOverzicht.trainingenPerTrainer), met een
+// eigen trainer-koppeling (op Payload-trainerId, niet mondayUitvoerderItemId).
+describe("bouwAdminTrainingenLijst — aanvullende trainingen (Upsell-ronde)", () => {
+  const LEGE_OVERZICHT: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map(), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() };
+
+  it("voegt een aanvullende training toe met bron='aanvullend' en een gecodeerd trainingId", () => {
+    const rijen = bouwAdminTrainingenLijst(LEGE_OVERZICHT, [trainer()], [], [aanvullendeTraining({ id: 42, naam: "Rekenen coaching" })]);
+    expect(rijen).toHaveLength(1);
+    expect(rijen[0]).toMatchObject({ trainingId: codeerAanvullendeTrainingId(42), trainingNaam: "Rekenen coaching", bron: "aanvullend", schoolId: "school-1", schoolNaam: "School Een", trainerId: 1, trainerNaam: "Anne Trainer" });
+  });
+
+  it("koppelt de verslagstatus via het gecodeerde trainingId (dezelfde sleutel als verslag.ts se resolveerTrainingVoorMutatie gebruikt)", () => {
+    const gecodeerd = codeerAanvullendeTrainingId(42);
+    const verslag = verslagActiviteit({ trainerId: 1, mondayTrainingId: gecodeerd, status: "bevestigd", bron: "portal" });
+    const rijen = bouwAdminTrainingenLijst(LEGE_OVERZICHT, [trainer()], [verslag], [aanvullendeTraining({ id: 42 })]);
+    expect(rijen[0]).toMatchObject({ verslagStatus: "bevestigd", verslagBron: "portal" });
+  });
+
+  it("weergaveStatus: geen live Monday-logboek-checkbox — een bevestigd/voltooid verslag telt als 'logboek ingevuld'", () => {
+    const gecodeerd = codeerAanvullendeTrainingId(42);
+    const verslag = verslagActiviteit({ trainerId: 1, mondayTrainingId: gecodeerd, status: "voltooid" });
+    const rijen = bouwAdminTrainingenLijst(LEGE_OVERZICHT, [trainer()], [verslag], [aanvullendeTraining({ id: 42, datum: "2020-01-01" })]);
+    expect(rijen[0]?.weergaveStatus).toBe("gedaan"); // datum in het verleden + logboekIngevuld -> "gedaan" (training-weergave.ts)
+  });
+
+  it("weergaveStatus: zonder bevestigd verslag en een datum in het verleden -> 'verslag_nog_invullen'", () => {
+    const rijen = bouwAdminTrainingenLijst(LEGE_OVERZICHT, [trainer()], [], [aanvullendeTraining({ id: 42, datum: "2020-01-01" })]);
+    expect(rijen[0]?.weergaveStatus).toBe("verslag_nog_invullen");
+  });
+
+  it("slaat een aanvullende training van een onbekend (bv. verwijderd) traineraccount defensief over", () => {
+    const rijen = bouwAdminTrainingenLijst(LEGE_OVERZICHT, [trainer({ id: 1 })], [], [aanvullendeTraining({ id: 42, trainerId: 999 })]);
+    expect(rijen).toEqual([]);
+  });
+
+  it("mijnleerlijn- en aanvullende trainingen komen samen in één, chronologisch gesorteerde lijst", () => {
+    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["uitv-1", [training({ id: "ml-1", datum: "2026-01-01" })]]]), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() };
+    const rijen = bouwAdminTrainingenLijst(overzicht, [trainer()], [], [aanvullendeTraining({ id: 42, datum: "2026-06-01" })]);
+    expect(rijen.map((r) => r.bron)).toEqual(["aanvullend", "mijnleerlijn"]); // 2026-06 vóór 2026-01, aflopend op datum
+  });
+
+  it("zonder vierde argument blijft het bestaande, uitsluitend-Monday gedrag exact hetzelfde (backwards compatible)", () => {
+    const overzicht: AdminTrainerMondayOverzicht = { trainingenPerTrainer: new Map([["uitv-1", [training()]]]), scholenPerTrainer: new Map(), scholen: new Map(), trainingenPerSchool: new Map() };
+    const rijen = bouwAdminTrainingenLijst(overzicht, [trainer()], []);
+    expect(rijen).toHaveLength(1);
+    expect(rijen[0]?.bron).toBe("mijnleerlijn");
   });
 });

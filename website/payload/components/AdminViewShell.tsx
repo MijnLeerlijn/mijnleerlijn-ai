@@ -26,6 +26,7 @@ import { TrainersTrainingenView } from "./TrainersTrainingenView";
 import { TrainersTodoView } from "./TrainersTodoView";
 import { TrainersActiviteitView } from "./TrainersActiviteitView";
 import { SchoolDetailView } from "./SchoolDetailView";
+import { TrainersUpsellView } from "./TrainersUpsellView";
 
 // Admin-shell-fix (2026-07-28): custom views die via admin.components.views
 // worden geregistreerd, krijgen van Payload's eigen RootPage-dispatcher géén
@@ -332,6 +333,16 @@ export function SchoolDetailViewShell(props: AdminViewServerProps) {
   return (
     <InAdminShell props={props} viewType="trainersSchool" requiredPermission="trainers.dashboard">
       <SchoolDetailView />
+    </InAdminShell>
+  );
+}
+
+// Upsell-ronde (2026-09-02, spec §12) — "Trainingen & upsell", eigen
+// nav-groups.ts-item (i.t.t. de drill-downs hierboven) met eigen permissie.
+export function TrainersUpsellViewShell(props: AdminViewServerProps) {
+  return (
+    <InAdminShell props={props} viewType="trainersUpsell" requiredPermission="trainers.upsell">
+      <TrainersUpsellView />
     </InAdminShell>
   );
 }

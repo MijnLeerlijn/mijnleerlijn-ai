@@ -10,6 +10,7 @@ import type {
   AdminTrainerVerslagRegel,
   AdminTrainerOproepRegel,
   AdminTrainerBestandenTab,
+  AdminTrainerUpsell,
 } from "@/lib/admin/trainers/trainerdetail";
 import type { TrainerScholenResultaat, TrainingMetSchool } from "@/lib/trainers/monday-links";
 import type { LogboekItemRecord } from "@/lib/trainers/logboek";
@@ -45,12 +46,13 @@ import { VerslagenLijst, LogboekLijst } from "./AdminVerslagLogboek";
 // React-state) — zie lib/admin/trainers/trainerdetail.ts se moduletoelichting
 // voor de reden (voorkomt 3x dezelfde Monday-boarddata per paginalading).
 
-const TABS = ["overzicht", "scholen", "trainingen", "verslagen", "logboek", "telefonie", "bestanden"] as const;
+const TABS = ["overzicht", "scholen", "trainingen", "upsell", "verslagen", "logboek", "telefonie", "bestanden"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   overzicht: "Overzicht",
   scholen: "Scholen",
   trainingen: "Trainingen",
+  upsell: "Upsell",
   verslagen: "Verslagen",
   logboek: "Logboek",
   telefonie: "Telefonie",
@@ -110,6 +112,7 @@ function DetailVoorTrainer({ trainerId, initialTab }: { trainerId: string; initi
   const [overzicht, setOverzicht] = useState<AdminTrainerOverzichtTab | null>(null);
   const [scholen, setScholen] = useState<TrainerScholenResultaat | null>(null);
   const [trainingen, setTrainingen] = useState<TrainingMetSchool[] | null>(null);
+  const [upsell, setUpsell] = useState<AdminTrainerUpsell | null>(null);
   const [verslagen, setVerslagen] = useState<AdminTrainerVerslagRegel[] | null>(null);
   const [logboek, setLogboek] = useState<LogboekItemRecord[] | null>(null);
   const [telefonie, setTelefonie] = useState<AdminTrainerOproepRegel[] | null>(null);
@@ -210,6 +213,9 @@ function DetailVoorTrainer({ trainerId, initialTab }: { trainerId: string; initi
           case "trainingen":
             setTrainingen(data as TrainingMetSchool[]);
             break;
+          case "upsell":
+            setUpsell(data as AdminTrainerUpsell);
+            break;
           case "verslagen":
             setVerslagen(data as AdminTrainerVerslagRegel[]);
             break;
@@ -272,6 +278,7 @@ function DetailVoorTrainer({ trainerId, initialTab }: { trainerId: string; initi
       {!tabLaden && tab === "overzicht" && (overzicht ? <OverzichtTab data={overzicht} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "scholen" && (scholen ? <ScholenTab data={scholen} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "trainingen" && (trainingen ? <TrainingenTab data={trainingen} /> : <TabFoutmelding />)}
+      {!tabLaden && tab === "upsell" && (upsell ? <UpsellTab data={upsell} /> : <TabFoutmelding />)}
       {!tabLaden && tab === "verslagen" && (verslagen ? (
         <VerslagenLijst
           data={verslagen}
@@ -450,7 +457,14 @@ function TrainingenTab({ data }: { data: TrainingMetSchool[] }) {
                   {groepen[status].map((t) => (
                     <tr key={t.id}>
                       <td className={t.datum ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(t.datum)}</td>
-                      <td>{t.naam}</td>
+                      <td>
+                        {t.naam}
+                        {t.bron === "aanvullend" && (
+                          <span style={{ marginLeft: 7 }}>
+                            <AdminStatusBadge label="Aanvullend" kleur="purple" />
+                          </span>
+                        )}
+                      </td>
                       <td>{t.schoolNaam}</td>
                       <td>{t.logboekIngevuld ? "Ja" : "Nee"}</td>
                     </tr>
@@ -461,6 +475,22 @@ function TrainingenTab({ data }: { data: TrainingMetSchool[] }) {
           </div>
         ))}
     </>
+  );
+}
+
+function UpsellTab({ data }: { data: AdminTrainerUpsell }) {
+  return (
+    <div className="ml-sales__kaarten-rij" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+      <MiniKpiKaart waarde={data.aantalMijnleerlijn} label="MijnLeerlijn-trainingen" kleur="blue" />
+      <MiniKpiKaart waarde={data.aantalAanvullend} label="Aanvullende trainingen" kleur="purple" />
+      <MiniKpiKaart waarde={data.aantalScholenMetAanvullend} label="Scholen met aanvullend" kleur="teal" />
+      <div className="ml-sales__kaart" style={{ textAlign: "center" }}>
+        <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{data.verhouding === null ? "—" : data.verhouding}</p>
+        <p className="ml-sales__kaart-tekst" style={{ margin: 0 }}>
+          Aanvullend t.o.v. MijnLeerlijn
+        </p>
+      </div>
+    </div>
   );
 }
 

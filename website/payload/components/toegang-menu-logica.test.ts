@@ -7,10 +7,11 @@ const trainers = NAV_GROUPS.find((g) => g.id === "trainers")!;
 const helpdeskAi = NAV_GROUPS.find((g) => g.id === "helpdesk-ai")!; // heeft mutedItems
 
 describe("alleItemIds", () => {
-  it("bevat exact de 8 Trainers-permissie-ID's uit de opdracht", () => {
+  it("bevat exact de 9 Trainers-permissie-ID's (8 uit de opdracht + trainers.upsell, Upsell-ronde 2026-09-02)", () => {
     expect(alleItemIds(trainers)).toEqual([
       "trainers.dashboard",
       "trainers.trainingen",
+      "trainers.upsell",
       "trainers.todo",
       "trainers.activiteit",
       "trainers.accounts",
@@ -30,12 +31,12 @@ describe("alleItemIds", () => {
 describe("berekenGroepTelling", () => {
   it("'alles' is waar wanneer elk item van de groep geselecteerd is", () => {
     const telling = berekenGroepTelling(trainers, new Set(alleItemIds(trainers)));
-    expect(telling).toEqual({ aantalGeselecteerd: 8, totaal: 8, alles: true, niets: false });
+    expect(telling).toEqual({ aantalGeselecteerd: 9, totaal: 9, alles: true, niets: false });
   });
 
   it("'niets' is waar bij een lege selectie", () => {
     const telling = berekenGroepTelling(trainers, new Set());
-    expect(telling).toEqual({ aantalGeselecteerd: 0, totaal: 8, alles: false, niets: true });
+    expect(telling).toEqual({ aantalGeselecteerd: 0, totaal: 9, alles: false, niets: true });
   });
 
   it("noch 'alles' noch 'niets' is waar bij een gedeeltelijke selectie (indeterminate)", () => {
@@ -47,7 +48,7 @@ describe("berekenGroepTelling", () => {
 
   it("selecties uit EEN ANDERE groep tellen niet mee", () => {
     const telling = berekenGroepTelling(trainers, new Set(["sales.overzicht", "creator.creator"]));
-    expect(telling).toEqual({ aantalGeselecteerd: 0, totaal: 8, alles: false, niets: true });
+    expect(telling).toEqual({ aantalGeselecteerd: 0, totaal: 9, alles: false, niets: true });
   });
 });
 

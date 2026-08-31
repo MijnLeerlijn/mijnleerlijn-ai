@@ -6,6 +6,7 @@ import { bepaalScholenVoorTrainer, haalAlleTrainingenVoorTrainer, type TrainerSc
 import { haalLogboekVoorTrainer, type LogboekItemRecord } from "@/lib/trainers/logboek";
 import { haalMijnBestanden, haalMetMijGedeeldeBestanden, type TrainerBestandRecord, type GedeeldBestandRecord } from "@/lib/trainers/bestanden";
 import { haalActieveGroepenVoorTrainer, type TrainerDeelgroepSamenvatting } from "@/lib/trainers/groepen";
+import { haalAanvullendeTrainingenAlsSamenvattingen } from "@/lib/trainers/aanvullende-trainingen";
 import type { VerslagRecord } from "@/lib/trainers/verslag";
 import { haalKennisvragenSinds } from "./aggregatie";
 
@@ -135,14 +136,59 @@ export async function haalAdminTrainerScholenTab(payload: Payload, trainerId: nu
 // ---------------------------------------------------------------------------
 // Trainingen — volledige lijst, dezelfde statusindeling als de portal (de
 // UI groepeert dit zelf via lib/trainers/training-weergave.ts, net als de
-// portal-trainingenpagina — geen tweede groepeerimplementatie hier)
+// portal-trainingenpagina — geen tweede groepeerimplementatie hier).
+//
+// Upsell-ronde (2026-09-02, spec §A4/§10/§11) — aangevuld met de aanvullende
+// trainingen van deze trainer (lib/trainers/aanvullende-trainingen.ts se
+// haalAanvullendeTrainingenAlsSamenvattingen, exact dezelfde TrainingMetSchool
+// -vorm, dus een kale concat volstaat) — zelfde principe als de portal se
+// eigen /trainingen-pagina in Fase 1: "behandel een aanvullende training
+// verder als een normale training", ook hier in admin-context.
 // ---------------------------------------------------------------------------
 
 export async function haalAdminTrainerTrainingenTab(payload: Payload, trainerId: number): Promise<TrainerDetailTabUitkomst<TrainingMetSchool[]>> {
   const trainer = await magBekeken(payload, trainerId);
   if (!trainer) return { soort: "niet_gevonden" };
-  const trainingen = await haalAlleTrainingenVoorTrainer(trainer);
-  return { soort: "ok", data: trainingen };
+  const [trainingen, aanvullendeTrainingen] = await Promise.all([haalAlleTrainingenVoorTrainer(trainer), haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer)]);
+  return { soort: "ok", data: [...trainingen, ...aanvullendeTrainingen] };
+}
+
+// ---------------------------------------------------------------------------
+// Upsell (Upsell-ronde, 2026-09-02, spec §11) — aparte, kleine tab i.p.v.
+// meegenomen in Overzicht (zelfde kostenisolatie-principe als elke andere
+// functie in dit bestand, zie de moduletoelichting bovenaan): een admin die
+// alleen de Overzicht-tab bekijkt, betaalt niet de kosten van deze tellingen.
+// Hergebruikt dezelfde twee al-bestaande, trainer-gescoped leesfuncties als
+// hierboven (haalAlleTrainingenVoorTrainer/haalAanvullendeTrainingenAlsSamenvattingen)
+// — géén nieuwe Monday-aanroep, géén nieuwe Payload-query.
+// ---------------------------------------------------------------------------
+
+export interface AdminTrainerUpsell {
+  aantalMijnleerlijn: number;
+  aantalAanvullend: number;
+  aantalScholenMetAanvullend: number;
+  /** aanvullend / mijnleerlijn, afgerond op 2 decimalen — null zolang er nog geen ML-trainingen zijn (voorkomt delen door nul/misleidende oneindige verhouding). */
+  verhouding: number | null;
+}
+
+export async function haalAdminTrainerUpsell(payload: Payload, trainerId: number): Promise<TrainerDetailTabUitkomst<AdminTrainerUpsell>> {
+  const trainer = await magBekeken(payload, trainerId);
+  if (!trainer) return { soort: "niet_gevonden" };
+
+  const [mlTrainingen, aanvullendeTrainingen] = await Promise.all([haalAlleTrainingenVoorTrainer(trainer), haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer)]);
+  const aantalMijnleerlijn = mlTrainingen.length;
+  const aantalAanvullend = aanvullendeTrainingen.length;
+  const scholenMetAanvullend = new Set(aanvullendeTrainingen.map((t) => t.schoolId));
+
+  return {
+    soort: "ok",
+    data: {
+      aantalMijnleerlijn,
+      aantalAanvullend,
+      aantalScholenMetAanvullend: scholenMetAanvullend.size,
+      verhouding: aantalMijnleerlijn > 0 ? Math.round((aantalAanvullend / aantalMijnleerlijn) * 100) / 100 : null,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

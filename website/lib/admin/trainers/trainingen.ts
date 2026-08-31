@@ -1,7 +1,8 @@
 import { bepaalWeergaveStatus, type TrainingWeergaveStatus } from "@/lib/trainers/training-weergave";
 import { vandaagIsoAmsterdam, type AdminTrainerMondayOverzicht } from "@/lib/trainers/monday-links";
+import { codeerAanvullendeTrainingId } from "@/lib/trainers/aanvullende-trainingen";
 import type { VerslagRecord } from "@/lib/trainers/verslag";
-import type { AdminVerslagActiviteit, AdminTrainerAccount } from "./aggregatie";
+import type { AdminVerslagActiviteit, AdminTrainerAccount, AdminAanvullendeTraining } from "./aggregatie";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — "Alle trainingen" adminbreed
 // (spec §4). Rijniveau is (trainer, training) — niet uitsluitend training —
@@ -28,6 +29,8 @@ export interface AdminTrainingRegel {
   /** Null = deze trainer heeft nog geen verslagrij voor deze training gestart. */
   verslagStatus: VerslagRecord["status"] | null;
   verslagBron: "portal" | "telefoon" | null;
+  /** Upsell-ronde (2026-09-02, spec §H/§10/§11/§12) — zelfde veld/waarden als TrainingSamenvatting.bron (lib/trainers/monday-links.ts): één robuuste herkomst-indicatie, geen tweede interpretatie. */
+  bron: "mijnleerlijn" | "aanvullend";
 }
 
 /**
@@ -38,9 +41,27 @@ export interface AdminTrainingRegel {
  * meegegeven lijst vallen en hier als "nog geen verslag" tonen terwijl er in
  * werkelijkheid ooit wél één was. Aanvaard, gedocumenteerd randgeval — zie
  * het opleverrapport.
+ *
+ * `aanvullendeTrainingen` (Upsell-ronde, 2026-09-02, spec §10/§11/§12) —
+ * optioneel, admin-brede lijst uit aggregatie.ts se haalAlleAanvullendeTrainingen.
+ * Elke aanroeper die de bestaande, Monday-only lijst wil (geen upsell-context
+ * nodig) kan dit weglaten — geen bestaande aanroepplek breekt. Wordt hier
+ * NIET via mondayOverzicht.trainingenPerTrainer verwerkt (aanvullende
+ * trainingen bestaan nergens in Monday) maar in een eigen, tweede lus, op
+ * dezelfde manier omgezet naar een AdminTrainingRegel — inclusief
+ * codeerAanvullendeTrainingId zodat verslagPerTrainerTraining 'm op precies
+ * dezelfde sleutel terugvindt als training-verslagen.mondayTrainingId
+ * (verslag.ts se resolveerTrainingVoorMutatie schrijft daar al diezelfde
+ * gecodeerde string naartoe — geen tweede sleutelconventie).
  */
-export function bouwAdminTrainingenLijst(mondayOverzicht: AdminTrainerMondayOverzicht, trainers: AdminTrainerAccount[], verslagenActiviteit: AdminVerslagActiviteit[]): AdminTrainingRegel[] {
+export function bouwAdminTrainingenLijst(
+  mondayOverzicht: AdminTrainerMondayOverzicht,
+  trainers: AdminTrainerAccount[],
+  verslagenActiviteit: AdminVerslagActiviteit[],
+  aanvullendeTrainingen: AdminAanvullendeTraining[] = []
+): AdminTrainingRegel[] {
   const trainerPerMondayId = new Map(trainers.map((t) => [t.mondayUitvoerderItemId, t]));
+  const trainerPerId = new Map(trainers.map((t) => [t.id, t]));
   const verslagPerTrainerTraining = new Map(verslagenActiviteit.map((v) => [`${v.trainerId}:${v.mondayTrainingId}`, v]));
   const vandaag = vandaagIsoAmsterdam();
 
@@ -62,13 +83,39 @@ export function bouwAdminTrainingenLijst(mondayOverzicht: AdminTrainerMondayOver
         ruweStatusTekst: training.ruweStatusTekst,
         verslagStatus: verslag?.status ?? null,
         verslagBron: verslag?.bron ?? null,
+        bron: training.bron,
       });
     }
   }
 
+  for (const aanvullend of aanvullendeTrainingen) {
+    const trainer = trainerPerId.get(aanvullend.trainerId);
+    if (!trainer) continue; // defensief — zelfde reden als hierboven (bv. inmiddels verwijderd traineraccount)
+    const trainingId = codeerAanvullendeTrainingId(aanvullend.id);
+    const verslag = verslagPerTrainerTraining.get(`${trainer.id}:${trainingId}`);
+    // logboekIngevuld heeft hier geen live Monday-checkbox om te lezen (zie
+    // lib/trainers/aanvullende-trainingen.ts se haalAanvullendeTrainingenAlsSamenvattingen)
+    // — zelfde afleiding hier: een bevestigd/voltooid verslag telt als "logboek ingevuld".
+    const logboekIngevuld = verslag?.status === "bevestigd" || verslag?.status === "voltooid";
+    rijen.push({
+      trainingId,
+      trainingNaam: aanvullend.naam,
+      schoolId: aanvullend.mondaySchoolId,
+      schoolNaam: aanvullend.schoolNaam ?? "Onbekende school",
+      trainerId: trainer.id,
+      trainerNaam: trainer.naam,
+      datum: aanvullend.datum,
+      weergaveStatus: bepaalWeergaveStatus({ status: "gepland", datum: aanvullend.datum, logboekIngevuld }, vandaag),
+      ruweStatusTekst: null,
+      verslagStatus: verslag?.status ?? null,
+      verslagBron: verslag?.bron ?? null,
+      bron: "aanvullend",
+    });
+  }
+
   // Chronologisch, meest recent eerst — filters (trainer/school/status/
-  // periode/verslagstatus) past de aanroepende laag (API-route/UI) hierna
-  // toe, zelfde scheiding als lib/admin/trainers/todo.ts.
+  // periode/verslagstatus/bron) past de aanroepende laag (API-route/UI)
+  // hierna toe, zelfde scheiding als lib/admin/trainers/todo.ts.
   rijen.sort((a, b) => (b.datum ?? "").localeCompare(a.datum ?? ""));
   return rijen;
 }

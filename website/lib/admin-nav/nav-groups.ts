@@ -215,6 +215,14 @@ export const NAV_GROUPS: NavGroupDef[] = [
       // "trainers.accounts", "trainers.telefonie") — niet zelf verzonnen.
       { id: "dashboard", label: "Dashboard", href: "/admin/trainers", icon: LayoutGrid, color: "teal", description: "Centraal overzicht van alle trainers en hun werk." },
       { id: "trainingen", label: "Alle trainingen", href: "/admin/trainers/trainingen", icon: CirclePlay, color: "blue", description: "Alle trainingen van alle trainers — filters op trainer, school, status, periode, verslagstatus." },
+      {
+        id: "upsell",
+        label: "Trainingen & upsell",
+        href: "/admin/trainers/upsell",
+        icon: TrendingUp,
+        color: "purple",
+        description: "MijnLeerlijn vs. aanvullende trainingen — totalen, verdeling per trainer/school, trainer-multiselect.",
+      },
       { id: "todo", label: "To do", href: "/admin/trainers/todo", icon: ListTodo, color: "orange", description: "Openstaande acties over alle trainers, dezelfde logica als het trainerdashboard." },
       { id: "activiteit", label: "Activiteit", href: "/admin/trainers/activiteit", icon: MessageSquare, color: "purple", description: "Chronologische activiteit — verslagen en logboekitems van alle trainers." },
       { id: "accounts", label: "Trainer Accounts", href: "/admin/collections/trainer-accounts", icon: GraduationCap, color: "teal", description: "Accounts voor trainers.mijnleerlijn.chat.", permission: { type: "collection", slug: "trainer-accounts" } },

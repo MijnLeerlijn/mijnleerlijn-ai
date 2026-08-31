@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { GET } from "./route";
 import { verifyAdminSessionCookie } from "@/lib/auth/verify-session";
-import { haalAdminSchoolBasis, haalAdminSchoolTrainingenTab, haalAdminSchoolVerslagenTab } from "@/lib/admin/trainers/schooldetail";
+import { haalAdminSchoolBasis, haalAdminSchoolTrainingenTab, haalAdminSchoolVerslagenTab, haalAdminSchoolUpsell } from "@/lib/admin/trainers/schooldetail";
 
 // Traineromgeving V2, Fase 5 (2026-08-24) — spec §10/§6: rechten (alleen
 // admin/editor, nooit trainercookie of unauthenticated) en tab-dispatch,
@@ -25,12 +25,14 @@ vi.mock("@/lib/admin/trainers/schooldetail", () => ({
   haalAdminSchoolVerslagenTab: vi.fn(),
   haalAdminSchoolLogboekTab: vi.fn(),
   haalAdminSchoolBestandenTab: vi.fn(),
+  haalAdminSchoolUpsell: vi.fn(),
 }));
 
 const mockVerify = vi.mocked(verifyAdminSessionCookie);
 const mockBasis = vi.mocked(haalAdminSchoolBasis);
 const mockTrainingen = vi.mocked(haalAdminSchoolTrainingenTab);
 const mockVerslagen = vi.mocked(haalAdminSchoolVerslagenTab);
+const mockUpsell = vi.mocked(haalAdminSchoolUpsell);
 
 function maakRequest(query: string) {
   return new NextRequest(`http://localhost:3000/api/admin/trainers/school${query}`);
@@ -41,6 +43,7 @@ beforeEach(() => {
   mockBasis.mockReset();
   mockTrainingen.mockReset();
   mockVerslagen.mockReset();
+  mockUpsell.mockReset();
   mockVerify.mockResolvedValue({ user: { id: 1, role: "editor" }, cookieAanwezig: true });
 });
 
@@ -110,5 +113,12 @@ describe("GET /api/admin/trainers/school — tab-dispatch", () => {
     mockVerslagen.mockResolvedValue({ soort: "niet_gevonden" });
     const response = await GET(maakRequest("?id=s999&tab=verslagen"));
     expect(response.status).toBe(404);
+  });
+
+  it("dispatcht tab=upsell naar haalAdminSchoolUpsell (Upsell-ronde, 2026-09-02)", async () => {
+    mockUpsell.mockResolvedValue({ soort: "ok", data: { aantalMijnleerlijn: 1, aantalAanvullend: 0, totaal: 1, aanvullendeTrainingen: [] } });
+    const response = await GET(maakRequest("?id=s1&tab=upsell"));
+    expect(response.status).toBe(200);
+    expect(mockUpsell).toHaveBeenCalledWith(expect.anything(), "s1");
   });
 });

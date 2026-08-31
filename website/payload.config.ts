@@ -302,6 +302,13 @@ export default buildConfig({
           path: "/trainers/school",
           exact: true,
         },
+        // Upsell-ronde (2026-09-02, spec §12) — "Trainingen & upsell", zelfde
+        // exact:true-reden als de andere "/trainers/*"-registraties hierboven.
+        trainersUpsell: {
+          Component: "@/payload/components/AdminViewShell#TrainersUpsellViewShell",
+          path: "/trainers/upsell",
+          exact: true,
+        },
       },
     },
   },

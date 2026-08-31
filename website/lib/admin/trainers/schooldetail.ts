@@ -7,6 +7,7 @@ import {
   haalRecenteVerslagActiviteitVoorAlleTrainers,
   haalMislukteTelefonieOproepenVoorAlleTrainers,
   haalLogboekitemsVoorAlleTrainers,
+  haalAlleAanvullendeTrainingen,
   type AdminTrainerAccount,
   type AdminLogboekItem,
 } from "./aggregatie";
@@ -152,18 +153,19 @@ export interface AdminSchoolOverzichtTab {
 const MAX_ACTIVITEIT_OVERZICHT = 20;
 
 export async function haalAdminSchoolOverzichtTab(payload: Payload, schoolId: string): Promise<SchoolDetailTabUitkomst<AdminSchoolOverzichtTab>> {
-  const [mondayOverzicht, trainers, openVerslagen, verslagenActiviteit, misluktOproepen, logboekitems] = await Promise.all([
+  const [mondayOverzicht, trainers, openVerslagen, verslagenActiviteit, misluktOproepen, logboekitems, aanvullendeTrainingen] = await Promise.all([
     haalTrainingenEnScholenVoorAlleTrainers(),
     haalAlleTrainerAccounts(payload),
     haalOpenVerslagenVoorAlleTrainers(payload),
     haalRecenteVerslagActiviteitVoorAlleTrainers(payload),
     haalMislukteTelefonieOproepenVoorAlleTrainers(payload),
     haalLogboekitemsVoorAlleTrainers(payload),
+    haalAlleAanvullendeTrainingen(payload),
   ]);
   const school = mondayOverzicht.scholen.get(schoolId);
   if (!school) return { soort: "niet_gevonden" };
 
-  const alleRijen = bouwAdminTrainingenLijst(mondayOverzicht, trainers, verslagenActiviteit).filter((r) => r.schoolId === schoolId);
+  const alleRijen = bouwAdminTrainingenLijst(mondayOverzicht, trainers, verslagenActiviteit, aanvullendeTrainingen).filter((r) => r.schoolId === schoolId);
   const komendeTrainingen = alleRijen.filter((r) => r.weergaveStatus === "komend" || r.weergaveStatus === "vandaag").sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? ""));
 
   const openTodos = bouwAdminTodoLijst(mondayOverzicht, openVerslagen, trainers).filter((t) => t.schoolId === schoolId);
@@ -195,13 +197,55 @@ export async function haalAdminSchoolTrainersTab(payload: Payload, schoolId: str
 // ---------------------------------------------------------------------------
 
 export async function haalAdminSchoolTrainingenTab(payload: Payload, schoolId: string): Promise<SchoolDetailTabUitkomst<AdminTrainingRegel[]>> {
-  const [mondayOverzicht, trainers, verslagenActiviteit] = await Promise.all([
+  const [mondayOverzicht, trainers, verslagenActiviteit, aanvullendeTrainingen] = await Promise.all([
     haalTrainingenEnScholenVoorAlleTrainers(),
     haalAlleTrainerAccounts(payload),
     haalRecenteVerslagActiviteitVoorAlleTrainers(payload),
+    haalAlleAanvullendeTrainingen(payload),
   ]);
   if (!mondayOverzicht.scholen.has(schoolId)) return { soort: "niet_gevonden" };
-  return { soort: "ok", data: bouwAdminTrainingenLijst(mondayOverzicht, trainers, verslagenActiviteit).filter((r) => r.schoolId === schoolId) };
+  return { soort: "ok", data: bouwAdminTrainingenLijst(mondayOverzicht, trainers, verslagenActiviteit, aanvullendeTrainingen).filter((r) => r.schoolId === schoolId) };
+}
+
+// ---------------------------------------------------------------------------
+// Upsell-tab (Upsell-ronde, 2026-09-02, spec §10) — aparte tab i.p.v. in de
+// bestaande kopregel/Overzicht-tab geprikt: dit is een NIEUW inzicht voor
+// beheer ("hoeveel upsell ontstaat hier"), geen aanvulling op een bestaand
+// begrip — zelfde reden als waarom de trainerportal er in Fase 1 een eigen
+// tab "Aanvullend" voor kreeg i.p.v. een uitbreiding van de bestaande
+// Trainingen-tab. Hergebruikt bouwAdminTrainingenLijst (nu bron-bewust) i.p.v.
+// een eigen telling — dezelfde rijen die de Trainingen-tab ook al toont, hier
+// samengevat + gefilterd op bron="aanvullend".
+// ---------------------------------------------------------------------------
+
+export interface AdminSchoolUpsell {
+  aantalMijnleerlijn: number;
+  aantalAanvullend: number;
+  totaal: number;
+  aanvullendeTrainingen: AdminTrainingRegel[];
+}
+
+export async function haalAdminSchoolUpsell(payload: Payload, schoolId: string): Promise<SchoolDetailTabUitkomst<AdminSchoolUpsell>> {
+  const [mondayOverzicht, trainers, verslagenActiviteit, aanvullendeTrainingen] = await Promise.all([
+    haalTrainingenEnScholenVoorAlleTrainers(),
+    haalAlleTrainerAccounts(payload),
+    haalRecenteVerslagActiviteitVoorAlleTrainers(payload),
+    haalAlleAanvullendeTrainingen(payload),
+  ]);
+  if (!mondayOverzicht.scholen.has(schoolId)) return { soort: "niet_gevonden" };
+
+  const alleRijen = bouwAdminTrainingenLijst(mondayOverzicht, trainers, verslagenActiviteit, aanvullendeTrainingen).filter((r) => r.schoolId === schoolId);
+  const aanvullendRijen = alleRijen.filter((r) => r.bron === "aanvullend");
+
+  return {
+    soort: "ok",
+    data: {
+      aantalMijnleerlijn: alleRijen.length - aanvullendRijen.length,
+      aantalAanvullend: aanvullendRijen.length,
+      totaal: alleRijen.length,
+      aanvullendeTrainingen: aanvullendRijen,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

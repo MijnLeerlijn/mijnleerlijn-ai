@@ -36,12 +36,18 @@ const VERSLAG_STATUS_LABEL: Record<NonNullable<AdminTrainingRegel["verslagStatus
   geen: "Nog geen verslag",
 };
 
+const BRON_LABEL: Record<AdminTrainingRegel["bron"], string> = {
+  mijnleerlijn: "MijnLeerlijn",
+  aanvullend: "Aanvullend",
+};
+
 interface FilterState {
   zoekterm: string;
   status: string;
   verslagStatus: string;
+  bron: string;
 }
-const LEGE_FILTERS: FilterState = { zoekterm: "", status: "", verslagStatus: "" };
+const LEGE_FILTERS: FilterState = { zoekterm: "", status: "", verslagStatus: "", bron: "" };
 
 export function TrainersTrainingenView() {
   const [trainingen, setTrainingen] = useState<AdminTrainingRegel[]>([]);
@@ -69,6 +75,7 @@ export function TrainersTrainingenView() {
       if (filters.verslagStatus) {
         if (filters.verslagStatus === "geen" ? t.verslagStatus !== null : t.verslagStatus !== filters.verslagStatus) return false;
       }
+      if (filters.bron && t.bron !== filters.bron) return false;
       return true;
     });
   }, [trainingen, filters]);
@@ -106,7 +113,15 @@ export function TrainersTrainingenView() {
             </option>
           ))}
         </select>
-        {(filters.zoekterm || filters.status || filters.verslagStatus) && (
+        <select value={filters.bron} onChange={(e) => setFilters((f) => ({ ...f, bron: e.target.value }))} style={{ padding: "6px 10px" }}>
+          <option value="">MijnLeerlijn + aanvullend</option>
+          {Object.entries(BRON_LABEL).map(([waarde, label]) => (
+            <option key={waarde} value={waarde}>
+              {label}
+            </option>
+          ))}
+        </select>
+        {(filters.zoekterm || filters.status || filters.verslagStatus || filters.bron) && (
           <button type="button" className="ml-sales__knop" onClick={() => setFilters(LEGE_FILTERS)}>
             Wis filters
           </button>
@@ -126,6 +141,7 @@ export function TrainersTrainingenView() {
                 <th>Trainer</th>
                 <th>School</th>
                 <th>Training</th>
+                <th>Bron</th>
                 <th>Status</th>
                 <th>Verslagstatus</th>
                 <th>Bron verslag</th>
@@ -142,6 +158,7 @@ export function TrainersTrainingenView() {
                     <Link href={`/admin/trainers/school?id=${t.schoolId}`}>{t.schoolNaam}</Link>
                   </td>
                   <td>{t.trainingNaam}</td>
+                  <td>{t.bron === "aanvullend" ? <AdminStatusBadge label="Aanvullend" kleur="purple" /> : <span className="ml-sales__ontbrekend">MijnLeerlijn</span>}</td>
                   <td>
                     <AdminStatusBadge label={STATUS_LABEL[t.weergaveStatus]} kleur={WEERGAVE_STATUS_KLEUR[t.weergaveStatus]} />
                   </td>

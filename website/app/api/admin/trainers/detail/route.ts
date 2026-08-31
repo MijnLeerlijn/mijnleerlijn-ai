@@ -13,6 +13,7 @@ import {
   haalAdminTrainerLogboekTab,
   haalAdminTrainerTelefonieTab,
   haalAdminTrainerBestandenTab,
+  haalAdminTrainerUpsell,
 } from "@/lib/admin/trainers/trainerdetail";
 
 // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdetail (spec §3).
@@ -24,7 +25,7 @@ import {
 // bij elke paginalading drie keer dezelfde Monday-boarddata ophalen (zie de
 // toelichting bovenaan trainerdetail.ts) en een overbodig grote payload naar
 // de client sturen (spec §13/§16).
-const TABS = ["basis", "overzicht", "scholen", "trainingen", "verslagen", "logboek", "telefonie", "bestanden"] as const;
+const TABS = ["basis", "overzicht", "scholen", "trainingen", "verslagen", "logboek", "telefonie", "bestanden", "upsell"] as const;
 type Tab = (typeof TABS)[number];
 
 function isTab(waarde: string | null): waarde is Tab {
@@ -70,6 +71,8 @@ export async function GET(request: NextRequest) {
         return haalAdminTrainerTelefonieTab(payload, trainerId);
       case "bestanden":
         return haalAdminTrainerBestandenTab(payload, trainerId);
+      case "upsell":
+        return haalAdminTrainerUpsell(payload, trainerId);
     }
   })();
 
