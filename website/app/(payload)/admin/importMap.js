@@ -62,6 +62,9 @@ import { TrainersTrainingenViewShell as TrainersTrainingenViewShell_1e788d78f4aa
 import { TrainersTodoViewShell as TrainersTodoViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { TrainersActiviteitViewShell as TrainersActiviteitViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { SchoolDetailViewShell as SchoolDetailViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { TrainersUpsellViewShell as TrainersUpsellViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { TrainersStartbegeleidingViewShell as TrainersStartbegeleidingViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
+import { TrainersStartbegeleidingSchoolViewShell as TrainersStartbegeleidingSchoolViewShell_1e788d78f4aade245b171d8fd6e8c09d } from '@/payload/components/AdminViewShell'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -130,5 +133,8 @@ export const importMap = {
   "@/payload/components/AdminViewShell#TrainersTodoViewShell": TrainersTodoViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#TrainersActiviteitViewShell": TrainersActiviteitViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@/payload/components/AdminViewShell#SchoolDetailViewShell": SchoolDetailViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#TrainersUpsellViewShell": TrainersUpsellViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#TrainersStartbegeleidingViewShell": TrainersStartbegeleidingViewShell_1e788d78f4aade245b171d8fd6e8c09d,
+  "@/payload/components/AdminViewShell#TrainersStartbegeleidingSchoolViewShell": TrainersStartbegeleidingSchoolViewShell_1e788d78f4aade245b171d8fd6e8c09d,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }
