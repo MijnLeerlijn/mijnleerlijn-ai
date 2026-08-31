@@ -2,10 +2,15 @@
 
 import { useState, type ReactNode } from "react";
 
-export type SchooldetailTabSleutel = "trainingen" | "ai" | "logboek" | "bestanden" | "contactpersoon";
+export type SchooldetailTabSleutel = "trainingen" | "aanvullend" | "ai" | "logboek" | "bestanden" | "contactpersoon";
 
 const TABS: { sleutel: SchooldetailTabSleutel; label: string }[] = [
   { sleutel: "trainingen", label: "Trainingen" },
+  // Upsell-ronde (2026-09-02, spec §A1) — eigen tab, direct na Trainingen:
+  // "trainer ziet alle aanvullende trainingen van die school", los van de
+  // gemengde Trainingen-planning (waar aanvullende trainingen óók al tussen
+  // staan, zie scholen/[school]/page.tsx se verrijkSchoolDetailMetAanvullend).
+  { sleutel: "aanvullend", label: "Aanvullende trainingen" },
   { sleutel: "ai", label: "Vraag aan AI" },
   { sleutel: "logboek", label: "Logboek" },
   { sleutel: "bestanden", label: "Bestanden" },
@@ -37,12 +42,14 @@ const TABS: { sleutel: SchooldetailTabSleutel; label: string }[] = [
  */
 export function SchooldetailTabs({
   trainingenPaneel,
+  aanvullendPaneel,
   aiPaneel,
   logboekPaneel,
   bestandenPaneel,
   contactpersoonPaneel,
 }: {
   trainingenPaneel: ReactNode;
+  aanvullendPaneel: ReactNode;
   aiPaneel: ReactNode;
   logboekPaneel: ReactNode;
   bestandenPaneel: ReactNode;
@@ -80,6 +87,9 @@ export function SchooldetailTabs({
 
       <div id="schooldetail-paneel-trainingen" role="tabpanel" aria-labelledby="schooldetail-tab-trainingen" hidden={actief !== "trainingen"}>
         {trainingenPaneel}
+      </div>
+      <div id="schooldetail-paneel-aanvullend" role="tabpanel" aria-labelledby="schooldetail-tab-aanvullend" hidden={actief !== "aanvullend"}>
+        {aanvullendPaneel}
       </div>
       <div id="schooldetail-paneel-ai" role="tabpanel" aria-labelledby="schooldetail-tab-ai" hidden={actief !== "ai"} className="p-3.5">
         {aiPaneel}

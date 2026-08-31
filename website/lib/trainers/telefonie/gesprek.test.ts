@@ -110,6 +110,7 @@ function training(overrides: Partial<TrainingMetSchool> = {}): TrainingMetSchool
     datum: vandaagIsoAmsterdam(),
     logboekIngevuld: false,
     trainerboardItemId: TRAINERBOARD_ITEM_ID,
+    bron: "mijnleerlijn",
     schoolId: SCHOOL_ID,
     schoolNaam: SCHOOL_NAAM,
     ...overrides,
@@ -119,7 +120,7 @@ function training(overrides: Partial<TrainingMetSchool> = {}): TrainingMetSchool
 function gevondenTrainingVoorMutatie(overrides: Partial<TrainingMetSchool> = {}): TrainingVoorMutatie {
   const t = training(overrides);
   return {
-    training: { id: t.id, naam: t.naam, status: t.status, ruweStatusTekst: t.ruweStatusTekst, datum: t.datum, logboekIngevuld: t.logboekIngevuld, trainerboardItemId: t.trainerboardItemId },
+    training: { id: t.id, naam: t.naam, status: t.status, ruweStatusTekst: t.ruweStatusTekst, datum: t.datum, logboekIngevuld: t.logboekIngevuld, trainerboardItemId: t.trainerboardItemId, bron: t.bron },
     schoolId: t.schoolId,
     schoolNaam: t.schoolNaam,
   };

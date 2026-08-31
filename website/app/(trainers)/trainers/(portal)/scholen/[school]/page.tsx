@@ -7,9 +7,11 @@ import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalSchoolDetail } from "@/lib/trainers/monday-links";
 import { haalVerslagenPerTraining, haalTelefonischeConceptenVoorTrainer } from "@/lib/trainers/verslag";
 import { haalSchoolBestanden } from "@/lib/trainers/bestanden";
+import { verrijkSchoolDetailMetAanvullend, haalAanvullendeTrainingenVoorSchool } from "@/lib/trainers/aanvullende-trainingen";
 import { formatKorteDatumTijd } from "@/lib/sales/format-datum";
 import { TrainingSecties, LegeToestand } from "./training-secties";
 import { SchooldetailTabs } from "./schooldetail-tabs";
+import { AanvullendeTrainingenPaneel } from "./aanvullende-trainingen-paneel";
 import { BestandenPaneel } from "./bestanden-paneel";
 import { TrainerVraagBlok } from "../../trainer-vraag-blok";
 
@@ -35,18 +37,31 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
   const trainer = await haalIngelogdeTrainer();
   if (!trainer) redirect("/login");
 
-  const school = await haalSchoolDetail(trainer, schoolId);
-  if (!school) notFound();
+  const schoolRuw = await haalSchoolDetail(trainer, schoolId);
+  if (!schoolRuw) notFound();
 
+  const payload = await getPayload({ config });
+  // Upsell-ronde (2026-09-02, spec §A4) — "behandel een aanvullende
+  // training verder als een normale training: zichtbaar in
+  // planning/trainingen; zichtbaar bij de school." Mengt de aanvullende
+  // trainingen van déze school in dezelfde secties/buckets als de
+  // Monday-trainingen — geen tweede Trainingen-weergave.
+  const school = await verrijkSchoolDetailMetAanvullend(payload, trainer, schoolId, schoolRuw);
   const { trainingen } = school;
 
   // Uitsluitend voor de secties die toonLogboekStatus (dus ook de
   // verslag-CTA) tonen — zelfde contextminimalisatie-principe als elders in
   // dit bestand, geen opzoeking voor trainingen waar de CTA toch niet
-  // verschijnt.
-  const payload = await getPayload({ config });
+  // verschijnt. verslagRelevanteIds bevat hierdoor ook eventuele
+  // "aanvullend:<id>"-training-ID's — haalVerslagenPerTraining matcht puur op
+  // de tekstkolom mondayTrainingId, dus dat is geen aparte tak.
   const verslagRelevanteIds = [...trainingen.verslag_nog_invullen, ...trainingen.gedaan].map((t) => t.id);
   const verslagenPerTraining = await haalVerslagenPerTraining(payload, trainer, verslagRelevanteIds);
+
+  // Spec §A1 — de eigen, dedicated tab toont de VOLLEDIGE lijst (los van de
+  // Trainingen-secties/-buckets hierboven, en ongeacht welke trainer hem
+  // toevoegde — schoolgebonden zichtbaarheid, zie haalAanvullendeTrainingenVoorSchool).
+  const aanvullendeTrainingen = (await haalAanvullendeTrainingenVoorSchool(payload, trainer, school.id)) ?? [];
   // Ronde 3.5 (telefonie) — spec §13: "Same on Schooldetail." Los van
   // verslagenPerTraining hierboven: een telefonisch ingesproken concept kan
   // bij een training staan die Monday-status-technisch nog niet in
@@ -65,6 +80,7 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
     .map((t) => ({ id: t.id, naam: t.naam }));
 
   const trainingenPaneel = <TrainingSecties trainingen={trainingen} schoolId={school.id} verslagenPerTraining={verslagenPerTraining} />;
+  const aanvullendPaneel = <AanvullendeTrainingenPaneel schoolId={school.id} initieel={aanvullendeTrainingen} />;
 
   const logboekPaneel =
     school.logboek.length === 0 ? (
@@ -156,6 +172,7 @@ export default async function SchooldetailPagina({ params }: SchooldetailProps) 
       <section className="rounded-xl border border-grijs-200 bg-white shadow-sm">
         <SchooldetailTabs
           trainingenPaneel={trainingenPaneel}
+          aanvullendPaneel={aanvullendPaneel}
           aiPaneel={<TrainerVraagBlok soort="schooldetail" school={{ id: school.id, naam: school.naam }} />}
           logboekPaneel={logboekPaneel}
           bestandenPaneel={

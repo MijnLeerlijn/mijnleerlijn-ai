@@ -59,6 +59,9 @@ import * as migration_20260901_090000_gedeelde_chats_v1 from './20260901_090000_
 import * as migration_20260901_100000_admin_gebruikersbeheer_permissies from './20260901_100000_admin_gebruikersbeheer_permissies';
 import * as migration_20260901_110000_telefonie_stilte_timeout_fragmenten from './20260901_110000_telefonie_stilte_timeout_fragmenten';
 import * as migration_20260901_120000_gedeelde_chats_vervolgen from './20260901_120000_gedeelde_chats_vervolgen';
+import * as migration_20260901_130000_aanvullende_trainingen_v1 from './20260901_130000_aanvullende_trainingen_v1';
+import * as migration_20260901_140000_training_verslagen_aanvullend from './20260901_140000_training_verslagen_aanvullend';
+import * as migration_20260901_150000_trainer_logboek_items_monday_writeback from './20260901_150000_trainer_logboek_items_monday_writeback';
 
 export const migrations = [
   {
@@ -365,5 +368,20 @@ export const migrations = [
     up: migration_20260901_120000_gedeelde_chats_vervolgen.up,
     down: migration_20260901_120000_gedeelde_chats_vervolgen.down,
     name: '20260901_120000_gedeelde_chats_vervolgen',
+  },
+  {
+    up: migration_20260901_130000_aanvullende_trainingen_v1.up,
+    down: migration_20260901_130000_aanvullende_trainingen_v1.down,
+    name: '20260901_130000_aanvullende_trainingen_v1',
+  },
+  {
+    up: migration_20260901_140000_training_verslagen_aanvullend.up,
+    down: migration_20260901_140000_training_verslagen_aanvullend.down,
+    name: '20260901_140000_training_verslagen_aanvullend',
+  },
+  {
+    up: migration_20260901_150000_trainer_logboek_items_monday_writeback.up,
+    down: migration_20260901_150000_trainer_logboek_items_monday_writeback.down,
+    name: '20260901_150000_trainer_logboek_items_monday_writeback',
   },
 ];

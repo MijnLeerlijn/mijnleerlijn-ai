@@ -82,7 +82,7 @@ describe("GET /api/admin/trainers/aandacht — inhoud", () => {
   it("filtert een vastgelopen verslag van een uit Monday verwijderde training ook via deze route", async () => {
     mockTrainers.mockResolvedValue([trainerA]);
     mockMonday.mockResolvedValue({
-      trainingenPerTrainer: new Map([["uitv-a", [{ id: "t1", naam: "T1", status: "gedaan", ruweStatusTekst: "Gedaan", datum: "2026-08-20", logboekIngevuld: false, trainerboardItemId: null, schoolId: "s1", schoolNaam: "School A" }]]]),
+      trainingenPerTrainer: new Map([["uitv-a", [{ id: "t1", naam: "T1", status: "gedaan", ruweStatusTekst: "Gedaan", datum: "2026-08-20", logboekIngevuld: false, trainerboardItemId: null, bron: "mijnleerlijn", schoolId: "s1", schoolNaam: "School A" }]]]),
       scholenPerTrainer: new Map(),
       scholen: new Map(),
       trainingenPerSchool: new Map(),

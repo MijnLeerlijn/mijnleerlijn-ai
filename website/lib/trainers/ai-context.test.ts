@@ -129,8 +129,8 @@ describe("bouwTrainerSchoolPrompt — trainingen per sectie", () => {
       school: maakSchoolDetail({
         trainingen: {
           ...LEGE_TRAININGEN,
-          komend: [{ id: "1", naam: "Training A", status: "gepland" as const, ruweStatusTekst: "Gepland", datum: "2026-09-01", logboekIngevuld: false, trainerboardItemId: "8001" }],
-          open: [{ id: "2", naam: "Training B", status: "open" as const, ruweStatusTekst: null, datum: null, logboekIngevuld: false, trainerboardItemId: "8002" }],
+          komend: [{ id: "1", naam: "Training A", status: "gepland" as const, ruweStatusTekst: "Gepland", datum: "2026-09-01", logboekIngevuld: false, trainerboardItemId: "8001", bron: "mijnleerlijn" as const }],
+          open: [{ id: "2", naam: "Training B", status: "open" as const, ruweStatusTekst: null, datum: null, logboekIngevuld: false, trainerboardItemId: "8002", bron: "mijnleerlijn" as const }],
         },
       }),
     };
@@ -226,10 +226,10 @@ describe("bouwTrainerSchoolPrompt — Ronde 3-integratie (trainingsverslag autom
 
 describe("bouwTrainerAlgemeneContext / bouwTrainerAlgemeenPrompt — contextminimalisatie", () => {
   const DASHBOARD: TrainerDashboardData = {
-    trainingenVandaag: [{ id: "1", naam: "Training Vandaag", status: "gepland", ruweStatusTekst: "Gepland", datum: "2026-08-19", logboekIngevuld: false, trainerboardItemId: "8001", schoolId: "500", schoolNaam: "School A" }],
-    komendeTrainingen: [{ id: "2", naam: "Training Komend", status: "gepland", ruweStatusTekst: "Gepland", datum: "2026-08-25", logboekIngevuld: false, trainerboardItemId: "8002", schoolId: "501", schoolNaam: "School B" }],
+    trainingenVandaag: [{ id: "1", naam: "Training Vandaag", status: "gepland", ruweStatusTekst: "Gepland", datum: "2026-08-19", logboekIngevuld: false, trainerboardItemId: "8001", bron: "mijnleerlijn", schoolId: "500", schoolNaam: "School A" }],
+    komendeTrainingen: [{ id: "2", naam: "Training Komend", status: "gepland", ruweStatusTekst: "Gepland", datum: "2026-08-25", logboekIngevuld: false, trainerboardItemId: "8002", bron: "mijnleerlijn", schoolId: "501", schoolNaam: "School B" }],
     aantalScholen: 5,
-    logboekOpenstaand: [{ id: "3", naam: "Training Verslag", status: "gedaan", ruweStatusTekst: "Gedaan", datum: "2026-08-10", logboekIngevuld: false, trainerboardItemId: "8003", schoolId: "502", schoolNaam: "School C" }],
+    logboekOpenstaand: [{ id: "3", naam: "Training Verslag", status: "gedaan", ruweStatusTekst: "Gedaan", datum: "2026-08-10", logboekIngevuld: false, trainerboardItemId: "8003", bron: "mijnleerlijn", schoolId: "502", schoolNaam: "School C" }],
     bevestigdeScholen: [
       { id: "500", naam: "School A" },
       { id: "501", naam: "School B" },

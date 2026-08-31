@@ -72,7 +72,7 @@ describe("PATCH /api/admin/trainers/logboek/[id]", () => {
   });
 
   it("slaat een geldige wijziging op en geeft het bijgewerkte item terug", async () => {
-    mockWijzig.mockResolvedValue({ soort: "ok", item: { id: 1, mondaySchoolId: "500", schoolNaam: "School A", type: "helpdesk", occurredAt: "2026-08-20T10:00:00.000Z", tekst: "Nieuw.", createdAt: "2026-08-19T00:00:00.000Z" } });
+    mockWijzig.mockResolvedValue({ soort: "ok", item: { id: 1, mondaySchoolId: "500", schoolNaam: "School A", type: "helpdesk", occurredAt: "2026-08-20T10:00:00.000Z", tekst: "Nieuw.", createdAt: "2026-08-19T00:00:00.000Z", mondayUpdateStatus: "niet_verzonden" } });
     const response = await PATCH(maakRequest("PATCH", { type: "helpdesk", tekst: "Nieuw." }), params("1"));
     expect(response.status).toBe(200);
     const data = await response.json();
@@ -81,7 +81,7 @@ describe("PATCH /api/admin/trainers/logboek/[id]", () => {
   });
 
   it("trainer/school-ID's in de request-body worden genegeerd — kunnen nooit worden ombogen (er bestaat geen invoerveld ervoor)", async () => {
-    mockWijzig.mockResolvedValue({ soort: "ok", item: { id: 1, mondaySchoolId: "500", schoolNaam: "School A", type: "notitie", occurredAt: "2026-08-20T10:00:00.000Z", tekst: "Tekst.", createdAt: "2026-08-19T00:00:00.000Z" } });
+    mockWijzig.mockResolvedValue({ soort: "ok", item: { id: 1, mondaySchoolId: "500", schoolNaam: "School A", type: "notitie", occurredAt: "2026-08-20T10:00:00.000Z", tekst: "Tekst.", createdAt: "2026-08-19T00:00:00.000Z", mondayUpdateStatus: "niet_verzonden" } });
     await PATCH(maakRequest("PATCH", { tekst: "Tekst.", trainer: 999, mondaySchoolId: "andere-school", schoolNaam: "Andere school" }), params("1"));
     // De aanroep naar de servicelaag bevat uitsluitend type/occurredAt/tekst — geen trainer/mondaySchoolId, ongeacht wat de body meestuurt.
     expect(mockWijzig).toHaveBeenCalledWith(expect.anything(), 1, { type: undefined, occurredAt: undefined, tekst: "Tekst." });

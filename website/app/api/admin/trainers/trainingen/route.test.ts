@@ -28,8 +28,8 @@ function maakRequest(query = "") {
 
 const trainerA = { id: 1, naam: "Trainer A", email: "a@test.nl", actief: true, mondayUitvoerderItemId: "uitv-a", mondayTrainerboardId: "board-a", telefonieActief: false };
 const trainerB = { id: 2, naam: "Trainer B", email: "b@test.nl", actief: true, mondayUitvoerderItemId: "uitv-b", mondayTrainerboardId: "board-b", telefonieActief: false };
-const trainingA = { id: "t-a", naam: "Training van A", status: "gepland" as const, ruweStatusTekst: "Gepland", datum: "2026-09-01", logboekIngevuld: false, trainerboardItemId: "tb-1", schoolId: "s-a", schoolNaam: "School A" };
-const trainingB = { id: "t-b", naam: "Training van B", status: "gedaan" as const, ruweStatusTekst: "Gedaan", datum: "2026-08-01", logboekIngevuld: true, trainerboardItemId: "tb-2", schoolId: "s-b", schoolNaam: "School B" };
+const trainingA = { id: "t-a", naam: "Training van A", status: "gepland" as const, ruweStatusTekst: "Gepland", datum: "2026-09-01", logboekIngevuld: false, trainerboardItemId: "tb-1", bron: "mijnleerlijn" as const, schoolId: "s-a", schoolNaam: "School A" };
+const trainingB = { id: "t-b", naam: "Training van B", status: "gedaan" as const, ruweStatusTekst: "Gedaan", datum: "2026-08-01", logboekIngevuld: true, trainerboardItemId: "tb-2", bron: "mijnleerlijn" as const, schoolId: "s-b", schoolNaam: "School B" };
 
 beforeEach(() => {
   mockVerify.mockReset();

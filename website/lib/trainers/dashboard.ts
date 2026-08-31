@@ -1,8 +1,10 @@
 import type { Payload } from "payload";
-import { haalDashboardData, type TrainingMetSchool } from "./monday-links";
+import { haalDashboardData, vandaagIsoAmsterdam, type TrainingMetSchool } from "./monday-links";
 import { haalTelefonischeConceptenVoorTrainer, haalVerslagenDieAandachtNodigHebben, haalGestarteConceptenVoorTrainer, telVoltooideVerslagen } from "./verslag";
 import { haalActiviteitVoorTrainer, type ActiviteitItem } from "./activiteit";
 import { bouwActueleTrainingIds, isActueleTraining } from "./training-actualiteit";
+import { groepeerOpWeergaveStatus } from "./training-weergave";
+import { haalAanvullendeTrainingenAlsSamenvattingen } from "./aanvullende-trainingen";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V2, Fase 1 (2026-08-28) — Dashboard V2: "Wat moet ik
@@ -79,15 +81,44 @@ const ACTIVITEIT_LIMIET = 5; // spec: "Bijvoorbeeld de laatste 5."
  * hoeveel categorieën een training tegelijk raakt.
  */
 export async function haalDashboardV2Data(payload: Payload, trainer: AuthTrainer): Promise<DashboardV2Data> {
-  const data = await haalDashboardData(trainer);
-
-  const [telefonischeConcepten, vastgelopenVerslagen, gestarteConcepten, recenteActiviteit, verslagenAfgerond] = await Promise.all([
+  const [mondayData, aanvullendeTrainingen, telefonischeConcepten, vastgelopenVerslagen, gestarteConcepten, recenteActiviteit, verslagenAfgerond] = await Promise.all([
+    haalDashboardData(trainer),
+    haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer),
     haalTelefonischeConceptenVoorTrainer(payload, trainer),
     haalVerslagenDieAandachtNodigHebben(payload, trainer),
     haalGestarteConceptenVoorTrainer(payload, trainer),
     haalActiviteitVoorTrainer(payload, trainer, ACTIVITEIT_LIMIET),
     telVoltooideVerslagen(payload, trainer),
   ]);
+
+  // Upsell-ronde (2026-09-02) — aanvullende trainingen (lib/trainers/
+  // aanvullende-trainingen.ts) tellen hier volwaardig mee: dezelfde
+  // TrainingSamenvatting-vorm, dus dezelfde bucket-indeling (training-
+  // weergave.ts) als een Monday-training — geen tweede interpretatie van
+  // "wat betekent deze training nu". haalDashboardData zelf blijft
+  // ongewijzigd (Monday-only, geen circulaire import).
+  //
+  // Bewust GEEN her-groepering van de VOLLEDIGE samengevoegde lijst (dat was
+  // de eerste versie van deze ronde, teruggedraaid): mondayData.
+  // logboekOpenstaand/trainingenVandaag/komendeTrainingen komen uit
+  // haalDashboardData's EIGEN live Monday-bucketing en zijn met opzet NIET
+  // afgeleid van mondayData.alleTrainingen (zie het commentaar bij
+  // verlopenZonderVerslag hieronder: "verslag_ontbreekt ... heeft de
+  // whitelist niet nodig, dat komt zelf al rechtstreeks uit dezelfde live
+  // Monday-set"). Een her-groepering over de samengevoegde lijst zou die
+  // buckets stilzwijgend weer afhankelijk maken van alleTrainingen. In
+  // plaats daarvan: de aanvullende trainingen apart bucketen (ze zijn onder
+  // elkaar altijd consistent, één bron) en per bucket toevoegen aan de
+  // al-bestaande Monday-buckets — nooit vervangen.
+  const aanvullendGroepen = groepeerOpWeergaveStatus(aanvullendeTrainingen, vandaagIsoAmsterdam());
+  const data: typeof mondayData = {
+    ...mondayData,
+    trainingenVandaag: [...mondayData.trainingenVandaag, ...aanvullendGroepen.vandaag],
+    komendeTrainingen: [...mondayData.komendeTrainingen, ...aanvullendGroepen.komend].sort((a, b) => (a.datum ?? "").localeCompare(b.datum ?? "")),
+    logboekOpenstaand: [...mondayData.logboekOpenstaand, ...aanvullendGroepen.verslag_nog_invullen],
+    totaalTrainingen: mondayData.totaalTrainingen + aanvullendeTrainingen.length,
+    alleTrainingen: [...mondayData.alleTrainingen, ...aanvullendeTrainingen],
+  };
 
   // "verslag_ontbreekt" komt uit dezelfde groepeerOpWeergaveStatus-bucket
   // (verslag_nog_invullen) als de "Vandaag"-sectie zijn data mede vandaan

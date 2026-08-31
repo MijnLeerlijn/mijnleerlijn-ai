@@ -59,6 +59,7 @@ const BEWERKBARE_TRAINING = {
   ruweStatusTekst: null,
   datum: null,
   trainerboardItemId: "800",
+  bron: "mijnleerlijn" as const,
 };
 
 function mockFetchEenmaal(status: number, body: unknown) {
@@ -269,6 +270,37 @@ describe("TrainingRij — niet-bewerkbare training (geen trainerboardItemId)", (
     render(<TrainingRij training={{ ...BEWERKBARE_TRAINING, trainerboardItemId: null }} schoolId="500" />);
     expect(screen.queryByRole("button", { name: "Nieuw" })).not.toBeInTheDocument();
     expect(screen.getByText("Nieuw")).toBeInTheDocument(); // wél als platte tekst/badge zichtbaar
+  });
+});
+
+// Upsell-ronde (2026-09-02, spec §A4) — een aanvullende training heeft
+// ALTIJD trainerboardItemId: null (geen Monday-tegenhanger), maar mag —
+// anders dan een gewone ML-training zonder trainerboardItemId hierboven —
+// wél altijd de verslag-CTA tonen: "behandel een aanvullende training
+// verder als een normale training", alleen de Monday-status/datum-popovers
+// blijven terecht onbereikbaar (er is niets om naar te schrijven).
+const AANVULLENDE_TRAINING = { ...BEWERKBARE_TRAINING, id: "aanvullend:1", trainerboardItemId: null, bron: "aanvullend" as const };
+
+describe("TrainingRij — aanvullende training (spec §A4/§A5)", () => {
+  it("toont, anders dan een ML-training zonder trainerboardItemId, wél de verslag-CTA", () => {
+    render(<TrainingRij training={AANVULLENDE_TRAINING} schoolId="500" toonLogboekStatus logboekIngevuld={false} />);
+    const link = screen.getByRole("link", { name: /Verslag maken/ });
+    expect(link).toHaveAttribute("href", "/scholen/500/trainingen/aanvullend:1/verslag");
+  });
+
+  it("toont een 'Aanvullend'-label naast de trainingnaam", () => {
+    render(<TrainingRij training={AANVULLENDE_TRAINING} schoolId="500" />);
+    expect(screen.getByText("Aanvullend")).toBeInTheDocument();
+  });
+
+  it("toont geen 'Aanvullend'-label bij een gewone MijnLeerlijn-training", () => {
+    render(<TrainingRij training={BEWERKBARE_TRAINING} schoolId="500" />);
+    expect(screen.queryByText("Aanvullend")).not.toBeInTheDocument();
+  });
+
+  it("toont, net als elke andere training zonder trainerboardItemId, de statische badge/datum i.p.v. de Monday-popovers", () => {
+    render(<TrainingRij training={AANVULLENDE_TRAINING} schoolId="500" />);
+    expect(screen.queryByRole("button", { name: "Nieuw" })).not.toBeInTheDocument();
   });
 });
 

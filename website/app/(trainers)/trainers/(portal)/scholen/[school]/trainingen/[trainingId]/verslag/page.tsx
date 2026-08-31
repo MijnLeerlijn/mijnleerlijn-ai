@@ -4,8 +4,7 @@ import { getPayload } from "payload";
 import { ArrowLeft } from "lucide-react";
 import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
-import { haalTrainingVoorMutatie } from "@/lib/trainers/monday-links";
-import { haalVerslagVoorTraining, bouwVerslagWeergaveTekst } from "@/lib/trainers/verslag";
+import { haalVerslagVoorTraining, bouwVerslagWeergaveTekst, resolveerTrainingVoorMutatie } from "@/lib/trainers/verslag";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { VerslagEditor } from "./verslag-editor";
 
@@ -39,11 +38,17 @@ export default async function VerslagPagina({ params }: VerslagPaginaProps) {
   const trainer = await haalIngelogdeTrainer();
   if (!trainer) redirect("/login");
 
-  const gevonden = await haalTrainingVoorMutatie(trainer, trainingId);
+  // Upsell-ronde (2026-09-02, spec §A4) — resolveerTrainingVoorMutatie
+  // (lib/trainers/verslag.ts) verzorgt hier dezelfde tweeledige resolutie
+  // (Monday-training via haalTrainingVoorMutatie ÓF lokale aanvullende
+  // training) als de verslag-mutatiefuncties zelf: "geen tweede
+  // verslagflow" betekent ook dat deze pagina niet los een eigen,
+  // Monday-only resolutie mag blijven doen.
+  const payload = await getPayload({ config });
+  const gevonden = await resolveerTrainingVoorMutatie(payload, trainer, trainingId);
   if (!gevonden) notFound();
   const { training, schoolId, schoolNaam } = gevonden;
 
-  const payload = await getPayload({ config });
   const verslag = await haalVerslagVoorTraining(payload, trainer, trainingId);
 
   const terugHref = `/scholen/${schoolIdUitUrl || schoolId}`;
@@ -62,7 +67,7 @@ export default async function VerslagPagina({ params }: VerslagPaginaProps) {
         </p>
       </div>
 
-      {training.trainerboardItemId === null ? (
+      {training.bron === "mijnleerlijn" && training.trainerboardItemId === null ? (
         <div className="rounded-xl border border-grijs-200 bg-white p-4 text-body-sm text-grijs-600 shadow-sm">
           Deze training heeft geen eigen trainerboard-item en kan (nog) niet vanuit de portal bewerkt worden.
         </div>

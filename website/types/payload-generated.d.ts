@@ -73,6 +73,7 @@ export interface Config {
     'trainer-log-events': TrainerLogEvent;
     'trainer-ai-log-events': TrainerAiLogEvent;
     'training-verslagen': TrainingVerslagen;
+    'aanvullende-trainingen': AanvullendeTrainingen;
     'trainer-telefonie-oproepen': TrainerTelefonieOproepen;
     'trainer-logboek-items': TrainerLogboekItem;
     'trainer-kennisversies': TrainerKennisversy;
@@ -122,6 +123,7 @@ export interface Config {
     'trainer-log-events': TrainerLogEventsSelect<false> | TrainerLogEventsSelect<true>;
     'trainer-ai-log-events': TrainerAiLogEventsSelect<false> | TrainerAiLogEventsSelect<true>;
     'training-verslagen': TrainingVerslagenSelect<false> | TrainingVerslagenSelect<true>;
+    'aanvullende-trainingen': AanvullendeTrainingenSelect<false> | AanvullendeTrainingenSelect<true>;
     'trainer-telefonie-oproepen': TrainerTelefonieOproepenSelect<false> | TrainerTelefonieOproepenSelect<true>;
     'trainer-logboek-items': TrainerLogboekItemsSelect<false> | TrainerLogboekItemsSelect<true>;
     'trainer-kennisversies': TrainerKennisversiesSelect<false> | TrainerKennisversiesSelect<true>;
@@ -523,11 +525,18 @@ export interface TrainingVerslagen {
    */
   telefonieOproep?: (number | null) | TrainerTelefonieOproepen;
   /**
-   * Server-side afgeleid via haalTrainingVoorMutatie — nooit door de client aangeleverd.
+   * Upsell-ronde (2026-09-02) — of dit verslag bij een Monday-training hoort of bij een lokale aanvullende training (aanvullende-trainingen). Bepaalt of de Monday-statusafronding (werkTrainingBij) geprobeerd wordt — een aanvullende training heeft niets op Monday om af te ronden.
+   */
+  trainingBron: 'mijnleerlijn' | 'aanvullend';
+  /**
+   * Server-side afgeleid via haalTrainingVoorMutatie/haalAanvullendeTrainingVoorMutatie — nooit door de client aangeleverd. Bij trainingBron='aanvullend' is dit een lokale sleutel ("aanvullend:<id>"), geen echt Monday-item-ID.
    */
   mondayTrainingId: string;
   mondaySchoolId: string;
-  mondayTrainerboardItemId: string;
+  /**
+   * Leeg bij trainingBron='aanvullend' (geen Monday-tegenhanger).
+   */
+  mondayTrainerboardItemId?: string | null;
   schoolNaam?: string | null;
   trainingNaam?: string | null;
   /**
@@ -734,6 +743,25 @@ export interface TrainerTelefonieOproepen {
   createdAt: string;
 }
 /**
+ * Trainingen die een trainer zelf, los van het MijnLeerlijn-Monday-traject, bij een school geeft. Nooit rechtstreeks bewerken — uitsluitend server-side via lib/trainers/aanvullende-trainingen.ts.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "aanvullende-trainingen".
+ */
+export interface AanvullendeTrainingen {
+  id: number;
+  trainer: number | TrainerAccount;
+  /**
+   * Server-side geverifieerd via haalSchoolDetail — nooit ongecontroleerd door de client aangeleverd.
+   */
+  mondaySchoolId: string;
+  schoolNaam?: string | null;
+  naam: string;
+  datum: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * Handmatige logboekitems (contact/aantekening) van trainers, los van de trainingsverslagflow. Nooit rechtstreeks bewerken — uitsluitend server-side via lib/trainers/logboek.ts.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -758,6 +786,18 @@ export interface TrainerLogboekItem {
    */
   mondayTrainingId?: string | null;
   trainingNaam?: string | null;
+  /**
+   * Server-side bijgehouden, nooit door de client gezet. 'Mislukt' blokkeert het lokale logboekitem nooit — het item bestaat en telt sowieso, de Monday-Update is een aanvulling erbovenop.
+   */
+  mondayUpdateStatus: 'niet_verzonden' | 'geschreven' | 'mislukt' | 'niet_geactiveerd';
+  /**
+   * ID van de geschreven Update op het school-item, indien geschreven.
+   */
+  mondaySchoolUpdateId?: string | null;
+  /**
+   * ID van de geschreven Update op het training-item — alleen relevant bij mondayTrainingId, en alleen bij een échte Monday-training (geen aanvullende training).
+   */
+  mondayTrainingUpdateId?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2535,6 +2575,10 @@ export interface PayloadLockedDocument {
         value: number | TrainingVerslagen;
       } | null)
     | ({
+        relationTo: 'aanvullende-trainingen';
+        value: number | AanvullendeTrainingen;
+      } | null)
+    | ({
         relationTo: 'trainer-telefonie-oproepen';
         value: number | TrainerTelefonieOproepen;
       } | null)
@@ -2826,6 +2870,7 @@ export interface TrainingVerslagenSelect<T extends boolean = true> {
   trainer?: T;
   bron?: T;
   telefonieOproep?: T;
+  trainingBron?: T;
   mondayTrainingId?: T;
   mondaySchoolId?: T;
   mondayTrainerboardItemId?: T;
@@ -2845,6 +2890,19 @@ export interface TrainingVerslagenSelect<T extends boolean = true> {
   afrondingResultaat?: T;
   bevestigdOp?: T;
   bevestigdDoorTrainerNaam?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "aanvullende-trainingen_select".
+ */
+export interface AanvullendeTrainingenSelect<T extends boolean = true> {
+  trainer?: T;
+  mondaySchoolId?: T;
+  schoolNaam?: T;
+  naam?: T;
+  datum?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2904,6 +2962,9 @@ export interface TrainerLogboekItemsSelect<T extends boolean = true> {
   tekst?: T;
   mondayTrainingId?: T;
   trainingNaam?: T;
+  mondayUpdateStatus?: T;
+  mondaySchoolUpdateId?: T;
+  mondayTrainingUpdateId?: T;
   updatedAt?: T;
   createdAt?: T;
 }

@@ -13,6 +13,7 @@ import { TrainerAccounts } from "./payload/collections/TrainerAccounts";
 import { TrainerLogEvents } from "./payload/collections/TrainerLogEvents";
 import { TrainerAiLogEvents } from "./payload/collections/TrainerAiLogEvents";
 import { TrainingVerslagen } from "./payload/collections/TrainingVerslagen";
+import { AanvullendeTrainingen } from "./payload/collections/AanvullendeTrainingen";
 import { TrainerTelefonieOproepen } from "./payload/collections/TrainerTelefonieOproepen";
 import { TrainerLogboekItems } from "./payload/collections/TrainerLogboekItems";
 import { TrainerKennisversies } from "./payload/collections/TrainerKennisversies";
@@ -310,6 +311,7 @@ export default buildConfig({
     TrainerLogEvents,
     TrainerAiLogEvents,
     TrainingVerslagen,
+    AanvullendeTrainingen,
     TrainerTelefonieOproepen,
     TrainerLogboekItems,
     TrainerKennisversies,

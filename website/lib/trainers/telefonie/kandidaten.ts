@@ -1,6 +1,7 @@
 import type { Payload } from "payload";
-import { haalRecenteTrainingenVoorTelefonie, vandaagIsoAmsterdam, type TrainingMetSchool } from "../monday-links";
+import { haalRecenteTrainingenVoorTelefonie, vandaagIsoAmsterdam, TELEFONIE_RECENTE_DAGEN, type TrainingMetSchool } from "../monday-links";
 import { haalVerslagenPerTraining } from "../verslag";
+import { haalAanvullendeTrainingenAlsSamenvattingen } from "../aanvullende-trainingen";
 import type { AuthTrainer } from "../auth";
 
 // Trainertelefonie V1-afronding (2026-08-26) — spec §6/§16: "Centraliseer
@@ -30,6 +31,8 @@ export interface TelefonieKandidaat {
   schoolId: string;
   trainerboardItemId: string | null;
   datum: string | null;
+  /** Upsell-ronde (2026-09-02, spec §A5) — laat portal/admin/transcript altijd kunnen onderscheiden om welke soort training het ging. */
+  bron: "mijnleerlijn" | "aanvullend";
 }
 
 export interface TelefonieKandidatenResultaat {
@@ -40,7 +43,7 @@ export interface TelefonieKandidatenResultaat {
 }
 
 function naarKandidaat(t: TrainingMetSchool): TelefonieKandidaat {
-  return { id: t.id, naam: t.naam, schoolNaam: t.schoolNaam, schoolId: t.schoolId, trainerboardItemId: t.trainerboardItemId, datum: t.datum };
+  return { id: t.id, naam: t.naam, schoolNaam: t.schoolNaam, schoolId: t.schoolId, trainerboardItemId: t.trainerboardItemId, datum: t.datum, bron: t.bron };
 }
 
 /**
@@ -52,7 +55,14 @@ function naarKandidaat(t: TrainingMetSchool): TelefonieKandidaat {
  * splitsen in vandaag/ouder (spec §1-§6).
  */
 export async function haalTelefonieKandidaten(payload: Payload, trainer: AuthTrainer): Promise<TelefonieKandidatenResultaat> {
-  const recent = await haalRecenteTrainingenVoorTelefonie(trainer);
+  const [recentMonday, recentAanvullend] = await Promise.all([
+    haalRecenteTrainingenVoorTelefonie(trainer),
+    // Upsell-ronde (2026-09-02, spec §A5) — een aanvullende training met
+    // datum moet hier net zo goed als kandidaat kunnen voorkomen als een
+    // MijnLeerlijn-training, zelfde recentheidsvenster (TELEFONIE_RECENTE_DAGEN).
+    haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer, { maxDagenGeleden: TELEFONIE_RECENTE_DAGEN }),
+  ]);
+  const recent = [...recentMonday, ...recentAanvullend];
   if (recent.length === 0) return { vandaag: [], ouder: [] };
 
   const verslagen = await haalVerslagenPerTraining(

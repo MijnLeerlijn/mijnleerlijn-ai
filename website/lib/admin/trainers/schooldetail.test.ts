@@ -47,6 +47,7 @@ function trainingMetSchool(overrides: Partial<TrainingMetSchool> = {}): Training
     datum: "2099-01-01", // ver in de toekomst — onafhankelijk van de systeemklok altijd "komend"
     logboekIngevuld: false,
     trainerboardItemId: "tb-1",
+    bron: "mijnleerlijn",
     schoolId: "s1",
     schoolNaam: "School A",
     ...overrides,
@@ -62,6 +63,7 @@ function trainingSamenvatting(overrides: Partial<TrainingSamenvatting> = {}): Tr
     datum: "2099-01-01",
     logboekIngevuld: false,
     trainerboardItemId: "tb-1",
+    bron: "mijnleerlijn",
     ...overrides,
   };
 }

@@ -30,6 +30,7 @@ function training(overrides: Partial<TrainingMetSchool> = {}): TrainingMetSchool
     datum: "2026-09-01",
     logboekIngevuld: false,
     trainerboardItemId: "tb-1",
+    bron: "mijnleerlijn",
     schoolId: "school-1",
     schoolNaam: "School Een",
     ...overrides,

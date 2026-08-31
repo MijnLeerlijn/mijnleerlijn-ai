@@ -1,5 +1,9 @@
 import type { Payload } from "payload";
-import { haalSchoolDetail, haalTrainingVoorMutatie } from "./monday-links";
+import { optionalEnv, logFlagDiagnose } from "@/config/env";
+import { maakUpdate } from "@/lib/sales/monday-client";
+import { haalSchoolDetail } from "./monday-links";
+import { formatteerDatumHeaderNL, resolveerTrainingVoorMutatie } from "./verslag";
+import { isAanvullendeTrainingId } from "./aanvullende-trainingen";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V2, Fase 1 (2026-08-28) — handmatig logboek: een trainer
@@ -44,6 +48,8 @@ function begrensLengte(tekst: string, maxLengte: number): string {
  * vorm i.p.v. de volledige gegenereerde Payload-rij, zelfde bewuste keuze als
  * VerslagRecord (verslag.ts).
  */
+export type LogboekMondayUpdateStatus = "niet_verzonden" | "geschreven" | "mislukt" | "niet_geactiveerd";
+
 export interface LogboekItemRecord {
   id: number;
   mondaySchoolId: string;
@@ -54,6 +60,9 @@ export interface LogboekItemRecord {
   mondayTrainingId?: string | null;
   trainingNaam?: string | null;
   createdAt: string;
+  mondayUpdateStatus: LogboekMondayUpdateStatus;
+  mondaySchoolUpdateId?: string | null;
+  mondayTrainingUpdateId?: string | null;
 }
 
 export interface LogboekInvoer {
@@ -105,7 +114,13 @@ export async function maakLogboekItem(payload: Payload, trainer: AuthTrainer, in
 
   let trainingNaam: string | undefined;
   if (invoer.mondayTrainingId) {
-    const gevonden = await haalTrainingVoorMutatie(trainer, invoer.mondayTrainingId);
+    // Upsell-ronde (2026-09-02, spec §A6) — "mag aan de aanvullende training
+    // gekoppeld worden": resolveerTrainingVoorMutatie (verslag.ts) verzorgt
+    // dezelfde tweeledige resolutie (Monday-training ÓF lokale aanvullende
+    // training) als de verslagflow zelf — een logboekitem koppelen aan een
+    // aanvullende training zou anders altijd ten onrechte "niet_gevonden"
+    // opleveren.
+    const gevonden = await resolveerTrainingVoorMutatie(payload, trainer, invoer.mondayTrainingId);
     // Ook weigeren als de gevonden training bij een ANDERE school hoort dan
     // de opgegeven mondaySchoolId — voorkomt een verwarrende/onjuiste
     // school-training-koppeling in het logboekitem.
@@ -113,7 +128,7 @@ export async function maakLogboekItem(payload: Payload, trainer: AuthTrainer, in
     trainingNaam = gevonden.training.naam;
   }
 
-  const nieuw = await payload.create({
+  const nieuw = (await payload.create({
     collection: "trainer-logboek-items",
     overrideAccess: true,
     data: {
@@ -123,11 +138,96 @@ export async function maakLogboekItem(payload: Payload, trainer: AuthTrainer, in
       type: invoer.type,
       occurredAt: occurredAtDatum.toISOString(),
       tekst,
-      mondayTrainingId: invoer.mondayTrainingId ?? null,
-      trainingNaam: trainingNaam ?? null,
+      mondayTrainingId: invoer.mondayTrainingId,
+      trainingNaam,
+      mondayUpdateStatus: "niet_verzonden",
     },
-  });
-  return { soort: "ok", item: nieuw as LogboekItemRecord };
+  })) as LogboekItemRecord;
+
+  const bijgewerkt = await schrijfLogboekUpdateNaarMonday(payload, trainer, nieuw);
+  return { soort: "ok", item: bijgewerkt };
+}
+
+/**
+ * Upsell-ronde (2026-09-02, spec §B7/§B8) — "het logboek wordt de enige
+ * inhoud uit deze trainer-/helpdesklaag die naar Monday wordt geschreven."
+ * Precies één poging, meteen ná het lokaal aanmaken van het item (er is
+ * bewust geen los retry-eindpunt — een logboekitem wordt altijd in één
+ * moment geschreven, nooit als concept/later-bevestigd zoals een
+ * trainingsverslag) — de idempotentie die spec §K vraagt ("dubbele retry
+ * geeft geen dubbele Monday-update") komt hier uit twee lagen: (1) Monday's
+ * eigen Idempotency-Key-header op maakUpdate (lib/sales/monday-client.ts,
+ * zelfde bewezen mechanisme als lib/trainers/verslag.ts), sleutel
+ * `logboek-item:<id>:school`/`:training` — stabiel per item, dus een
+ * eventuele dubbele aanroep met hetzelfde item-ID dupliceert nooit; (2) een
+ * mislukte Monday-schrijving blokkeert het lokale item nooit (dat bestaat
+ * en telt al, zie return hierboven) — dit is puur een aanvulling erbovenop.
+ *
+ * Stuurt UITSLUITEND de daadwerkelijk ingevoerde logboektekst + de
+ * noodzakelijke metadata (datum, trainernaam) — spec §8: "geen interne
+ * IDs, AI-context of technische velden." School-Update wordt ALTIJD
+ * geprobeerd (elk logboekitem heeft een school); training-Update
+ * UITSLUITEND wanneer het item aan een training gekoppeld is ÉN die
+ * training een échte Monday-training is (isAanvullendeTrainingId: een
+ * aanvullende training heeft geen Monday-tegenhanger om naar te schrijven,
+ * spec §H "geen lokale kopie van Monday-trainingen ... voor aanvullende
+ * trainingen bestaat domweg geen Monday-item"). Beide kanten volledig
+ * onafhankelijk (Promise.allSettled) — zelfde principe als
+ * lib/trainers/verslag.ts se bevestigVerslag: de ene kant mag nooit
+ * overgeslagen worden omdat de andere net mislukte.
+ */
+async function schrijfLogboekUpdateNaarMonday(payload: Payload, trainer: AuthTrainer, item: LogboekItemRecord): Promise<LogboekItemRecord> {
+  logFlagDiagnose("TRAINER_MONDAY_LOGBOEK_ENABLED");
+  if (optionalEnv("TRAINER_MONDAY_LOGBOEK_ENABLED") !== "true") {
+    return (await payload.update({
+      collection: "trainer-logboek-items",
+      id: item.id,
+      overrideAccess: true,
+      data: { mondayUpdateStatus: "niet_geactiveerd" },
+    })) as LogboekItemRecord;
+  }
+
+  const updateTekst = bouwLogboekUpdateTekst({ occurredAtIso: item.occurredAt, trainerNaam: trainer.name, tekst: item.tekst });
+  const schrijfNaarTraining = Boolean(item.mondayTrainingId) && !isAanvullendeTrainingId(item.mondayTrainingId as string);
+
+  const [schoolUitkomst, trainingUitkomst] = await Promise.allSettled([
+    maakUpdate(item.mondaySchoolId, updateTekst, `logboek-item:${item.id}:school`),
+    schrijfNaarTraining ? maakUpdate(item.mondayTrainingId as string, updateTekst, `logboek-item:${item.id}:training`) : Promise.resolve(null),
+  ]);
+
+  if (schoolUitkomst.status === "rejected") {
+    console.error("[lib/trainers/logboek] Monday-Update (school) mislukt:", schoolUitkomst.reason);
+  }
+  if (trainingUitkomst.status === "rejected") {
+    console.error("[lib/trainers/logboek] Monday-Update (training) mislukt:", trainingUitkomst.reason);
+  }
+
+  const schoolGelukt = schoolUitkomst.status === "fulfilled";
+  const trainingGelukt = !schrijfNaarTraining || trainingUitkomst.status === "fulfilled";
+
+  return (await payload.update({
+    collection: "trainer-logboek-items",
+    id: item.id,
+    overrideAccess: true,
+    data: {
+      mondayUpdateStatus: schoolGelukt && trainingGelukt ? "geschreven" : "mislukt",
+      ...(schoolUitkomst.status === "fulfilled" ? { mondaySchoolUpdateId: schoolUitkomst.value.id } : {}),
+      ...(trainingUitkomst.status === "fulfilled" && trainingUitkomst.value ? { mondayTrainingUpdateId: trainingUitkomst.value.id } : {}),
+    },
+  })) as LogboekItemRecord;
+}
+
+/**
+ * Gedeeld tussen schrijfLogboekUpdateNaarMonday hierboven en (toekomstige)
+ * admin-weergave — zelfde format als het voorbeeld uit de opdracht:
+ * "Logboek — 31 augustus 2026 — Wessel Kok" gevolgd door de logboektekst
+ * zelf, verder niets (geen interne IDs/technische velden, spec §8).
+ * formatteerDatumHeaderNL (verslag.ts) is dezelfde Dutch-date-helper als de
+ * trainingsverslag-Update — bewust hergebruikt i.p.v. een tweede
+ * datumformattering.
+ */
+export function bouwLogboekUpdateTekst(opts: { occurredAtIso: string; trainerNaam: string; tekst: string }): string {
+  return [`Logboek — ${formatteerDatumHeaderNL(opts.occurredAtIso)} — ${opts.trainerNaam}`, opts.tekst].join("\n");
 }
 
 /**

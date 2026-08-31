@@ -102,7 +102,7 @@ describe("POST /api/trainers/logboek — uitkomst", () => {
   it("geldige aanvraag -> maakLogboekItem aangeroepen met de INGELOGDE trainer (nooit clientinvoer), 200 met het item", async () => {
     mockMaakLogboekItem.mockResolvedValue({
       soort: "ok",
-      item: { id: 1, mondaySchoolId: "500", schoolNaam: "School A", type: "telefonisch", occurredAt: "2026-08-28T10:00:00.000Z", tekst: "Gebeld over de planning.", createdAt: "2026-08-28T10:00:00.000Z" },
+      item: { id: 1, mondaySchoolId: "500", schoolNaam: "School A", type: "telefonisch", occurredAt: "2026-08-28T10:00:00.000Z", tekst: "Gebeld over de planning.", createdAt: "2026-08-28T10:00:00.000Z", mondayUpdateStatus: "niet_verzonden" },
     });
 
     const response = await POST(maakRequest(GELDIGE_BODY));

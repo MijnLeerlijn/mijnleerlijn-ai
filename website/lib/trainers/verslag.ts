@@ -6,7 +6,27 @@ import { generateStructuredOutput } from "@/services/ai-client";
 import { haalUpdatesVoorItem, maakUpdate, type MondayUpdate } from "@/lib/sales/monday-client";
 import { haalTrainingVoorMutatie, haalSchoolDetail, type TrainingSamenvatting, type SchoolDetail } from "./monday-links";
 import { werkTrainingBij, type TrainingWriteBackResultaat } from "./writeback";
+import { haalAanvullendeTrainingVoorMutatie, isAanvullendeTrainingId } from "./aanvullende-trainingen";
 import type { AuthTrainer } from "./auth";
+
+// Upsell-ronde (2026-09-02) — één training-mutatie-resolutie voor beide
+// trainingsbronnen (spec §A4: "behandel een aanvullende training verder als
+// een normale training, bouw geen tweede verslagflow"): een aanvullende-
+// trainingId (lib/trainers/aanvullende-trainingen.ts se "aanvullend:<id>"-
+// vorm) wordt lokaal opgezocht, elke andere trainingId blijft de bestaande,
+// ongewijzigde Monday-resolutie (haalTrainingVoorMutatie). Beide geven exact
+// dezelfde vorm terug ({training, schoolId, schoolNaam}), dus de rest van dit
+// bestand hoeft nergens anders te vertakken.
+interface TrainingVoorMutatieGeneriek {
+  training: TrainingSamenvatting;
+  schoolId: string;
+  schoolNaam: string;
+}
+
+export async function resolveerTrainingVoorMutatie(payload: Payload, trainer: AuthTrainer, trainingId: string): Promise<TrainingVoorMutatieGeneriek | null> {
+  if (isAanvullendeTrainingId(trainingId)) return haalAanvullendeTrainingVoorMutatie(payload, trainer, trainingId);
+  return haalTrainingVoorMutatie(trainer, trainingId);
+}
 
 // Traineromgeving V1, Ronde 3 (2026-08-24) — trainingsverslag: vrije
 // trainerinvoer -> AI-structureringsvoorstel -> trainerbevestigde definitieve
@@ -181,7 +201,7 @@ export async function structureerVerslag(
 
   const begrensdeInvoer = begrensLengte(trainerInvoer, MAX_TRAINERINVOER_LENGTE);
 
-  const gevonden = await haalTrainingVoorMutatie(trainer, rij.mondayTrainingId);
+  const gevonden = await resolveerTrainingVoorMutatie(payload, trainer, rij.mondayTrainingId);
   if (!gevonden) return { soort: "niet_gevonden" };
   const school = await haalSchoolDetail(trainer, rij.mondaySchoolId);
   if (!school) return { soort: "niet_gevonden" };
@@ -224,9 +244,11 @@ export async function structureerVerslag(
  */
 export interface VerslagRecord {
   id: number;
+  /** Upsell-ronde (2026-09-02) — "mijnleerlijn" (default, elk bestaand verslag) of "aanvullend". Bepaalt of bevestigVerslag de Monday-statusafronding (werkTrainingBij) probeert. */
+  trainingBron: "mijnleerlijn" | "aanvullend";
   mondayTrainingId: string;
   mondaySchoolId: string;
-  mondayTrainerboardItemId: string;
+  mondayTrainerboardItemId: string | null;
   schoolNaam?: string | null;
   trainingNaam?: string | null;
   trainerInvoer?: string | null;
@@ -378,10 +400,14 @@ export async function upsertConcept(
   trainingId: string,
   invoer: { trainerInvoer?: string; definitieveTekst?: string; bron?: "telefoon"; telefonieOproepId?: number; mogelijkOnvolledig?: boolean }
 ): Promise<VerslagConceptUitkomst> {
-  const gevonden = await haalTrainingVoorMutatie(trainer, trainingId);
+  const gevonden = await resolveerTrainingVoorMutatie(payload, trainer, trainingId);
   if (!gevonden) return { soort: "niet_gevonden" };
+  const trainingBron = gevonden.training.bron;
   const trainerboardItemId = gevonden.training.trainerboardItemId;
-  if (trainerboardItemId === null) {
+  // Upsell-ronde (2026-09-02) — deze eis geldt uitsluitend voor MijnLeerlijn-
+  // trainingen: een aanvullende training heeft per definitie geen
+  // trainerboard-item (bestaat niet in Monday) en is dus altijd bewerkbaar.
+  if (trainingBron === "mijnleerlijn" && trainerboardItemId === null) {
     return { soort: "niet_bewerkbaar", boodschap: "Deze training heeft geen eigen trainerboard-item en kan (nog) niet vanuit de portal bewerkt worden." };
   }
 
@@ -440,9 +466,14 @@ export async function upsertConcept(
       overrideAccess: true,
       data: {
         trainer: trainer.id,
+        trainingBron,
         mondayTrainingId: trainingId,
         mondaySchoolId: gevonden.schoolId,
-        mondayTrainerboardItemId: trainerboardItemId,
+        // trainerboardItemId is hier null voor een aanvullende training (geen
+        // Monday-tegenhanger) — undefined i.p.v. null doorgeven laat Payload
+        // de kolom simpelweg ongezet laten, wat zonder defaultValue-config
+        // hetzelfde resultaat geeft (NULL in Postgres) als expliciet null.
+        mondayTrainerboardItemId: trainerboardItemId ?? undefined,
         status: "concept",
         trainingUpdateStatus: "niet_verzonden",
         schoolUpdateStatus: "niet_verzonden",
@@ -705,7 +736,7 @@ export async function telVoltooideVerslagen(payload: Payload, trainer: AuthTrain
 // Definitief bevestigen — dubbele Monday-Update-write + afronding
 // ---------------------------------------------------------------------------
 
-function formatteerDatumHeaderNL(iso: string): string {
+export function formatteerDatumHeaderNL(iso: string): string {
   // Zelfde Europe/Amsterdam-expliciete server-side aanpak als monday-links.ts
   // se vandaagIsoAmsterdam() — een server draait doorgaans in UTC, dus zonder
   // expliciete timeZone zou de kalenderdatum rond middernacht NL-tijd kunnen
@@ -828,6 +859,13 @@ interface ClaimSlotUitkomst {
 }
 
 /**
+ * Upsell-ronde (2026-09-02, spec §B7) — bevestigVerslag roept dit niet meer
+ * aan (geen automatische volledige verslag-writeback naar Monday meer, zie
+ * de doc-comment daar). Bewust EXPORTED en ongewijzigd laten staan i.p.v.
+ * verwijderen: dit is al-geteste, concurrency-gevoelige code die zonder
+ * aanpassing herbruikbaar blijft mocht een latere ronde alsnog een
+ * expliciete/optionele Monday-writeback van verslagen willen aanbieden.
+ *
  * DE concurrencygarantie van deze ronde: een atomische, conditionele
  * Postgres-UPDATE (`UPDATE ... WHERE ... RETURNING`) i.p.v. payload.update()
  * (dat SELECT-dan-UPDATE doet, dus zelf NIET atomisch is — twee gelijktijdige
@@ -854,7 +892,7 @@ interface ClaimSlotUitkomst {
  * "de andere aanvraag is al klaar" (idempotent succes) of "een andere
  * aanvraag is nog bezig" betekent — zie schrijfVerslagUpdateIdempotent.
  */
-async function claimUpdateSlot(payload: Payload, verslagId: number, kant: "training" | "school"): Promise<ClaimSlotUitkomst> {
+export async function claimUpdateSlot(payload: Payload, verslagId: number, kant: "training" | "school"): Promise<ClaimSlotUitkomst> {
   const nu = new Date().toISOString();
   const claimResultaat =
     kant === "training"
@@ -951,8 +989,12 @@ async function schrijfVerslagVelden(payload: Payload, verslagId: number, kolomme
  * naar "mislukt" via schrijfVerslagVelden (nooit payload.update(), zie die
  * functie se doc-comment) — veilig, want alleen de claimhouder zelf raakt
  * deze velden ooit aan zolang de claim actief is.
+ *
+ * Upsell-ronde (2026-09-02, spec §B7) — zelfde status als claimUpdateSlot
+ * hierboven: niet meer aangeroepen vanuit bevestigVerslag, bewust EXPORTED
+ * en ongewijzigd bewaard i.p.v. verwijderd.
  */
-async function schrijfVerslagUpdateIdempotent(
+export async function schrijfVerslagUpdateIdempotent(
   payload: Payload,
   verslagId: number,
   kant: "training" | "school",
@@ -1071,9 +1113,11 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
   }
 
   // Stap 1.
-  const gevonden = await haalTrainingVoorMutatie(trainer, rij.mondayTrainingId);
+  const gevonden = await resolveerTrainingVoorMutatie(payload, trainer, rij.mondayTrainingId);
   if (!gevonden) return { soort: "niet_gevonden" };
-  if (gevonden.training.trainerboardItemId === null) {
+  // Upsell-ronde (2026-09-02) — zelfde uitzondering als upsertConcept
+  // hierboven: een aanvullende training heeft nooit een trainerboard-item.
+  if (gevonden.training.bron === "mijnleerlijn" && gevonden.training.trainerboardItemId === null) {
     return { soort: "niet_bewerkbaar", boodschap: "Deze training heeft geen eigen trainerboard-item meer en kan niet worden afgerond." };
   }
 
@@ -1129,91 +1173,54 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
     return { soort: "niet_bewerkbaar", boodschap: "Verslag heeft nog geen bevestigde tekst." };
   }
 
-  // Stap 4. trainingInBehandeling blijft bewust LOKAAL (nooit naar de DB
-  // geschreven) — "in_behandeling" is geen status van het verslag zelf, maar
-  // het transiënte resultaat van DEZE aanroep. Bij verlies van de claim
-  // raakt dit blok trainingUpdateStatus/trainingUpdateMondayId in de DB
-  // dus NIET aan (spec-eis: status/checkbox-retry mag nooit de Updates
-  // opnieuw schrijven, en een verloren claim mag de velden van de winnaar
-  // nooit overschrijven).
-  let trainingUpdateStatus = werkrij.trainingUpdateStatus;
-  let trainingUpdateMondayId = werkrij.trainingUpdateMondayId ?? null;
-  let trainingInBehandeling = false;
-  if (trainingUpdateStatus !== "geschreven") {
-    const uitkomst = await schrijfVerslagUpdateIdempotent(payload, rij.id, "training", werkrij.mondayTrainingId, updateTekst, {
-      status: trainingUpdateStatus,
-      mondayUpdateId: trainingUpdateMondayId,
-    });
-    if (uitkomst.status === "in_behandeling") {
-      trainingInBehandeling = true;
-    } else {
-      trainingUpdateStatus = uitkomst.status;
-      trainingUpdateMondayId = uitkomst.mondayUpdateId;
-      werkrij = await schrijfVerslagVelden(payload, rij.id, { training_update_status: trainingUpdateStatus, training_update_monday_id: trainingUpdateMondayId });
-    }
-  }
-
-  // Stap 5. Zelfde in_behandeling-behandeling als stap 4, volledig
-  // onafhankelijk — de school-claim en de training-claim delen geen state,
-  // precies zoals de opdracht vereist ("training-update en school-update
-  // moeten onafhankelijk idempotent blijven").
-  let schoolUpdateStatus = werkrij.schoolUpdateStatus;
-  let schoolUpdateMondayId = werkrij.schoolUpdateMondayId ?? null;
-  let schoolInBehandeling = false;
-  if (schoolUpdateStatus !== "geschreven") {
-    const uitkomst = await schrijfVerslagUpdateIdempotent(payload, rij.id, "school", werkrij.mondaySchoolId, updateTekst, {
-      status: schoolUpdateStatus,
-      mondayUpdateId: schoolUpdateMondayId,
-    });
-    if (uitkomst.status === "in_behandeling") {
-      schoolInBehandeling = true;
-    } else {
-      schoolUpdateStatus = uitkomst.status;
-      schoolUpdateMondayId = uitkomst.mondayUpdateId;
-      werkrij = await schrijfVerslagVelden(payload, rij.id, { school_update_status: schoolUpdateStatus, school_update_monday_id: schoolUpdateMondayId });
-    }
-  }
-
-  const beideGeschreven = trainingUpdateStatus === "geschreven" && schoolUpdateStatus === "geschreven";
-  if (!beideGeschreven) {
-    // De grove "gedeeltelijk"-statusvlag hieronder mag wél redundant/
-    // gelijktijdig door beide kanten van een race geschreven worden: het is
-    // een constante waarde (geen lees-wijzig-schrijf op bestaande data), dus
-    // zonder duplicatie- of divergentierisico. Toch via schrijfVerslagVelden
-    // (nooit payload.update()) — empirisch bevestigd dat payload.update() op
-    // DEZE rij een gelijktijdige, andere payload.update()-schrijving (zoals
-    // stap 4/5 hierboven) kan clobberen, zie de doc-comment bij
-    // schrijfVerslagVelden.
-    werkrij = await schrijfVerslagVelden(payload, rij.id, { status: "gedeeltelijk" });
-    const boodschap =
-      trainingInBehandeling || schoolInBehandeling
-        ? "Dit verslag wordt op dit moment al verwerkt door een andere aanvraag (bijvoorbeeld een tweede klik of tweede tabblad) — probeer het over enkele seconden opnieuw."
-        : "Verslag gedeeltelijk opgeslagen — niet alle onderdelen zijn nog geschreven.";
-    return { soort: "resultaat", verslag: werkrij, boodschap, weergaveTekst: updateTekst };
-  }
-
+  // Upsell-ronde (2026-09-02, spec §B7) — GEEN automatische volledige
+  // writeback meer van het trainingsverslag naar Monday. Vóór deze ronde
+  // schreven stap 4/5 hier de samengestelde updateTekst als Monday-Update
+  // naar zowel de training als de Master Data-school (schrijfVerslagUpdate
+  // Idempotent/claimUpdateSlot hierboven) — dat is precies de "volledige
+  // writeback van trainingsverslagen" die de opdracht nu uitsluit: "het
+  // logboek wordt de enige inhoud uit deze trainer-/helpdesklaag die naar
+  // Monday wordt geschreven". De idempotente claim-/retrykolommen
+  // (training_update_status/monday_id, school_update_status/monday_id) en
+  // de bijbehorende schrijfVerslagUpdateIdempotent/claimUpdateSlot-functies
+  // hierboven blijven bewust ONGEWIJZIGD in dit bestand staan — alleen niet
+  // meer vanaf hier aangeroepen — zodat dit omkeerbaar is en er niets
+  // geraakt wordt aan al-geteste concurrency-gevoelige code ("verander
+  // bestaande productiefunctionaliteit niet blind", opdracht §B7).
+  // updateTekst/weergaveTekst blijven bestaan: de portal toont het verslag
+  // nog altijd op dezelfde manier, alleen Monday krijgt de tekst niet meer.
   werkrij = await schrijfVerslagVelden(payload, rij.id, { status: "bevestigd" });
 
-  // Stap 6. Smalle, geaccepteerde TOCTOU-marge tussen stap 1/2 en hier (geen
+  // Stap 4 (was stap 6) — uitsluitend voor MijnLeerlijn-trainingen: een
+  // aanvullende training heeft geen trainerboard-item en dus niets om op
+  // Monday af te ronden (spec §A4/§H — verder een normale training, maar
+  // deze ene afrondingsstap bestaat voor een aanvullende training simpelweg
+  // niet). Smalle, geaccepteerde TOCTOU-marge tussen stap 1/2 en hier (geen
   // Monday-transactie beschikbaar, zelfde klasse race als de rest van dit
   // bestand) — werkTrainingBij herverifieert eigendom bovendien opnieuw,
   // zelf.
-  const afronding = await werkTrainingBij(payload, trainer, rij.mondayTrainingId, {
-    status: { nieuweWaarde: "gedaan", verwachteHuidigeRuweTekst: gevonden.training.ruweStatusTekst },
-    logboek: { nieuweWaarde: true },
-  });
-
-  if (afronding.soort !== "resultaat") {
-    return { soort: "resultaat", verslag: werkrij, boodschap: "Verslag is opgeslagen, maar de afronding (status/logboek) kon niet worden voltooid.", weergaveTekst: updateTekst };
+  let afronding: TrainingWriteBackResultaat | undefined;
+  if (werkrij.trainingBron !== "aanvullend") {
+    const afrondingUitkomst = await werkTrainingBij(payload, trainer, rij.mondayTrainingId, {
+      status: { nieuweWaarde: "gedaan", verwachteHuidigeRuweTekst: gevonden.training.ruweStatusTekst },
+      logboek: { nieuweWaarde: true },
+    });
+    if (afrondingUitkomst.soort !== "resultaat") {
+      return { soort: "resultaat", verslag: werkrij, boodschap: "Verslag is opgeslagen, maar de afronding (status/logboek) kon niet worden voltooid.", weergaveTekst: updateTekst };
+    }
+    afronding = afrondingUitkomst.resultaat;
   }
 
-  const afrondingVolledigGeslaagd = afronding.resultaat.algeheleStatus === "volledig_geslaagd" || afronding.resultaat.algeheleStatus === "niet_geactiveerd";
+  // afronding === undefined (aanvullende training, geen Monday-afronding
+  // nodig) telt hier als "geslaagd": er is voor die trainingsbron niets meer
+  // te doen, dus het verslag mag direct naar "voltooid".
+  const afrondingVolledigGeslaagd = afronding === undefined || afronding.algeheleStatus === "volledig_geslaagd" || afronding.algeheleStatus === "niet_geactiveerd";
   werkrij = await schrijfVerslagVelden(payload, rij.id, {
-    afronding_resultaat: JSON.stringify(afronding.resultaat),
+    ...(afronding !== undefined ? { afronding_resultaat: JSON.stringify(afronding) } : {}),
     status: afrondingVolledigGeslaagd ? "voltooid" : "bevestigd",
   });
 
-  return { soort: "resultaat", verslag: werkrij, afronding: afronding.resultaat, weergaveTekst: updateTekst };
+  return { soort: "resultaat", verslag: werkrij, afronding, weergaveTekst: updateTekst };
 }
 
 // ---------------------------------------------------------------------------

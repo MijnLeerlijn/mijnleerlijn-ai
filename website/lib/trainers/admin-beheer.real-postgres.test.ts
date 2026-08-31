@@ -137,6 +137,7 @@ describe.skipIf(!beschikbaar)("Admin verslag-/traineraccountbeheer — verificat
       data: {
         trainer: trainerId,
         bron: "portal",
+        trainingBron: "mijnleerlijn",
         mondayTrainingId: `t-${suffix}`,
         mondaySchoolId: `s-${suffix}`,
         mondayTrainerboardItemId: `tb-${suffix}`,

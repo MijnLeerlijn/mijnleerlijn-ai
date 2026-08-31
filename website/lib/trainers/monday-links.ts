@@ -256,6 +256,17 @@ export interface TrainingSamenvatting {
    * hier aannemen of door de client laten aanleveren.
    */
   trainerboardItemId: string | null;
+  /**
+   * Upsell-ronde (2026-09-02) — "mijnleerlijn" voor elke training die hier,
+   * zoals altijd, live uit Monday komt. "aanvullend" wordt UITSLUITEND door
+   * lib/trainers/aanvullende-trainingen.ts gezet, bij het omzetten van een
+   * lokale aanvullende training naar dit type — dit bestand zelf blijft
+   * onwetend van die collectie (geen circulaire import, zie de toelichting
+   * daar). Eén robuust veld i.p.v. uitsluitend een visueel label
+   * (opdrachtseis §A3), zodat elke consument (dashboard/schooldetail/
+   * telefonie/upsell-tellingen) hetzelfde, betrouwbare onderscheid gebruikt.
+   */
+  bron: "mijnleerlijn" | "aanvullend";
 }
 
 export interface TrainerSchoolBron {
@@ -461,6 +472,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
       datum,
       logboekIngevuld: parseCheckboxIngevuld(kolommen.get(UV_LOGBOEK_KOLOM)?.value),
       trainerboardItemId: trainerboardItemIdByMasterId.get(item.id) ?? null,
+      bron: "mijnleerlijn",
     };
     uitvoeringById.set(item.id, { schoolIds, samenvatting });
     for (const schoolId of schoolIds) {
@@ -739,7 +751,12 @@ export async function haalDashboardData(trainer: AuthTrainer): Promise<TrainerDa
  * trainingen hoort deze trainer" (spec §6: de write-identiteit komt altijd uit
  * dezelfde resolutieladder, nooit uit een losse telefonie-specifieke query).
  */
-const TELEFONIE_RECENTE_DAGEN = 3;
+// Geëxporteerd (upsell-ronde, 2026-09-02): lib/trainers/telefonie/
+// kandidaten.ts heeft dit venster ook nodig om aanvullende trainingen
+// (lib/trainers/aanvullende-trainingen.ts) met exact hetzelfde
+// recentheidsvenster te filteren — één getal, geen kans dat de twee
+// bronnen uit de pas raken.
+export const TELEFONIE_RECENTE_DAGEN = 3;
 
 export async function haalRecenteTrainingenVoorTelefonie(trainer: AuthTrainer): Promise<TrainingMetSchool[]> {
   const context = await verzamelTrainerContext(trainer);
@@ -892,6 +909,7 @@ export async function haalTrainingenEnScholenVoorAlleTrainers(): Promise<AdminTr
       datum,
       logboekIngevuld: parseCheckboxIngevuld(kolommen.get(UV_LOGBOEK_KOLOM)?.value),
       trainerboardItemId: null, // niet opgehaald voor het admin-brede overzicht, zie moduletoelichting hierboven
+      bron: "mijnleerlijn",
     };
     for (const schoolId of schoolIds) {
       const lijst = trainingenPerSchool.get(schoolId) ?? [];

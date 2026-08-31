@@ -37,7 +37,12 @@ function TrainingRij({ training }: { training: TrainingMetSchool }) {
     >
       <div className="min-w-[10rem] flex-1">
         <p className="text-body-sm font-medium text-grijs-900">{training.schoolNaam}</p>
-        <p className="text-label text-grijs-600">{training.naam}</p>
+        <p className="text-label text-grijs-600">
+          {training.naam}
+          {training.bron === "aanvullend" && (
+            <span className="ml-1.5 rounded-full bg-purple-50 px-1.5 py-0.5 align-middle text-label font-semibold text-purple-700">Aanvullend</span>
+          )}
+        </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <span className="text-body-sm text-grijs-600">{formatKorteDatum(training.datum)}</span>

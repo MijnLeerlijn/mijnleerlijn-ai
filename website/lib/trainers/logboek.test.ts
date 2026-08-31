@@ -55,7 +55,7 @@ function schoolDetail(overrides: Partial<SchoolDetail> = {}): SchoolDetail {
 
 function trainingVoorMutatie(overrides: Partial<TrainingVoorMutatie> = {}): TrainingVoorMutatie {
   return {
-    training: { id: TRAINING_ID, naam: "Training A", status: "gepland", ruweStatusTekst: "Gepland", datum: "2026-08-24", logboekIngevuld: false, trainerboardItemId: "8001" },
+    training: { id: TRAINING_ID, naam: "Training A", status: "gepland", ruweStatusTekst: "Gepland", datum: "2026-08-24", logboekIngevuld: false, trainerboardItemId: "8001", bron: "mijnleerlijn" },
     schoolId: SCHOOL_ID,
     schoolNaam: "School A",
     ...overrides,
@@ -172,16 +172,153 @@ describe("maakLogboekItem", () => {
     expect(uitkomst.item.tekst.length).toBe(4000);
   });
 
-  it("een handmatig logboekitem triggert NOOIT de trainingsverslag- of Monday-writebackflow", async () => {
+  it("een handmatig logboekitem triggert NOOIT de trainingsverslag- of telefonieflow (wél, apart getest hieronder, een eigen Monday-Update — spec §B7/§B8)", async () => {
     const { payload, collection } = maakFakePayload({});
     await maakLogboekItem(payload, TRAINER_A, { mondaySchoolId: SCHOOL_ID, type: "helpdesk", occurredAt: "2026-08-28T10:00:00.000Z", tekst: "Helpdeskvraag." });
 
     expect(collection("training-verslagen")).toHaveLength(0);
     expect(collection("trainer-telefonie-oproepen")).toHaveLength(0);
     expect(mockHaalUpdatesVoorItem).not.toHaveBeenCalled();
-    expect(mockMaakUpdate).not.toHaveBeenCalled();
     expect(mockWijzigKolomWaarde).not.toHaveBeenCalled();
     expect(mockWijzigKolomWaardeJson).not.toHaveBeenCalled();
+    // TRAINER_MONDAY_LOGBOEK_ENABLED staat in deze test niet aan (default
+    // uit) — mockMaakUpdate blijft dus ongebruikt, maar NIET meer omdat het
+    // logboek principieel geen Monday-Update mag schrijven (dat is
+    // inmiddels precies andersom, zie de nieuwe describe hieronder).
+    expect(mockMaakUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// Upsell-ronde (2026-09-02, spec §B7/§B8) — "het logboek wordt de enige
+// inhoud uit deze trainer-/helpdesklaag die naar Monday wordt geschreven."
+describe("maakLogboekItem — Monday-writeback (spec §B7/§B8/§K)", () => {
+  it("TRAINER_MONDAY_LOGBOEK_ENABLED staat niet aan (default) -> geen enkele Monday-aanroep, mondayUpdateStatus 'niet_geactiveerd', item bestaat gewoon lokaal", async () => {
+    const { payload } = maakFakePayload({});
+    const uitkomst = await maakLogboekItem(payload, TRAINER_A, { mondaySchoolId: SCHOOL_ID, type: "notitie", occurredAt: "2026-08-28T10:00:00.000Z", tekst: "Tekst." });
+
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.mondayUpdateStatus).toBe("niet_geactiveerd");
+    expect(mockMaakUpdate).not.toHaveBeenCalled();
+  });
+
+  it("vlag aan, geen trainingskoppeling -> precies één Monday-Update, op het schoolitem, met leesbare tekst zonder interne IDs/technische velden (spec §8)", async () => {
+    vi.stubEnv("TRAINER_MONDAY_LOGBOEK_ENABLED", "true");
+    mockMaakUpdate.mockResolvedValue({ id: "update-school-1" });
+    const { payload } = maakFakePayload({});
+
+    const uitkomst = await maakLogboekItem(payload, TRAINER_A, {
+      mondaySchoolId: SCHOOL_ID,
+      type: "overleg",
+      occurredAt: "2026-08-31T10:00:00.000Z",
+      tekst: "Besproken dat het team voor de volgende bijeenkomst de rekenleerlijn voorbereidt.",
+    });
+
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.mondayUpdateStatus).toBe("geschreven");
+    expect(uitkomst.item.mondaySchoolUpdateId).toBe("update-school-1");
+    expect(uitkomst.item.mondayTrainingUpdateId).toBeFalsy();
+    expect(mockMaakUpdate).toHaveBeenCalledTimes(1);
+
+    const [itemId, tekst, idempotencyKey] = mockMaakUpdate.mock.calls[0]!;
+    expect(itemId).toBe(SCHOOL_ID);
+    expect(tekst).toContain("Logboek —");
+    expect(tekst).toContain("Wessel Kok");
+    expect(tekst).toContain("Besproken dat het team voor de volgende bijeenkomst de rekenleerlijn voorbereidt.");
+    // Geen interne IDs/technische velden — met name het eigen rij-ID van het
+    // logboekitem (de idempotencyKey draagt dat wél, de Update-TEKST zelf nooit).
+    expect(tekst).not.toContain(String(uitkomst.item.id));
+    expect(tekst).not.toMatch(/mondaySchoolId|mondayTrainingId|trainer-logboek-items/i);
+    expect(idempotencyKey).toBe(`logboek-item:${uitkomst.item.id}:school`);
+
+    vi.unstubAllEnvs();
+  });
+
+  it("vlag aan, gekoppeld aan een échte Monday-training -> twee Updates (school + training), beide met dezelfde tekst", async () => {
+    vi.stubEnv("TRAINER_MONDAY_LOGBOEK_ENABLED", "true");
+    mockMaakUpdate.mockImplementation(async (itemId: string) => ({ id: `update-${itemId}` }));
+    const { payload } = maakFakePayload({});
+
+    const uitkomst = await maakLogboekItem(payload, TRAINER_A, {
+      mondaySchoolId: SCHOOL_ID,
+      type: "overleg",
+      occurredAt: "2026-08-31T10:00:00.000Z",
+      tekst: "Kort telefonisch contact gehad.",
+      mondayTrainingId: TRAINING_ID,
+    });
+
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.mondayUpdateStatus).toBe("geschreven");
+    expect(uitkomst.item.mondaySchoolUpdateId).toBe(`update-${SCHOOL_ID}`);
+    expect(uitkomst.item.mondayTrainingUpdateId).toBe(`update-${TRAINING_ID}`);
+    expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
+    expect(mockMaakUpdate).toHaveBeenCalledWith(SCHOOL_ID, expect.any(String), `logboek-item:${uitkomst.item.id}:school`);
+    expect(mockMaakUpdate).toHaveBeenCalledWith(TRAINING_ID, expect.any(String), `logboek-item:${uitkomst.item.id}:training`);
+    const schoolTekst = mockMaakUpdate.mock.calls.find((c) => c[0] === SCHOOL_ID)![1];
+    const trainingTekst = mockMaakUpdate.mock.calls.find((c) => c[0] === TRAINING_ID)![1];
+    expect(schoolTekst).toBe(trainingTekst);
+
+    vi.unstubAllEnvs();
+  });
+
+  it("vlag aan, gekoppeld aan een AANVULLENDE training -> uitsluitend de school-Update, nooit een schrijfpoging naar het niet-bestaande Monday-'aanvullend:<id>'-item (spec §H)", async () => {
+    vi.stubEnv("TRAINER_MONDAY_LOGBOEK_ENABLED", "true");
+    mockMaakUpdate.mockResolvedValue({ id: "update-school-2" });
+    const { payload } = maakFakePayload({
+      "aanvullende-trainingen": [{ id: 1, trainer: TRAINER_A.id, mondaySchoolId: SCHOOL_ID, schoolNaam: "School A", naam: "Bijles rekenen", datum: "2026-08-30" }],
+    });
+
+    const uitkomst = await maakLogboekItem(payload, TRAINER_A, {
+      mondaySchoolId: SCHOOL_ID,
+      type: "overleg",
+      occurredAt: "2026-08-31T10:00:00.000Z",
+      tekst: "Voortgang besproken.",
+      mondayTrainingId: "aanvullend:1",
+    });
+
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.mondayTrainingId).toBe("aanvullend:1");
+    expect(uitkomst.item.mondayUpdateStatus).toBe("geschreven");
+    expect(uitkomst.item.mondayTrainingUpdateId).toBeFalsy();
+    expect(mockMaakUpdate).toHaveBeenCalledTimes(1);
+    expect(mockMaakUpdate).toHaveBeenCalledWith(SCHOOL_ID, expect.any(String), expect.any(String));
+
+    vi.unstubAllEnvs();
+  });
+
+  it("Monday-schrijving mislukt -> het lokale logboekitem bestaat en telt gewoon, mondayUpdateStatus 'mislukt'", async () => {
+    vi.stubEnv("TRAINER_MONDAY_LOGBOEK_ENABLED", "true");
+    mockMaakUpdate.mockRejectedValue(new Error("Monday tijdelijk onbereikbaar"));
+    const { payload } = maakFakePayload({});
+
+    const uitkomst = await maakLogboekItem(payload, TRAINER_A, { mondaySchoolId: SCHOOL_ID, type: "notitie", occurredAt: "2026-08-28T10:00:00.000Z", tekst: "Tekst." });
+
+    expect(uitkomst.soort).toBe("ok");
+    if (uitkomst.soort !== "ok") return;
+    expect(uitkomst.item.mondayUpdateStatus).toBe("mislukt");
+    const opgeslagen = await haalLogboekVoorTrainer(payload, TRAINER_A);
+    expect(opgeslagen).toHaveLength(1); // het item zelf is en blijft gewoon opgeslagen
+
+    vi.unstubAllEnvs();
+  });
+
+  it("de idempotency-key is uitsluitend afgeleid van het eigen, server-gegenereerde rij-ID — twee verschillende items krijgen dus altijd verschillende sleutels, nooit een botsing", async () => {
+    vi.stubEnv("TRAINER_MONDAY_LOGBOEK_ENABLED", "true");
+    mockMaakUpdate.mockResolvedValue({ id: "update-x" });
+    const { payload } = maakFakePayload({});
+
+    const eerste = await maakLogboekItem(payload, TRAINER_A, { mondaySchoolId: SCHOOL_ID, type: "notitie", occurredAt: "2026-08-28T10:00:00.000Z", tekst: "Eerste." });
+    const tweede = await maakLogboekItem(payload, TRAINER_A, { mondaySchoolId: SCHOOL_ID, type: "notitie", occurredAt: "2026-08-28T10:00:00.000Z", tekst: "Tweede." });
+    if (eerste.soort !== "ok" || tweede.soort !== "ok") throw new Error("setup mislukt");
+
+    expect(eerste.item.id).not.toBe(tweede.item.id);
+    const sleutels = mockMaakUpdate.mock.calls.map((c) => c[2]);
+    expect(new Set(sleutels).size).toBe(sleutels.length); // geen enkele sleutel komt dubbel voor
+
+    vi.unstubAllEnvs();
   });
 });
 

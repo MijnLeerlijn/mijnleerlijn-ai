@@ -17,6 +17,7 @@ function training(overrides: Partial<TrainingSamenvatting> & { id: string; naam:
     datum: null,
     logboekIngevuld: false,
     trainerboardItemId: null, // niet-bewerkbaar -> geen popovers/router-interactie nodig in deze presentatietests
+    bron: "mijnleerlijn",
     ...overrides,
   };
 }

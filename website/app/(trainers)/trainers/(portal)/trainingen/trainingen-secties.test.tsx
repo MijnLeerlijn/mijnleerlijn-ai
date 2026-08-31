@@ -18,6 +18,7 @@ function training(overrides: Partial<TrainingMetSchool> & { id: string; naam: st
     datum: null,
     logboekIngevuld: false,
     trainerboardItemId: null,
+    bron: "mijnleerlijn",
     schoolId: "500",
     schoolNaam: "School A",
     ...overrides,

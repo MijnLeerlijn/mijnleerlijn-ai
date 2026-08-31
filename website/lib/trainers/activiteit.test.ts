@@ -30,7 +30,7 @@ function verslagActiviteit(overrides: Partial<VerslagActiviteit> = {}): VerslagA
 }
 
 function logboekItem(overrides: Partial<LogboekItemRecord> = {}): LogboekItemRecord {
-  return { id: 1, mondaySchoolId: "500", schoolNaam: "School A", type: "notitie", occurredAt: "2026-08-20T10:00:00.000Z", tekst: "Notitie", createdAt: "2026-08-20T10:00:00.000Z", ...overrides };
+  return { id: 1, mondaySchoolId: "500", schoolNaam: "School A", type: "notitie", occurredAt: "2026-08-20T10:00:00.000Z", tekst: "Notitie", createdAt: "2026-08-20T10:00:00.000Z", mondayUpdateStatus: "niet_verzonden", ...overrides };
 }
 
 beforeEach(() => {

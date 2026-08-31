@@ -87,9 +87,38 @@ export const TrainingVerslagen: CollectionConfig = {
       label: "Telefonie-oproep (indien bron=telefoon)",
       admin: { description: "Koppeling naar het call-staterecord dat dit concept aanmaakte — uitsluitend voor diagnostiek/traceerbaarheid, nooit een tweede bron van waarheid voor de verslagtekst zelf (die staat in trainerInvoer/definitieveTekst)." },
     },
-    { name: "mondayTrainingId", type: "text", required: true, label: "Monday-ID centrale training", admin: { description: "Server-side afgeleid via haalTrainingVoorMutatie — nooit door de client aangeleverd." } },
+    {
+      name: "trainingBron",
+      type: "select",
+      required: true,
+      defaultValue: "mijnleerlijn",
+      label: "Trainingsbron",
+      options: [
+        { label: "MijnLeerlijn (Monday)", value: "mijnleerlijn" },
+        { label: "Aanvullend (lokaal)", value: "aanvullend" },
+      ],
+      admin: {
+        description:
+          "Upsell-ronde (2026-09-02) — of dit verslag bij een Monday-training hoort of bij een lokale aanvullende training (aanvullende-trainingen). Bepaalt of de Monday-statusafronding (werkTrainingBij) geprobeerd wordt — een aanvullende training heeft niets op Monday om af te ronden.",
+      },
+    },
+    {
+      name: "mondayTrainingId",
+      type: "text",
+      required: true,
+      label: "Training-ID",
+      admin: {
+        description:
+          "Server-side afgeleid via haalTrainingVoorMutatie/haalAanvullendeTrainingVoorMutatie — nooit door de client aangeleverd. Bij trainingBron='aanvullend' is dit een lokale sleutel (\"aanvullend:<id>\"), geen echt Monday-item-ID.",
+      },
+    },
     { name: "mondaySchoolId", type: "text", required: true, label: "Monday-ID school (Master Data)" },
-    { name: "mondayTrainerboardItemId", type: "text", required: true, label: "Monday-ID trainerboard-item" },
+    {
+      name: "mondayTrainerboardItemId",
+      type: "text",
+      label: "Monday-ID trainerboard-item",
+      admin: { description: "Leeg bij trainingBron='aanvullend' (geen Monday-tegenhanger)." },
+    },
     { name: "schoolNaam", type: "text", label: "School (naam, ten tijde van opstellen)" },
     { name: "trainingNaam", type: "text", label: "Training (naam, ten tijde van opstellen)" },
     {

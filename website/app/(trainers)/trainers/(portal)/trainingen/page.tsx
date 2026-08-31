@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
+import { getPayload } from "payload";
+import config from "@/payload.config";
 import { haalIngelogdeTrainer } from "@/lib/trainers/session";
 import { haalAlleTrainingenVoorTrainer, vandaagIsoAmsterdam } from "@/lib/trainers/monday-links";
 import { groepeerOpWeergaveStatus, type TrainingWeergaveStatus } from "@/lib/trainers/training-weergave";
+import { haalAanvullendeTrainingenAlsSamenvattingen } from "@/lib/trainers/aanvullende-trainingen";
 import { TrainingenSecties } from "./trainingen-secties";
 
 export const metadata = { title: "Trainingen — Trainerportal" };
@@ -28,7 +31,16 @@ export default async function TrainerTrainingenPage() {
   const trainer = await haalIngelogdeTrainer();
   if (!trainer) redirect("/login");
 
-  const alle = await haalAlleTrainingenVoorTrainer(trainer);
+  // Upsell-ronde (2026-09-02, spec §A4) — aanvullende trainingen horen hier
+  // net zo goed thuis ("zichtbaar in planning/trainingen") als een
+  // Monday-training: zelfde TrainingMetSchool-vorm, dus zelfde
+  // groepeerOpWeergaveStatus-indeling, geen tweede interpretatie.
+  const payload = await getPayload({ config });
+  const [mondayTrainingen, aanvullendeTrainingen] = await Promise.all([
+    haalAlleTrainingenVoorTrainer(trainer),
+    haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer),
+  ]);
+  const alle = [...mondayTrainingen, ...aanvullendeTrainingen];
   const groepen = groepeerOpWeergaveStatus(alle, vandaagIsoAmsterdam());
 
   // Sectie-open/dicht-toestand is puur presentatie en leeft client-side

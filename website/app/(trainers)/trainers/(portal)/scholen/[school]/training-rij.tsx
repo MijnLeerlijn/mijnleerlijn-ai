@@ -18,6 +18,8 @@ interface TrainingProps {
   ruweStatusTekst: string | null;
   datum: string | null;
   trainerboardItemId: string | null;
+  /** Upsell-ronde (2026-09-02, spec §A3/§A5) — bepaalt hier uitsluitend of het "Aanvullend"-label getoond wordt en of de verslag-CTA los van trainerboardItemId beschikbaar is (zie kanVerslagMaken hieronder), nooit een tweede visuele stijl. */
+  bron: "mijnleerlijn" | "aanvullend";
 }
 
 // Eigen, losse frontend-vorm (geen import van server-only code in een
@@ -199,19 +201,31 @@ export function TrainingRij({
     }
   }
 
-  const kanBewerken = training.trainerboardItemId !== null;
+  // Upsell-ronde (2026-09-02, spec §A4) — "kan bewerken" (status/datum-
+  // popovers) en "kan verslag maken" zijn NIET meer hetzelfde: een
+  // aanvullende training heeft nooit een trainerboard-item (dus nooit de
+  // Monday-status/datum-popovers), maar moet wél altijd de gewone
+  // verslag-CTA kunnen tonen — "behandel een aanvullende training verder
+  // als een normale training" (spec §A4).
+  const kanSchrijvenNaarMonday = training.trainerboardItemId !== null;
+  const kanVerslagMaken = kanSchrijvenNaarMonday || training.bron === "aanvullend";
   const cta = toonLogboekStatus ? verslagCta(logboekIngevuld, verslag) : null;
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2.5">
-      <p className="min-w-[10rem] flex-1 text-body-sm font-medium text-grijs-900">{training.naam}</p>
+      <p className="min-w-[10rem] flex-1 text-body-sm font-medium text-grijs-900">
+        {training.naam}
+        {training.bron === "aanvullend" && (
+          <span className="ml-2 rounded-full bg-purple-50 px-1.5 py-0.5 align-middle text-label font-semibold text-purple-700">Aanvullend</span>
+        )}
+      </p>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         {/* Schooldetail-UX-ronde (2026-08-25) — het "Logboek niet ingevuld"-
             badge (systeemtaal, opdrachtseis) is bewust vervallen: de CTA
             hieronder ("Verslag maken"/"Verslag bekijken") draagt nu zelf de
             hoofdboodschap, en de sectiekop (training-secties.tsx) maakt via
             zijn titel al duidelijk in welke bucket deze rij zit. */}
-        {cta && kanBewerken && (
+        {cta && kanVerslagMaken && (
           <Link
             href={`/scholen/${schoolId}/trainingen/${training.id}/verslag`}
             className={
@@ -225,7 +239,7 @@ export function TrainingRij({
           </Link>
         )}
 
-        {kanBewerken ? (
+        {kanSchrijvenNaarMonday ? (
           <>
             <DatumPopover
               huidigeDatum={baselineDatum}

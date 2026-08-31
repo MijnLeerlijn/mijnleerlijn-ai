@@ -11,6 +11,7 @@ import {
   type GestartConcept,
 } from "./verslag";
 import { haalActiviteitVoorTrainer } from "./activiteit";
+import { haalAanvullendeTrainingenAlsSamenvattingen } from "./aanvullende-trainingen";
 import type { Payload } from "payload";
 import type { AuthTrainer } from "./auth";
 
@@ -35,6 +36,15 @@ vi.mock("./verslag", async (importOriginal) => {
   };
 });
 vi.mock("./activiteit", () => ({ haalActiviteitVoorTrainer: vi.fn() }));
+// Upsell-ronde (2026-09-02) — haalDashboardV2Data haalt aanvullende
+// trainingen nu naast de Monday-data op (lib/trainers/aanvullende-
+// trainingen.ts), zelfde mockprincipe als de andere domeinlagen hierboven:
+// deze suite test uitsluitend de aggregatie, niet die leesfunctie zelf (die
+// heeft haar eigen tests in aanvullende-trainingen.test.ts).
+vi.mock("./aanvullende-trainingen", async (importOriginal) => {
+  const echt = await importOriginal<typeof import("./aanvullende-trainingen")>();
+  return { ...echt, haalAanvullendeTrainingenAlsSamenvattingen: vi.fn() };
+});
 
 const mockHaalDashboardData = vi.mocked(haalDashboardData);
 const mockHaalTelefonischeConcepten = vi.mocked(haalTelefonischeConceptenVoorTrainer);
@@ -42,12 +52,25 @@ const mockHaalVerslagenDieAandachtNodigHebben = vi.mocked(haalVerslagenDieAandac
 const mockHaalGestarteConcepten = vi.mocked(haalGestarteConceptenVoorTrainer);
 const mockTelVoltooideVerslagen = vi.mocked(telVoltooideVerslagen);
 const mockHaalActiviteitVoorTrainer = vi.mocked(haalActiviteitVoorTrainer);
+const mockHaalAanvullendeTrainingen = vi.mocked(haalAanvullendeTrainingenAlsSamenvattingen);
 
 const TRAINER: AuthTrainer = { id: 1, name: "Wessel Kok", email: "wessel@mijnleerlijn.nl", mondayTrainerboardId: "18424768045", mondayUitvoerderItemId: "12419116827", actief: true };
 const FAKE_PAYLOAD = {} as Payload;
 
 function training(overrides: Partial<TrainingMetSchool> = {}): TrainingMetSchool {
-  return { id: "1", naam: "Training A", status: "gepland", ruweStatusTekst: "Gepland", datum: "2026-08-28", logboekIngevuld: false, trainerboardItemId: "8001", schoolId: "500", schoolNaam: "School A", ...overrides };
+  return {
+    id: "1",
+    naam: "Training A",
+    status: "gepland",
+    ruweStatusTekst: "Gepland",
+    datum: "2026-08-28",
+    logboekIngevuld: false,
+    trainerboardItemId: "8001",
+    bron: "mijnleerlijn",
+    schoolId: "500",
+    schoolNaam: "School A",
+    ...overrides,
+  };
 }
 
 function dashboardData(overrides: Partial<TrainerDashboardData> = {}): TrainerDashboardData {
@@ -90,6 +113,7 @@ beforeEach(() => {
   mockHaalGestarteConcepten.mockResolvedValue([]);
   mockTelVoltooideVerslagen.mockResolvedValue(0);
   mockHaalActiviteitVoorTrainer.mockResolvedValue([]);
+  mockHaalAanvullendeTrainingen.mockResolvedValue([]);
 });
 
 describe("haalDashboardV2Data", () => {
@@ -102,6 +126,7 @@ describe("haalDashboardV2Data", () => {
     expect(mockHaalGestarteConcepten).toHaveBeenCalledWith(FAKE_PAYLOAD, TRAINER);
     expect(mockTelVoltooideVerslagen).toHaveBeenCalledWith(FAKE_PAYLOAD, TRAINER);
     expect(mockHaalActiviteitVoorTrainer).toHaveBeenCalledWith(FAKE_PAYLOAD, TRAINER, 5);
+    expect(mockHaalAanvullendeTrainingen).toHaveBeenCalledWith(FAKE_PAYLOAD, TRAINER);
   });
 
   it("To do is zichtbaar (niet-leeg) zodra minstens één categorie iets oplevert", async () => {
@@ -243,5 +268,32 @@ describe("haalDashboardV2Data — actuele-trainingenwhitelist (spec §1)", () =>
     const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
 
     expect(data.todo.map((i) => i.trainingId)).toEqual(["live-1"]);
+  });
+});
+
+// Upsell-ronde (2026-09-02, spec §A4/§K) — "Behandel een aanvullende
+// training verder als een normale training: zichtbaar in planning/
+// trainingen." Deze suite bewijst dat de her-groepering in dashboard.ts
+// (groepeerOpWeergaveStatus over Monday- ÉN aanvullende trainingen samen)
+// een aanvullende training exact zo behandelt als een Monday-training —
+// geen tweede interpretatie van "wat telt als training".
+describe("haalDashboardV2Data — aanvullende trainingen (spec §A4/§K)", () => {
+  it("een aanvullende training telt mee in totaalTrainingen/alleTrainingen, naast de Monday-trainingen", async () => {
+    mockHaalDashboardData.mockResolvedValue(dashboardData({ totaalTrainingen: 1, alleTrainingen: [training({ id: "ml-1" })] }));
+    mockHaalAanvullendeTrainingen.mockResolvedValue([training({ id: "aanvullend:1", bron: "aanvullend", datum: "2099-01-01" })]);
+
+    const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
+
+    expect(data.statistieken.totaalTrainingen).toBe(2);
+    expect(data.komendVolgende.map((t) => t.id)).toContain("aanvullend:1");
+  });
+
+  it("een verlopen aanvullende training zonder verslag verschijnt in To do (verslag_ontbreekt), net als een Monday-training", async () => {
+    mockHaalDashboardData.mockResolvedValue(dashboardData());
+    mockHaalAanvullendeTrainingen.mockResolvedValue([training({ id: "aanvullend:2", bron: "aanvullend", datum: "2026-01-01", logboekIngevuld: false })]);
+
+    const data = await haalDashboardV2Data(FAKE_PAYLOAD, TRAINER);
+
+    expect(data.todo).toEqual([expect.objectContaining({ soort: "verslag_ontbreekt", trainingId: "aanvullend:2" })]);
   });
 });

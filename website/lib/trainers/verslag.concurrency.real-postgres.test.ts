@@ -125,6 +125,7 @@ function trainingVoorMutatie(trainingId: string): TrainingVoorMutatie {
       datum: "2026-08-20",
       logboekIngevuld: false,
       trainerboardItemId: `tb-${trainingId}`,
+      bron: "mijnleerlijn",
     },
     schoolId: `school-${trainingId}`,
     schoolNaam: "Testschool",
@@ -237,45 +238,39 @@ describe.skipIf(!beschikbaar)("bevestigVerslag — ECHTE concurrency tegen echte
     return uitkomst.verslag;
   }
 
-  function maakGate(): { promise: Promise<void>; resolve: () => void } {
-    let resolve!: () => void;
-    const promise = new Promise<void>((r) => {
-      resolve = r;
-    });
-    return { promise, resolve };
-  }
 
-  /** Vind, ongeacht volgorde, welke van de twee mock-aanroepen bij welk item hoort. */
-  function tekstVoorItem(itemId: string): string {
-    const call = mockMaakUpdate.mock.calls.find((c) => c[0] === itemId);
-    if (!call) throw new Error(`Geen create_update-aanroep gevonden voor item ${itemId}`);
-    return call[1];
-  }
-
-  it("1. twee écht gelijktijdige eerste 'Definitief opslaan'-requests -> precies twee Updates (nooit vier), exact dezelfde tekst naar beide kanten", async () => {
+  // Upsell-ronde (2026-09-02, spec §B7) — bevestigVerslag schrijft niet
+  // langer een Monday-Update voor het verslag zelf (die stap is uit de
+  // functie verwijderd, zie de doc-comment daar). De concurrency-garantie
+  // die dit bestand moet bewijzen is dus verschoven: niet langer "de twee
+  // Update-writes zijn race-safe", maar (a) de atomische stap-3-claim op
+  // definitieveTekst/status is nog altijd race-safe tegen ECHTE Postgres, en
+  // (b) maakUpdate wordt door bevestigVerslag NOOIT meer aangeroepen, ook
+  // niet onder gelijktijdige belasting. schrijfVerslagUpdateIdempotent/
+  // claimUpdateSlot zelf blijven ongewijzigd or (bewust EXPORTED, zie
+  // verslag.ts) maar hebben vanuit bevestigVerslag geen aanroeper meer — hun
+  // eigen concurrency-eigenschap is dus geen onderwerp meer van DEZE suite.
+  it("1. twee écht gelijktijdige eerste 'Definitief opslaan'-requests -> precies één tekst wint de atomische stap-3-claim, beide callers zien daarna dezelfde definitieve tekst en status", async () => {
     const trainingId = nieuweTrainingId();
     const trainer = await maakTrainerRow(payload, "Concurrency Trainer 1");
-    const rij = await maakConceptRij(payload, trainer, trainingId);
+    await maakConceptRij(payload, trainer, trainingId);
 
     const [eerste, tweede] = await Promise.all([
-      bevestigVerslag(payload, trainer, trainingId, "Tekst van gelijktijdige poging"),
-      bevestigVerslag(payload, trainer, trainingId, "Tekst van gelijktijdige poging"),
+      bevestigVerslag(payload, trainer, trainingId, "Tekst van poging A"),
+      bevestigVerslag(payload, trainer, trainingId, "Tekst van poging B"),
     ]);
 
     expect(eerste.soort).toBe("resultaat");
     expect(tweede.soort).toBe("resultaat");
-    expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
+    if (eerste.soort === "resultaat" && tweede.soort === "resultaat") {
+      expect(eerste.verslag.definitieveTekst).toBe(tweede.verslag.definitieveTekst);
+      expect(["Tekst van poging A", "Tekst van poging B"]).toContain(eerste.verslag.definitieveTekst);
+    }
 
     const finaleRij = await haalVerslagVoorTraining(payload, trainer, trainingId);
-    expect(finaleRij?.trainingUpdateStatus).toBe("geschreven");
-    expect(finaleRij?.schoolUpdateStatus).toBe("geschreven");
     expect(finaleRij?.status).toBe("voltooid");
-
-    // Exact dezelfde tekst naar beide kanten (spec §7) — ook al kwam die
-    // tekst mogelijk van de "verliezende" aanvraag se stap-3-claim.
-    const trainingTekst = tekstVoorItem(rij.mondayTrainingId);
-    const schoolTekst = tekstVoorItem(rij.mondaySchoolId);
-    expect(trainingTekst).toBe(schoolTekst);
+    expect(finaleRij?.trainingBron).toBe("mijnleerlijn");
+    expect(mockMaakUpdate).not.toHaveBeenCalled();
   });
 
   it("2. twee browser-tabs (twee volledig gescheiden Payload/DB-verbindingen, GEEN gedeeld in-memory object) -> zelfde garantie, bewijst dat correctheid uit de database komt, niet uit een in-process mutex", async () => {
@@ -287,116 +282,31 @@ describe.skipIf(!beschikbaar)("bevestigVerslag — ECHTE concurrency tegen echte
     // via de TWEEDE, volledig aparte Payload-instantie/verbinding.
     const [tabEen, tabTwee] = await Promise.all([
       bevestigVerslag(payload, trainer, trainingId, "Tekst uit tabblad 1"),
-      bevestigVerslag(payloadTweedeVerbinding, trainer, trainingId, "Tekst uit tabblad 1"),
+      bevestigVerslag(payloadTweedeVerbinding, trainer, trainingId, "Tekst uit tabblad 2"),
     ]);
 
     expect(tabEen.soort).toBe("resultaat");
     expect(tabTwee.soort).toBe("resultaat");
-    expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
-
-    const finaleRij = await haalVerslagVoorTraining(payload, trainer, trainingId);
-    expect(finaleRij?.trainingUpdateStatus).toBe("geschreven");
-    expect(finaleRij?.schoolUpdateStatus).toBe("geschreven");
+    if (tabEen.soort === "resultaat" && tabTwee.soort === "resultaat") {
+      expect(tabEen.verslag.definitieveTekst).toBe(tabTwee.verslag.definitieveTekst);
+    }
   });
 
-  it("3. eerste request houdt de training-claim vast (nog bezig) terwijl de tweede binnenkomt -> tweede krijgt 'in behandeling' op de trainingskant, mag en voltooit intussen zelfstandig de (onafhankelijke) schoolkant, nooit een duplicaat", async () => {
+  it("3. bevestigVerslag roept nooit maakUpdate aan — ook niet onder gelijktijdige belasting, ook niet bij een retry ná een geslaagde bevestiging (spec §B7: geen automatische volledige verslag-writeback meer naar Monday)", async () => {
     const trainingId = nieuweTrainingId();
     const trainer = await maakTrainerRow(payload, "Concurrency Trainer 3");
-    const rij = await maakConceptRij(payload, trainer, trainingId);
-
-    const binnengekomen = maakGate();
-    const vrijgeven = maakGate();
-    mockHaalUpdatesVoorItem.mockImplementation(async (itemId: string) => {
-      if (itemId === rij.mondayTrainingId) {
-        binnengekomen.resolve();
-        await vrijgeven.promise;
-      }
-      return [];
-    });
-
-    const eerstePromise = bevestigVerslag(payload, trainer, trainingId, "Tekst");
-    // Garandeert dat de eerste aanvraag zijn atomische training-claim-UPDATE
-    // al daadwerkelijk gecommit heeft (die loopt synchroon vóór deze
-    // haalUpdatesVoorItem-aanroep binnen schrijfVerslagUpdateIdempotent).
-    await binnengekomen.promise;
-
-    const tweede = await bevestigVerslag(payload, trainer, trainingId);
-    expect(tweede.soort).toBe("resultaat");
-    if (tweede.soort === "resultaat") {
-      expect(tweede.verslag.trainingUpdateStatus).not.toBe("geschreven"); // nog bij de eerste aanvraag
-      expect(tweede.verslag.schoolUpdateStatus).toBe("geschreven"); // onafhankelijk, dus zelfstandig voltooid door de tweede
-      expect(tweede.boodschap).toContain("al verwerkt");
-    }
-    // Op dit moment precies één Update geschreven: de schoolkant, door de tweede aanvraag.
-    expect(mockMaakUpdate).toHaveBeenCalledTimes(1);
-    expect(mockMaakUpdate).toHaveBeenCalledWith(rij.mondaySchoolId, expect.any(String), expect.any(String));
-
-    vrijgeven.resolve();
-    const eerste = await eerstePromise;
-    expect(eerste.soort).toBe("resultaat");
-    if (eerste.soort === "resultaat") {
-      expect(eerste.verslag.trainingUpdateStatus).toBe("geschreven");
-      expect(eerste.verslag.schoolUpdateStatus).toBe("geschreven"); // herkend als al gedaan, NIET nogmaals geschreven
-      expect(eerste.verslag.status).toBe("voltooid");
-    }
-    // Nooit meer dan training(1) + school(1), ook al liepen ze door elkaar.
-    expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
-  });
-
-  it("4. eerste request rondt volledig af, dan komt pas de tweede binnen -> idempotent succes/no-op, geen nieuwe Update", async () => {
-    const trainingId = nieuweTrainingId();
-    const trainer = await maakTrainerRow(payload, "Concurrency Trainer 4");
     await maakConceptRij(payload, trainer, trainingId);
 
-    const eerste = await bevestigVerslag(payload, trainer, trainingId, "Tekst");
-    expect(eerste.soort).toBe("resultaat");
-    expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
-
-    mockMaakUpdate.mockClear();
-    const tweede = await bevestigVerslag(payload, trainer, trainingId, "Andere tekst die genegeerd hoort te worden");
-    expect(tweede.soort).toBe("resultaat");
+    await Promise.all([bevestigVerslag(payload, trainer, trainingId, "Tekst A"), bevestigVerslag(payload, trainer, trainingId, "Tekst B")]);
     expect(mockMaakUpdate).not.toHaveBeenCalled();
-    if (tweede.soort === "resultaat") {
-      expect(tweede.verslag.status).toBe("voltooid");
-      expect(tweede.verslag.trainingUpdateStatus).toBe("geschreven");
-      expect(tweede.verslag.schoolUpdateStatus).toBe("geschreven");
-    }
+
+    await bevestigVerslag(payload, trainer, trainingId, "Genegeerde retry-tekst");
+    expect(mockMaakUpdate).not.toHaveBeenCalled();
   });
 
-  it("5. partial failure (training mislukt, school slaagt) gevolgd door twee gelijktijdige retries -> de mislukte kant wordt precies éénmaal herschreven, de al-geslaagde kant nooit opnieuw", async () => {
+  it("4. status gaat pas naar 'voltooid' zodra de ML-afronding (werkTrainingBij: status/logboek-kolommen) slaagt; blijft 'bevestigd' zolang die mislukt, ook bij gelijktijdige retries — en nooit een Update-schrijving erbij", async () => {
     const trainingId = nieuweTrainingId();
-    const trainer = await maakTrainerRow(payload, "Concurrency Trainer 5");
-    const rij = await maakConceptRij(payload, trainer, trainingId);
-
-    mockMaakUpdate.mockImplementation(async (itemId: string) => {
-      if (itemId === rij.mondayTrainingId) throw new Error("Monday tijdelijk onbereikbaar");
-      return { id: "school-update-eerste-poging" };
-    });
-    const eerste = await bevestigVerslag(payload, trainer, trainingId, "Tekst");
-    expect(eerste.soort).toBe("resultaat");
-    if (eerste.soort === "resultaat") {
-      expect(eerste.verslag.trainingUpdateStatus).toBe("mislukt");
-      expect(eerste.verslag.schoolUpdateStatus).toBe("geschreven");
-    }
-
-    mockMaakUpdate.mockReset().mockImplementation(async () => ({ id: `retry-update-${Math.random().toString(36).slice(2)}` }));
-    const [retryA, retryB] = await Promise.all([bevestigVerslag(payload, trainer, trainingId), bevestigVerslag(payload, trainer, trainingId)]);
-    expect(retryA.soort).toBe("resultaat");
-    expect(retryB.soort).toBe("resultaat");
-
-    // Uitsluitend de ontbrekende (training-)kant opnieuw geschreven — nooit de school-kant, die al 'geschreven' was.
-    expect(mockMaakUpdate).toHaveBeenCalledTimes(1);
-    expect(mockMaakUpdate).toHaveBeenCalledWith(rij.mondayTrainingId, expect.any(String), expect.any(String));
-
-    const finaleRij = await haalVerslagVoorTraining(payload, trainer, trainingId);
-    expect(finaleRij?.trainingUpdateStatus).toBe("geschreven");
-    expect(finaleRij?.schoolUpdateStatus).toBe("geschreven");
-    expect(finaleRij?.schoolUpdateMondayId).toBe("school-update-eerste-poging"); // ongewijzigd sinds de eerste poging
-  });
-
-  it("6. beide Updates geschreven, maar de administratieve afronding (status/logboek) mislukt -> retry rondt de afronding af zonder ooit de Updates opnieuw te schrijven", async () => {
-    const trainingId = nieuweTrainingId();
-    const trainer = await maakTrainerRow(payload, "Concurrency Trainer 6");
+    const trainer = await maakTrainerRow(payload, "Concurrency Trainer 4");
     await maakConceptRij(payload, trainer, trainingId);
 
     mockWijzigKolomWaarde.mockRejectedValue(new Error("Monday tijdelijk onbereikbaar"));
@@ -404,22 +314,19 @@ describe.skipIf(!beschikbaar)("bevestigVerslag — ECHTE concurrency tegen echte
     expect(eerste.soort).toBe("resultaat");
     if (eerste.soort === "resultaat") {
       expect(eerste.verslag.status).toBe("bevestigd"); // nooit "voltooid" zolang afronding mislukt
-      expect(eerste.verslag.trainingUpdateStatus).toBe("geschreven");
-      expect(eerste.verslag.schoolUpdateStatus).toBe("geschreven");
     }
-    expect(mockMaakUpdate).toHaveBeenCalledTimes(2);
 
-    mockMaakUpdate.mockClear();
     mockWijzigKolomWaarde.mockReset().mockResolvedValue(undefined); // afronding lukt nu wél
-    const retry = await bevestigVerslag(payload, trainer, trainingId);
-    expect(mockMaakUpdate).not.toHaveBeenCalled(); // status/checkbox-retry mag nooit de Updates opnieuw schrijven
-    expect(retry.soort).toBe("resultaat");
-    if (retry.soort === "resultaat") {
-      expect(retry.verslag.status).toBe("voltooid");
-    }
+    const [retryA, retryB] = await Promise.all([bevestigVerslag(payload, trainer, trainingId), bevestigVerslag(payload, trainer, trainingId)]);
+    expect(retryA.soort).toBe("resultaat");
+    expect(retryB.soort).toBe("resultaat");
+
+    const finaleRij = await haalVerslagVoorTraining(payload, trainer, trainingId);
+    expect(finaleRij?.status).toBe("voltooid");
+    expect(mockMaakUpdate).not.toHaveBeenCalled();
   });
 
-  it("7. twee verschillende trainers, gelijktijdig, elk hun eigen verslag -> volledig onafhankelijk, geen kruisbestuiving, geen onderlinge blokkade (geen globale lock)", async () => {
+  it("5. twee verschillende trainers, gelijktijdig, elk hun eigen verslag -> volledig onafhankelijk, geen kruisbestuiving, geen onderlinge blokkade (geen globale lock)", async () => {
     const trainingIdA = nieuweTrainingId();
     const trainingIdB = nieuweTrainingId();
     const trainerA = await maakTrainerRow(payload, "Trainer A Concurrency");
@@ -434,23 +341,14 @@ describe.skipIf(!beschikbaar)("bevestigVerslag — ECHTE concurrency tegen echte
 
     expect(uitkomstA.soort).toBe("resultaat");
     expect(uitkomstB.soort).toBe("resultaat");
-    expect(mockMaakUpdate).toHaveBeenCalledTimes(4); // 2 per trainer, nooit gedeeld/gedupliceerd
 
     // Trainer B kan trainer A se rij nooit lezen/claimen, ook niet indirect.
     const finaleRijA = await haalVerslagVoorTraining(payload, trainerA, trainingIdA);
     const finaleRijB = await haalVerslagVoorTraining(payload, trainerB, trainingIdB);
     expect(finaleRijA?.id).toBe(rijA.id);
     expect(finaleRijB?.id).toBe(rijB.id);
-    expect(finaleRijA?.trainingUpdateStatus).toBe("geschreven");
-    expect(finaleRijB?.trainingUpdateStatus).toBe("geschreven");
-
-    // Elke tekst kwam uitsluitend bij het eigen item terecht — geen kruisbestuiving.
-    const tekstTrainingA = tekstVoorItem(rijA.mondayTrainingId);
-    const tekstTrainingB = tekstVoorItem(rijB.mondayTrainingId);
-    expect(tekstTrainingA).toContain("Trainer A Concurrency");
-    expect(tekstTrainingA).not.toContain("Trainer B Concurrency");
-    expect(tekstTrainingB).toContain("Trainer B Concurrency");
-    expect(tekstTrainingB).not.toContain("Trainer A Concurrency");
+    expect(finaleRijA?.definitieveTekst).toBe("Tekst van trainer A");
+    expect(finaleRijB?.definitieveTekst).toBe("Tekst van trainer B");
 
     // Trainer B kan trainer A se training-ID niet claimen, ook al zou hij hem kennen.
     const kruispoging = await bevestigVerslag(payload, trainerB, trainingIdA, "Poging door trainer B");

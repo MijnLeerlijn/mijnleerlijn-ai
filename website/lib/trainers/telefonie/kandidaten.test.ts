@@ -44,6 +44,7 @@ function training(overrides: Partial<TrainingMetSchool> = {}): TrainingMetSchool
     datum: VANDAAG,
     logboekIngevuld: false,
     trainerboardItemId: "222",
+    bron: "mijnleerlijn",
     schoolId: "500",
     schoolNaam: "Montessori Gorinchem",
     ...overrides,
@@ -151,7 +152,57 @@ describe("haalTelefonieKandidaten", () => {
     const { payload } = maakFakePayload({});
     const findSpy = vi.spyOn(payload, "find");
     await haalTelefonieKandidaten(payload, TRAINER);
-    expect(findSpy).not.toHaveBeenCalled();
+    // Upsell-ronde (2026-09-02) — haalAanvullendeTrainingenAlsSamenvattingen
+    // (lib/trainers/aanvullende-trainingen.ts) doet altijd precies ÉÉN eigen
+    // find-aanroep, ongeacht het aantal Monday-trainingen (geen N+1, gewoon
+    // een tweede, onafhankelijke bron naast Monday) — de eis die deze test
+    // bewaakt blijft dus intact als "geen find naar training-verslagen",
+    // niet meer als "geen enkele find".
+    expect(findSpy).not.toHaveBeenCalledWith(expect.objectContaining({ collection: "training-verslagen" }));
+  });
+});
+
+// Upsell-ronde (2026-09-02, spec §A5) — "een aanvullende training met datum
+// moet ook door de telefonische flow gevonden kunnen worden [...] zorg dat
+// duidelijk kan worden onderscheiden om welke training het gaat." Bewijst
+// dat haalTelefonieKandidaten de twee bronnen simpelweg samenvoegt (zelfde
+// vandaag/ouder-splitsing, zelfde verslag-uitsluiting, zelfde sortering) —
+// geen tweede kandidatenlogica voor aanvullende trainingen.
+describe("haalTelefonieKandidaten — aanvullende trainingen (spec §A5)", () => {
+  function aanvullendeRij(overrides: Record<string, unknown> = {}) {
+    return { id: 1, trainer: TRAINER.id, mondaySchoolId: "500", schoolNaam: "Montessori Gorinchem", naam: "Bijles rekenen", datum: VANDAAG, ...overrides };
+  }
+
+  it("een aanvullende training van vandaag zonder verslag verschijnt als kandidaat, gelabeld bron: 'aanvullend'", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([]);
+    const { payload } = maakFakePayload({ "aanvullende-trainingen": [aanvullendeRij()] });
+
+    const resultaat = await haalTelefonieKandidaten(payload, TRAINER);
+
+    expect(resultaat.vandaag).toHaveLength(1);
+    expect(resultaat.vandaag[0]).toMatchObject({ id: "aanvullend:1", bron: "aanvullend", schoolNaam: "Montessori Gorinchem" });
+  });
+
+  it("een aanvullende training MET een bestaand verslag wordt net als een ML-training uitgesloten", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([]);
+    const { payload } = maakFakePayload({
+      "aanvullende-trainingen": [aanvullendeRij()],
+      "training-verslagen": [verslagRij({ mondayTrainingId: "aanvullend:1", status: "bevestigd" })],
+    });
+
+    const resultaat = await haalTelefonieKandidaten(payload, TRAINER);
+
+    expect(resultaat.vandaag).toHaveLength(0);
+    expect(resultaat.ouder).toHaveLength(0);
+  });
+
+  it("ML- en aanvullende trainingen van vandaag komen samen in dezelfde vandaag-laag terecht", async () => {
+    mockHaalRecenteTrainingen.mockResolvedValue([training({ id: "111", datum: VANDAAG })]);
+    const { payload } = maakFakePayload({ "aanvullende-trainingen": [aanvullendeRij({ datum: VANDAAG })] });
+
+    const resultaat = await haalTelefonieKandidaten(payload, TRAINER);
+
+    expect(resultaat.vandaag.map((k) => k.id).sort()).toEqual(["111", "aanvullend:1"]);
   });
 });
 
@@ -163,6 +214,7 @@ describe("labelKandidaten", () => {
     schoolId: "500",
     trainerboardItemId: "222",
     datum: VANDAAG,
+    bron: "mijnleerlijn",
     ...overrides,
   });
 

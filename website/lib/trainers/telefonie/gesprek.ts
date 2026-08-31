@@ -4,8 +4,9 @@ import type { TelefonieProvider, VoiceInstructie } from "./provider";
 import { vindTrainerVoorTelefoonnummer, haalAuthTrainerVoorId } from "./trainer-lookup";
 import type { AuthTrainer } from "../auth";
 import { normaliseerNederlandsNummer } from "./nummer";
-import { haalRecenteTrainingenVoorTelefonie, vandaagIsoAmsterdam } from "../monday-links";
+import { haalRecenteTrainingenVoorTelefonie, vandaagIsoAmsterdam, TELEFONIE_RECENTE_DAGEN } from "../monday-links";
 import { haalTelefonieKandidaten, labelKandidaten, type TelefonieKandidaat, type TelefonieKandidatenResultaat } from "./kandidaten";
+import { haalAanvullendeTrainingenAlsSamenvattingen } from "../aanvullende-trainingen";
 import { upsertConcept, structureerVerslag, haalVerslagVoorTraining, type VerslagConceptUitkomst } from "../verslag";
 import { transcribeAudio } from "@/services/ai-client";
 import {
@@ -394,12 +395,25 @@ async function kiesTrainingEnStartOpname(
   // Her-resolutie server-side, ZELFDE ladder als de portal (spec §6: "de
   // gekozen training moet altijd eindigen op de echte bewezen centrale
   // training-ID/trainerboard-item-ID/Master-Data-school-ID") — de kandidaat
-  // hierboven komt al uit die ladder (haalRecenteTrainingenVoorTelefonie via
-  // haalTelefonieKandidaten), dus dit is geen tweede interpretatie,
-  // uitsluitend een verse her-lezing vlak vóór het vastleggen (nooit de
-  // eerder-gesnapshotte kandidaatgegevens zelf als bron van waarheid
-  // gebruiken — die dienden uitsluitend om het gesproken menu op te bouwen).
-  const alleKandidaten = await haalRecenteTrainingenVoorTelefonie(trainer);
+  // hierboven komt al uit die ladder (haalRecenteTrainingenVoorTelefonie +
+  // haalAanvullendeTrainingenAlsSamenvattingen via haalTelefonieKandidaten),
+  // dus dit is geen tweede interpretatie, uitsluitend een verse her-lezing
+  // vlak vóór het vastleggen (nooit de eerder-gesnapshotte kandidaatgegevens
+  // zelf als bron van waarheid gebruiken — die dienden uitsluitend om het
+  // gesproken menu op te bouwen).
+  //
+  // Upsell-ronde (2026-09-02, spec §A5) — deze her-lezing moet exact
+  // dezelfde TWEE bronnen samenvoegen als haalTelefonieKandidaten hierboven
+  // (bewust niet die functie zelf hergebruikt: die filtert ook meteen op
+  // "heeft al een verslag", wat vlak hieronder al apart en explicieter
+  // gebeurt) — anders zou een gekozen AANVULLENDE training hier nooit
+  // teruggevonden worden en de trainer ten onrechte "niet meer beschikbaar"
+  // te horen krijgen.
+  const [recentMonday, recentAanvullend] = await Promise.all([
+    haalRecenteTrainingenVoorTelefonie(trainer),
+    haalAanvullendeTrainingenAlsSamenvattingen(payload, trainer, { maxDagenGeleden: TELEFONIE_RECENTE_DAGEN }),
+  ]);
+  const alleKandidaten = [...recentMonday, ...recentAanvullend];
   const bevestigd = alleKandidaten.find((t) => t.id === gekozen.id);
   if (!bevestigd) {
     // Training bestaat niet meer in de verse resolutie (bv. inmiddels

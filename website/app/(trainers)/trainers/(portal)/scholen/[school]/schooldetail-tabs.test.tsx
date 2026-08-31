@@ -16,6 +16,7 @@ function renderTabs() {
   return render(
     <SchooldetailTabs
       trainingenPaneel={<p data-testid="paneel-trainingen">Trainingeninhoud</p>}
+      aanvullendPaneel={<p data-testid="paneel-aanvullend">Aanvullendinhoud</p>}
       aiPaneel={<p data-testid="paneel-ai">AI-inhoud</p>}
       logboekPaneel={<p data-testid="paneel-logboek">Logboekinhoud</p>}
       bestandenPaneel={<p data-testid="paneel-bestanden">Bestandeninhoud</p>}
@@ -25,16 +26,32 @@ function renderTabs() {
 }
 
 describe("SchooldetailTabs", () => {
-  it("toont de tabs in de juiste volgorde: Trainingen | Vraag aan AI | Logboek | Bestanden | Contactpersoon", () => {
+  it("toont de tabs in de juiste volgorde: Trainingen | Aanvullende trainingen | Vraag aan AI | Logboek | Bestanden | Contactpersoon", () => {
     renderTabs();
     const tabs = screen.getAllByRole("tab").map((el) => el.textContent);
-    expect(tabs).toEqual(["Trainingen", "Vraag aan AI", "Logboek", "Bestanden", "Contactpersoon"]);
+    expect(tabs).toEqual(["Trainingen", "Aanvullende trainingen", "Vraag aan AI", "Logboek", "Bestanden", "Contactpersoon"]);
   });
 
   it("'Trainingen' is standaard de actieve tab", () => {
     renderTabs();
     expect(screen.getByRole("tab", { name: "Trainingen" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("paneel-trainingen")).toBeVisible();
+    expect(screen.getByTestId("paneel-aanvullend")).not.toBeVisible();
+    expect(screen.getByTestId("paneel-ai")).not.toBeVisible();
+    expect(screen.getByTestId("paneel-logboek")).not.toBeVisible();
+    expect(screen.getByTestId("paneel-bestanden")).not.toBeVisible();
+    expect(screen.getByTestId("paneel-contactpersoon")).not.toBeVisible();
+  });
+
+  it("klikken op 'Aanvullende trainingen' toont uitsluitend dat paneel", async () => {
+    const user = userEvent.setup();
+    renderTabs();
+
+    await user.click(screen.getByRole("tab", { name: "Aanvullende trainingen" }));
+
+    expect(screen.getByRole("tab", { name: "Aanvullende trainingen" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("paneel-aanvullend")).toBeVisible();
+    expect(screen.getByTestId("paneel-trainingen")).not.toBeVisible();
     expect(screen.getByTestId("paneel-ai")).not.toBeVisible();
     expect(screen.getByTestId("paneel-logboek")).not.toBeVisible();
     expect(screen.getByTestId("paneel-bestanden")).not.toBeVisible();
@@ -79,6 +96,7 @@ describe("SchooldetailTabs", () => {
     await user.click(screen.getByRole("tab", { name: "Trainingen" }));
 
     expect(screen.getAllByTestId("paneel-trainingen")).toHaveLength(1);
+    expect(screen.getAllByTestId("paneel-aanvullend")).toHaveLength(1);
     expect(screen.getAllByTestId("paneel-ai")).toHaveLength(1);
     expect(screen.getAllByTestId("paneel-logboek")).toHaveLength(1);
     expect(screen.getAllByTestId("paneel-bestanden")).toHaveLength(1);
