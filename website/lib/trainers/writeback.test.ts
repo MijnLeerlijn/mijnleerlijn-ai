@@ -8,18 +8,30 @@ import {
   wijzigKolomWaarde,
   wijzigKolomWaardeJson,
   haalItemMetKolomWaarden,
+  haalItemsMetKolomWaarden,
+  type MondaySchoolItem,
 } from "@/lib/sales/monday-client";
 import { werkTrainingBij } from "./writeback";
-import { UITVOERING_BOARD_ID } from "./monday-links";
 import type { AuthTrainer } from "./auth";
 
 // Traineromgeving V1, Ronde 2 (2026-08-19) — dekt lib/trainers/writeback.ts.
 // Zelfde mockpatroon als monday-links.test.ts/security.test.ts (bewust hier
 // gedupliceerd, niet geïmporteerd — elk testbestand in dit project is
-// zelfstandig leesbaar). mondayQuery/haalScholenPagina/haalUpdatesVoorItem
+// zelfstandig leesbaar). mondayQuery/haalScholenPagina/haalItemsMetKolomWaarden
 // worden gemockt omdat werkTrainingBij() altijd EERST haalTrainingVoorMutatie
 // (monday-links.ts) aanroept om eigendom server-side te herverifiëren — dat
 // pad hergebruikt exact dezelfde resolutieladder als het leespad.
+//
+// Root-cause-fix (2026-09-03) — herbouwd op de nieuwe basis (UO_SCHOLEN_KOLOM
+// op het eigen item van de trainer op board 5, zie monday-links.ts se
+// moduletoelichting). haalItemMetKolomWaarden wordt nu door TWEE
+// onafhankelijke plekken aangeroepen binnen één werkTrainingBij-cyclus: (1)
+// verzamelTrainerContext leest hiermee het eigen Board-5-item van de trainer
+// om eigendom te herleiden, en (2) writeback.ts zelf gebruikt 'm nog steeds
+// voor de fail-safe-herlees-bevestiging (datum verwijderen/logboek-checkbox).
+// mockHerlezenNa hieronder routeert deze twee uit elkaar op columnIds, zodat
+// elke test onafhankelijk kan blijven configureren wat (2) teruggeeft, zonder
+// de contextresolutie (1) — en dus elke test se eigendomscontrole — te breken.
 vi.mock("@/lib/sales/monday-client", async (importOriginal) => {
   const echt = await importOriginal<typeof import("@/lib/sales/monday-client")>();
   return {
@@ -31,6 +43,7 @@ vi.mock("@/lib/sales/monday-client", async (importOriginal) => {
     wijzigKolomWaarde: vi.fn(),
     wijzigKolomWaardeJson: vi.fn(),
     haalItemMetKolomWaarden: vi.fn(),
+    haalItemsMetKolomWaarden: vi.fn(),
   };
 });
 
@@ -41,6 +54,7 @@ const mockLeesKolomWaarden = vi.mocked(leesKolomWaarden);
 const mockWijzigKolomWaarde = vi.mocked(wijzigKolomWaarde);
 const mockWijzigKolomWaardeJson = vi.mocked(wijzigKolomWaardeJson);
 const mockHaalItemMetKolomWaarden = vi.mocked(haalItemMetKolomWaarden);
+const mockHaalItemsMetKolomWaarden = vi.mocked(haalItemsMetKolomWaarden);
 const mockCreate = vi.fn();
 
 function maakPayload(): Payload {
@@ -69,19 +83,15 @@ const TRAINER_B: AuthTrainer = {
 const CENTRALE_TRAINING_ID = "12713002919";
 const TRAINERBOARD_ITEM_ID = "12717612402";
 const SCHOOL_ID = "500";
+const UO_SCHOLEN_KOLOM_ID = "board_relation_mm4v62g5"; // UO_SCHOLEN_KOLOM
 
-function linkedPulseIdsValue(ids: (string | number)[]): string {
-  return JSON.stringify({ linkedPulseIds: ids.map((linkedPulseId) => ({ linkedPulseId })) });
-}
-
-function masterDataItem(opts: { id: string; naam: string; trainerLinkedIds?: (string | number)[] }) {
+function masterDataItem(opts: { id: string; naam: string }): MondaySchoolItem {
   return {
     id: opts.id,
     name: opts.naam,
     updated_at: "2026-08-19T00:00:00.000Z",
     column_values: [
-      { id: "board_relation_mm5r2jy1", text: null, value: opts.trainerLinkedIds ? linkedPulseIdsValue(opts.trainerLinkedIds) : null },
-      { id: "board_relation_mm4v8fpm", text: null, value: null },
+      { id: "board_relation_mm4v8fpm", text: null, value: null, linked_item_ids: [] },
       { id: "dropdown_mm4v9rvg", text: null, value: null },
       { id: "text_mm5r9kn2", text: null, value: null },
       { id: "color_mm5q790a", text: null, value: null },
@@ -89,13 +99,13 @@ function masterDataItem(opts: { id: string; naam: string; trainerLinkedIds?: (st
   };
 }
 
-function uitvoeringItem(opts: { id: string; naam: string; schoolIds?: (string | number)[]; statusTekst?: string | null; datum?: string | null }) {
+function uitvoeringItem(opts: { id: string; naam: string; schoolIds?: (string | number)[]; statusTekst?: string | null; datum?: string | null }): MondaySchoolItem {
   return {
     id: opts.id,
     name: opts.naam,
     updated_at: "2026-08-19T00:00:00.000Z",
     column_values: [
-      { id: "board_relation_mm5tyc40", text: null, value: opts.schoolIds ? linkedPulseIdsValue(opts.schoolIds) : null },
+      { id: "board_relation_mm5tyc40", text: null, value: null, linked_item_ids: opts.schoolIds ? opts.schoolIds.map(String) : [] },
       { id: "color_mm5tz3wk", text: opts.statusTekst ?? null, value: null },
       { id: "date_mm5tnfvx", text: opts.datum ?? null, value: null },
       { id: "boolean_mm5tvfc5", text: null, value: null },
@@ -120,18 +130,46 @@ function trainerboardBoardsResponse(items: { id: string; name: string; groupTitl
   };
 }
 
-/** Zet de resolutieladder zo op dat TRAINER se training CENTRALE_TRAINING_ID geldig is (tier 1, harde School-koppeling) mét een trainerboard-spiegelitem. statusTekst/datum bepalen de LIVE status die werkTrainingBij bij binnenkomst ziet (voor de auto-statusregel bij datumwijzigingen) — standaard "open" (geen datum, geen statustekst), zelfde als voorheen. */
+// Root-cause-fix (2026-09-03) — vervangt de trainer se eigen Board-5-item
+// ("Scholen"-relatie): huidigeTrainerEigenItem = null betekent "geen enkele
+// school gekoppeld" tenzij seedGeldigeTraining (of een test zelf) 'm zet. Alle
+// mocks hieronder zijn bewust PERSISTENT (mockResolvedValue, geen -Once):
+// verzamelTrainerContext wordt per werkTrainingBij-aanroep precies één keer
+// doorlopen, maar de "dubbele indiening"-test hieronder doorloopt 'm TWEE
+// keer gelijktijdig — een -Once-keten zou daar voor de tweede poging een
+// undefined-response opleveren.
+let huidigeTrainerEigenItem: { id: string; name: string; column_values: { id: string; text: string | null; value: string | null; linked_item_ids: string[] }[] } | null = null;
+
+type HerleesItem = { id: string; name: string; column_values: { id: string; text: string | null; value: string | null }[] } | null;
+let herleesHandler: (itemId: string, columnIds: string[]) => HerleesItem | Promise<HerleesItem> = () => null;
+
+/**
+ * Stelt in wat haalItemMetKolomWaarden teruggeeft voor elke aanroep BUITEN de
+ * trainer-eigen-Board-5-item-lookup — dus uitsluitend de fail-safe-herlees-
+ * aanroepen die writeback.ts zelf doet (datum verwijderen/logboek-checkbox).
+ * Nooit de contextresolutie zelf, die loopt via huidigeTrainerEigenItem
+ * hierboven en de routing-mockImplementation in beforeEach.
+ */
+function mockHerlezenNa(resultaat: HerleesItem | ((itemId: string, columnIds: string[]) => HerleesItem)) {
+  herleesHandler = typeof resultaat === "function" ? resultaat : () => resultaat;
+}
+
+/** Zet de resolutieladder zo op dat TRAINER se training CENTRALE_TRAINING_ID geldig is (via de Board-5-relatie) mét een trainerboard-spiegelitem. statusTekst/datum bepalen de LIVE status die werkTrainingBij bij binnenkomst ziet (voor de auto-statusregel bij datumwijzigingen) — standaard "open" (geen datum, geen statustekst), zelfde als voorheen. */
 function seedGeldigeTraining(
   trainer: AuthTrainer = TRAINER,
   opts: { metTrainerboardItem?: boolean; statusTekst?: string | null; datum?: string | null } = {}
 ) {
   const metTbItem = opts.metTrainerboardItem ?? true;
-  mockScholenPagina
-    .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: SCHOOL_ID, naam: "Montessori Gorinchem", trainerLinkedIds: [Number(trainer.mondayUitvoerderItemId)] })] })
-    .mockResolvedValueOnce({
-      cursor: null,
-      items: [uitvoeringItem({ id: CENTRALE_TRAINING_ID, naam: "Training", schoolIds: [SCHOOL_ID], statusTekst: opts.statusTekst, datum: opts.datum })],
-    });
+  huidigeTrainerEigenItem = {
+    id: trainer.mondayUitvoerderItemId,
+    name: trainer.name,
+    column_values: [{ id: UO_SCHOLEN_KOLOM_ID, text: null, value: null, linked_item_ids: [SCHOOL_ID] }],
+  };
+  mockHaalItemsMetKolomWaarden.mockResolvedValue([masterDataItem({ id: SCHOOL_ID, naam: "Montessori Gorinchem" })]);
+  mockScholenPagina.mockResolvedValue({
+    cursor: null,
+    items: [uitvoeringItem({ id: CENTRALE_TRAINING_ID, naam: "Training", schoolIds: [SCHOOL_ID], statusTekst: opts.statusTekst, datum: opts.datum })],
+  });
   mockQuery.mockResolvedValue(
     trainerboardBoardsResponse(metTbItem ? [{ id: TRAINERBOARD_ITEM_ID, name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: CENTRALE_TRAINING_ID }] : [])
   );
@@ -154,8 +192,16 @@ beforeEach(() => {
   mockLeesKolomWaarden.mockReset();
   mockWijzigKolomWaarde.mockReset().mockResolvedValue(undefined);
   mockWijzigKolomWaardeJson.mockReset().mockResolvedValue(undefined);
-  mockHaalItemMetKolomWaarden.mockReset();
+  mockHaalItemsMetKolomWaarden.mockReset();
   mockCreate.mockReset().mockResolvedValue({ id: 1 });
+
+  huidigeTrainerEigenItem = null;
+  herleesHandler = () => null;
+  mockHaalItemMetKolomWaarden.mockReset();
+  mockHaalItemMetKolomWaarden.mockImplementation(async (itemId: string, columnIds: string[]) => {
+    if (columnIds.includes(UO_SCHOLEN_KOLOM_ID)) return huidigeTrainerEigenItem;
+    return herleesHandler(itemId, columnIds);
+  });
 });
 
 afterEach(() => {
@@ -172,13 +218,17 @@ describe("werkTrainingBij — eigendomsverificatie (security)", () => {
 
   it("cross-trainer: trainer B kan trainer A se training-ID niet bewerken, ook al bestaat die echt (bij trainer A)", async () => {
     // Trainer B se EIGEN, volledig losstaande context (andere school, andere
-    // training-ID) — bevat CENTRALE_TRAINING_ID nergens, zodat een poging om
-    // die (van trainer A) te bewerken écht op trainer B se eigen, vers
-    // opgehaalde resolutieladder getoetst wordt, niet op een toevallig
-    // gedeelde fixture.
-    mockScholenPagina
-      .mockResolvedValueOnce({ cursor: null, items: [masterDataItem({ id: "600", naam: "CBS de Wereld", trainerLinkedIds: [999002] })] })
-      .mockResolvedValueOnce({ cursor: null, items: [uitvoeringItem({ id: "888", naam: "Training van B", schoolIds: ["600"] })] });
+    // training-ID, eigen Board-5-relatie) — bevat CENTRALE_TRAINING_ID
+    // nergens, zodat een poging om die (van trainer A) te bewerken écht op
+    // trainer B se eigen, vers opgehaalde resolutieladder getoetst wordt,
+    // niet op een toevallig gedeelde fixture.
+    huidigeTrainerEigenItem = {
+      id: TRAINER_B.mondayUitvoerderItemId,
+      name: TRAINER_B.name,
+      column_values: [{ id: UO_SCHOLEN_KOLOM_ID, text: null, value: null, linked_item_ids: ["600"] }],
+    };
+    mockHaalItemsMetKolomWaarden.mockResolvedValue([masterDataItem({ id: "600", naam: "CBS de Wereld" })]);
+    mockScholenPagina.mockResolvedValue({ cursor: null, items: [uitvoeringItem({ id: "888", naam: "Training van B", schoolIds: ["600"] })] });
     mockQuery.mockResolvedValue(trainerboardBoardsResponse([{ id: "889", name: "TB-item van B", groupTitle: "CBS de Wereld", masterId: "888" }]));
 
     const uitkomst = await werkTrainingBij(maakPayload(), TRAINER_B, CENTRALE_TRAINING_ID, { status: { nieuweWaarde: "gedaan", verwachteHuidigeRuweTekst: null } });
@@ -382,7 +432,7 @@ describe("werkTrainingBij — datum verwijderen (Beslissing 2, fail-safe herlees
         { id: "numeric_mm5vkjzz", text: null, value: null },
       ],
     });
-    mockHaalItemMetKolomWaarden.mockResolvedValue({ id: "x", name: "x", column_values: [{ id: "date4", text: null, value: null }] });
+    mockHerlezenNa({ id: "x", name: "x", column_values: [{ id: "date4", text: null, value: null }] });
 
     const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
       datum: { nieuweWaarde: null, verwachteHuidigeWaarde: "2026-09-01" },
@@ -392,7 +442,10 @@ describe("werkTrainingBij — datum verwijderen (Beslissing 2, fail-safe herlees
     if (uitkomst.soort !== "resultaat") return;
     expect(uitkomst.resultaat.algeheleStatus).toBe("volledig_geslaagd");
     expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "date4", "");
-    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalled(); // de extra fail-safe-stap werd echt uitgevoerd
+    // De extra fail-safe-stap werd echt uitgevoerd, specifiek voor het
+    // trainerboard-record (niet de contextresolutie, die is nu ook een
+    // haalItemMetKolomWaarden-aanroep maar met heel andere argumenten).
+    expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, ["date4"]);
   });
 
   it("FAIL-SAFE: Monday accepteert de mutatie-aanroep, maar herlezen bevestigt geen lege kolom -> mislukt, nooit een niet-bevestigd succes voorwenden", async () => {
@@ -407,7 +460,7 @@ describe("werkTrainingBij — datum verwijderen (Beslissing 2, fail-safe herlees
     });
     // Herlezing toont nog altijd de oude datum — de mutatie deed dus niet
     // wat verwacht, ook al gooide wijzigKolomWaarde zelf geen fout.
-    mockHaalItemMetKolomWaarden.mockResolvedValue({ id: "x", name: "x", column_values: [{ id: "date4", text: "2026-09-01", value: null }] });
+    mockHerlezenNa({ id: "x", name: "x", column_values: [{ id: "date4", text: "2026-09-01", value: null }] });
 
     const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
       datum: { nieuweWaarde: null, verwachteHuidigeWaarde: "2026-09-01" },
@@ -435,7 +488,11 @@ describe("werkTrainingBij — datum verwijderen (Beslissing 2, fail-safe herlees
       datum: { nieuweWaarde: "2026-09-01", verwachteHuidigeWaarde: null },
     });
 
-    expect(mockHaalItemMetKolomWaarden).not.toHaveBeenCalled();
+    // haalItemMetKolomWaarden wordt hier nog altijd precies één keer
+    // aangeroepen — de (legitieme) contextresolutie — maar NOOIT voor een
+    // fail-safe-herlees op een van beide records.
+    expect(mockHaalItemMetKolomWaarden).not.toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, expect.anything());
+    expect(mockHaalItemMetKolomWaarden).not.toHaveBeenCalledWith(CENTRALE_TRAINING_ID, expect.anything());
   });
 });
 
@@ -566,7 +623,7 @@ describe("werkTrainingBij — automatische status bij datumwijziging (Ronde 2 ve
         { id: "numeric_mm5vkjzz", text: null, value: null },
       ],
     });
-    mockHaalItemMetKolomWaarden.mockResolvedValue({ id: "x", name: "x", column_values: [{ id: "date4", text: null, value: null }] });
+    mockHerlezenNa({ id: "x", name: "x", column_values: [{ id: "date4", text: null, value: null }] });
 
     const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, {
       datum: { nieuweWaarde: null, verwachteHuidigeWaarde: "2026-08-10" },
@@ -754,20 +811,12 @@ describe("werkTrainingBij — dubbele indiening (geen ongecontroleerde dubbele w
     // disabled zodra bezig=true) — dit test de servergarantie die daaronder
     // ligt: zelfs als er toch twee verzoeken na elkaar binnenkomen, ontstaat
     // er nooit een ongecontroleerde dubbele schrijving of corrupte staat.
+    // Werkt hier met een gewone seedGeldigeTraining(): die mockt sinds de
+    // root-cause-fix al bewust PERSISTENT (nooit -Once), dus twee
+    // GELIJKTIJDIGE werkTrainingBij-aanroepen kunnen elk hun eigen, volledige
+    // verzamelTrainerContext-cyclus probleemloos doorlopen.
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
-    // Bewust mockResolvedValue (persistent, niet -Once) i.p.v.
-    // seedGeldigeTraining(): twee GELIJKTIJDIGE werkTrainingBij-aanroepen
-    // doorlopen elk hun eigen, volledige verzamelTrainerContext-cyclus (2x
-    // haalScholenPagina), dus in totaal 4 aanroepen — een one-shot-keten van
-    // 2 zou hier voor de tweede poging een undefined-response opleveren.
-    mockScholenPagina.mockImplementation(async (opties: { boardId: string }) =>
-      opties.boardId === UITVOERING_BOARD_ID
-        ? { cursor: null, items: [uitvoeringItem({ id: CENTRALE_TRAINING_ID, naam: "Training", schoolIds: [SCHOOL_ID] })] }
-        : { cursor: null, items: [masterDataItem({ id: SCHOOL_ID, naam: "Montessori Gorinchem", trainerLinkedIds: [Number(TRAINER.mondayUitvoerderItemId)] })] }
-    );
-    mockQuery.mockResolvedValue(
-      trainerboardBoardsResponse([{ id: TRAINERBOARD_ITEM_ID, name: "Trainerboard-item", groupTitle: "Montessori Gorinchem", masterId: CENTRALE_TRAINING_ID }])
-    );
+    seedGeldigeTraining();
     mockLezenPerItem({
       [TRAINERBOARD_ITEM_ID]: [{ id: "status", text: null, value: null }],
       [CENTRALE_TRAINING_ID]: [
@@ -810,7 +859,7 @@ describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsversl
     // Root-cause-fix (2026-08-20): Monday blijft bron van waarheid — een
     // "geschreven"-rapportage vereist dat de herlezing (haalItemMetKolomWaarden)
     // de checkbox ook daadwerkelijk aangevinkt bevestigt.
-    mockHaalItemMetKolomWaarden.mockImplementation(async (itemId: string, columnIds: string[]) => ({
+    mockHerlezenNa((itemId, columnIds) => ({
       id: itemId,
       name: "x",
       column_values: [{ id: columnIds[0]!, text: "v", value: JSON.stringify({ checked: "true" }) }],
@@ -842,7 +891,7 @@ describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsversl
         { id: "numeric_mm5vkjzz", text: null, value: null },
       ],
     });
-    mockHaalItemMetKolomWaarden.mockImplementation(async (itemId: string, columnIds: string[]) => ({
+    mockHerlezenNa((itemId, columnIds) => ({
       id: itemId,
       name: "x",
       column_values: [{ id: columnIds[0]!, text: null, value: null }], // uitgevinkt: leeg/null, zelfde als parseCheckboxIngevuld elders verwacht
@@ -867,9 +916,9 @@ describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsversl
         { id: "numeric_mm5vkjzz", text: null, value: null },
       ],
     });
-    // mockHaalItemMetKolomWaarden blijft op zijn beforeEach-default (geen
-    // implementatie -> undefined -> parseCheckboxIngevuld(undefined) = false)
-    // -> herlezing bevestigt NOOIT "aangevinkt", ook al gooide de mutatie zelf niets.
+    // herleesHandler blijft op zijn beforeEach-default (() => null) ->
+    // parseCheckboxIngevuld(undefined) = false -> herlezing bevestigt NOOIT
+    // "aangevinkt", ook al gooide de mutatie zelf niets.
 
     const uitkomst = await werkTrainingBij(maakPayload(), TRAINER, CENTRALE_TRAINING_ID, { logboek: { nieuweWaarde: true } });
 
@@ -910,7 +959,7 @@ describe("werkTrainingBij — logboek-veld (Ronde 3, afronding na trainingsversl
     // slagen, anders wordt de logboek-taak al vóór de "geschreven"-logregel
     // afgewezen en test dit scenario niet meer de bedoelde Promise.allSettled
     // "rejected"-tak (zie toelichting hierboven).
-    mockHaalItemMetKolomWaarden.mockImplementation(async (itemId: string, columnIds: string[]) => ({
+    mockHerlezenNa((itemId, columnIds) => ({
       id: itemId,
       name: "x",
       column_values: [{ id: columnIds[0]!, text: "v", value: JSON.stringify({ checked: "true" }) }],

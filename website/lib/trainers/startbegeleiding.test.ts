@@ -59,11 +59,16 @@ function kolomWaarden(overrides: Partial<Record<string, string | null>> = {}): M
     [MD_LOCATION_KOLOM]: "Utrecht",
     [MD_TRAINER_KOLOM]: null,
   };
-  // MD_TRAINER_KOLOM wordt door de productiecode via `.value` gelezen
-  // (parseLinkedPulseIds), elke andere kolom hier via `.text` — zelfde
-  // onderscheid als de echte Monday-respons (text = weergavewaarde, value =
-  // ruwe JSON, alleen relevant voor relatie-/board_relation-kolommen).
-  return Object.entries({ ...basis, ...overrides }).map(([id, waarde]) => (id === MD_TRAINER_KOLOM ? { id, text: null, value: waarde ?? null } : { id, text: waarde ?? null, value: null }));
+  // Root-cause-fix (2026-09-03) — parseLinkedPulseIds leest voor
+  // MD_TRAINER_KOLOM (board_relation) voortaan uitsluitend linked_item_ids,
+  // nooit meer .value (zie lib/sales/monday-client.ts). linked_item_ids
+  // wordt hier afgeleid uit dezelfde linkedPulseIds-JSON die de bestaande
+  // call sites al als override meegeven, zodat die zelf ongewijzigd blijven.
+  return Object.entries({ ...basis, ...overrides }).map(([id, waarde]) => {
+    if (id !== MD_TRAINER_KOLOM) return { id, text: waarde ?? null, value: null };
+    const linkedItemIds = waarde ? (JSON.parse(waarde) as { linkedPulseIds: { linkedPulseId: number }[] }).linkedPulseIds.map((l) => String(l.linkedPulseId)) : [];
+    return { id, text: null, value: waarde ?? null, linked_item_ids: linkedItemIds };
+  });
 }
 
 function pagina(items: MondayItemsPage["items"], cursor: string | null = null): MondayItemsPage {
@@ -185,7 +190,11 @@ describe("koppelTrainerAanSchool", () => {
 
   it("geeft 'al_gekoppeld' terug zonder te schrijven wanneer de trainer al in de kolom staat", async () => {
     vi.stubEnv("TRAINER_MONDAY_KOPPELING_ENABLED", "true");
-    mockHaalItemMetKolomWaarden.mockResolvedValue({ id: "s1", name: "School", column_values: [{ id: MD_TRAINER_KOLOM, text: null, value: JSON.stringify({ linkedPulseIds: [{ linkedPulseId: 999001 }] }) }] });
+    mockHaalItemMetKolomWaarden.mockResolvedValue({
+      id: "s1",
+      name: "School",
+      column_values: [{ id: MD_TRAINER_KOLOM, text: null, value: JSON.stringify({ linkedPulseIds: [{ linkedPulseId: 999001 }] }), linked_item_ids: ["999001"] }],
+    });
     const uitkomst = await koppelTrainerAanSchool("s1", "999001");
     expect(uitkomst.soort).toBe("al_gekoppeld");
     expect(mockWijzigKolomWaardeJson).not.toHaveBeenCalled();
@@ -194,8 +203,16 @@ describe("koppelTrainerAanSchool", () => {
   it("schrijft de UNIE van bestaande + nieuwe trainer-ID's (nooit de kolom overschrijven) en herleest ter bevestiging", async () => {
     vi.stubEnv("TRAINER_MONDAY_KOPPELING_ENABLED", "true");
     mockHaalItemMetKolomWaarden
-      .mockResolvedValueOnce({ id: "s1", name: "School", column_values: [{ id: MD_TRAINER_KOLOM, text: null, value: JSON.stringify({ linkedPulseIds: [{ linkedPulseId: 111 }] }) }] })
-      .mockResolvedValueOnce({ id: "s1", name: "School", column_values: [{ id: MD_TRAINER_KOLOM, text: null, value: JSON.stringify({ linkedPulseIds: [{ linkedPulseId: 111 }, { linkedPulseId: 999001 }] }) }] });
+      .mockResolvedValueOnce({
+        id: "s1",
+        name: "School",
+        column_values: [{ id: MD_TRAINER_KOLOM, text: null, value: JSON.stringify({ linkedPulseIds: [{ linkedPulseId: 111 }] }), linked_item_ids: ["111"] }],
+      })
+      .mockResolvedValueOnce({
+        id: "s1",
+        name: "School",
+        column_values: [{ id: MD_TRAINER_KOLOM, text: null, value: JSON.stringify({ linkedPulseIds: [{ linkedPulseId: 111 }, { linkedPulseId: 999001 }] }), linked_item_ids: ["111", "999001"] }],
+      });
     mockWijzigKolomWaardeJson.mockResolvedValue(undefined);
 
     const uitkomst = await koppelTrainerAanSchool("s1", "999001");
