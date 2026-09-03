@@ -73,7 +73,7 @@ export async function haalStartbegeleidingScholen(): Promise<StartbegeleidingSch
         onderwijstype: kolommen.get(MD_TYPE_SCHOOL_KOLOM)?.text || null,
         locatie: kolommen.get(MD_LOCATION_KOLOM)?.text || null,
         relatiestatus,
-        gekoppeldeTrainerMondayIds: parseLinkedPulseIds(kolommen.get(MD_TRAINER_KOLOM)?.value),
+        gekoppeldeTrainerMondayIds: parseLinkedPulseIds(kolommen.get(MD_TRAINER_KOLOM)),
       });
     }
     if (!resultaat.cursor) break;
@@ -162,6 +162,15 @@ export type KoppelTrainerUitkomst =
  * Herleest na de schrijving ter bevestiging — zelfde "Monday blijft bron van
  * waarheid, nooit een mutatie-aanroep zonder herlees-bevestiging vertrouwen"
  * discipline als lib/trainers/writeback.ts.
+ *
+ * Root-cause-fix (2026-09-03): vóór deze fix las `huidigeIds` altijd `[]`
+ * (dezelfde board_relation-`.value`-bug als monday-links.ts, zie de
+ * toelichting in lib/sales/monday-client.ts) — waardoor `nieuweIds` hieronder
+ * bij een school die AL een trainer had, die bestaande koppeling stil zou
+ * hebben OVERSCHREVEN met uitsluitend de nieuw toegevoegde trainer, zodra
+ * TRAINER_MONDAY_KOPPELING_ENABLED ooit op "true" stond. Nu `parseLinkedPulseIds`
+ * `linked_item_ids` leest, ziet `huidigeIds` de daadwerkelijke bestaande lijst
+ * en blijft deze functie voor het eerst ook in de praktijk zuiver additief.
  */
 export async function koppelTrainerAanSchool(mondaySchoolId: string, mondayUitvoerderItemId: string): Promise<KoppelTrainerUitkomst> {
   logFlagDiagnose("TRAINER_MONDAY_KOPPELING_ENABLED"); // TIJDELIJK — productie-diagnose, zelfde precedent als writeback.ts
@@ -169,15 +178,15 @@ export async function koppelTrainerAanSchool(mondaySchoolId: string, mondayUitvo
     return { soort: "niet_geactiveerd", boodschap: "Trainer koppelen aan Monday staat nog niet aan voor productiegebruik (TRAINER_MONDAY_KOPPELING_ENABLED)." };
   }
 
-  let huidigeWaarde: string | null;
+  let huidigeKolom: MondayColumnValue | undefined;
   try {
     const item = await haalItemMetKolomWaarden(mondaySchoolId, [MD_TRAINER_KOLOM]);
-    huidigeWaarde = item?.column_values[0]?.value ?? null;
+    huidigeKolom = item?.column_values[0];
   } catch (error) {
     return { soort: "mislukt", boodschap: `Kon de huidige koppeling niet lezen: ${error instanceof Error ? error.message : String(error)}` };
   }
 
-  const huidigeIds = parseLinkedPulseIds(huidigeWaarde);
+  const huidigeIds = parseLinkedPulseIds(huidigeKolom);
   if (huidigeIds.includes(mondayUitvoerderItemId)) {
     return { soort: "al_gekoppeld" };
   }
@@ -185,12 +194,11 @@ export async function koppelTrainerAanSchool(mondaySchoolId: string, mondayUitvo
   const nieuweIds = [...huidigeIds, mondayUitvoerderItemId];
   try {
     // board_relation-schrijfvorm ({"item_ids": [...]}), algemene stabiele
-    // Monday-platformkennis — symmetrisch met parseLinkedPulseIds se
-    // leesvorm ({"linkedPulseIds": [{"linkedPulseId": N}, ...]}), zelfde
-    // "niet opnieuw live bevestigd vanuit deze sessie"-voorbehoud als elke
-    // andere JSON-kolomschrijving in dit project (zie wijzigKolomWaardeJson,
-    // lib/sales/monday-client.ts) — vandaar de verplichte herlees-bevestiging
-    // hieronder.
+    // Monday-platformkennis — nog steeds "niet opnieuw live bevestigd vanuit
+    // deze sessie"-voorbehoud voor de SCHRIJFvorm specifiek (zie
+    // wijzigKolomWaardeJson, lib/sales/monday-client.ts) — vandaar de
+    // verplichte herlees-bevestiging hieronder, die nu wél de daadwerkelijke
+    // leesvorm gebruikt (linked_item_ids, zie parseLinkedPulseIds).
     await wijzigKolomWaardeJson(mondaySchoolId, MASTER_DATA_BOARD_ID, MD_TRAINER_KOLOM, JSON.stringify({ item_ids: nieuweIds.map(Number) }));
   } catch (error) {
     return { soort: "mislukt", boodschap: `Monday-schrijving mislukt: ${error instanceof Error ? error.message : String(error)}` };
@@ -198,7 +206,7 @@ export async function koppelTrainerAanSchool(mondaySchoolId: string, mondayUitvo
 
   try {
     const herlezenItem = await haalItemMetKolomWaarden(mondaySchoolId, [MD_TRAINER_KOLOM]);
-    const herlezenIds = parseLinkedPulseIds(herlezenItem?.column_values[0]?.value ?? null);
+    const herlezenIds = parseLinkedPulseIds(herlezenItem?.column_values[0]);
     if (!herlezenIds.includes(mondayUitvoerderItemId)) {
       return { soort: "mislukt", boodschap: "Monday accepteerde de schrijving, maar herlezen bevestigt de koppeling niet — niet als geslaagd gerapporteerd." };
     }

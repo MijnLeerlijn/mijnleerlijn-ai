@@ -1,4 +1,13 @@
-import { mondayQuery, haalScholenPagina, haalUpdatesVoorItem, type MondayColumnValue, type MondaySchoolItem, type MondayUpdate } from "@/lib/sales/monday-client";
+import {
+  mondayQuery,
+  haalScholenPagina,
+  haalUpdatesVoorItem,
+  haalItemMetKolomWaarden,
+  haalItemsMetKolomWaarden,
+  type MondayColumnValue,
+  type MondaySchoolItem,
+  type MondayUpdate,
+} from "@/lib/sales/monday-client";
 import type { AuthTrainer } from "./auth";
 import { groepeerOpWeergaveStatus, type TrainingWeergaveStatus } from "./training-weergave";
 import { sorteerTrainingenAlfabetisch } from "./training-sortering";
@@ -68,6 +77,22 @@ export const UV_LOGBOEK_KOLOM = "boolean_mm5tvfc5";
 
 const TB_MASTER_ID_KOLOM = "numeric_mm5vceeq";
 
+// Root-cause-fix (2026-09-03) — live onderzoek (Michel de Hond: portal
+// toonde 13 scholen, board 5 toonde 37) wees twee onafhankelijke oorzaken
+// aan: (1) board_relation-kolommen gaven altijd `value: null`/`text: null`
+// terug (zie de toelichting in lib/sales/monday-client.ts — nu gerepareerd
+// via `linked_item_ids`), en (2) MD_TRAINER_KOLOM (board 1 → board 5) is
+// niet de functioneel-leidende relatie: die is voortaan UO_SCHOLEN_KOLOM
+// hieronder, de kolom "Scholen" op het EIGEN item van de trainer op board 5
+// ("5: Uitvoerder training"). Live bevestigd: board 5 heeft TWEE afzonderlijke
+// kolommen met de titel "Scholen" die allebei naar board 1 verwijzen —
+// `board_relation_mm4v62g5` (bevat de daadwerkelijke koppelingen, 37 voor
+// Michel) en `board_relation_mm4v3wjn` (leeg voor elk item op board 5,
+// vermoedelijk een ongebruikte duplicaatkolom). Alleen de eerste wordt
+// gebruikt; de tweede wordt bewust nergens gelezen.
+export const UITVOERDERS_BOARD_ID = "18420120602"; // 5: Uitvoerder training
+export const UO_SCHOLEN_KOLOM = "board_relation_mm4v62g5";
+
 // Begrenzingen — zelfde "nooit onbegrensd tegen het gedeelde Monday-
 // ratebudget"-principe als lib/trainers-diagnose/monday-readonly.ts. Elke
 // waarde hieronder is nu een PER-PAGINA-limiet (zie MAX_PAGINAS + haalAllePaginas
@@ -114,19 +139,23 @@ function naarKolomMap(columnValues: MondayColumnValue[]): Map<string, MondayColu
 }
 
 /**
- * Board_relation-kolomwaarden bevatten de gekoppelde item-ID('s) als
- * linkedPulseIds — live bevestigd (zie haalItemDetail-tests in
- * lib/trainers-diagnose/monday-readonly.ts, dezelfde JSON-vorm). Geeft
- * nooit een fout, alleen een lege lijst bij ontbrekende/kapotte data.
+ * DE ENIGE plek die een board_relation-kolomwaarde interpreteert tot een
+ * lijst gekoppelde item-ID's — elke aanroeper geeft de volledige
+ * `MondayColumnValue` door (nooit alleen `.value`), zodat er nergens anders
+ * in de codebase een tweede interpretatie kan ontstaan.
+ *
+ * Root-cause-fix (2026-09-03): leest UITSLUITEND `linked_item_ids` (de
+ * typed BoardRelationValue-velden, zie lib/sales/monday-client.ts). Las
+ * voorheen `.value` als JSON (`{"linkedPulseIds":[{"linkedPulseId":N}]}`) —
+ * live bevestigd dat Monday die JSON voor board_relation-kolommen onder het
+ * gepinde API-Version niet meer teruggeeft (`value`/`text` zijn altijd
+ * `null`), waardoor deze functie voorheen voor ELKE board_relation-kolom
+ * altijd een lege lijst gaf, ongeacht de werkelijke koppelingen. Geeft nooit
+ * een fout, alleen een lege lijst bij een ontbrekende kolom of een kolom
+ * zonder gekoppelde items.
  */
-export function parseLinkedPulseIds(value: string | null | undefined): string[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value) as { linkedPulseIds?: { linkedPulseId: number }[] };
-    return (parsed.linkedPulseIds ?? []).map((l) => String(l.linkedPulseId));
-  } catch {
-    return [];
-  }
+export function parseLinkedPulseIds(kolom: MondayColumnValue | null | undefined): string[] {
+  return kolom?.linked_item_ids ?? [];
 }
 
 /**
@@ -310,38 +339,24 @@ export interface TrainerSchoolBron {
    */
   contactpersoonBetrouwbaar: boolean;
   /**
-   * Hoe deze school in de bevestigde lijst terechtkwam — intern/
-   * diagnostisch, geen trainer-facing onderscheid vereist (de UI toont tier
-   * 1/2 hieronder ongedifferentieerd onder "Mijn scholen"). Betrouwbaarheid,
-   * hoog naar lager: "trainer-relatie"/"training-koppeling" zijn beide de
-   * harde keten (Master Data.Trainer resp. Master ID → centrale training →
-   * School Connect Boards — altijd voorrang, zie verzamelTrainerContext).
-   * "legacy-unique" is de nieuwe, bewust zwakkere tier: uitsluitend bereikt
-   * wanneer de harde keten GEEN bruikbare School-relatie oplevert, en dan
-   * alleen bij een unieke groupTitle-naammatch (normaliseerSchoolnaamVoorMatch)
-   * tegen Master Data — nooit bij 0 of 2+ kandidaten. `id` hierboven is ook
-   * voor deze tier altijd het echte, opgezochte Master Data item-ID, nooit
-   * de groepnaam zelf — toekomstige write-backs mogen dus altijd blind op
-   * `id` vertrouwen, ongeacht welke `bron` de koppeling opleverde.
+   * Hoe deze school in de bevestigde lijst terechtkwam — intern/diagnostisch,
+   * geen trainer-facing onderscheid (de UI toont dit nergens). Root-cause-fix
+   * (2026-09-03): de basisset komt voortaan UITSLUITEND uit UO_SCHOLEN_KOLOM
+   * op het eigen item van de trainer op board 5 (zie verzamelTrainerContext)
+   * — "trainer-relatie" is dus het enige waarnaar dit veld nog verwijst.
+   * Trainingen (board 4, direct of via de trainerboard-groepnaam-fallback)
+   * kunnen nooit meer een NIEUWE school aan deze lijst toevoegen, alleen nog
+   * tellingen aan een school hierboven koppelen — vandaar dat dit type de
+   * vóór de fix bestaande waarden "training-koppeling"/"legacy-unique" niet
+   * meer kent (er is geen producent meer voor).
    */
-  bron: "trainer-relatie" | "training-koppeling" | "legacy-unique";
+  bron: "trainer-relatie";
 }
 
 export interface TrainerSchoolSuggestie {
   suggestieNaam: string;
   mogelijkeSchoolId: string;
   mogelijkeSchoolNaam: string;
-}
-
-interface MasterDataSchoolRuw {
-  id: string;
-  naam: string;
-  onderwijstype: string | null;
-  locatie: string | null;
-  implementatiefase: string | null;
-  contactpersoonNaam: string | null;
-  contactpersoonBetrouwbaar: boolean;
-  trainerLinkedIds: string[];
 }
 
 interface TrainerboardItemRuw {
@@ -410,24 +425,34 @@ interface TrainerMondayContext {
 }
 
 /**
- * Verzamelt in maximaal 3 Monday-aanroepen (parallel) alles wat de
- * resolutieladder nodig heeft: Master Data (gefilterd op de Trainer-relatie
- * van déze trainer — harde relatie, tier 1), alle Uitvoering-trainingen
- * gegroepeerd per gekoppeld school-ID, en het eigen trainerboard (Master ID
- * → centrale training → School — óók tier 1 — met tier 2, de unieke legacy-
- * groepsnaammatch, als gecontroleerde terugval zodra die School-relatie
- * zelf leeg is; zie normaliseerSchoolnaamVoorMatch hierboven voor de
- * volledige toelichting + live aanleiding). Geen lokale cache tussen
- * aanroepen — bewuste architectuurkeuze (architectuurrapport §5/§12): elke
- * paginalaad is een live Monday-read.
+ * Verzamelt in maximaal 4 Monday-aanroepen (de eerste 3 parallel, de vierde
+ * gericht op het resultaat van de eerste) alles wat de resolutieladder
+ * nodig heeft.
+ *
+ * Root-cause-fix (2026-09-03, Michel de Hond: portal toonde 13 scholen,
+ * board 5 toonde 37) — de basisset scholen komt niet langer van een scan
+ * over heel Master Data op een omgekeerde Trainer-relatie (die kon, live
+ * vastgesteld, ook licht uit de pas lopen met de kolom hieronder). De
+ * basisset is voortaan UITSLUITEND UO_SCHOLEN_KOLOM op het EIGEN item van
+ * de trainer op board 5 — de vastgestelde functionele waarheid: "de kolom
+ * Scholen op het item van de trainer in Board 5 is leidend voor welke
+ * scholen bij die trainer horen, onafhankelijk van het bestaan van
+ * trainingen." Uitvoering-trainingen (board 4) worden daarna gegroepeerd
+ * per gekoppeld school-ID — uitsluitend als AANVULLENDE informatie/telling
+ * op een reeds bevestigde school, nooit als reden om een school toe te
+ * voegen. Het eigen trainerboard (Master ID → centrale training) blijft
+ * bestaan als FALLBACK om een training zonder eigen School-relatie via de
+ * groepsnaam alsnog aan een AL BEVESTIGDE school toe te wijzen (spec: "mag
+ * nooit meer de primaire reden zijn waarom een gekoppelde school zichtbaar
+ * wordt") — zie normaliseerSchoolnaamVoorMatch hierboven voor de volledige
+ * toelichting + live aanleiding van die naam-heuristiek zelf.
+ *
+ * Geen lokale cache tussen aanroepen — bewuste architectuurkeuze
+ * (architectuurrapport §5/§12): elke paginalaad is een live Monday-read.
  */
 async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMondayContext> {
-  const [masterDataItems, uitvoeringItems, trainerboardStructuur] = await Promise.all([
-    haalAllePaginas({
-      boardId: MASTER_DATA_BOARD_ID,
-      columnIds: [MD_TRAINER_KOLOM, MD_HOOFDCONTACTPERSOON_KOLOM, MD_TYPE_SCHOOL_KOLOM, MD_LOCATION_KOLOM, MD_IMPLEMENTATIEFASE_KOLOM],
-      limit: MAX_MASTER_DATA_ITEMS,
-    }),
+  const [uitvoerderItem, uitvoeringItems, trainerboardStructuur] = await Promise.all([
+    haalItemMetKolomWaarden(trainer.mondayUitvoerderItemId, [UO_SCHOLEN_KOLOM]),
     haalAllePaginas({
       boardId: UITVOERING_BOARD_ID,
       columnIds: [UV_SCHOOL_KOLOM, UV_STATUS_KOLOM, UV_DATUM_KOLOM, UV_LOGBOEK_KOLOM],
@@ -436,18 +461,30 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
     haalTrainerboardStructuur(trainer.mondayTrainerboardId, MAX_TRAINERBOARD_ITEMS),
   ]);
 
-  const masterDataById = new Map<string, MasterDataSchoolRuw>();
+  // De basisset: exact de school-ID's uit UO_SCHOLEN_KOLOM op het eigen item
+  // van de trainer — nooit méér, nooit minder, ongeacht trainingen. Gericht
+  // opgehaald (niet heel Master Data gepagineerd) — precies de school-ID's
+  // die hier al bekend zijn, nooit meer.
+  const gekoppeldeSchoolIds = parseLinkedPulseIds(uitvoerderItem?.column_values[0]);
+  const masterDataItems = await haalItemsMetKolomWaarden(gekoppeldeSchoolIds, [
+    MD_TYPE_SCHOOL_KOLOM,
+    MD_LOCATION_KOLOM,
+    MD_IMPLEMENTATIEFASE_KOLOM,
+    MD_HOOFDCONTACTPERSOON_KOLOM,
+  ]);
+
+  const scholen = new Map<string, TrainerSchoolBron>();
   for (const item of masterDataItems) {
     const kolommen = naarKolomMap(item.column_values);
-    masterDataById.set(item.id, {
+    scholen.set(item.id, {
       id: item.id,
       naam: item.name,
       onderwijstype: kolommen.get(MD_TYPE_SCHOOL_KOLOM)?.text || null,
       locatie: kolommen.get(MD_LOCATION_KOLOM)?.text || null,
       implementatiefase: kolommen.get(MD_IMPLEMENTATIEFASE_KOLOM)?.text || null,
       contactpersoonNaam: kolommen.get(MD_HOOFDCONTACTPERSOON_KOLOM)?.text || null,
-      contactpersoonBetrouwbaar: parseLinkedPulseIds(kolommen.get(MD_HOOFDCONTACTPERSOON_KOLOM)?.value).length > 0,
-      trainerLinkedIds: parseLinkedPulseIds(kolommen.get(MD_TRAINER_KOLOM)?.value),
+      contactpersoonBetrouwbaar: parseLinkedPulseIds(kolommen.get(MD_HOOFDCONTACTPERSOON_KOLOM)).length > 0,
+      bron: "trainer-relatie",
     });
   }
 
@@ -480,7 +517,7 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
   const uitvoeringById = new Map<string, { schoolIds: string[]; samenvatting: TrainingSamenvatting }>();
   for (const item of uitvoeringItems) {
     const kolommen = naarKolomMap(item.column_values);
-    const schoolIds = parseLinkedPulseIds(kolommen.get(UV_SCHOOL_KOLOM)?.value);
+    const schoolIds = parseLinkedPulseIds(kolommen.get(UV_SCHOOL_KOLOM));
     const datum = parseMondayDatum(kolommen.get(UV_DATUM_KOLOM)?.text);
     const statusTekst = kolommen.get(UV_STATUS_KOLOM)?.text ?? null;
     const samenvatting: TrainingSamenvatting = {
@@ -494,6 +531,14 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
       bron: "mijnleerlijn",
     };
     uitvoeringById.set(item.id, { schoolIds, samenvatting });
+    // Onvoorwaardelijk gegroepeerd op de eigen School-relatie van de
+    // training, ongeacht welke trainer — dit is de globale trainingen-per-
+    // school-index (board 4-breed). Alleen de school-ID's die hierboven al
+    // in `scholen` staan (afkomstig uit UO_SCHOLEN_KOLOM) worden ooit
+    // opgezocht (samenvattingVoorSchool/haalDashboardData/haalSchoolDetail),
+    // dus een training voor een school buiten die set wordt hier onschadelijk
+    // berekend maar nergens getoond — trainingen voegen nooit een nieuwe
+    // school toe (spec).
     for (const schoolId of schoolIds) {
       const lijst = trainingenPerSchool.get(schoolId) ?? [];
       lijst.push(samenvatting);
@@ -501,25 +546,14 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
     }
   }
 
-  // Tier 1 (autoritatief): Master Data.Trainer bevat het item-ID van déze trainer.
-  const scholen = new Map<string, TrainerSchoolBron>();
-  for (const school of masterDataById.values()) {
-    if (school.trainerLinkedIds.includes(trainer.mondayUitvoerderItemId)) {
-      scholen.set(school.id, {
-        id: school.id,
-        naam: school.naam,
-        onderwijstype: school.onderwijstype,
-        locatie: school.locatie,
-        implementatiefase: school.implementatiefase,
-        contactpersoonNaam: school.contactpersoonNaam,
-        contactpersoonBetrouwbaar: school.contactpersoonBetrouwbaar,
-        bron: "trainer-relatie",
-      });
-    }
-  }
-
-  // Tier 1 (harde relatie, vervolg) / Tier 2 (unieke legacy-schoolmatch):
-  // via het eigen trainerboard — Master ID → centrale training → School.
+  // Fallback (spec: "mag nooit meer de primaire reden zijn waarom een
+  // gekoppelde school zichtbaar wordt") — uitsluitend voor trainingen wier
+  // EIGEN School-relatie op board 4 leeg is: via de groepsnaam op het eigen
+  // trainerboard alsnog aan een school toewijzen. `kandidaten` zoekt hier
+  // bewust binnen `scholen.values()` (de al bevestigde set uit
+  // UO_SCHOLEN_KOLOM), niet binnen heel Master Data — een match kan dus per
+  // constructie nooit een nieuwe school toevoegen, uitsluitend een training
+  // aan een al bevestigde school koppelen.
   const suggesties: TrainerSchoolSuggestie[] = [];
   // Dedup op centrale-training-ID (niet op trainerboard-item-ID): voorkomt
   // dubbeltelling als twee trainerboard-rijen toevallig dezelfde Master ID
@@ -530,70 +564,21 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
     if (!tbItem.masterId) continue;
     const training = uitvoeringById.get(tbItem.masterId);
     if (!training) continue; // hangende/ongeldige Master ID — geen crash, gewoon overslaan
+    if (training.schoolIds.length > 0) continue; // heeft al een eigen School-relatie, hierboven al onvoorwaardelijk toegewezen — geen fallback nodig
 
-    if (training.schoolIds.length > 0) {
-      // Tier 1 (harde relatie) — wint altijd: zodra de centrale training
-      // zelf een bruikbare School-koppeling heeft, wordt de legacy-
-      // naammatch hieronder voor dit trainerboard-item nooit meer bereikt
-      // (de `continue` hieronder slaat 'm structureel over) — precies de
-      // opdrachtseis "Tier 1 wint altijd", zonder een aparte prioriteitscheck.
-      for (const schoolId of training.schoolIds) {
-        if (scholen.has(schoolId)) continue;
-        const school = masterDataById.get(schoolId);
-        if (!school) continue;
-        scholen.set(schoolId, {
-          id: school.id,
-          naam: school.naam,
-          onderwijstype: school.onderwijstype,
-          locatie: school.locatie,
-          implementatiefase: school.implementatiefase,
-          contactpersoonNaam: school.contactpersoonNaam,
-          contactpersoonBetrouwbaar: school.contactpersoonBetrouwbaar,
-          bron: "training-koppeling",
-        });
-      }
-      continue;
-    }
-
-    // Tier 2 (unieke legacy-schoolmatch, 2026-08-19 — zie
-    // normaliseerSchoolnaamVoorMatch se toelichting hierboven voor de live-
-    // bevestigde aanleiding): School-kolom leeg op de centrale training.
-    // De groupTitle op het PERSOONLIJKE trainerboard is dan de enige
-    // overgebleven schoolidentiteit — bij een unieke, veilig-genormaliseerde
-    // naammatch tegen Master Data is dat betrouwbaar genoeg om als bevestigd
-    // te tonen (nooit fuzzy, nooit bij ambiguïteit). Bij 0 of 2+ kandidaten:
-    // niets — geen suggestie, geen bevestiging, nooit gokken (ongewijzigd
-    // t.o.v. de oorspronkelijke, uitsluitend-suggestie-versie van deze tier).
+    // 2026-08-19 — zie normaliseerSchoolnaamVoorMatch se toelichting
+    // hierboven voor de live-bevestigde aanleiding: School-kolom leeg op de
+    // centrale training, de groupTitle op het PERSOONLIJKE trainerboard is
+    // dan de enige overgebleven schoolidentiteit — bij een unieke, veilig-
+    // genormaliseerde naammatch tegen een AL BEVESTIGDE school is dat
+    // betrouwbaar genoeg om de training daaraan toe te wijzen (nooit fuzzy,
+    // nooit bij ambiguïteit). Bij 0 of 2+ kandidaten: niets — geen
+    // toewijzing, nooit gokken.
     if (!tbItem.groupTitle) continue;
     const groepNaamGenormaliseerd = normaliseerSchoolnaamVoorMatch(tbItem.groupTitle);
-    const kandidaten = Array.from(masterDataById.values()).filter((school) => normaliseerSchoolnaamVoorMatch(school.naam) === groepNaamGenormaliseerd);
+    const kandidaten = Array.from(scholen.values()).filter((school) => normaliseerSchoolnaamVoorMatch(school.naam) === groepNaamGenormaliseerd);
     if (kandidaten.length !== 1) continue;
     const kandidaat = kandidaten[0]!;
-
-    // Nooit een reeds bevestigde school overschrijven met de zwakkere
-    // legacy-bron (bv. al bevestigd via tier 1 door een ander trainerboard-
-    // item) — maar dat mag de trainingstoewijzing hieronder niet blokkeren:
-    // meerdere trainerboard-items binnen dezelfde groep (Montessori
-    // Gorinchem heeft er meerdere "Training"/"Online uur"-items van, live
-    // bevestigd) moeten ALLEMAAL hun eigen centrale training aan deze school
-    // toevoegen, ongeacht welke tier de school uiteindelijk bevestigde. Vóór
-    // deze fix stond hier `if (scholen.has(kandidaat.id)) continue;` — dat
-    // sloeg zowel de (overbodige) herbevestiging als de (wél noodzakelijke)
-    // trainingstoewijzing structureel over voor elk item ná het eerste in
-    // dezelfde groep — precies het gerapporteerde "0 open/0 gepland/0
-    // gedaan"-symptoon voor Montessori Gorinchem.
-    if (!scholen.has(kandidaat.id)) {
-      scholen.set(kandidaat.id, {
-        id: kandidaat.id,
-        naam: kandidaat.naam,
-        onderwijstype: kandidaat.onderwijstype,
-        locatie: kandidaat.locatie,
-        implementatiefase: kandidaat.implementatiefase,
-        contactpersoonNaam: kandidaat.contactpersoonNaam,
-        contactpersoonBetrouwbaar: kandidaat.contactpersoonBetrouwbaar,
-        bron: "legacy-unique",
-      });
-    }
 
     // De training zelf identificeren we via de bestaande Master-ID-keten
     // (training.samenvatting.id is de centrale-training-ID, nooit het
@@ -887,6 +872,20 @@ export interface AdminTrainerMondayOverzicht {
  * caching zou hier geen aantoonbaar performanceprobleem oplossen, uitsluitend
  * nieuwe complexiteit toevoegen (opdrachtseis §13: "geen nieuwe
  * infrastructuur zonder noodzaak").
+ *
+ * Root-cause-fix (2026-09-03) — deze functie kreeg UITSLUITEND de generieke
+ * parseLinkedPulseIds-reparatie (leest nu linked_item_ids i.p.v. het altijd-
+ * lege `.value`); de bronrichting is BEWUST NIET meegewijzigd naar
+ * UO_SCHOLEN_KOLOM (board 5) zoals verzamelTrainerContext hierboven — dat
+ * zou dit board-brede overzicht willen omzetten naar N losse board-5-
+ * itemreads (of een aparte board-5-scan) i.p.v. de huidige 2 begrensde
+ * aanroepen. Gevolg: vóór deze fix gaf dit admin-overzicht voor ELKE trainer
+ * altijd 0 scholen/trainingen (dezelfde `.value`-bug); ná deze fix toont het
+ * weer echte aantallen via Master Data.Trainer (board 1 → board 5) — maar
+ * kan, zoals live vastgesteld (Michel: 1 school in elke richting anders),
+ * op een enkele school afwijken van "Mijn scholen" (die board 5 leidend
+ * neemt). Zie het opleverrapport voor de vervolgstap als dit ook hier naar
+ * board 5 moet.
  */
 export async function haalTrainingenEnScholenVoorAlleTrainers(): Promise<AdminTrainerMondayOverzicht> {
   const [masterDataItems, uitvoeringItems] = await Promise.all([
@@ -910,14 +909,14 @@ export async function haalTrainingenEnScholenVoorAlleTrainers(): Promise<AdminTr
       naam: item.name,
       onderwijstype: kolommen.get(MD_TYPE_SCHOOL_KOLOM)?.text || null,
       locatie: kolommen.get(MD_LOCATION_KOLOM)?.text || null,
-      trainerIds: parseLinkedPulseIds(kolommen.get(MD_TRAINER_KOLOM)?.value),
+      trainerIds: parseLinkedPulseIds(kolommen.get(MD_TRAINER_KOLOM)),
     });
   }
 
   const trainingenPerSchool = new Map<string, TrainingSamenvatting[]>();
   for (const item of uitvoeringItems) {
     const kolommen = naarKolomMap(item.column_values);
-    const schoolIds = parseLinkedPulseIds(kolommen.get(UV_SCHOOL_KOLOM)?.value);
+    const schoolIds = parseLinkedPulseIds(kolommen.get(UV_SCHOOL_KOLOM));
     const datum = parseMondayDatum(kolommen.get(UV_DATUM_KOLOM)?.text);
     const statusTekst = kolommen.get(UV_STATUS_KOLOM)?.text ?? null;
     const samenvatting: TrainingSamenvatting = {

@@ -14,6 +14,20 @@ import { requireEnv, optionalEnv } from "@/config/env";
 // GraphQL-schema (algemene platformkennis) plus de RESPONSvorm die deze
 // sessie via een los, purpose-built onderzoekstool is waargenomen.
 //
+// `board_relation`-kolommen — LIVE GEVERIFIEERD, root-cause-fix (2026-09-03):
+// onder het hier gepinde API-Version (DEFAULT_API_VERSION, "2024-10") geeft
+// Monday voor `board_relation`-kolommen ALTIJD `text: null` en `value: null`
+// terug, ongeacht of er daadwerkelijk gekoppelde items zijn — bevestigd op
+// board 1 (160 items) én board 5 (alle items) via een los, purpose-built
+// onderzoekstool tegen het echte account. De daadwerkelijke gekoppelde
+// item-ID's zitten uitsluitend in de TYPED `BoardRelationValue`-velden
+// (`linked_item_ids`/`display_value`), die de generieke `ColumnValue`-
+// interface niet meegeeft tenzij je er expliciet naar vraagt via een inline
+// fragment. Elke `column_values`-selectie hieronder die een board_relation-
+// kolom kán bevatten, vraagt daarom ook `... on BoardRelationValue {
+// linked_item_ids }` mee — `id`/`text`/`value` blijven staan voor de andere
+// kolomtypes (status/date/text/dropdown/etc.), die dit probleem niet hebben.
+//
 // Write-back (2026-08-15) — `wijzigKolomWaarde()` gebruikt Monday's publieke
 // `change_simple_column_value`-mutation (stabiel, publiek gedocumenteerd
 // schema — algemene platformkennis, werkt voor zowel `date`- als
@@ -89,6 +103,13 @@ export interface MondayColumnValue {
   id: string;
   text: string | null;
   value: string | null;
+  /**
+   * Uitsluitend aanwezig voor `board_relation`-kolommen (via de
+   * `BoardRelationValue`-inline-fragment) — de daadwerkelijke gekoppelde
+   * item-ID's. Dit is voor board_relation de ENIGE betrouwbare bron; zie de
+   * toelichting bovenaan dit bestand. `undefined` voor elk ander kolomtype.
+   */
+  linked_item_ids?: string[] | null;
 }
 
 export interface MondayBoardRelationLink {
@@ -125,7 +146,7 @@ export async function haalScholenPagina(opties: {
             id
             name
             updated_at
-            column_values(ids: $columnIds) { id text value }
+            column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } }
           }
         }
       }
@@ -244,7 +265,7 @@ export async function leesKolomWaarden(itemId: string, columnIds: string[]): Pro
   const query = `
     query LeesKolomWaarden($itemId: ID!, $columnIds: [String!]) {
       items(ids: [$itemId]) {
-        column_values(ids: $columnIds) { id text value }
+        column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } }
       }
     }
   `;
@@ -273,12 +294,44 @@ export async function haalItemMetKolomWaarden(itemId: string, columnIds: string[
       items(ids: [$itemId]) {
         id
         name
-        column_values(ids: $columnIds) { id text value }
+        column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } }
       }
     }
   `;
   const data = await mondayQuery<{ items: { id: string; name: string; column_values: MondayColumnValue[] }[] }>(query, { itemId, columnIds });
   return data.items[0] ?? null;
+}
+
+const MAX_ITEMS_PER_QUERY = 100;
+
+/**
+ * Haalt meerdere items gericht op hun ID op (in batches van
+ * MAX_ITEMS_PER_QUERY — Monday's `items(ids:)` is niet onbegrensd), i.p.v.
+ * een heel board te paginerene en te filteren. Toegevoegd voor de
+ * root-cause-fix van 2026-09-03 (zie de toelichting bovenaan dit bestand):
+ * de scholenlijst van een trainer wordt voortaan opgebouwd uit exact de
+ * school-ID's uit `linked_item_ids` van diens eigen board_relation-kolom,
+ * niet meer door heel board 1 te scannen op een omgekeerde relatie.
+ */
+export async function haalItemsMetKolomWaarden(itemIds: string[], columnIds: string[]): Promise<MondaySchoolItem[]> {
+  if (itemIds.length === 0) return [];
+  const query = `
+    query HaalItemsMetKolomWaarden($ids: [ID!], $columnIds: [String!]) {
+      items(ids: $ids) {
+        id
+        name
+        updated_at
+        column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } }
+      }
+    }
+  `;
+  const resultaten: MondaySchoolItem[] = [];
+  for (let i = 0; i < itemIds.length; i += MAX_ITEMS_PER_QUERY) {
+    const batch = itemIds.slice(i, i + MAX_ITEMS_PER_QUERY);
+    const data = await mondayQuery<{ items: MondaySchoolItem[] }>(query, { ids: batch, columnIds });
+    resultaten.push(...data.items);
+  }
+  return resultaten;
 }
 
 export interface MondayColumnDefinitie {
