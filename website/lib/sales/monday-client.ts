@@ -312,12 +312,22 @@ const MAX_ITEMS_PER_QUERY = 100;
  * de scholenlijst van een trainer wordt voortaan opgebouwd uit exact de
  * school-ID's uit `linked_item_ids` van diens eigen board_relation-kolom,
  * niet meer door heel board 1 te scannen op een omgekeerde relatie.
+ *
+ * Root-cause-fix (2026-09-03, vervolg — live productie-incident: Michel
+ * toonde na deze functie 25 scholen i.p.v. 37): Monday's `items`-veld heeft
+ * een EIGEN `limit`-argument met `defaultValue: "25"` (bevestigd via
+ * schema-introspectie) — dat default gold ook hier, ONGEACHT hoeveel ID's in
+ * `ids:` meegingen, en werd stilzwijgend toegepast: geen fout, geen
+ * waarschuwing, gewoon de eerste 25 van elke batch. Live gereproduceerd (37
+ * echte school-ID's, deze exacte query zonder `limit` → precies 25 terug) en
+ * bevestigd verholpen door `limit: $limit` expliciet mee te geven. `$limit`
+ * is bewust MAX_ITEMS_PER_QUERY (nooit hoger dan de batchgrootte hierboven).
  */
 export async function haalItemsMetKolomWaarden(itemIds: string[], columnIds: string[]): Promise<MondaySchoolItem[]> {
   if (itemIds.length === 0) return [];
   const query = `
-    query HaalItemsMetKolomWaarden($ids: [ID!], $columnIds: [String!]) {
-      items(ids: $ids) {
+    query HaalItemsMetKolomWaarden($ids: [ID!], $columnIds: [String!], $limit: Int) {
+      items(ids: $ids, limit: $limit) {
         id
         name
         updated_at
@@ -328,7 +338,7 @@ export async function haalItemsMetKolomWaarden(itemIds: string[], columnIds: str
   const resultaten: MondaySchoolItem[] = [];
   for (let i = 0; i < itemIds.length; i += MAX_ITEMS_PER_QUERY) {
     const batch = itemIds.slice(i, i + MAX_ITEMS_PER_QUERY);
-    const data = await mondayQuery<{ items: MondaySchoolItem[] }>(query, { ids: batch, columnIds });
+    const data = await mondayQuery<{ items: MondaySchoolItem[] }>(query, { ids: batch, columnIds, limit: MAX_ITEMS_PER_QUERY });
     resultaten.push(...data.items);
   }
   return resultaten;
