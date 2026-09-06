@@ -29,6 +29,15 @@ export const SCHOLEN_KOLOM = {
   hoofdcontactpersoon: "board_relation_mm4v8fpm",
   location: "text_mm5r9kn2",
   binnengekomenVia: "dropdown_mm5qpp3q",
+  // Sales Fundament & Historie, Fase 1 (2026-09-04) — "Aantal leerlingen",
+  // live bevestigd tijdens de Monday-historieverificatie (numeric-kolom, o.a.
+  // waargenomen als 26/144/217/372/600 op echte scholen). Was tot nu toe
+  // volledig ongesynchroniseerd — enrichment.ts noemde 'm expliciet als
+  // destijds "bewust niet geactiveerd" kandidaat, zonder gedocumenteerde
+  // reden. Primaire licentiebron per expliciete opdracht — zie
+  // school-equivalent.ts. Verkoopregels (board 3) wordt bewust NIET de bron
+  // in Fase 1, zie de toelichting in sync.ts.
+  aantalLeerlingen: "numeric_mm4vyz6j",
 } as const;
 
 /**
@@ -74,6 +83,20 @@ export function isOpenstaandeRelatiestatus(relatiestatus: string | null | undefi
   if (!relatiestatus) return false;
   return (RELATIESTATUS_OPENSTAAND as readonly string[]).includes(relatiestatus);
 }
+
+/**
+ * Sales Fundament & Historie, Fase 1 (2026-09-04) — de natuurlijke
+ * instroomwaarde van elk van de twee statuskolommen: het punt waarop een
+ * schoolitem de funnel binnenkomt, dus GEEN eerdere fase gemist kan zijn.
+ * Live bevestigd tijdens de historieverificatie ("Nieuw" is Salesfase-index
+ * 0). Gebruikt door lib/sales/status-geschiedenis.ts se baseline/transition-
+ * classificatie: een eerste-ooit-waargenomen waarde die niet deze instroom-
+ * waarde is, kán geen bijgewoonde reis zijn (er moet iets vóór zijn gebeurd
+ * dat Monday nooit heeft vastgelegd) en telt daarom als "baseline", nooit
+ * als "transition".
+ */
+export const RELATIESTATUS_INSTROOM_WAARDE = "Lead" as const;
+export const SALESFASE_INSTROOM_WAARDE = "Nieuw" as const;
 
 /**
  * Letterlijke marker aan het begin van een gemigreerde Update-tekst
