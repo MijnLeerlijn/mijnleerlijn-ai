@@ -78,6 +78,7 @@ const UO_SCHOLEN_KOLOM_ONGEBRUIKT_ID = "board_relation_mm4v3wjn"; // de tweede, 
 const MD_TRAINER_KOLOM_ID = "board_relation_mm5r2jy1";
 const MD_HOOFDCONTACTPERSOON_KOLOM_ID = "board_relation_mm4v8fpm";
 const UV_SCHOOL_KOLOM_ID = "board_relation_mm5tyc40";
+const UV_UITVOERDER_KOLOM_ID = "board_relation_mm5vhav3"; // root-cause-fix (2026-09-08) — tweede bron voor de scholenbasis
 
 function checkboxValue(checked: boolean): string {
   return JSON.stringify({ checked: checked ? "true" : "" });
@@ -114,7 +115,16 @@ function masterDataItem(opts: {
   };
 }
 
-function uitvoeringItem(opts: { id: string; naam: string; schoolIds?: (string | number)[]; status?: string | null; datum?: string | null; logboekIngevuld?: boolean }): MondaySchoolItem {
+function uitvoeringItem(opts: {
+  id: string;
+  naam: string;
+  schoolIds?: (string | number)[];
+  status?: string | null;
+  datum?: string | null;
+  logboekIngevuld?: boolean;
+  /** Root-cause-fix (2026-09-08) — Uitvoerder training (board_relation_mm5vhav3). Onbenoemd = geen koppeling (leeg), niet "deze trainer". */
+  uitvoerderIds?: (string | number)[];
+}): MondaySchoolItem {
   return {
     id: opts.id,
     name: opts.naam,
@@ -124,6 +134,7 @@ function uitvoeringItem(opts: { id: string; naam: string; schoolIds?: (string | 
       { id: "color_mm5tz3wk", text: opts.status ?? null, value: null },
       { id: "date_mm5tnfvx", text: opts.datum ?? null, value: null },
       { id: "boolean_mm5tvfc5", text: null, value: checkboxValue(opts.logboekIngevuld ?? false) },
+      { id: UV_UITVOERDER_KOLOM_ID, text: null, value: null, linked_item_ids: opts.uitvoerderIds ? opts.uitvoerderIds.map(String) : [] },
     ],
   };
 }
@@ -379,7 +390,7 @@ describe("bepaalScholenVoorTrainer — basisset uit Board 5 'Scholen'-relatie (r
     expect(mockHaalItemsMetKolomWaarden).toHaveBeenCalledWith(["500"], expect.arrayContaining(["dropdown_mm4v9rvg", "text_mm5r9kn2"]));
   });
 
-  it("een Board-4-training gekoppeld aan een school BUITEN de Board-5-relatie is nergens zichtbaar — trainingen voegen nooit een nieuwe school toe", async () => {
+  it("een Board-4-training ZONDER Uitvoerder-koppeling aan deze trainer, voor een school buiten de Board-5-relatie, is nergens zichtbaar (root-cause-fix 2026-09-08 voegt een training als bron toe, maar uitsluitend mét een Uitvoerder-match — geen match hier)", async () => {
     mockTrainerContext({
       schoolIds: ["500"],
       masterData: [masterDataItem({ id: "500", naam: "Bevestigde school" })],
@@ -406,6 +417,135 @@ describe("bepaalScholenVoorTrainer — basisset uit Board 5 'Scholen'-relatie (r
 
     expect(resultaatA.bevestigd.some((s) => s.id === "600")).toBe(false);
     expect(resultaatB.bevestigd.some((s) => s.id === "500")).toBe(false);
+  });
+});
+
+describe("bepaalScholenVoorTrainer — union met Board-4-trainingen als tweede bron voor de scholenbasis (root-cause-fix 2026-09-08, Wessel: Montessorischool de Basis en de Kraal)", () => {
+  it("school+training zichtbaar zodra een Board-4-training deze trainer als Uitvoerder heeft, ook als de school (nog) NIET in UO_SCHOLEN_KOLOM staat — het exacte, live bevestigde Wessel-scenario van vandaag", async () => {
+    mockTrainerContext({
+      schoolIds: ["500"], // Wessels bestaande UO_SCHOLEN_KOLOM — bevat de nieuwe school NIET
+      masterData: [masterDataItem({ id: "500", naam: "Bestaande school" }), masterDataItem({ id: "12993435378", naam: "Montessorischool de Basis en de Kraal" })],
+      uitvoering: [
+        uitvoeringItem({
+          id: "12993435878",
+          naam: "Training dagdeel",
+          schoolIds: ["12993435378"],
+          uitvoerderIds: [TRAINER.mondayUitvoerderItemId], // "12419116827" in productie — deze trainer
+          datum: "2026-09-08",
+        }),
+      ],
+    });
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd.map((s) => s.id).sort()).toEqual(["12993435378", "500"]);
+    const nieuweSchool = resultaat.bevestigd.find((s) => s.id === "12993435378");
+    expect(nieuweSchool).toBeDefined();
+    expect(nieuweSchool!.aantalGepland).toBe(1); // de training van vandaag zit correct in trainingenPerSchool, ongewijzigd
+  });
+
+  it("Board-5-scholen zonder enige training blijven zichtbaar (bron 1 blijft volledig intact, union voegt alleen toe)", async () => {
+    mockTrainerContext({
+      schoolIds: ["500", "501"],
+      masterData: [masterDataItem({ id: "500", naam: "Met training" }), masterDataItem({ id: "501", naam: "Zonder training" })],
+      uitvoering: [uitvoeringItem({ id: "1", naam: "Training", schoolIds: ["500"], uitvoerderIds: [TRAINER.mondayUitvoerderItemId] })],
+    });
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd.map((s) => s.id).sort()).toEqual(["500", "501"]);
+    const zonderTraining = resultaat.bevestigd.find((s) => s.id === "501");
+    expect(zonderTraining!.aantalOpen).toBe(0);
+    expect(zonderTraining!.aantalGepland).toBe(0);
+    expect(zonderTraining!.aantalGedaan).toBe(0);
+  });
+
+  it("een training van een ANDERE trainer voegt nooit een school toe — Erik-scenario: dezelfde school heeft een training bij Erik, Wessel heeft die school niet in Board 5 en krijgt hem dus ook niet te zien", async () => {
+    mockTrainerContext({
+      schoolIds: ["500"], // Wessel — geen 12993435378 in Board 5
+      masterData: [masterDataItem({ id: "500", naam: "Wessels school" })],
+      uitvoering: [
+        uitvoeringItem({
+          id: "999",
+          naam: "Training bij Erik",
+          schoolIds: ["12993435378"],
+          uitvoerderIds: ["12671779744"], // Erik, NIET Wessel
+        }),
+      ],
+    });
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd.map((s) => s.id)).toEqual(["500"]);
+    expect(resultaat.bevestigd.some((s) => s.id === "12993435378")).toBe(false);
+  });
+
+  it("een school die in ZOWEL UO_SCHOLEN_KOLOM als een training van deze trainer voorkomt, verschijnt precies één keer (dedupliceren vóór de Master Data-fetch)", async () => {
+    mockTrainerContext({
+      schoolIds: ["500"],
+      masterData: [masterDataItem({ id: "500", naam: "School in beide bronnen" })],
+      uitvoering: [uitvoeringItem({ id: "1", naam: "Training", schoolIds: ["500"], uitvoerderIds: [TRAINER.mondayUitvoerderItemId] })],
+    });
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd.filter((s) => s.id === "500")).toHaveLength(1);
+    // Dedupliceren gebeurt vóór de gerichte Master Data-fetch — nooit twee keer hetzelfde ID opvragen.
+    expect(mockHaalItemsMetKolomWaarden).toHaveBeenCalledWith(["500"], expect.any(Array));
+  });
+
+  it("trainingenPerSchool blijft ongewijzigd: een training bij een via bron 2 toegevoegde school telt gewoon mee in aantalOpen/aantalGepland/aantalGedaan", async () => {
+    mockTrainerContext({
+      schoolIds: [],
+      masterData: [masterDataItem({ id: "12993435378", naam: "Montessorischool de Basis en de Kraal" })],
+      uitvoering: [
+        uitvoeringItem({ id: "1", naam: "Open", schoolIds: ["12993435378"], uitvoerderIds: [TRAINER.mondayUitvoerderItemId] }),
+        uitvoeringItem({ id: "2", naam: "Gepland", schoolIds: ["12993435378"], uitvoerderIds: [TRAINER.mondayUitvoerderItemId], datum: "2099-01-01" }),
+        uitvoeringItem({
+          id: "3",
+          naam: "Gedaan",
+          schoolIds: ["12993435378"],
+          uitvoerderIds: [TRAINER.mondayUitvoerderItemId],
+          datum: "2020-01-01",
+          status: "Gedaan",
+          logboekIngevuld: true,
+        }),
+      ],
+    });
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    const school = resultaat.bevestigd.find((s) => s.id === "12993435378");
+    expect(school).toBeDefined();
+    expect(school!.aantalOpen).toBe(1);
+    expect(school!.aantalGepland).toBe(1);
+    expect(school!.aantalGedaan).toBe(1);
+  });
+
+  it("Michel-scenario (37 Board-5-scholen) regresseert niet: een training van deze trainer bij een van die 37 scholen levert nog steeds precies 37 op, geen dubbele", async () => {
+    const ALLE_SCHOOL_IDS = Array.from({ length: 37 }, (_, i) => `school-${i + 1}`);
+
+    mockTrainerContext({
+      schoolIds: ALLE_SCHOOL_IDS,
+      masterData: ALLE_SCHOOL_IDS.map((id) => masterDataItem({ id, naam: `School ${id}` })),
+      uitvoering: [
+        // Een training bij een school die AL in Board 5 staat — bron 2 overlapt hier bewust met bron 1.
+        uitvoeringItem({ id: "training-1", naam: "Training", schoolIds: [ALLE_SCHOOL_IDS[0]!], uitvoerderIds: [TRAINER.mondayUitvoerderItemId] }),
+      ],
+    });
+
+    const resultaat = await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(resultaat.bevestigd).toHaveLength(37);
+    expect(new Set(resultaat.bevestigd.map((s) => s.id)).size).toBe(37);
+  });
+
+  it("de Uitvoerder-kolom (board_relation_mm5vhav3) wordt daadwerkelijk meegevraagd bij het ophalen van Uitvoering-trainingen", async () => {
+    mockTrainerContext({ schoolIds: ["500"], masterData: [masterDataItem({ id: "500", naam: "School" })] });
+
+    await bepaalScholenVoorTrainer(TRAINER);
+
+    expect(mockScholenPagina).toHaveBeenCalledWith(expect.objectContaining({ columnIds: expect.arrayContaining([UV_UITVOERDER_KOLOM_ID]) }));
   });
 });
 

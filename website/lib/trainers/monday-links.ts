@@ -69,6 +69,12 @@ const MD_IMPLEMENTATIEFASE_KOLOM = "color_mm5q790a";
 const UV_SCHOOL_KOLOM = "board_relation_mm5tyc40";
 export const UV_STATUS_KOLOM = "color_mm5tz3wk";
 export const UV_DATUM_KOLOM = "date_mm5tnfvx";
+// Root-cause-fix (2026-09-08) — tweede bron voor de scholenbasis van een
+// trainer (zie verzamelTrainerContext hieronder): de Uitvoerder-relatie op
+// een Board-4-training zelf. Voorheen alleen gebruikt in de reactieve
+// item-creation-flow (monday-trainer-sync-project), hier voor het eerst
+// ook door de portal zelf gelezen.
+const UV_UITVOERDER_KOLOM = "board_relation_mm5vhav3";
 // Geëxporteerd (Ronde 3, 2026-08-24): lib/trainers/monday-columns.ts heeft
 // deze kolom-ID nodig als schrijfdoel voor de logboek-afronding (zie
 // writeback.ts se nieuwe "logboek"-veld). Zuiver additief, leespad hier
@@ -432,20 +438,33 @@ interface TrainerMondayContext {
  * Root-cause-fix (2026-09-03, Michel de Hond: portal toonde 13 scholen,
  * board 5 toonde 37) — de basisset scholen komt niet langer van een scan
  * over heel Master Data op een omgekeerde Trainer-relatie (die kon, live
- * vastgesteld, ook licht uit de pas lopen met de kolom hieronder). De
- * basisset is voortaan UITSLUITEND UO_SCHOLEN_KOLOM op het EIGEN item van
- * de trainer op board 5 — de vastgestelde functionele waarheid: "de kolom
- * Scholen op het item van de trainer in Board 5 is leidend voor welke
- * scholen bij die trainer horen, onafhankelijk van het bestaan van
- * trainingen." Uitvoering-trainingen (board 4) worden daarna gegroepeerd
- * per gekoppeld school-ID — uitsluitend als AANVULLENDE informatie/telling
- * op een reeds bevestigde school, nooit als reden om een school toe te
- * voegen. Het eigen trainerboard (Master ID → centrale training) blijft
- * bestaan als FALLBACK om een training zonder eigen School-relatie via de
- * groepsnaam alsnog aan een AL BEVESTIGDE school toe te wijzen (spec: "mag
- * nooit meer de primaire reden zijn waarom een gekoppelde school zichtbaar
- * wordt") — zie normaliseerSchoolnaamVoorMatch hierboven voor de volledige
- * toelichting + live aanleiding van die naam-heuristiek zelf.
+ * vastgesteld, ook licht uit de pas lopen met de kolom hieronder).
+ *
+ * Root-cause-fix (2026-09-08, Wessel: nieuwe school+trainingen van vandaag
+ * bleven onzichtbaar ondanks correcte Board-4-koppeling en een bestaand,
+ * wederzijds correct trainerboard-item — live bevestigd bij "Montessorischool
+ * de Basis en de Kraal", 12993435378) — de basisset scholen is voortaan de
+ * UNION van twee bronnen, niet langer uitsluitend UO_SCHOLEN_KOLOM: (1)
+ * UO_SCHOLEN_KOLOM op het EIGEN item van de trainer op board 5 — behouden
+ * zodat een school zonder (nog) enige training zichtbaar blijft; (2) elke
+ * school waarvoor een Board-4-training bestaat met Uitvoerder training =
+ * DEZE trainer — zodat een nieuwe koppeling automatisch zichtbaar wordt
+ * zonder dat UO_SCHOLEN_KOLOM apart hoeft te worden bijgewerkt
+ * (architectuurdoel: geen handmatige backfill/portalactie nodig). Board 4
+ * (School + Uitvoerder) is en blijft de canonieke koppeling; UO_SCHOLEN_KOLOM
+ * is een aanvullende, niet langer een exclusieve bron. Uitvoering-trainingen
+ * (board 4) worden daarna gegroepeerd per gekoppeld school-ID — zoals altijd,
+ * ongewijzigd.
+ *
+ * Het eigen trainerboard (Master ID → centrale training) blijft bestaan als
+ * FALLBACK om een training zonder eigen School-relatie via de groepsnaam
+ * alsnog aan een AL BEVESTIGDE school toe te wijzen (spec: "mag nooit meer de
+ * primaire reden zijn waarom een gekoppelde school zichtbaar wordt") — zie
+ * normaliseerSchoolnaamVoorMatch hierboven voor de volledige toelichting +
+ * live aanleiding van die naam-heuristiek zelf. Het trainerboard wordt NOOIT
+ * als (derde) bron voor de scholenbasis zelf gebruikt — uitsluitend voor
+ * trainerboardItemId-resolutie (bewerkbaarheid), zie
+ * trainerboardItemIdByMasterId hieronder.
  *
  * Geen lokale cache tussen aanroepen — bewuste architectuurkeuze
  * (architectuurrapport §5/§12): elke paginalaad is een live Monday-read.
@@ -455,17 +474,40 @@ async function verzamelTrainerContext(trainer: AuthTrainer): Promise<TrainerMond
     haalItemMetKolomWaarden(trainer.mondayUitvoerderItemId, [UO_SCHOLEN_KOLOM]),
     haalAllePaginas({
       boardId: UITVOERING_BOARD_ID,
-      columnIds: [UV_SCHOOL_KOLOM, UV_STATUS_KOLOM, UV_DATUM_KOLOM, UV_LOGBOEK_KOLOM],
+      columnIds: [UV_SCHOOL_KOLOM, UV_STATUS_KOLOM, UV_DATUM_KOLOM, UV_LOGBOEK_KOLOM, UV_UITVOERDER_KOLOM],
       limit: MAX_UITVOERING_ITEMS,
     }),
     haalTrainerboardStructuur(trainer.mondayTrainerboardId, MAX_TRAINERBOARD_ITEMS),
   ]);
 
-  // De basisset: exact de school-ID's uit UO_SCHOLEN_KOLOM op het eigen item
-  // van de trainer — nooit méér, nooit minder, ongeacht trainingen. Gericht
-  // opgehaald (niet heel Master Data gepagineerd) — precies de school-ID's
-  // die hier al bekend zijn, nooit meer.
-  const gekoppeldeSchoolIds = parseLinkedPulseIds(uitvoerderItem?.column_values[0]);
+  // Bron 1 (bestaand, ongewijzigd sinds de root-cause-fix van 2026-09-03):
+  // UO_SCHOLEN_KOLOM op het eigen item van de trainer. Blijft bestaan zodat
+  // een school zonder (nog) enige training — dus niet afleidbaar uit Board
+  // 4 — gewoon zichtbaar blijft.
+  const schoolIdsUitUO = parseLinkedPulseIds(uitvoerderItem?.column_values[0]);
+
+  // Bron 2 (root-cause-fix 2026-09-08, live bevestigd bij Wessel/Montessori-
+  // school de Basis en de Kraal — 12993435378): elke school waarvoor een
+  // Board-4-training bestaat met Uitvoerder training = DEZE trainer, ongeacht
+  // of UO_SCHOLEN_KOLOM al is bijgewerkt. Board 4 (School + Uitvoerder) is
+  // de canonieke koppeling (architectuurregel); UO_SCHOLEN_KOLOM is voortaan
+  // een aanvullende, geen exclusieve bron. Expliciete identiteitscontrole op
+  // trainer.mondayUitvoerderItemId — een training van een andere trainer kan
+  // hierdoor nooit een school toevoegen.
+  const schoolIdsUitTrainingen = new Set<string>();
+  for (const item of uitvoeringItems) {
+    const kolommen = naarKolomMap(item.column_values);
+    const uitvoerderIds = parseLinkedPulseIds(kolommen.get(UV_UITVOERDER_KOLOM));
+    if (!uitvoerderIds.includes(trainer.mondayUitvoerderItemId)) continue;
+    for (const schoolId of parseLinkedPulseIds(kolommen.get(UV_SCHOOL_KOLOM))) {
+      schoolIdsUitTrainingen.add(schoolId);
+    }
+  }
+
+  // Union, gededupliceerd op Board-1-school-ID vóór de gerichte Master
+  // Data-fetch — een school uit beide bronnen wordt zo precies één keer
+  // opgehaald en getoond, nooit dubbel.
+  const gekoppeldeSchoolIds = Array.from(new Set([...schoolIdsUitUO, ...schoolIdsUitTrainingen]));
   const masterDataItems = await haalItemsMetKolomWaarden(gekoppeldeSchoolIds, [
     MD_TYPE_SCHOOL_KOLOM,
     MD_LOCATION_KOLOM,
