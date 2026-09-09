@@ -1,6 +1,7 @@
 import { getPayload } from "payload";
 import config from "../../payload.config";
 import { schrijfVerslagUpdateIdempotent, schrijfVerslagVelden, bouwVerslagWeergaveTekst, type VerslagRecord } from "@/lib/trainers/verslag";
+import { berekenVerslagUpdateBackfillRapport } from "@/lib/trainers/verslag-backfill-rapport";
 
 /**
  * Eenmalige backfill voor de verslag-Update-writeback-regressie
@@ -35,17 +36,6 @@ import { schrijfVerslagUpdateIdempotent, schrijfVerslagVelden, bouwVerslagWeerga
  *    die --apply zojuist bijwerkte.
  */
 
-interface RapportRegel {
-  "Verslag-ID": number;
-  "Board4-ID": string;
-  "Trainerboard-item-ID": string;
-  "School-ID": string;
-  "Training-update-status": string;
-  "School-update-status": string;
-  "Gepland: training": string;
-  "Gepland: school": string;
-}
-
 async function main(): Promise<void> {
   const apply = process.argv.includes("--apply");
 
@@ -53,6 +43,38 @@ async function main(): Promise<void> {
 
   const payload = await getPayload({ config });
 
+  // Rapport (aantallen + per-rij status/geplande writes) komt altijd uit de
+  // gedeelde, puur-lezende module — exact dezelfde die de tijdelijke
+  // productie-diagnoseroute gebruikt.
+  const rapport = await berekenVerslagUpdateBackfillRapport(payload);
+
+  console.table(
+    rapport.regels.map((r) => ({
+      "Verslag-ID": r.verslagId,
+      "Board4-ID": r.mondayTrainingId,
+      "Trainerboard-item-ID": r.mondayTrainerboardItemId ?? "-",
+      "School-ID": r.mondaySchoolId,
+      "Training-update-status": r.trainingUpdateStatus,
+      "School-update-status": r.schoolUpdateStatus,
+      "Gepland: training": r.trainingOntbreekt ? "JA" : "nee",
+      "Gepland: school": r.schoolOntbreekt ? "JA" : "nee",
+      Overgeslagen: r.zouWordenOvergeslagenBijApply ? "JA (geen Update-tekst op te bouwen)" : "",
+    }))
+  );
+
+  if (!apply) {
+    console.log("\n--- Totalen ---");
+    console.log(`Verslagen gecontroleerd (status bevestigd/voltooid): ${rapport.totaalVerslagen}`);
+    console.log(`Training-updates GEPLAND: ${rapport.ontbrekendeTrainingUpdates}`);
+    console.log(`School-updates GEPLAND:   ${rapport.ontbrekendeSchoolUpdates}`);
+    console.log(`Zouden worden overgeslagen: ${rapport.overgeslagen}`);
+    console.log("\nDit was een dry-run — er is niets naar Monday of de database geschreven. Voeg --apply toe om echt te schrijven.");
+    return;
+  }
+
+  // --apply: hier pas de volledige rijen ophalen (inclusief de velden die
+  // nodig zijn om de Update-tekst te bouwen) — de gedeelde, puur-lezende
+  // module hierboven kent deze velden bewust niet.
   const rijen: VerslagRecord[] = [];
   let pagina = 1;
   for (;;) {
@@ -70,9 +92,6 @@ async function main(): Promise<void> {
     pagina += 1;
   }
 
-  const rapport: RapportRegel[] = [];
-  let geplandeTrainingUpdates = 0;
-  let geplandeSchoolUpdates = 0;
   let daadwerkelijkeTrainingUpdates = 0;
   let daadwerkelijkeSchoolUpdates = 0;
   let fouten = 0;
@@ -80,22 +99,7 @@ async function main(): Promise<void> {
   for (const rij of rijen) {
     const trainingOntbreekt = !(rij.trainingUpdateStatus === "geschreven" && Boolean(rij.trainingUpdateMondayId));
     const schoolOntbreekt = !(rij.schoolUpdateStatus === "geschreven" && Boolean(rij.schoolUpdateMondayId));
-
-    if (trainingOntbreekt) geplandeTrainingUpdates += 1;
-    if (schoolOntbreekt) geplandeSchoolUpdates += 1;
-
-    rapport.push({
-      "Verslag-ID": rij.id,
-      "Board4-ID": rij.mondayTrainingId,
-      "Trainerboard-item-ID": rij.mondayTrainerboardItemId ?? "-",
-      "School-ID": rij.mondaySchoolId,
-      "Training-update-status": rij.trainingUpdateStatus,
-      "School-update-status": rij.schoolUpdateStatus,
-      "Gepland: training": trainingOntbreekt ? "JA" : "nee",
-      "Gepland: school": schoolOntbreekt ? "JA" : "nee",
-    });
-
-    if (!apply || (!trainingOntbreekt && !schoolOntbreekt)) continue;
+    if (!trainingOntbreekt && !schoolOntbreekt) continue;
 
     const updateTekst = bouwVerslagWeergaveTekst({
       bevestigdOp: rij.bevestigdOp,
@@ -143,30 +147,22 @@ async function main(): Promise<void> {
     }
   }
 
-  console.table(rapport);
-
   console.log("\n--- Totalen ---");
-  console.log(`Verslagen gecontroleerd (status bevestigd/voltooid): ${rijen.length}`);
-  if (apply) {
-    console.log(`Training-updates daadwerkelijk toegevoegd: ${daadwerkelijkeTrainingUpdates} (van ${geplandeTrainingUpdates} gepland)`);
-    console.log(`School-updates daadwerkelijk toegevoegd:   ${daadwerkelijkeSchoolUpdates} (van ${geplandeSchoolUpdates} gepland)`);
-    console.log(`Fouten/overgeslagen:                       ${fouten}`);
-    if (fouten === 0 && daadwerkelijkeTrainingUpdates + daadwerkelijkeSchoolUpdates === geplandeTrainingUpdates + geplandeSchoolUpdates) {
-      console.log("\n✔ Backfill voltooid — alle geplande Updates zijn geschreven, geen fouten.");
-    } else {
-      console.log("\n⚠ Backfill afgerond MET aandachtspunten — zie de regels hierboven. Draai het script nogmaals (--apply) om veilig te hervatten.");
-      process.exitCode = 1;
-    }
+  console.log(`Verslagen gecontroleerd (status bevestigd/voltooid): ${rapport.totaalVerslagen}`);
+  console.log(`Training-updates daadwerkelijk toegevoegd: ${daadwerkelijkeTrainingUpdates} (van ${rapport.ontbrekendeTrainingUpdates} gepland)`);
+  console.log(`School-updates daadwerkelijk toegevoegd:   ${daadwerkelijkeSchoolUpdates} (van ${rapport.ontbrekendeSchoolUpdates} gepland)`);
+  console.log(`Fouten/overgeslagen:                       ${fouten}`);
+  if (fouten === 0 && daadwerkelijkeTrainingUpdates + daadwerkelijkeSchoolUpdates === rapport.ontbrekendeTrainingUpdates + rapport.ontbrekendeSchoolUpdates) {
+    console.log("\n✔ Backfill voltooid — alle geplande Updates zijn geschreven, geen fouten.");
   } else {
-    console.log(`Training-updates GEPLAND: ${geplandeTrainingUpdates}`);
-    console.log(`School-updates GEPLAND:   ${geplandeSchoolUpdates}`);
-    console.log("\nDit was een dry-run — er is niets naar Monday of de database geschreven. Voeg --apply toe om echt te schrijven.");
+    console.log("\n⚠ Backfill afgerond MET aandachtspunten — zie de regels hierboven. Draai het script nogmaals (--apply) om veilig te hervatten.");
+    process.exitCode = 1;
   }
-
-  process.exit(process.exitCode ?? 0);
 }
 
-main().catch((error) => {
-  console.error("Backfill mislukt:", error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(process.exitCode ?? 0))
+  .catch((error) => {
+    console.error("Backfill mislukt:", error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
