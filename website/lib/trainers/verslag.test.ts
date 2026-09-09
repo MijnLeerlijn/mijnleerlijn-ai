@@ -461,8 +461,13 @@ describe("bevestigVerslag", () => {
     expect(mockMaakUpdate).not.toHaveBeenCalled();
   });
 
-  it("volledige happy flow (MijnLeerlijn-training): GEEN Monday-Update, wél status Gedaan + logboek true op beide records, verslag eindigt 'voltooid' (Upsell-ronde §B7: geen automatische verslag-writeback meer)", async () => {
+  it("volledige happy flow (MijnLeerlijn-training, TRAINER_MONDAY_VERSLAG_ENABLED NIET gezet): GEEN Monday-Update, wél status Gedaan + logboek true op beide records, verslag eindigt 'voltooid'", async () => {
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    // TRAINER_MONDAY_VERSLAG_ENABLED bewust NIET gezet — dekt de
+    // "niet_geactiveerd"-tak (forward fix, 2026-09-09): de Update-write
+    // wordt dan simpelweg overgeslagen, nooit een fout. Zie het testblok
+    // "forward fix — verslag-writeback (2026-09-09)" hieronder voor het
+    // geactiveerde geval.
     const { payload } = maakFakePayload({});
     await maakConcept(payload);
 
@@ -471,10 +476,9 @@ describe("bevestigVerslag", () => {
     expect(uitkomst.soort).toBe("resultaat");
     if (uitkomst.soort !== "resultaat") return;
     expect(uitkomst.verslag.status).toBe("voltooid");
-    // DE kern van deze ronde: geen enkele Monday-Update, nooit — ook niet
-    // bij een volledig geslaagde bevestiging. trainingUpdateStatus/
-    // schoolUpdateStatus blijven daarom simpelweg op hun aanmaakwaarde staan
-    // (nooit meer aangeraakt door deze functie).
+    // TRAINER_MONDAY_VERSLAG_ENABLED staat hier niet op "true" -> de
+    // Update-write wordt overgeslagen ("niet_geactiveerd"), dus
+    // trainingUpdateStatus/schoolUpdateStatus blijven op hun aanmaakwaarde.
     expect(mockMaakUpdate).not.toHaveBeenCalled();
     expect(uitkomst.verslag.trainingUpdateStatus).toBe("niet_verzonden");
     expect(uitkomst.verslag.schoolUpdateStatus).toBe("niet_verzonden");
@@ -504,6 +508,133 @@ describe("bevestigVerslag", () => {
     // Herlezing bevestigt daadwerkelijk aangevinkt (Monday blijft bron van waarheid).
     expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, ["boolean_mm5v9vxd"]);
     expect(mockHaalItemMetKolomWaarden).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, ["boolean_mm5tvfc5"]);
+  });
+
+  describe("forward fix — verslag-writeback (2026-09-09, TRAINER_MONDAY_VERSLAG_ENABLED='true')", () => {
+    beforeEach(() => {
+      vi.stubEnv("TRAINER_MONDAY_VERSLAG_ENABLED", "true");
+      vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
+    });
+
+    it("nieuw bevestigd verslag -> exact 1 Update op de training (Board 4) EN exact 1 Update op de school (Master Data), status/logboek blijven ongewijzigd werken", async () => {
+      const { payload } = maakFakePayload({});
+      await maakConcept(payload);
+
+      const uitkomst = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, "Wat is behandeld:\nRekenen");
+
+      expect(uitkomst.soort).toBe("resultaat");
+      if (uitkomst.soort !== "resultaat") return;
+      expect(uitkomst.verslag.status).toBe("voltooid");
+
+      const trainingCalls = mockMaakUpdate.mock.calls.filter((c) => c[0] === CENTRALE_TRAINING_ID);
+      const schoolCalls = mockMaakUpdate.mock.calls.filter((c) => c[0] === SCHOOL_ID);
+      expect(trainingCalls).toHaveLength(1);
+      expect(schoolCalls).toHaveLength(1);
+      // Exact dezelfde tekst naar beide kanten, exact zoals de doc-comment
+      // bij bevestigVerslag vereist ("beide Updates krijgen exact dezelfde
+      // tekst").
+      expect(trainingCalls[0]![1]).toBe(schoolCalls[0]![1]);
+      expect(trainingCalls[0]![1]).toContain("Rekenen");
+
+      expect(uitkomst.verslag.trainingUpdateStatus).toBe("geschreven");
+      expect(uitkomst.verslag.schoolUpdateStatus).toBe("geschreven");
+      expect(uitkomst.verslag.trainingUpdateMondayId).toBeTruthy();
+      expect(uitkomst.verslag.schoolUpdateMondayId).toBeTruthy();
+
+      // Status/logboek-writeback (bestaande, ongewijzigde stap 6) blijft
+      // gewoon werken, onafhankelijk van de heractivering hierboven.
+      expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "status", "Gedaan");
+      expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(TRAINERBOARD_ITEM_ID, TRAINER.mondayTrainerboardId, "boolean_mm5v9vxd", JSON.stringify({ checked: "true" }));
+      expect(mockWijzigKolomWaarde).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "color_mm5tz3wk", "Gedaan");
+      expect(mockWijzigKolomWaardeJson).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, "18420120466", "boolean_mm5tvfc5", JSON.stringify({ checked: "true" }));
+    });
+
+    it("opnieuw bevestigen (dezelfde training, na een geslaagde eerste bevestiging) -> GEEN duplicaten: create_update wordt geen tweede keer aangeroepen", async () => {
+      const { payload } = maakFakePayload({});
+      await maakConcept(payload);
+      const eerste = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, "Wat is behandeld:\nRekenen");
+      expect(eerste.soort).toBe("resultaat");
+      expect(mockMaakUpdate).toHaveBeenCalledTimes(2); // 1x training, 1x school
+
+      mockMaakUpdate.mockClear();
+      // "Opnieuw proberen" — geen definitieveTekst nodig, exact zoals de portal bij een retry doet.
+      const tweede = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID);
+
+      expect(tweede.soort).toBe("resultaat");
+      if (tweede.soort !== "resultaat") return;
+      expect(tweede.verslag.status).toBe("voltooid");
+      expect(mockMaakUpdate).not.toHaveBeenCalled(); // geen enkele nieuwe Update, aan geen van beide kanten
+    });
+
+    it("training-update bestaat al ('geschreven', met Monday-ID) -> alleen de ontbrekende school-update wordt alsnog verstuurd", async () => {
+      const { payload } = maakFakePayload({
+        "training-verslagen": [
+          {
+            id: 1,
+            trainer: TRAINER.id,
+            mondayTrainingId: CENTRALE_TRAINING_ID,
+            mondaySchoolId: SCHOOL_ID,
+            mondayTrainerboardItemId: TRAINERBOARD_ITEM_ID,
+            trainingBron: "mijnleerlijn",
+            schoolNaam: "Montessori Gorinchem",
+            trainingNaam: "Training",
+            definitieveTekst: "Wat is behandeld:\nTaal",
+            status: "bevestigd",
+            trainingUpdateStatus: "geschreven",
+            trainingUpdateMondayId: "update-training-al-bestaand",
+            schoolUpdateStatus: "niet_verzonden",
+            bevestigdOp: "2026-09-08T10:00:00.000Z",
+            bevestigdDoorTrainerNaam: "Wessel Kok",
+          },
+        ],
+      });
+      seedAfrondingsleeswaarden();
+
+      const uitkomst = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID);
+
+      expect(uitkomst.soort).toBe("resultaat");
+      if (uitkomst.soort !== "resultaat") return;
+      expect(mockMaakUpdate).toHaveBeenCalledTimes(1);
+      expect(mockMaakUpdate).toHaveBeenCalledWith(SCHOOL_ID, expect.any(String), expect.any(String));
+      expect(mockMaakUpdate).not.toHaveBeenCalledWith(CENTRALE_TRAINING_ID, expect.any(String), expect.any(String));
+      expect(uitkomst.verslag.trainingUpdateMondayId).toBe("update-training-al-bestaand"); // ongewijzigd, nooit overschreven
+      expect(uitkomst.verslag.schoolUpdateStatus).toBe("geschreven");
+    });
+
+    it("school-update bestaat al ('geschreven', met Monday-ID) -> alleen de ontbrekende training-update wordt alsnog verstuurd", async () => {
+      const { payload } = maakFakePayload({
+        "training-verslagen": [
+          {
+            id: 1,
+            trainer: TRAINER.id,
+            mondayTrainingId: CENTRALE_TRAINING_ID,
+            mondaySchoolId: SCHOOL_ID,
+            mondayTrainerboardItemId: TRAINERBOARD_ITEM_ID,
+            trainingBron: "mijnleerlijn",
+            schoolNaam: "Montessori Gorinchem",
+            trainingNaam: "Training",
+            definitieveTekst: "Wat is behandeld:\nTaal",
+            status: "bevestigd",
+            trainingUpdateStatus: "niet_verzonden",
+            schoolUpdateStatus: "geschreven",
+            schoolUpdateMondayId: "update-school-al-bestaand",
+            bevestigdOp: "2026-09-08T10:00:00.000Z",
+            bevestigdDoorTrainerNaam: "Wessel Kok",
+          },
+        ],
+      });
+      seedAfrondingsleeswaarden();
+
+      const uitkomst = await bevestigVerslag(payload, TRAINER, CENTRALE_TRAINING_ID);
+
+      expect(uitkomst.soort).toBe("resultaat");
+      if (uitkomst.soort !== "resultaat") return;
+      expect(mockMaakUpdate).toHaveBeenCalledTimes(1);
+      expect(mockMaakUpdate).toHaveBeenCalledWith(CENTRALE_TRAINING_ID, expect.any(String), expect.any(String));
+      expect(mockMaakUpdate).not.toHaveBeenCalledWith(SCHOOL_ID, expect.any(String), expect.any(String));
+      expect(uitkomst.verslag.schoolUpdateMondayId).toBe("update-school-al-bestaand"); // ongewijzigd, nooit overschreven
+      expect(uitkomst.verslag.trainingUpdateStatus).toBe("geschreven");
+    });
   });
 
   it("Upsell-ronde §B7/§A4 — aanvullende training (bron 'aanvullend', geen trainerboard-item): GEEN afrondingsstap (werkTrainingBij wordt niet aangeroepen, er is niets op Monday om af te ronden), verslag gaat na bevestiging direct naar 'voltooid'", async () => {
@@ -806,7 +937,7 @@ describe("bevestigVerslag", () => {
     expect(mockMaakUpdate).not.toHaveBeenCalled();
   });
 
-  it("LEGACY-RECORD (verslag definitief bevestigd vóór 61ffb42 — bevestigdDoorTrainerNaam ontbreekt terwijl bevestigdOp/definitieveTekst al aanwezig zijn): 'Opnieuw proberen' backfilt het ontbrekende naamsnapshot server-side, verzendt NOOIT een Monday-Update, slaat de al-correcte statuswrite over, en rondt uitsluitend de nog openstaande logboekcheckbox(es) af tot volledig 'voltooid'", async () => {
+  it("LEGACY-RECORD (verslag definitief bevestigd vóór 61ffb42 — bevestigdDoorTrainerNaam ontbreekt terwijl bevestigdOp/definitieveTekst al aanwezig zijn): 'Opnieuw proberen' backfilt het ontbrekende naamsnapshot server-side, verzendt GEEN NIEUWE Monday-Update (beide kanten stonden al op 'geschreven'), en rondt uitsluitend de nog openstaande logboekcheckbox(es) af tot volledig 'voltooid'", async () => {
     vi.stubEnv("TRAINER_MONDAY_WRITEBACK_ENABLED", "true");
 
     // Monday's live status-kolommen staan al op "Gedaan" (precies zoals in
@@ -854,8 +985,11 @@ describe("bevestigVerslag", () => {
     expect(uitkomst.soort).toBe("resultaat");
     if (uitkomst.soort !== "resultaat") return;
 
-    // Geen enkele Monday Update — deze functie verzendt er sinds de
-    // Upsell-ronde nooit meer een, ongeacht welke status de rij al had.
+    // Geen NIEUWE Monday Update — trainingUpdateStatus/schoolUpdateStatus
+    // stonden hier bewust al op "geschreven" met een bestaand Monday-ID
+    // (forward fix, 2026-09-09): schrijfVerslagUpdateIdempotent's eigen,
+    // ongewijzigde eerste controle ("reedsGeschreven") kort dit meteen af,
+    // vóór enige claim/Monday-aanroep.
     expect(mockMaakUpdate).not.toHaveBeenCalled();
 
     // Legacy-bevestigingsgegevens veilig aangevuld — server-side, uit het ingelogde trainer-account, nooit clientinput.

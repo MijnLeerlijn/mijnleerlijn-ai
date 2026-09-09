@@ -919,12 +919,11 @@ interface ClaimSlotUitkomst {
 }
 
 /**
- * Upsell-ronde (2026-09-02, spec §B7) — bevestigVerslag roept dit niet meer
- * aan (geen automatische volledige verslag-writeback naar Monday meer, zie
- * de doc-comment daar). Bewust EXPORTED en ongewijzigd laten staan i.p.v.
- * verwijderen: dit is al-geteste, concurrency-gevoelige code die zonder
- * aanpassing herbruikbaar blijft mocht een latere ronde alsnog een
- * expliciete/optionele Monday-writeback van verslagen willen aanbieden.
+ * Forward fix (2026-09-09) — bevestigVerslag hieronder roept dit weer aan
+ * (heractivering na de Upsell-ronde van 2026-09-02, die de aanroep tijdelijk
+ * verwijderde — zie de doc-comment bij bevestigVerslag). Deze functie zelf
+ * is bij die heractivering NIET aangepast: al-geteste, concurrency-gevoelige
+ * code, bewust ongewijzigd hergebruikt.
  *
  * DE concurrencygarantie van deze ronde: een atomische, conditionele
  * Postgres-UPDATE (`UPDATE ... WHERE ... RETURNING`) i.p.v. payload.update()
@@ -1050,9 +1049,9 @@ async function schrijfVerslagVelden(payload: Payload, verslagId: number, kolomme
  * functie se doc-comment) — veilig, want alleen de claimhouder zelf raakt
  * deze velden ooit aan zolang de claim actief is.
  *
- * Upsell-ronde (2026-09-02, spec §B7) — zelfde status als claimUpdateSlot
- * hierboven: niet meer aangeroepen vanuit bevestigVerslag, bewust EXPORTED
- * en ongewijzigd bewaard i.p.v. verwijderd.
+ * Forward fix (2026-09-09) — zelfde heractivering als bij claimUpdateSlot
+ * hierboven: bevestigVerslag roept dit weer aan, deze functie zelf is
+ * ongewijzigd.
  */
 export async function schrijfVerslagUpdateIdempotent(
   payload: Payload,
@@ -1157,8 +1156,21 @@ export type BevestigVerslagUitkomst =
  *     ongeacht de uitkomst van stap 4 (spec §11 beschrijft beide volgordes
  *     van deelmislukking als mogelijk, dus school mag nooit overgeslagen
  *     worden enkel omdat training net mislukte)
- *  6. pas als BEIDE (4) en (5) "geschreven" zijn: status/logboekvlaggen
- *     wijzigen via werkTrainingBij — nooit eerder (spec §9/§10 punt 5)
+ *  6. status/logboekvlaggen wijzigen via werkTrainingBij — ONGEWIJZIGD
+ *     t.o.v. de Upsell-ronde (2026-09-02, spec §B7): gebeurt hier bewust
+ *     ONVOORWAARDELIJK, niet pas ná een geslaagde stap 4/5 (dat was het
+ *     oorspronkelijke, inmiddels verlaten ontwerp — de heractivering
+ *     hieronder (forward fix, 2026-09-09) verandert uitsluitend of de
+ *     Update-writeback weer plaatsvindt, niet de al-bestaande, al-werkende
+ *     status/logboek-volgorde).
+ *
+ * Heractivering (forward fix, 2026-09-09) — stap 4/5 riepen sinds de
+ * Upsell-ronde (2026-09-02) schrijfVerslagUpdateIdempotent niet meer aan
+ * (zie de root-cause-analyse: verslagtekst kwam sindsdien nergens meer op
+ * Monday terecht, alleen nog in training_verslagen.definitieve_tekst).
+ * Beide aanroepen zijn hieronder teruggezet, ONGEWIJZIGD t.o.v. het
+ * bestaande, al-geteste schrijfVerslagUpdateIdempotent/claimUpdateSlot-
+ * mechanisme — geen enkele wijziging aan die twee functies zelf.
  */
 export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, trainingId: string, definitieveTekst?: string): Promise<BevestigVerslagUitkomst> {
   trainingId = genormaliseerTrainingId(trainingId);
@@ -1234,22 +1246,52 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
     return { soort: "niet_bewerkbaar", boodschap: "Verslag heeft nog geen bevestigde tekst." };
   }
 
-  // Upsell-ronde (2026-09-02, spec §B7) — GEEN automatische volledige
-  // writeback meer van het trainingsverslag naar Monday. Vóór deze ronde
-  // schreven stap 4/5 hier de samengestelde updateTekst als Monday-Update
-  // naar zowel de training als de Master Data-school (schrijfVerslagUpdate
-  // Idempotent/claimUpdateSlot hierboven) — dat is precies de "volledige
-  // writeback van trainingsverslagen" die de opdracht nu uitsluit: "het
-  // logboek wordt de enige inhoud uit deze trainer-/helpdesklaag die naar
-  // Monday wordt geschreven". De idempotente claim-/retrykolommen
-  // (training_update_status/monday_id, school_update_status/monday_id) en
-  // de bijbehorende schrijfVerslagUpdateIdempotent/claimUpdateSlot-functies
-  // hierboven blijven bewust ONGEWIJZIGD in dit bestand staan — alleen niet
-  // meer vanaf hier aangeroepen — zodat dit omkeerbaar is en er niets
-  // geraakt wordt aan al-geteste concurrency-gevoelige code ("verander
-  // bestaande productiefunctionaliteit niet blind", opdracht §B7).
-  // updateTekst/weergaveTekst blijven bestaan: de portal toont het verslag
-  // nog altijd op dezelfde manier, alleen Monday krijgt de tekst niet meer.
+  // Stap 4/5 — heractivatie van de verwijderde volledige writeback
+  // (2026-09-09, forward fix na het opleverrapport): schrijf de
+  // samengestelde updateTekst als Monday-Update naar zowel de centrale
+  // training (Board 4, rij.mondayTrainingId) als het schoolitem op Board 1
+  // Master Data (rij.mondaySchoolId) — via de bestaande, ONGEWIJZIGDE
+  // schrijfVerslagUpdateIdempotent/claimUpdateSlot-flow (create_update,
+  // nooit een kolomwaarde). Beide kanten worden ALTIJD geprobeerd, ongeacht
+  // de uitkomst van de andere — exact zoals de oorspronkelijke stap 4/5
+  // hierboven al beschreven ("school mag nooit overgeslagen worden enkel
+  // omdat training net mislukte"). Alleen bij een daadwerkelijke uitkomst
+  // ("geschreven" of "mislukt") wordt de status teruggeschreven — bij
+  // "in_behandeling" (een andere aanvraag houdt de claim) of
+  // "niet_geactiveerd" (TRAINER_MONDAY_VERSLAG_ENABLED staat niet op
+  // "true") raakt uitsluitend de claimhouder deze velden aan, dus hier
+  // bewust niets overschrijven. Nooit een trainingitem aanmaken (deze
+  // functie schrijft uitsluitend een Update op een al-bestaand item-ID) en
+  // nooit de bestaande status/logboek-writeback (hieronder, stap 6)
+  // aanraken of eraan koppelen.
+  const trainingUitkomst = await schrijfVerslagUpdateIdempotent(payload, rij.id, "training", werkrij.mondayTrainingId, updateTekst, {
+    status: werkrij.trainingUpdateStatus,
+    mondayUpdateId: werkrij.trainingUpdateMondayId,
+  });
+  if (
+    trainingUitkomst.status === "mislukt" ||
+    (trainingUitkomst.status === "geschreven" && werkrij.trainingUpdateMondayId !== trainingUitkomst.mondayUpdateId)
+  ) {
+    werkrij = await schrijfVerslagVelden(payload, rij.id, {
+      training_update_status: trainingUitkomst.status,
+      training_update_monday_id: trainingUitkomst.mondayUpdateId,
+    });
+  }
+
+  const schoolUitkomst = await schrijfVerslagUpdateIdempotent(payload, rij.id, "school", werkrij.mondaySchoolId, updateTekst, {
+    status: werkrij.schoolUpdateStatus,
+    mondayUpdateId: werkrij.schoolUpdateMondayId,
+  });
+  if (
+    schoolUitkomst.status === "mislukt" ||
+    (schoolUitkomst.status === "geschreven" && werkrij.schoolUpdateMondayId !== schoolUitkomst.mondayUpdateId)
+  ) {
+    werkrij = await schrijfVerslagVelden(payload, rij.id, {
+      school_update_status: schoolUitkomst.status,
+      school_update_monday_id: schoolUitkomst.mondayUpdateId,
+    });
+  }
+
   werkrij = await schrijfVerslagVelden(payload, rij.id, { status: "bevestigd" });
 
   // Stap 4 (was stap 6) — uitsluitend voor MijnLeerlijn-trainingen: een
@@ -1305,11 +1347,13 @@ export async function bevestigVerslag(payload: Payload, trainer: AuthTrainer, tr
 // schrijfVerslagUpdateIdempotent hierboven.
 //
 // Writeback-analyse (opleverrapport-eis: "onderzoek eerst hoe de bestaande
-// Monday-writeback werkt"): bevestigVerslag schrijft uitsluitend naar Monday
+// Monday-writeback werkt"): bevestigVerslag (na de forward fix van
+// 2026-09-09, zie de doc-comment daar) schrijft uitsluitend naar Monday
 // wanneer trainingUpdateStatus/schoolUpdateStatus nog niet "geschreven" zijn
-// (zie de twee "if (...Status !== 'geschreven')"-blokken in stap 4/5
-// hierboven) — dat is de VOLLEDIGE writeback-trigger in deze codebase, geen
-// hooks op de collectie zelf (TrainingVerslagen.ts kent er geen).
+// — die controle zit in schrijfVerslagUpdateIdempotent zelf (de
+// "reedsGeschreven"-parameter), niet als los if-blok in bevestigVerslag —
+// dat is de VOLLEDIGE writeback-trigger in deze codebase, geen hooks op de
+// collectie zelf (TrainingVerslagen.ts kent er geen).
 // wijzigVerslagAlsAdmin hieronder raakt uitsluitend definitieveTekst aan —
 // nooit trainingUpdateStatus/schoolUpdateStatus/*MondayId/*ClaimedAt/
 // afrondingResultaat — en roept bevestigVerslag/schrijfVerslagUpdateIdempotent
