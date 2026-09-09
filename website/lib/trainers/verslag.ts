@@ -1010,7 +1010,7 @@ export async function claimUpdateSlot(payload: Payload, verslagId: number, kant:
  * afronding_resultaat) moeten door de aanroeper al JSON.stringify'd zijn —
  * deze laag doet geen kolomtype-detectie.
  */
-async function schrijfVerslagVelden(payload: Payload, verslagId: number, kolommen: Record<string, string | number | boolean | null>): Promise<VerslagRecord> {
+export async function schrijfVerslagVelden(payload: Payload, verslagId: number, kolommen: Record<string, string | number | boolean | null>): Promise<VerslagRecord> {
   const toewijzingen = Object.entries(kolommen).map(([kolom, waarde]) => sql`${sql.identifier(kolom)} = ${waarde}`);
   await payload.db.drizzle.execute(sql`UPDATE training_verslagen SET ${sql.join(toewijzingen, sql`, `)} WHERE id = ${verslagId};`);
   return (await payload.findByID({ collection: "training-verslagen", id: verslagId, overrideAccess: true, depth: 0 })) as VerslagRecord;
