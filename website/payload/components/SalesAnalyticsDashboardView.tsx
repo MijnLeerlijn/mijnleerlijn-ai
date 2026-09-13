@@ -36,6 +36,7 @@ export function SalesAnalyticsDashboardView() {
   async function sync() { setSyncBezig(true); setFout(null); try { const res = await fetch("/api/sales/sync", { method: "POST", credentials: "include" }); if (!res.ok) throw new Error("Synchroniseren is mislukt of niet toegestaan voor dit account."); await laad(); } catch (e) { setFout(e instanceof Error ? e.message : String(e)); } finally { setSyncBezig(false); } }
   if (laden) return <div className={s.root}><p>Laden…</p></div>;
   if (!data) return <div className={s.root}><h1>Sales Dashboard</h1><p>{fout ?? "Geen data beschikbaar."}</p></div>;
+  const upsellPercentage = data.trainingen && data.kpis.klanten > 0 ? (data.trainingen.scholenMetUpsell / data.kpis.klanten) * 100 : 0;
   return <div className={s.root}>
     <header className={s.header}><div><h1>Sales Dashboard</h1><p>Commerciële groei, klanten, licenties en pipeline uit Monday.</p></div><button className={s.button} type="button" onClick={sync} disabled={syncBezig}>{syncBezig ? "Synchroniseren…" : "Sync met Monday"}</button></header>
     {fout && <p className={s.error}>{fout}</p>}
@@ -48,6 +49,21 @@ export function SalesAnalyticsDashboardView() {
       <Kpi label="Pipeline school-equivalent" waarde={decimaal.format(data.kpis.pipelineSchoolEquivalenten)} toelichting="Potentiële licenties" />
     </div>
     {data.doelstellingen.length > 0 && <><h2>Doelstellingen</h2><div className={s.grid}>{data.doelstellingen.map((doel) => <Doelkaart key={doel.id} doel={doel} />)}</div></>}
+    {data.trainingen && <>
+      <h2>Trainingen & upsell</h2>
+      <div className={s.kpis}>
+        <Kpi label="Uitgevoerd" waarde={getal.format(data.trainingen.mijnLeerlijnUitgevoerd)} toelichting="MijnLeerlijn-trainingen" />
+        <Kpi label="Gepland" waarde={getal.format(data.trainingen.mijnLeerlijnGepland)} toelichting="MijnLeerlijn-trainingen" />
+        <Kpi label="Nog in te plannen" waarde={getal.format(data.trainingen.nogInTePlannen)} toelichting="Open trainingen" />
+        <Kpi label="Upsell-trainingen" waarde={getal.format(data.trainingen.upsellTrainingen)} toelichting="Aanvullende trainingen" />
+        <Kpi label="Scholen met upsell" waarde={getal.format(data.trainingen.scholenMetUpsell)} toelichting={`${decimaal.format(upsellPercentage)}% van actuele klanten`} />
+      </div>
+      <div className={s.grid}>
+        <Balken titel="Uitgevoerde trainingen per maand" data={data.trainingen.mijnLeerlijnUitgevoerdPerMaand} />
+        <Balken titel="Geplande trainingen per maand" data={data.trainingen.mijnLeerlijnGeplandPerMaand} />
+        <Balken titel="Upsell-trainingen per maand" data={data.trainingen.upsellPerMaand} />
+      </div>
+    </>}
     <div className={s.grid}>
       <Balken titel="Nieuwe licenties per maand — historische winst" data={data.nieuweLicentiesPerMaand} />
       <Balken titel="Nieuwe klanten per maand — exacte overgang" data={data.nieuweKlantenPerMaand} />
