@@ -29,7 +29,11 @@ function maandSleutel(datum: string | null): string | null {
 }
 
 function maandLabel(sleutel: string): string {
-  const [jaar, maand] = sleutel.split("-").map(Number);
+  const match = /^(\d{4})-(\d{2})$/.exec(sleutel);
+  if (!match) return sleutel;
+
+  const jaar = Number(match[1]);
+  const maand = Number(match[2]);
   return new Intl.DateTimeFormat("nl-NL", { month: "short", year: "numeric", timeZone: "Europe/Amsterdam" })
     .format(new Date(Date.UTC(jaar, maand - 1, 1)));
 }
