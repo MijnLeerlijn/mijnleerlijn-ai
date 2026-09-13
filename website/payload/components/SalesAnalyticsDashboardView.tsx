@@ -18,21 +18,24 @@ export function SalesAnalyticsDashboardView() {
     <header className={s.header}><div><h1>Sales Dashboard</h1><p>Commerciële groei, klanten, licenties en pipeline uit Monday.</p></div><button className={s.button} type="button" onClick={sync} disabled={syncBezig}>{syncBezig ? "Synchroniseren…" : "Sync met Monday"}</button></header>
     {fout && <p className={s.error}>{fout}</p>}
     <div className={s.kpis}>
-      <Kpi label="Klantlicenties" waarde={getal.format(data.kpis.klantLicenties)} toelichting={`${getal.format(data.kpis.klanten)} actuele klanten`} />
+      <Kpi label="Klantlicenties nu" waarde={getal.format(data.kpis.klantLicenties)} toelichting={`${getal.format(data.kpis.klanten)} actuele klanten`} />
       <Kpi label="Open pipeline" waarde={getal.format(data.kpis.openPipelineLicenties)} toelichting={`${getal.format(data.kpis.openPipelineScholen)} scholen`} />
-      <Kpi label="Klant school-equivalent" waarde={decimaal.format(data.kpis.klantSchoolEquivalenten)} toelichting={`1 school = ${getal.format(data.kpis.schoolEquivalentFactor)} licenties`} />
+      <Kpi label="Historisch gewonnen" waarde={getal.format(data.kpis.exactGewonnenLicenties)} toelichting={`${getal.format(data.kpis.exactGewonnenScholen)} klantovergangen in betrouwbare historie`} />
+      <Kpi label="Gewonnen school-equivalent" waarde={decimaal.format(data.kpis.exactGewonnenSchoolEquivalenten)} toelichting={`1 school = ${getal.format(data.kpis.schoolEquivalentFactor)} licenties`} />
+      <Kpi label="Klant school-equivalent" waarde={decimaal.format(data.kpis.klantSchoolEquivalenten)} toelichting="Huidige klantlicenties" />
       <Kpi label="Pipeline school-equivalent" waarde={decimaal.format(data.kpis.pipelineSchoolEquivalenten)} toelichting="Potentiële licenties" />
-      <Kpi label="Historische transities" waarde={getal.format(data.historie.transities)} toelichting={`${getal.format(data.historie.volledigeTransities)} met oude én nieuwe waarde`} />
     </div>
     <div className={s.grid}>
+      <Balken titel="Nieuwe licenties per maand — historische winst" data={data.nieuweLicentiesPerMaand} />
+      <Balken titel="Nieuwe klanten per maand — exacte overgang" data={data.nieuweKlantenPerMaand} />
       <Balken titel="Funnel nu — scholen" data={data.funnel} />
       <Balken titel="Pipeline — potentiële licenties per fase" data={data.pipelineLicentiesPerFase} />
-      <Balken titel="Nieuwe klanten per periode" data={data.klantenGeworden} />
+      <Balken titel="Klant geworden — Monday indeling" data={data.klantenGeworden} />
       <Balken titel="Klantlicenties per onderwijstype" data={data.licentiesPerOnderwijstype} />
       <Balken titel="Klanten per onderwijstype" data={data.klantenPerOnderwijstype} />
       <Balken titel="Klantlicenties per bron / partner" data={data.licentiesPerBron} />
       <Balken titel="Klanten per bron / partner" data={data.klantenPerBron} />
-      <section className={s.panel}><h2>Historie & datakwaliteit</h2><p><strong>{getal.format(data.historie.volledigeTransities)}</strong> transities bevatten oude én nieuwe waarde.</p><p><strong>{getal.format(data.historie.eersteWaardeZonderVorige)}</strong> registraties bevatten alleen de nieuwe waarde.</p><p className={s.muted}>Monday blijft de operationele bron. Statusovergangen worden lokaal vastgelegd zodat latere wijzigingen het verleden niet herschrijven.</p></section>
+      <section className={s.panel}><h2>Historie & datakwaliteit</h2><p><strong>{getal.format(data.historie.exacteKlantovergangen)}</strong> eerste overgangen naar Klant zijn lokaal teruggevonden.</p><p><strong>{getal.format(data.historie.klantovergangenMetExacteLicenties)}</strong> daarvan hebben een historische licentiewaarde of een latere wijziging waarvan de vorige waarde de stand bij winnen reconstrueert.</p><p><strong>{getal.format(data.historie.klantovergangenMetAfgeleideLicenties)}</strong> gebruiken voorlopig de huidige licentiewaarde omdat Monday voor die overgang geen oudere licentiewaarde bevat.</p><p className={s.muted}>Status- en licentiewijzigingen worden lokaal bewaard. Een latere jaarlijkse wijziging van het leerlingaantal herschrijft daardoor historische perioden niet zodra een historische licentiewaarde beschikbaar is.</p></section>
     </div>
     <footer className={s.footer}><Link href="/admin/sales/scholen">Bekijk pipeline en scholen</Link><Link href="/admin/sales/acties">Bekijk acties</Link></footer>
   </div>;
