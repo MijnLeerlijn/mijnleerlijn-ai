@@ -3,6 +3,7 @@ import { haalScholenPagina, type MondaySchoolItem } from "./monday-client";
 import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM } from "./monday-columns";
 import { calculateSalesGoalProgress, type SalesGoalInput, type SalesGoalProgress } from "./goal-progress";
 import { bouwSalesTrainingSamenvatting, type SalesTrainingSamenvatting } from "./training-summary";
+import { calculateSalesPartnerSummary, type SalesPartnerInput, type SalesPartnerSchoolInput, type SalesPartnerSummary } from "./partner-summary";
 
 const OPEN_RELATIESTATUSSEN = new Set(["Lead", "Prospect", "Wacht op handtekening"]);
 export interface DashboardReeksPunt { label: string; waarde: number }
@@ -21,6 +22,7 @@ export interface SalesDashboardData {
     exactGewonnenSchoolEquivalenten: number;
   };
   doelstellingen: SalesGoalProgress[];
+  partners: SalesPartnerSummary[];
   trainingen: SalesTrainingSamenvatting | null;
   funnel: DashboardReeksPunt[];
   pipelineLicentiesPerFase: DashboardReeksPunt[];
@@ -65,6 +67,7 @@ function historischNummer(raw: string | number | null | undefined): number | nul
 }
 function voegToe(map: Map<string, number>, label: string, waarde: number) { map.set(label, (map.get(label) ?? 0) + waarde); }
 function reeks(map: Map<string, number>): DashboardReeksPunt[] { return [...map.entries()].map(([label, waarde]) => ({ label, waarde })).sort((a, b) => b.waarde - a.waarde); }
+function splitWaarden(raw: string | null): string[] { return raw?.split(",").map((v) => v.trim()).filter(Boolean) ?? []; }
 function maandSleutel(timestamp: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: "Europe/Amsterdam" }).formatToParts(new Date(timestamp));
   const jaar = parts.find((p) => p.type === "year")?.value ?? "0000";
@@ -156,25 +159,44 @@ async function haalDoelstellingen(payload: Payload, klantWinsten: KlantWinst[], 
   }
 }
 
+async function haalPartnerSamenvattingen(payload: Payload, scholen: SalesPartnerSchoolInput[]): Promise<SalesPartnerSummary[]> {
+  try {
+    const resultaat = await payload.find({
+      collection: "sales-partners" as never,
+      sort: "naam",
+      limit: 200,
+      depth: 0,
+      overrideAccess: true,
+    });
+    return calculateSalesPartnerSummary(resultaat.docs as unknown as SalesPartnerInput[], scholen);
+  } catch {
+    return [];
+  }
+}
+
 export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDashboardData> {
   const scholen = await haalScholen();
   const funnel = new Map<string, number>(); const pipelineLicentiesPerFase = new Map<string, number>();
   const klantenGeworden = new Map<string, number>(); const klantenPerOnderwijstype = new Map<string, number>(); const licentiesPerOnderwijstype = new Map<string, number>();
   const klantenPerBron = new Map<string, number>(); const licentiesPerBron = new Map<string, number>();
   const huidigeLicenties = new Map<string, number>();
+  const partnerScholen: SalesPartnerSchoolInput[] = [];
   let klanten = 0, klantLicenties = 0, openPipelineScholen = 0, openPipelineLicenties = 0;
+
   for (const school of scholen) {
-    const relatie = tekst(school, SCHOLEN_KOLOM.relatiestatus) ?? "Onbekend"; const licenties = nummer(school, SCHOLEN_KOLOM.aantalLeerlingen);
+    const relatie = tekst(school, SCHOLEN_KOLOM.relatiestatus) ?? "Onbekend";
+    const licenties = nummer(school, SCHOLEN_KOLOM.aantalLeerlingen);
+    const bronnen = splitWaarden(tekst(school, SCHOLEN_KOLOM.binnengekomenVia));
     huidigeLicenties.set(String(school.id), licenties);
+    partnerScholen.push({ relatiestatus: relatie, licenties, bronnen });
     voegToe(funnel, relatie, 1);
     if (OPEN_RELATIESTATUSSEN.has(relatie)) { openPipelineScholen++; openPipelineLicenties += licenties; voegToe(pipelineLicentiesPerFase, relatie, licenties); }
     if (relatie !== "Klant") continue;
     klanten++; klantLicenties += licenties;
     const geworden = tekst(school, SCHOLEN_KOLOM.klantGeworden); if (geworden) voegToe(klantenGeworden, geworden, 1);
-    const types = tekst(school, SCHOLEN_KOLOM.typeSchool)?.split(",").map((v) => v.trim()).filter(Boolean) ?? ["Onbekend"];
-    for (const type of types) { voegToe(klantenPerOnderwijstype, type, 1); voegToe(licentiesPerOnderwijstype, type, licenties); }
-    const bronnen = tekst(school, SCHOLEN_KOLOM.binnengekomenVia)?.split(",").map((v) => v.trim()).filter(Boolean) ?? ["Onbekend"];
-    for (const bron of bronnen) { voegToe(klantenPerBron, bron, 1); voegToe(licentiesPerBron, bron, licenties); }
+    const types = splitWaarden(tekst(school, SCHOLEN_KOLOM.typeSchool));
+    for (const type of types.length ? types : ["Onbekend"]) { voegToe(klantenPerOnderwijstype, type, 1); voegToe(licentiesPerOnderwijstype, type, licenties); }
+    for (const bron of bronnen.length ? bronnen : ["Onbekend"]) { voegToe(klantenPerBron, bron, 1); voegToe(licentiesPerBron, bron, licenties); }
   }
 
   const historieResult = await payload.find({ collection: "sales-log-events", where: { type: { equals: "monday_status" } }, limit: 5000, depth: 0, overrideAccess: true });
@@ -208,8 +230,10 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
 
   let schoolEquivalentFactor = 200;
   try { const instellingen = await payload.findGlobal({ slug: "sales-instellingen", overrideAccess: true }); const factor = (instellingen as unknown as { licentiesPerSchoolEquivalent?: number | null }).licentiesPerSchoolEquivalent; if (factor && factor > 0) schoolEquivalentFactor = factor; } catch { /* veilige standaard */ }
-  const [doelstellingen, trainingen] = await Promise.all([
+
+  const [doelstellingen, partners, trainingen] = await Promise.all([
     haalDoelstellingen(payload, klantWinsten, schoolEquivalentFactor),
+    haalPartnerSamenvattingen(payload, partnerScholen),
     bouwSalesTrainingSamenvatting(payload).catch(() => null),
   ]);
 
@@ -228,6 +252,7 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
       exactGewonnenSchoolEquivalenten: exactGewonnenLicenties / schoolEquivalentFactor,
     },
     doelstellingen,
+    partners,
     trainingen,
     funnel: reeks(funnel),
     pipelineLicentiesPerFase: reeks(pipelineLicentiesPerFase),
