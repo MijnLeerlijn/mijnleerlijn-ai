@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { NextRequest } from "next/server";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { NextRequest } from "next/server";
 
 // Route-test voor de proxy naar Curriculum Werkplaats (Helpdesk-
 // beheerkoppeling-uitbreiding 2026, punt 1/7): dekt specifiek de twee
@@ -33,8 +33,8 @@ vi.mock("@/lib/curriculum-beheer/client", () => ({
 
 const ADMIN_USER = { id: 1, role: "admin", name: "Beheerder Test", email: "beheerder@voorbeeld.nl" };
 
-function maakRequest(url: string, init?: RequestInit): NextRequest {
-  return new Request(url, init) as unknown as NextRequest;
+function maakRequest(url: string, init?: ConstructorParameters<typeof NextRequest>[1]): NextRequest {
+  return new NextRequest(url, init);
 }
 
 describe("GET/POST/DELETE /api/curriculum-beheer/[...pad] — proxy naar Curriculum Werkplaats", () => {
@@ -44,6 +44,10 @@ describe("GET/POST/DELETE /api/curriculum-beheer/[...pad] — proxy naar Curricu
     verifyAdminSessionCookieMock.mockResolvedValue({ user: ADMIN_USER });
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("beheer-API bereikbaar: geeft status en body van Curriculum Werkplaats onveranderd door", async () => {
     const { GET } = await import("./route");
     stuurCurriculumBeheerVerzoekMock.mockResolvedValue({
@@ -51,9 +55,12 @@ describe("GET/POST/DELETE /api/curriculum-beheer/[...pad] — proxy naar Curricu
       body: { status: "OK", projecten: [{ id: "p1", schoolnaam: "Testschool", plaats: "Amsterdam" }] },
     });
 
-    const request = maakRequest("https://helpdesk.mijnleerlijn.chat/api/curriculum-beheer/projecten");
+    const request = maakRequest("https://helpdesk.mijnleerlijn.chat/api/curriculum-beheer/projecten", {
+      headers: { Cookie: "payload-token=test-sessie" },
+    });
     const response = await GET(request, { params: Promise.resolve({ pad: ["projecten"] }) });
 
+    expect(verifyAdminSessionCookieMock).toHaveBeenCalledWith({}, "test-sessie");
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.status).toBe("OK");
@@ -107,5 +114,33 @@ describe("GET/POST/DELETE /api/curriculum-beheer/[...pad] — proxy naar Curricu
     const json = await response.json();
     expect(json.error).toBe("De Curriculum Werkplaats kan op dit moment niet worden bereikt.");
     expect(JSON.stringify(json)).not.toContain("interne foutdetails");
+  });
+
+  it("weigert een verzoek zonder geldige sessie vóór de Curriculum-API wordt benaderd", async () => {
+    const { GET } = await import("./route");
+    verifyAdminSessionCookieMock.mockResolvedValue({ user: null });
+
+    const request = maakRequest("https://helpdesk.mijnleerlijn.chat/api/curriculum-beheer/projecten");
+    const response = await GET(request, { params: Promise.resolve({ pad: ["projecten"] }) });
+
+    expect(verifyAdminSessionCookieMock).toHaveBeenCalledWith({}, undefined);
+    expect(response.status).toBe(403);
+    expect(stuurCurriculumBeheerVerzoekMock).not.toHaveBeenCalled();
+  });
+
+  it("weigert een beheerder zonder werkplaatsrechten ook bij een muterend verzoek", async () => {
+    const { POST } = await import("./route");
+    verifyAdminSessionCookieMock.mockResolvedValue({
+      user: { ...ADMIN_USER, permissionMode: "restricted", permissions: [] },
+    });
+
+    const request = maakRequest("https://helpdesk.mijnleerlijn.chat/api/curriculum-beheer/projecten/p1/blokkeren", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const response = await POST(request, { params: Promise.resolve({ pad: ["projecten", "p1", "blokkeren"] }) });
+
+    expect(response.status).toBe(403);
+    expect(stuurCurriculumBeheerVerzoekMock).not.toHaveBeenCalled();
   });
 });
