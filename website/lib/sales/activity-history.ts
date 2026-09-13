@@ -4,13 +4,17 @@ import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM } from "./monday-columns";
 
 const HISTORIE_START = "2026-07-01T00:00:00Z";
 const ACTIVITEIT_PAGE_SIZE = 500;
-const DOELKOLOMMEN = new Set<string>([SCHOLEN_KOLOM.relatiestatus, SCHOLEN_KOLOM.salesfase]);
+const STATUSKOLOMMEN = new Set<string>([SCHOLEN_KOLOM.relatiestatus, SCHOLEN_KOLOM.salesfase]);
+const DOELKOLOMMEN = new Set<string>([...STATUSKOLOMMEN, SCHOLEN_KOLOM.aantalLeerlingen]);
 interface MondayActivityLog { id: string; event: string; entity: string; user_id: string; created_at: string; data: string }
 interface ActivityData { pulse_id?: number | string; pulse_name?: string; column_id?: string; column_title?: string; previous_value?: unknown; value?: unknown; action_record_uuid?: string }
 export interface SalesHistorieSyncResultaat { opgehaald: number; relevant: number; nieuw: number; bestaand: number; zonderSchool: number; overgeslagen: number; fouten: string[] }
 
-function labelUitWaarde(waarde: unknown): string | null {
-  if (!waarde || typeof waarde !== "object") return null;
+function waardeUitMonday(waarde: unknown): string | null {
+  if (waarde === null || waarde === undefined) return null;
+  if (typeof waarde === "string") return waarde.trim() || null;
+  if (typeof waarde === "number") return Number.isFinite(waarde) ? String(waarde) : null;
+  if (typeof waarde !== "object") return null;
   const record = waarde as Record<string, unknown>;
   const label = record.label;
   if (label && typeof label === "object") {
@@ -25,6 +29,9 @@ function labelUitWaarde(waarde: unknown): string | null {
   if (typeof record.text === "string" && record.text.trim()) return record.text.trim();
   if (typeof record.value === "string" && record.value.trim()) return record.value.trim();
   if (typeof record.value === "number") return String(record.value);
+  // Number-kolommen komen in activity_logs soms als {number:"123"} terug.
+  if (typeof record.number === "string" && record.number.trim()) return record.number.trim();
+  if (typeof record.number === "number") return String(record.number);
   return null;
 }
 function activityTimestampNaarIso(raw: string): string {
@@ -32,8 +39,6 @@ function activityTimestampNaarIso(raw: string): string {
   catch { const parsed = new Date(raw); return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString(); }
 }
 async function haalActivityPagina(vanaf: string, tot: string, page: number): Promise<MondayActivityLog[]> {
-  // Deze exacte queryvorm (incl. [String!]) is 13-09-2026 read-only tegen
-  // board 18420120365 getest en gaf echte before/after-statusregels terug.
   const query = `query SalesActivityHistory($boardId: ID!, $from: ISO8601DateTime!, $to: ISO8601DateTime!, $columnIds: [String!], $limit: Int, $page: Int) { boards(ids: [$boardId]) { activity_logs(from: $from, to: $to, column_ids: $columnIds, limit: $limit, page: $page) { id event entity user_id created_at data } } }`;
   const data = await mondayQuery<{ boards: { activity_logs: MondayActivityLog[] }[] }>(query, { boardId: SCHOLEN_BOARD_ID, from: vanaf, to: tot, columnIds: [...DOELKOLOMMEN], limit: ACTIVITEIT_PAGE_SIZE, page });
   return data.boards[0]?.activity_logs ?? [];
@@ -44,6 +49,13 @@ async function haalAlleActivity(vanaf: string, tot: string): Promise<MondayActiv
   return alle;
 }
 function parseActivityData(raw: string): ActivityData | null { try { const parsed = JSON.parse(raw) as unknown; return parsed && typeof parsed === "object" ? parsed as ActivityData : null; } catch { return null; } }
+function kolomTitel(id: string, fallback?: string): string {
+  if (fallback) return fallback;
+  if (id === SCHOLEN_KOLOM.relatiestatus) return "Relatiestatus";
+  if (id === SCHOLEN_KOLOM.salesfase) return "Salesfase";
+  if (id === SCHOLEN_KOLOM.aantalLeerlingen) return "Aantal licenties";
+  return id;
+}
 
 export async function synchroniseerSalesHistorie(payload: Payload, opties?: { vanaf?: string; tot?: string }): Promise<SalesHistorieSyncResultaat> {
   const vanaf = opties?.vanaf ?? HISTORIE_START; const tot = opties?.tot ?? new Date().toISOString();
@@ -59,10 +71,13 @@ export async function synchroniseerSalesHistorie(payload: Payload, opties?: { va
   for (const { regel, data } of kandidaten) {
     const sourceExternalId = `monday-activity:${regel.id}`; if (bestaandeIds.has(sourceExternalId)) { resultaat.bestaand++; continue; }
     const schoolId = schoolPerMondayId.get(String(data.pulse_id)); if (!schoolId) { resultaat.zonderSchool++; continue; }
-    const vorige = labelUitWaarde(data.previous_value); const nieuwe = labelUitWaarde(data.value); if (vorige === nieuwe) { resultaat.overgeslagen++; continue; }
-    const columnTitle = data.column_title || (data.column_id === SCHOLEN_KOLOM.relatiestatus ? "Relatiestatus" : "Salesfase"); const bronkwaliteit = vorige === null ? "alleen_nieuwe_waarde" : "volledig";
-    try { await payload.create({ collection: "sales-log-events", data: { school: schoolId, occurredAt: activityTimestampNaarIso(regel.created_at), type: "monday_status", source: "monday", sourceExternalId, summary: `${columnTitle}: ${vorige ?? "leeg"} → ${nieuwe ?? "leeg"}`, payload: { activityEventId: regel.id, actionRecordUuid: data.action_record_uuid ?? null, mondayUserId: regel.user_id, columnId: data.column_id, columnTitle, previousValue: vorige, value: nieuwe, bronkwaliteit } }, overrideAccess: true }); resultaat.nieuw++; }
-    catch (error) { resultaat.fouten.push(`${regel.id}: ${error instanceof Error ? error.message : String(error)}`); }
+    const vorige = waardeUitMonday(data.previous_value); const nieuwe = waardeUitMonday(data.value); if (vorige === nieuwe) { resultaat.overgeslagen++; continue; }
+    const columnTitle = kolomTitel(data.column_id, data.column_title); const bronkwaliteit = vorige === null ? "alleen_nieuwe_waarde" : "volledig";
+    const soort = STATUSKOLOMMEN.has(data.column_id) ? "status" : "licenties";
+    try {
+      await payload.create({ collection: "sales-log-events", data: { school: schoolId, occurredAt: activityTimestampNaarIso(regel.created_at), type: "monday_status", source: "monday", sourceExternalId, summary: `${columnTitle}: ${vorige ?? "leeg"} → ${nieuwe ?? "leeg"}`, payload: { activityEventId: regel.id, actionRecordUuid: data.action_record_uuid ?? null, mondayUserId: regel.user_id, mondayItemId: String(data.pulse_id), columnId: data.column_id, columnTitle, previousValue: vorige, value: nieuwe, soort, bronkwaliteit } }, overrideAccess: true });
+      resultaat.nieuw++;
+    } catch (error) { resultaat.fouten.push(`${regel.id}: ${error instanceof Error ? error.message : String(error)}`); }
   }
   return resultaat;
 }
