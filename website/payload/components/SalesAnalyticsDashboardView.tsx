@@ -1,18 +1,39 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { SalesDashboardData } from "@/lib/sales/dashboard-data";
 import s from "./SalesAnalyticsDashboardView.module.css";
-const euro=new Intl.NumberFormat("nl-NL",{style:"currency",currency:"EUR",maximumFractionDigits:0});const getal=new Intl.NumberFormat("nl-NL",{maximumFractionDigits:0});
-function Kpi({label,waarde,toelichting}:{label:string;waarde:string;toelichting?:string}){return <div className={s.kpi}><span>{label}</span><strong>{waarde}</strong>{toelichting&&<small>{toelichting}</small>}</div>}
-function Balken({titel,data,formatter=getal.format}:{titel:string;data:{label:string;waarde:number}[];formatter?:(v:number)=>string}){const max=Math.max(1,...data.map(d=>d.waarde));return <section className={s.panel}><h2>{titel}</h2>{!data.length?<p className={s.muted}>Nog geen data.</p>:<div className={s.bars}>{data.map(d=><div key={d.label}><div className={s.barHead}><span>{d.label}</span><strong>{formatter(d.waarde)}</strong></div><div className={s.track}><span style={{width:`${Math.max(2,d.waarde/max*100)}%`}}/></div></div>)}</div>}</section>}
-export function SalesAnalyticsDashboardView(){
- const[data,setData]=useState<SalesDashboardData|null>(null),[laden,setLaden]=useState(true),[fout,setFout]=useState<string|null>(null),[syncBezig,setSyncBezig]=useState(false),[kanSync,setKanSync]=useState(false);
- const laad=useCallback(async()=>{setLaden(true);setFout(null);try{const[res,me]=await Promise.all([fetch("/api/sales/dashboard",{credentials:"include"}),fetch("/api/users/me",{credentials:"include"}).then(r=>r.ok?r.json():null).catch(()=>null)]);if(!res.ok)throw new Error(res.status===403?"Je hebt geen toegang tot dit dashboard.":"Dashboarddata kon niet worden geladen.");setData(await res.json() as SalesDashboardData);setKanSync(me?.user?.role==="admin")}catch(e){setFout(e instanceof Error?e.message:String(e))}finally{setLaden(false)}},[]);useEffect(()=>{void laad()},[laad]);
- async function sync(){setSyncBezig(true);setFout(null);try{const res=await fetch("/api/sales/sync",{method:"POST",credentials:"include"});if(!res.ok)throw new Error("Synchroniseren is mislukt.");await laad()}catch(e){setFout(e instanceof Error?e.message:String(e))}finally{setSyncBezig(false)}}
- const maanden=useMemo(()=>data?.omzetPerMaand.slice(-12)??[],[data]);if(laden)return <div className={s.root}><p>Laden…</p></div>;if(!data)return <div className={s.root}><h1>Sales Dashboard</h1><p>{fout??"Geen data beschikbaar."}</p></div>;
- return <div className={s.root}><header className={s.header}><div><h1>Sales Dashboard</h1><p>Commerciële groei, klanten, licenties en omzet uit Monday.</p></div>{kanSync&&<button className={s.button} type="button" onClick={sync} disabled={syncBezig}>{syncBezig?"Synchroniseren…":"Sync met Monday"}</button>}</header>{fout&&<p className={s.error}>{fout}</p>}
- <div className={s.kpis}><Kpi label="Klantlicenties" waarde={getal.format(data.kpis.leerlingenBijKlanten)} toelichting={`${data.kpis.schoolEquivalent.toFixed(1)} school-equivalent · ${getal.format(data.kpis.klanten)} echte scholen`}/><Kpi label="Pipeline licenties" waarde={getal.format(data.kpis.pipelineLicenties)} toelichting={`${data.kpis.pipelineSchoolEquivalent.toFixed(1)} school-equivalent · ${getal.format(data.kpis.openPipeline)} scholen`}/><Kpi label="Omzet totaal" waarde={euro.format(data.kpis.omzetTotaal)} toelichting="Gereed / in uitvoering / afgerond"/><Kpi label={`Omzet ${new Date().getFullYear()}`} waarde={euro.format(data.kpis.omzetDitJaar)}/><Kpi label="Gem. omzet per klant" waarde={euro.format(data.kpis.gemiddeldeOmzetPerKlant)}/><Kpi label="Historische transities" waarde={getal.format(data.historie.transities)} toelichting={`${getal.format(data.historie.volledigeTransities)} volledig`}/></div>
- <div className={s.grid}><Balken titel="Funnel nu" data={data.funnel}/><Balken titel="Licenties per bron" data={data.licentiesPerBron}/><Balken titel="Klanten per bron" data={data.klantenPerBron}/><Balken titel="Klanten per onderwijstype" data={data.klantenPerOnderwijstype}/><Balken titel="Klant geworden" data={data.klantenGeworden}/><Balken titel="Omzet per product" data={data.omzetPerProduct} formatter={euro.format}/><Balken titel="Omzet per maand" data={maanden} formatter={euro.format}/><section className={s.panel}><h2>Datakwaliteit historie</h2><p><strong>{getal.format(data.historie.volledigeTransities)}</strong> transities bevatten oude én nieuwe waarde.</p><p><strong>{getal.format(data.historie.eersteWaardeZonderVorige)}</strong> registraties bevatten alleen de nieuwe waarde.</p><p className={s.muted}>Historische events worden lokaal vastgelegd zodat latere Monday-wijzigingen het verleden niet herschrijven.</p></section></div>
- <section className={s.panel} style={{marginTop:18}}><h2>Klanten</h2><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th align="left">School</th><th align="right">Licenties</th><th align="left">Type</th><th align="left">Bron</th><th align="left">Klant geworden</th></tr></thead><tbody>{data.klanten.map(x=><tr key={x.naam}><td>{x.naam}</td><td align="right">{getal.format(x.licenties)}</td><td>{x.onderwijstype.join(", ")||"—"}</td><td>{x.bron??"—"}</td><td>{x.klantGeworden??"—"}</td></tr>)}</tbody></table></div></section>
- <footer className={s.footer}><Link href="/admin/sales/scholen">Bekijk scholen</Link><Link href="/admin/sales/acties">Bekijk acties</Link></footer></div>}
+const getal = new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 0 });
+const decimaal = new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 1 });
+function Kpi({ label, waarde, toelichting }: { label: string; waarde: string; toelichting?: string }) { return <div className={s.kpi}><span>{label}</span><strong>{waarde}</strong>{toelichting && <small>{toelichting}</small>}</div>; }
+function Balken({ titel, data }: { titel: string; data: { label: string; waarde: number }[] }) { const max = Math.max(1, ...data.map((d) => d.waarde)); return <section className={s.panel}><h2>{titel}</h2>{data.length === 0 ? <p className={s.muted}>Nog geen data.</p> : <div className={s.bars}>{data.map((d) => <div key={d.label}><div className={s.barHead}><span>{d.label}</span><strong>{getal.format(d.waarde)}</strong></div><div className={s.track}><span style={{ width: `${Math.max(2, (d.waarde / max) * 100)}%` }} /></div></div>)}</div>}</section>; }
+export function SalesAnalyticsDashboardView() {
+  const [data, setData] = useState<SalesDashboardData | null>(null); const [laden, setLaden] = useState(true); const [fout, setFout] = useState<string | null>(null); const [syncBezig, setSyncBezig] = useState(false);
+  const laad = useCallback(async () => { setLaden(true); setFout(null); try { const res = await fetch("/api/sales/dashboard", { credentials: "include" }); if (!res.ok) throw new Error(res.status === 403 ? "Je hebt geen toegang tot dit dashboard." : "Dashboarddata kon niet worden geladen."); setData(await res.json() as SalesDashboardData); } catch (e) { setFout(e instanceof Error ? e.message : String(e)); } finally { setLaden(false); } }, []);
+  useEffect(() => { void laad(); }, [laad]);
+  async function sync() { setSyncBezig(true); setFout(null); try { const res = await fetch("/api/sales/sync", { method: "POST", credentials: "include" }); if (!res.ok) throw new Error("Synchroniseren is mislukt of niet toegestaan voor dit account."); await laad(); } catch (e) { setFout(e instanceof Error ? e.message : String(e)); } finally { setSyncBezig(false); } }
+  if (laden) return <div className={s.root}><p>Laden…</p></div>;
+  if (!data) return <div className={s.root}><h1>Sales Dashboard</h1><p>{fout ?? "Geen data beschikbaar."}</p></div>;
+  return <div className={s.root}>
+    <header className={s.header}><div><h1>Sales Dashboard</h1><p>Commerciële groei, klanten, licenties en pipeline uit Monday.</p></div><button className={s.button} type="button" onClick={sync} disabled={syncBezig}>{syncBezig ? "Synchroniseren…" : "Sync met Monday"}</button></header>
+    {fout && <p className={s.error}>{fout}</p>}
+    <div className={s.kpis}>
+      <Kpi label="Klantlicenties" waarde={getal.format(data.kpis.klantLicenties)} toelichting={`${getal.format(data.kpis.klanten)} actuele klanten`} />
+      <Kpi label="Open pipeline" waarde={getal.format(data.kpis.openPipelineLicenties)} toelichting={`${getal.format(data.kpis.openPipelineScholen)} scholen`} />
+      <Kpi label="Klant school-equivalent" waarde={decimaal.format(data.kpis.klantSchoolEquivalenten)} toelichting={`1 school = ${getal.format(data.kpis.schoolEquivalentFactor)} licenties`} />
+      <Kpi label="Pipeline school-equivalent" waarde={decimaal.format(data.kpis.pipelineSchoolEquivalenten)} toelichting="Potentiële licenties" />
+      <Kpi label="Historische transities" waarde={getal.format(data.historie.transities)} toelichting={`${getal.format(data.historie.volledigeTransities)} met oude én nieuwe waarde`} />
+    </div>
+    <div className={s.grid}>
+      <Balken titel="Funnel nu — scholen" data={data.funnel} />
+      <Balken titel="Pipeline — potentiële licenties per fase" data={data.pipelineLicentiesPerFase} />
+      <Balken titel="Nieuwe klanten per periode" data={data.klantenGeworden} />
+      <Balken titel="Klantlicenties per onderwijstype" data={data.licentiesPerOnderwijstype} />
+      <Balken titel="Klanten per onderwijstype" data={data.klantenPerOnderwijstype} />
+      <Balken titel="Klantlicenties per bron / partner" data={data.licentiesPerBron} />
+      <Balken titel="Klanten per bron / partner" data={data.klantenPerBron} />
+      <section className={s.panel}><h2>Historie & datakwaliteit</h2><p><strong>{getal.format(data.historie.volledigeTransities)}</strong> transities bevatten oude én nieuwe waarde.</p><p><strong>{getal.format(data.historie.eersteWaardeZonderVorige)}</strong> registraties bevatten alleen de nieuwe waarde.</p><p className={s.muted}>Monday blijft de operationele bron. Statusovergangen worden lokaal vastgelegd zodat latere wijzigingen het verleden niet herschrijven.</p></section>
+    </div>
+    <footer className={s.footer}><Link href="/admin/sales/scholen">Bekijk pipeline en scholen</Link><Link href="/admin/sales/acties">Bekijk acties</Link></footer>
+  </div>;
+}
