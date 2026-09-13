@@ -49,6 +49,9 @@ function naarReeks(map: Map<string, number>): SalesTrainingPunt[] {
  * Sales gebruikt exact dezelfde trainingsbron en statusafleiding als het
  * bestaande Trainer/Upsell-dashboard. Geen tweede Monday-querymodel of
  * alternatieve interpretatie van trainingstatussen.
+ *
+ * De geldige weergavestatussen komen rechtstreeks uit training-weergave.ts:
+ * open, vandaag, komend, verslag_nog_invullen, gedaan en geannuleerd.
  */
 export async function bouwSalesTrainingSamenvatting(payload: Payload): Promise<SalesTrainingSamenvatting> {
   const [trainers, mondayOverzicht, verslagenActiviteit, aanvullendeTrainingen] = await Promise.all([
@@ -75,6 +78,7 @@ export async function bouwSalesTrainingSamenvatting(payload: Payload): Promise<S
   const upsellPerMaand = new Map<string, number>();
 
   for (const training of trainingen) {
+    if (training.weergaveStatus === "geannuleerd") continue;
     const maand = maandSleutel(training.datum);
 
     if (training.bron === "aanvullend") {
@@ -95,7 +99,7 @@ export async function bouwSalesTrainingSamenvatting(payload: Payload): Promise<S
       continue;
     }
 
-    if (training.weergaveStatus === "gedaan" || training.weergaveStatus === "verslag_nog_invullen") {
+    if (training.weergaveStatus === "gedaan") {
       mijnLeerlijnUitgevoerd++;
       telPerMaand(uitgevoerdPerMaand, maand);
     }
