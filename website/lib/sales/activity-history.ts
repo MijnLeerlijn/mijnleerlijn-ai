@@ -29,7 +29,6 @@ function waardeUitMonday(waarde: unknown): string | null {
   if (typeof record.text === "string" && record.text.trim()) return record.text.trim();
   if (typeof record.value === "string" && record.value.trim()) return record.value.trim();
   if (typeof record.value === "number") return String(record.value);
-  // Number-kolommen komen in activity_logs soms als {number:"123"} terug.
   if (typeof record.number === "string" && record.number.trim()) return record.number.trim();
   if (typeof record.number === "number") return String(record.number);
   return null;
@@ -64,18 +63,24 @@ export async function synchroniseerSalesHistorie(payload: Payload, opties?: { va
   const scholenResultaat = await payload.find({ collection: "sales-schools", limit: 5000, depth: 0, overrideAccess: true });
   const schoolPerMondayId = new Map<string, number>();
   for (const doc of scholenResultaat.docs) { const school = doc as unknown as { id: number; mondayItemId?: string | null }; if (school.mondayItemId) schoolPerMondayId.set(String(school.mondayItemId), school.id); }
-  const kandidaten = activity.flatMap((regel) => { if (regel.event !== "update_column_value") return []; const data = parseActivityData(regel.data); if (!data?.column_id || !DOELKOLOMMEN.has(data.column_id) || !data.pulse_id) return []; return [{ regel, data }]; });
+  const kandidaten = activity.flatMap((regel) => {
+    if (regel.event !== "update_column_value") return [];
+    const data = parseActivityData(regel.data);
+    const columnId = data?.column_id;
+    if (!data || !columnId || !DOELKOLOMMEN.has(columnId) || !data.pulse_id) return [];
+    return [{ regel, data, columnId }];
+  });
   resultaat.relevant = kandidaten.length;
   const bronIds = kandidaten.map(({ regel }) => `monday-activity:${regel.id}`); const bestaandeIds = new Set<string>();
   for (let i = 0; i < bronIds.length; i += 100) { const bestaande = await payload.find({ collection: "sales-log-events", where: { sourceExternalId: { in: bronIds.slice(i, i + 100) } }, limit: 200, depth: 0, overrideAccess: true }); for (const doc of bestaande.docs) { const id = (doc as unknown as { sourceExternalId?: string | null }).sourceExternalId; if (id) bestaandeIds.add(id); } }
-  for (const { regel, data } of kandidaten) {
+  for (const { regel, data, columnId } of kandidaten) {
     const sourceExternalId = `monday-activity:${regel.id}`; if (bestaandeIds.has(sourceExternalId)) { resultaat.bestaand++; continue; }
     const schoolId = schoolPerMondayId.get(String(data.pulse_id)); if (!schoolId) { resultaat.zonderSchool++; continue; }
     const vorige = waardeUitMonday(data.previous_value); const nieuwe = waardeUitMonday(data.value); if (vorige === nieuwe) { resultaat.overgeslagen++; continue; }
-    const columnTitle = kolomTitel(data.column_id, data.column_title); const bronkwaliteit = vorige === null ? "alleen_nieuwe_waarde" : "volledig";
-    const soort = STATUSKOLOMMEN.has(data.column_id) ? "status" : "licenties";
+    const columnTitle = kolomTitel(columnId, data.column_title); const bronkwaliteit = vorige === null ? "alleen_nieuwe_waarde" : "volledig";
+    const soort = STATUSKOLOMMEN.has(columnId) ? "status" : "licenties";
     try {
-      await payload.create({ collection: "sales-log-events", data: { school: schoolId, occurredAt: activityTimestampNaarIso(regel.created_at), type: "monday_status", source: "monday", sourceExternalId, summary: `${columnTitle}: ${vorige ?? "leeg"} → ${nieuwe ?? "leeg"}`, payload: { activityEventId: regel.id, actionRecordUuid: data.action_record_uuid ?? null, mondayUserId: regel.user_id, mondayItemId: String(data.pulse_id), columnId: data.column_id, columnTitle, previousValue: vorige, value: nieuwe, soort, bronkwaliteit } }, overrideAccess: true });
+      await payload.create({ collection: "sales-log-events", data: { school: schoolId, occurredAt: activityTimestampNaarIso(regel.created_at), type: "monday_status", source: "monday", sourceExternalId, summary: `${columnTitle}: ${vorige ?? "leeg"} → ${nieuwe ?? "leeg"}`, payload: { activityEventId: regel.id, actionRecordUuid: data.action_record_uuid ?? null, mondayUserId: regel.user_id, mondayItemId: String(data.pulse_id), columnId, columnTitle, previousValue: vorige, value: nieuwe, soort, bronkwaliteit } }, overrideAccess: true });
       resultaat.nieuw++;
     } catch (error) { resultaat.fouten.push(`${regel.id}: ${error instanceof Error ? error.message : String(error)}`); }
   }
