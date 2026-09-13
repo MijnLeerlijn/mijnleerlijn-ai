@@ -32,9 +32,10 @@ export interface SalesDashboardData {
   klantenPerBron: DashboardReeksPunt[];
   licentiesPerBron: DashboardReeksPunt[];
   historie: {
-    transities: number;
-    volledigeTransities: number;
-    eersteWaardeZonderVorige: number;
+    statusMutaties: number;
+    licentieMutaties: number;
+    volledigeStatusMutaties: number;
+    statusMutatiesZonderVorigeWaarde: number;
     exacteKlantovergangen: number;
     klantovergangenMetExacteLicenties: number;
     klantovergangenMetAfgeleideLicenties: number;
@@ -64,8 +65,23 @@ function historischNummer(raw: string | number | null | undefined): number | nul
 }
 function voegToe(map: Map<string, number>, label: string, waarde: number) { map.set(label, (map.get(label) ?? 0) + waarde); }
 function reeks(map: Map<string, number>): DashboardReeksPunt[] { return [...map.entries()].map(([label, waarde]) => ({ label, waarde })).sort((a, b) => b.waarde - a.waarde); }
-function maandLabel(timestamp: number): string {
-  return new Intl.DateTimeFormat("nl-NL", { month: "short", year: "numeric", timeZone: "Europe/Amsterdam" }).format(new Date(timestamp));
+function maandSleutel(timestamp: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: "Europe/Amsterdam" }).formatToParts(new Date(timestamp));
+  const jaar = parts.find((p) => p.type === "year")?.value ?? "0000";
+  const maand = parts.find((p) => p.type === "month")?.value ?? "00";
+  return `${jaar}-${maand}`;
+}
+function maandLabelVanSleutel(sleutel: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(sleutel);
+  if (!match) return sleutel;
+  const jaar = Number(match[1]);
+  const maand = Number(match[2]);
+  return new Intl.DateTimeFormat("nl-NL", { month: "short", year: "numeric", timeZone: "Europe/Amsterdam" }).format(new Date(Date.UTC(jaar, maand - 1, 1)));
+}
+function maandReeks(map: Map<string, number>): DashboardReeksPunt[] {
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([sleutel, waarde]) => ({ label: maandLabelVanSleutel(sleutel), waarde }));
 }
 async function haalScholen(): Promise<MondaySchoolItem[]> {
   const alle: MondaySchoolItem[] = []; let cursor: string | null = null;
@@ -160,10 +176,22 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
     const bronnen = tekst(school, SCHOLEN_KOLOM.binnengekomenVia)?.split(",").map((v) => v.trim()).filter(Boolean) ?? ["Onbekend"];
     for (const bron of bronnen) { voegToe(klantenPerBron, bron, 1); voegToe(licentiesPerBron, bron, licenties); }
   }
+
   const historieResult = await payload.find({ collection: "sales-log-events", where: { type: { equals: "monday_status" } }, limit: 5000, depth: 0, overrideAccess: true });
-  let volledigeTransities = 0, eersteWaardeZonderVorige = 0;
   const historieDocs = historieResult.docs as unknown as HistorieDoc[];
-  for (const doc of historieDocs) { const p = doc.payload; if (p?.bronkwaliteit === "volledig") volledigeTransities++; else if (p?.bronkwaliteit === "alleen_nieuwe_waarde") eersteWaardeZonderVorige++; }
+  let statusMutaties = 0, licentieMutaties = 0, volledigeStatusMutaties = 0, statusMutatiesZonderVorigeWaarde = 0;
+  for (const doc of historieDocs) {
+    const p = doc.payload;
+    const isLicentie = p?.columnId === SCHOLEN_KOLOM.aantalLeerlingen || p?.soort === "licenties";
+    const isStatus = p?.columnId === SCHOLEN_KOLOM.relatiestatus || p?.columnId === SCHOLEN_KOLOM.salesfase || p?.soort === "status";
+    if (isLicentie) licentieMutaties++;
+    if (isStatus) {
+      statusMutaties++;
+      if (p?.bronkwaliteit === "volledig") volledigeStatusMutaties++;
+      else if (p?.bronkwaliteit === "alleen_nieuwe_waarde") statusMutatiesZonderVorigeWaarde++;
+    }
+  }
+
   const klantWinsten = bepaalExacteKlantWinsten(historieDocs, huidigeLicenties);
   const nieuweKlantenPerMaand = new Map<string, number>();
   const nieuweLicentiesPerMaand = new Map<string, number>();
@@ -171,18 +199,20 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
   let klantovergangenMetExacteLicenties = 0;
   let klantovergangenMetAfgeleideLicenties = 0;
   for (const winst of klantWinsten) {
-    const maand = maandLabel(winst.op);
+    const maand = maandSleutel(winst.op);
     voegToe(nieuweKlantenPerMaand, maand, 1);
     voegToe(nieuweLicentiesPerMaand, maand, winst.licenties);
     exactGewonnenLicenties += winst.licenties;
     if (winst.licentieBron === "huidig") klantovergangenMetAfgeleideLicenties++; else klantovergangenMetExacteLicenties++;
   }
+
   let schoolEquivalentFactor = 200;
   try { const instellingen = await payload.findGlobal({ slug: "sales-instellingen", overrideAccess: true }); const factor = (instellingen as unknown as { licentiesPerSchoolEquivalent?: number | null }).licentiesPerSchoolEquivalent; if (factor && factor > 0) schoolEquivalentFactor = factor; } catch { /* veilige standaard */ }
   const [doelstellingen, trainingen] = await Promise.all([
     haalDoelstellingen(payload, klantWinsten, schoolEquivalentFactor),
     bouwSalesTrainingSamenvatting(payload).catch(() => null),
   ]);
+
   return {
     gegenereerdOp: new Date().toISOString(),
     kpis: {
@@ -202,16 +232,17 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
     funnel: reeks(funnel),
     pipelineLicentiesPerFase: reeks(pipelineLicentiesPerFase),
     klantenGeworden: reeks(klantenGeworden),
-    nieuweKlantenPerMaand: reeks(nieuweKlantenPerMaand),
-    nieuweLicentiesPerMaand: reeks(nieuweLicentiesPerMaand),
+    nieuweKlantenPerMaand: maandReeks(nieuweKlantenPerMaand),
+    nieuweLicentiesPerMaand: maandReeks(nieuweLicentiesPerMaand),
     klantenPerOnderwijstype: reeks(klantenPerOnderwijstype),
     licentiesPerOnderwijstype: reeks(licentiesPerOnderwijstype),
     klantenPerBron: reeks(klantenPerBron),
     licentiesPerBron: reeks(licentiesPerBron),
     historie: {
-      transities: historieResult.totalDocs,
-      volledigeTransities,
-      eersteWaardeZonderVorige,
+      statusMutaties,
+      licentieMutaties,
+      volledigeStatusMutaties,
+      statusMutatiesZonderVorigeWaarde,
       exacteKlantovergangen: klantWinsten.length,
       klantovergangenMetExacteLicenties,
       klantovergangenMetAfgeleideLicenties,
