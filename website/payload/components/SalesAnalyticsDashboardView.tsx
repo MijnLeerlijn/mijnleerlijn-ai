@@ -2,11 +2,33 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { SalesDashboardData } from "@/lib/sales/dashboard-data";
+import type { SalesGoalProgress } from "@/lib/sales/goal-progress";
 import s from "./SalesAnalyticsDashboardView.module.css";
 const getal = new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 0 });
 const decimaal = new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 1 });
+const datum = new Intl.DateTimeFormat("nl-NL", { day: "numeric", month: "short", year: "numeric" });
 function Kpi({ label, waarde, toelichting }: { label: string; waarde: string; toelichting?: string }) { return <div className={s.kpi}><span>{label}</span><strong>{waarde}</strong>{toelichting && <small>{toelichting}</small>}</div>; }
 function Balken({ titel, data }: { titel: string; data: { label: string; waarde: number }[] }) { const max = Math.max(1, ...data.map((d) => d.waarde)); return <section className={s.panel}><h2>{titel}</h2>{data.length === 0 ? <p className={s.muted}>Nog geen data.</p> : <div className={s.bars}>{data.map((d) => <div key={d.label}><div className={s.barHead}><span>{d.label}</span><strong>{getal.format(d.waarde)}</strong></div><div className={s.track}><span style={{ width: `${Math.max(2, (d.waarde / max) * 100)}%` }} /></div></div>)}</div>}</section>; }
+function doelStatus(doel: SalesGoalProgress): string {
+  if (doel.status === "voor") return `${getal.format(Math.abs(doel.verschilTovTempoLicenties))} licenties voor op schema`;
+  if (doel.status === "achter") return `${getal.format(Math.abs(doel.verschilTovTempoLicenties))} licenties achter op schema`;
+  if (doel.status === "toekomstig") return "Periode moet nog beginnen";
+  if (doel.status === "afgerond") return "Periode afgerond";
+  return "Op schema";
+}
+function Doelkaart({ doel }: { doel: SalesGoalProgress }) {
+  const voortgang = Math.max(0, Math.min(100, doel.percentageBehaald));
+  return <section className={s.panel}>
+    <h2>{doel.naam}</h2>
+    <p className={s.muted}>{datum.format(new Date(doel.startDatum))} – {datum.format(new Date(doel.eindDatum))}</p>
+    <div className={s.barHead}><span>{getal.format(doel.gerealiseerdLicenties)} / {getal.format(doel.doelLicenties)} licenties</span><strong>{decimaal.format(doel.percentageBehaald)}%</strong></div>
+    <div className={s.track}><span style={{ width: `${Math.max(2, voortgang)}%` }} /></div>
+    <p><strong>{doelStatus(doel)}</strong></p>
+    <p>{getal.format(doel.resterendLicenties)} licenties nodig · {getal.format(doel.nieuweScholen)} echte nieuwe scholen</p>
+    <p>{decimaal.format(doel.gerealiseerdSchoolEquivalenten)} van {decimaal.format(doel.doelSchoolEquivalenten)} school-equivalenten · {decimaal.format(doel.periodeVerstrekenPercentage)}% van de periode verstreken</p>
+    {doel.forecastLicenties !== null && <p className={s.muted}>Prognose einddatum bij huidig tempo: {getal.format(doel.forecastLicenties)} licenties.</p>}
+  </section>;
+}
 export function SalesAnalyticsDashboardView() {
   const [data, setData] = useState<SalesDashboardData | null>(null); const [laden, setLaden] = useState(true); const [fout, setFout] = useState<string | null>(null); const [syncBezig, setSyncBezig] = useState(false);
   const laad = useCallback(async () => { setLaden(true); setFout(null); try { const res = await fetch("/api/sales/dashboard", { credentials: "include" }); if (!res.ok) throw new Error(res.status === 403 ? "Je hebt geen toegang tot dit dashboard." : "Dashboarddata kon niet worden geladen."); setData(await res.json() as SalesDashboardData); } catch (e) { setFout(e instanceof Error ? e.message : String(e)); } finally { setLaden(false); } }, []);
@@ -25,6 +47,7 @@ export function SalesAnalyticsDashboardView() {
       <Kpi label="Klant school-equivalent" waarde={decimaal.format(data.kpis.klantSchoolEquivalenten)} toelichting="Huidige klantlicenties" />
       <Kpi label="Pipeline school-equivalent" waarde={decimaal.format(data.kpis.pipelineSchoolEquivalenten)} toelichting="Potentiële licenties" />
     </div>
+    {data.doelstellingen.length > 0 && <><h2>Doelstellingen</h2><div className={s.grid}>{data.doelstellingen.map((doel) => <Doelkaart key={doel.id} doel={doel} />)}</div></>}
     <div className={s.grid}>
       <Balken titel="Nieuwe licenties per maand — historische winst" data={data.nieuweLicentiesPerMaand} />
       <Balken titel="Nieuwe klanten per maand — exacte overgang" data={data.nieuweKlantenPerMaand} />
