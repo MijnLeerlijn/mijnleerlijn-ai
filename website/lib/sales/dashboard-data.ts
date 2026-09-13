@@ -1,6 +1,7 @@
 import type { Payload } from "payload";
 import { haalScholenPagina, type MondaySchoolItem } from "./monday-client";
 import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM } from "./monday-columns";
+import { calculateSalesGoalProgress, type SalesGoalInput, type SalesGoalProgress } from "./goal-progress";
 
 const OPEN_RELATIESTATUSSEN = new Set(["Lead", "Prospect", "Wacht op handtekening"]);
 export interface DashboardReeksPunt { label: string; waarde: number }
@@ -18,6 +19,7 @@ export interface SalesDashboardData {
     exactGewonnenLicenties: number;
     exactGewonnenSchoolEquivalenten: number;
   };
+  doelstellingen: SalesGoalProgress[];
   funnel: DashboardReeksPunt[];
   pipelineLicentiesPerFase: DashboardReeksPunt[];
   klantenGeworden: DashboardReeksPunt[];
@@ -107,20 +109,33 @@ function bepaalExacteKlantWinsten(historie: HistorieDoc[], huidigeLicenties: Map
       resultaten.push({ mondayItemId: itemId, op: eersteKlantOp, licenties: laatsteVoorOfOp.nieuwe, licentieBron: "historisch" });
       continue;
     }
-    // Als de eerste wijziging in Aantal licenties pas ná de klantovergang kwam,
-    // is previousValue de beste immutable reconstructie van het aantal op het
-    // moment van winnen. Daarmee verandert een latere jaarlijkse aanpassing
-    // het historische resultaat niet.
     const eersteNa = events.find((e) => e.op > eersteKlantOp && e.vorige !== null);
     if (eersteNa?.vorige !== null && eersteNa?.vorige !== undefined) {
       resultaten.push({ mondayItemId: itemId, op: eersteKlantOp, licenties: eersteNa.vorige, licentieBron: "volgende_vorige_waarde" });
       continue;
     }
-    // Alleen voor records waarvoor Monday geen historische licentiewaarde
-    // bevat: huidige waarde gebruiken en expliciet als afgeleid markeren.
     resultaten.push({ mondayItemId: itemId, op: eersteKlantOp, licenties: huidigeLicenties.get(itemId) ?? 0, licentieBron: "huidig" });
   }
   return resultaten.sort((a, b) => a.op - b.op);
+}
+
+async function haalDoelstellingen(payload: Payload, klantWinsten: KlantWinst[], factor: number): Promise<SalesGoalProgress[]> {
+  try {
+    const resultaat = await payload.find({
+      collection: "sales-goals" as never,
+      where: { actief: { equals: true } },
+      sort: "-startDatum",
+      limit: 50,
+      depth: 0,
+      overrideAccess: true,
+    });
+    const wins = klantWinsten.map((w) => ({ occurredAt: w.op, licenses: w.licenties }));
+    return (resultaat.docs as unknown as SalesGoalInput[])
+      .map((doel) => calculateSalesGoalProgress(doel, wins, factor, Date.now()))
+      .filter((doel): doel is SalesGoalProgress => doel !== null);
+  } catch {
+    return [];
+  }
 }
 
 export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDashboardData> {
@@ -162,6 +177,7 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
   }
   let schoolEquivalentFactor = 200;
   try { const instellingen = await payload.findGlobal({ slug: "sales-instellingen", overrideAccess: true }); const factor = (instellingen as unknown as { licentiesPerSchoolEquivalent?: number | null }).licentiesPerSchoolEquivalent; if (factor && factor > 0) schoolEquivalentFactor = factor; } catch { /* veilige standaard */ }
+  const doelstellingen = await haalDoelstellingen(payload, klantWinsten, schoolEquivalentFactor);
   return {
     gegenereerdOp: new Date().toISOString(),
     kpis: {
@@ -176,6 +192,7 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
       exactGewonnenLicenties,
       exactGewonnenSchoolEquivalenten: exactGewonnenLicenties / schoolEquivalentFactor,
     },
+    doelstellingen,
     funnel: reeks(funnel),
     pipelineLicentiesPerFase: reeks(pipelineLicentiesPerFase),
     klantenGeworden: reeks(klantenGeworden),
