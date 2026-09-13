@@ -47,6 +47,8 @@ import { SalesSchools } from "./payload/collections/SalesSchools";
 import { SalesLogEvents } from "./payload/collections/SalesLogEvents";
 import { SalesActions } from "./payload/collections/SalesActions";
 import { SalesProposals } from "./payload/collections/SalesProposals";
+import { SalesGoals } from "./payload/collections/SalesGoals";
+import { SalesPartners } from "./payload/collections/SalesPartners";
 import { PersonalTasks } from "./payload/collections/PersonalTasks";
 import { GoogleConnections } from "./payload/collections/GoogleConnections";
 import { VoorbereidingSignalen } from "./payload/collections/VoorbereidingSignalen";
@@ -105,7 +107,7 @@ export default buildConfig({
       },
     },
   },
-  collections: [Users, TrainerAccounts, TrainerLogEvents, TrainerAiLogEvents, TrainingVerslagen, AanvullendeTrainingen, StartActies, TrainerTelefonieOproepen, TrainerLogboekItems, TrainerKennisversies, TrainerKennisvragen, TrainerDeelgroepen, TrainerBestanden, Variants, Categories, Articles, VariantOverrides, Sources, Media, Updates, ContactSubmissions, AnswerFeedback, SupportThreads, KnowledgeDrafts, KnowledgeSources, Handleidingen, MailDrafts, MailTemplates, DerivedContent, KennisbasisOnderwerpen, HelpdeskVragen, AssistantConversations, GedeeldeChats, AssistantEvalQuestions, AssistantEvalRuns, SalesSchools, SalesLogEvents, SalesActions, SalesProposals, PersonalTasks, GoogleConnections, VoorbereidingSignalen, MailSignalen],
+  collections: [Users, TrainerAccounts, TrainerLogEvents, TrainerAiLogEvents, TrainingVerslagen, AanvullendeTrainingen, StartActies, TrainerTelefonieOproepen, TrainerLogboekItems, TrainerKennisversies, TrainerKennisvragen, TrainerDeelgroepen, TrainerBestanden, Variants, Categories, Articles, VariantOverrides, Sources, Media, Updates, ContactSubmissions, AnswerFeedback, SupportThreads, KnowledgeDrafts, KnowledgeSources, Handleidingen, MailDrafts, MailTemplates, DerivedContent, KennisbasisOnderwerpen, HelpdeskVragen, AssistantConversations, GedeeldeChats, AssistantEvalQuestions, AssistantEvalRuns, SalesSchools, SalesLogEvents, SalesActions, SalesProposals, SalesGoals, SalesPartners, PersonalTasks, GoogleConnections, VoorbereidingSignalen, MailSignalen],
   globals: [GmailConnection, KnowledgeSearch, AssistantEval, KennisbasisMijnleerlijn, HelpdeskInstellingen, SalesInstellingen],
   editor: lexicalEditor(),
   db: postgresAdapter({ pool: { connectionString: requireEnv("DATABASE_URI") }, migrationDir: path.resolve(dirname, "payload", "migrations"), push: false }),
