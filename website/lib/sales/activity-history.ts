@@ -28,7 +28,7 @@ function labelUitWaarde(waarde: unknown): string | null {
   return null;
 }
 function activityTimestampNaarIso(raw: string): string {
-  try { return new Date(Number(BigInt(raw) / 10000n)).toISOString(); }
+  try { return new Date(Number(BigInt(raw) / BigInt(10000))).toISOString(); }
   catch { const parsed = new Date(raw); return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString(); }
 }
 async function haalActivityPagina(vanaf: string, tot: string, page: number): Promise<MondayActivityLog[]> {
