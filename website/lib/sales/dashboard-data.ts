@@ -2,6 +2,7 @@ import type { Payload } from "payload";
 import { haalScholenPagina, type MondaySchoolItem } from "./monday-client";
 import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM } from "./monday-columns";
 import { calculateSalesGoalProgress, type SalesGoalInput, type SalesGoalProgress } from "./goal-progress";
+import { bouwSalesTrainingSamenvatting, type SalesTrainingSamenvatting } from "./training-summary";
 
 const OPEN_RELATIESTATUSSEN = new Set(["Lead", "Prospect", "Wacht op handtekening"]);
 export interface DashboardReeksPunt { label: string; waarde: number }
@@ -20,6 +21,7 @@ export interface SalesDashboardData {
     exactGewonnenSchoolEquivalenten: number;
   };
   doelstellingen: SalesGoalProgress[];
+  trainingen: SalesTrainingSamenvatting | null;
   funnel: DashboardReeksPunt[];
   pipelineLicentiesPerFase: DashboardReeksPunt[];
   klantenGeworden: DashboardReeksPunt[];
@@ -177,7 +179,10 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
   }
   let schoolEquivalentFactor = 200;
   try { const instellingen = await payload.findGlobal({ slug: "sales-instellingen", overrideAccess: true }); const factor = (instellingen as unknown as { licentiesPerSchoolEquivalent?: number | null }).licentiesPerSchoolEquivalent; if (factor && factor > 0) schoolEquivalentFactor = factor; } catch { /* veilige standaard */ }
-  const doelstellingen = await haalDoelstellingen(payload, klantWinsten, schoolEquivalentFactor);
+  const [doelstellingen, trainingen] = await Promise.all([
+    haalDoelstellingen(payload, klantWinsten, schoolEquivalentFactor),
+    bouwSalesTrainingSamenvatting(payload).catch(() => null),
+  ]);
   return {
     gegenereerdOp: new Date().toISOString(),
     kpis: {
@@ -193,6 +198,7 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
       exactGewonnenSchoolEquivalenten: exactGewonnenLicenties / schoolEquivalentFactor,
     },
     doelstellingen,
+    trainingen,
     funnel: reeks(funnel),
     pipelineLicentiesPerFase: reeks(pipelineLicentiesPerFase),
     klantenGeworden: reeks(klantenGeworden),
