@@ -76,6 +76,11 @@ export function SalesAnalyticsDashboardView() {
       <Balken titel="Klanten per bron / partner" data={data.klantenPerBron} />
       <section className={s.panel}><h2>Historie & datakwaliteit</h2><p><strong>{getal.format(data.historie.exacteKlantovergangen)}</strong> eerste overgangen naar Klant zijn lokaal teruggevonden.</p><p><strong>{getal.format(data.historie.klantovergangenMetExacteLicenties)}</strong> daarvan hebben een historische licentiewaarde of een latere wijziging waarvan de vorige waarde de stand bij winnen reconstrueert.</p><p><strong>{getal.format(data.historie.klantovergangenMetAfgeleideLicenties)}</strong> gebruiken voorlopig de huidige licentiewaarde omdat Monday voor die overgang geen oudere licentiewaarde bevat.</p><p className={s.muted}>Status- en licentiewijzigingen worden lokaal bewaard. Een latere jaarlijkse wijziging van het leerlingaantal herschrijft daardoor historische perioden niet zodra een historische licentiewaarde beschikbaar is.</p></section>
     </div>
-    <footer className={s.footer}><Link href="/admin/sales/scholen">Bekijk pipeline en scholen</Link><Link href="/admin/sales/acties">Bekijk acties</Link></footer>
+    <footer className={s.footer}>
+      <Link href="/admin/sales">Dashboard</Link>
+      <Link href="/admin/sales/scholen">Pipeline</Link>
+      <Link href="/admin/collections/sales-goals">Doelstellingen</Link>
+      <Link href="/admin/collections/sales-partners">Partners</Link>
+    </footer>
   </div>;
 }
