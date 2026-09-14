@@ -5,6 +5,7 @@ import { getSelectedDashboardCards } from "@/lib/admin-nav/nav-groups";
 import { getDashboardSelection } from "@/lib/admin-nav/dashboard-preferences";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 import { SalesDashboardPaneel } from "./SalesDashboardPaneel";
+import { LesplanAnalyticsDashboard } from "./LesplanAnalyticsDashboard";
 
 // Fase 1B (2026-08-13), 65/35-indeling toegevoegd in Sales UX V2
 // (2026-08-14): het dashboard toont voortaan twee kolommen — links "Mijn
@@ -100,6 +101,8 @@ export async function BeheerDashboard({ permissions, user, payload }: BeheerDash
           )}
         </div>
       </div>
+
+      <LesplanAnalyticsDashboard payload={payload} />
     </div>
   );
 }

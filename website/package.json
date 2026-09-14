@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:production": "npm run migrate:preflight && payload migrate && next build",
+    "build:production": "npm run migrate:preflight && payload migrate && payload generate:types && next build",
     "migrate:preflight": "node --env-file-if-exists=.env node_modules/.bin/tsx payload/migrate-preflight.ts",
     "start": "next start",
     "lint": "eslint",
