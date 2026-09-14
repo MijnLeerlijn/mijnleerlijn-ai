@@ -41,67 +41,15 @@ import {
 import type { NavColor } from "@/lib/admin-nav/nav-colors";
 import { heeftAdminPermissie, type AuthUserMetPermissies } from "@/payload/access/menu-permissions";
 
-// Admin-rebrand Fase 1 (2026-08-12), uitgebreid in Fase 1B (2026-08-13):
-// enige bron van waarheid voor de MijnLeerlijn-navigatie-indeling — vervangt
-// de kale, ongegroepeerde Payload-standaardnav (24 collecties/globals in 3
-// technische admin.group-secties) door 4 taakgerichte hoofdgroepen ("wat wil
-// ik doen" i.p.v. "hoe heet de databasecollectie"). Puur data + functies,
-// geen React — BeheerNavLinks.tsx (sidebar), BeheerDashboard.tsx (gekozen
-// dashboardkaarten) én BeheerTopBar.tsx (breadcrumb + toevoegen/verwijderen-
-// van-dashboard) lezen allemaal hieruit, zodat kleur/label/icoon/route/groep
-// maar op één plek hoeft te kloppen (Fase 1B-eis: niet dupliceren).
-//
-// Raakt bewust GEEN enkele collectie-/global-config aan (geen admin.hidden) —
-// de onderliggende Payload-routes/field-schema's blijven exact zoals vandaag;
-// alleen de presentatielaag verbergt de automatisch gegenereerde nav en
-// vervangt 'm door wat hier staat. Eén bewuste uitzondering (fix-ronde
-// 2026-08-14): de Sales-collecties/-global gebruikten admin.group: "Sales",
-// letterlijk dezelfde string als het label hieronder — Payload's <NavGroup>
-// stempelt id={`nav-group-${label}`} zonder sanitatie, dus de CSS-regel die
-// Payload's eigen (bedoelde) Sales-groep verbergt (admin-shell.css) verborg
-// via die gedeelde id ONBEDOELD ook deze custom groep. admin.group op die 5
-// bestanden is nu "Sales — systeem" (zuiver presentatie/organisatie, geen
-// schema-wijziging, geen migratie nodig) — dit label hieronder blijft "Sales".
 export type NavItemPermission = { type: "collection" | "global"; slug: string };
 
 export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
-  /**
-   * Kleursleutel (lib/admin-nav/nav-colors.ts, hergebruikt het bestaande
-   * categorie-kleurenpalet) — zelfde kleur op het navicoon én de
-   * dashboardkaart van hetzelfde item (Fase 1B-eis). Gemute "Technisch"-
-   * items houden hun bestaande neutrale grijs in de nav (admin-shell.css) —
-   * dit veld is voor hen alleen relevant als ze ooit als dashboardkaart
-   * gekozen worden.
-   */
   color: NavColor;
-  /** Korte omschrijving — gebruikt op de dashboardkaart. */
   description: string;
-  /**
-   * Alleen zetten voor items die een echte Payload-collectie/-global zijn —
-   * bepaalt of `isNavItemVisible` dit item voor de ingelogde gebruiker
-   * toont op basis van Payload's EIGEN rolgebaseerde access.read (adminOnly/
-   * anyEditor/...). Custom views (bv. "Varianten", "AI Verbetercentrum")
-   * hebben geen Payload-permissieobject — voor hen geldt uitsluitend de
-   * onderstaande `id`/permissie-gate.
-   */
   permission?: NavItemPermission;
-  /**
-   * Admin gebruikersbeheer — per-gebruiker menupermissies (2026-08-25,
-   * "Admin gebruikersbeheer — rechten per hoofdmenu en submenu"): korte,
-   * STABIELE identifier van dit item, uniek binnen de groep — NOOIT afgeleid
-   * van `label` (een tekstwijziging in het menu mag nooit stilzwijgend
-   * bestaande, opgeslagen gebruikersrechten breken). Samen met het
-   * bijbehorende `NavGroupDef.id` vormt dit de volledige permissie-ID
-   * (`${groupId}.${id}`, bv. "trainers.telefonie") — zie
-   * `navItemPermissionId()` hieronder. Verplicht voor ELK item (ook items
-   * zonder `permission`-veld) — dit is de ENIGE plek waar een menu-item-ID
-   * wordt toegekend; er bestaat bewust geen tweede lijst (opdrachtseis: "Ik
-   * wil niet handmatig een tweede lijst met menu-items onderhouden die later
-   * uit sync raakt").
-   */
   id: string;
 }
 
@@ -110,12 +58,6 @@ export interface NavGroupDef {
   label: string;
   icon: LucideIcon;
   items: NavItem[];
-  /**
-   * Alleen voor "Helpdesk AI": technische/pijplijn-tools (Gmail-koppeling,
-   * AI-conceptartikelen, geïmporteerde support-threads, de zoek-tester) —
-   * geen dagelijkse bestemmingen, dus visueel gedempt, maar NIET verborgen
-   * of ingeklapt.
-   */
   mutedItems?: NavItem[];
 }
 
@@ -179,60 +121,24 @@ export const NAV_GROUPS: NavGroupDef[] = [
     label: "Sales",
     icon: Sunrise,
     items: [
-      // Sales UX-ronde 3 (2026-08-14) — label "Overzicht" i.p.v. "Vandaag":
-      // het algemene dashboard (BeheerDashboard.tsx) heeft nu zijn eigen
-      // "Vandaag"-tab (SalesDashboardPaneel.tsx) die het letterlijke
-      // "wat moet ik vandaag doen"-antwoord geeft — dit menu-item/deze pagina
-      // (nog steeds SalesVandaagView.tsx, ONGEWIJZIGD qua inhoud) is het
-      // bredere Sales-overzicht (vandaag/AI-voorstellen/aandacht
-      // nodig/binnenkort). href blijft bewust /admin/sales (veiligste optie,
-      // geen routewijziging nodig voor een naamswijziging).
-      { id: "overzicht", label: "Overzicht", href: "/admin/sales", icon: Sunrise, color: "blue", description: "Sales-overzicht: vandaag te doen, AI-voorstellen, aandacht nodig." },
-      { id: "scholen", label: "Scholen", href: "/admin/sales/scholen", icon: School, color: "teal", description: "Overzicht van alle scholen uit Monday." },
-      { id: "acties", label: "Acties", href: "/admin/sales/acties", icon: ListTodo, color: "orange", description: "Alle geaccepteerde Sales-acties." },
-      { id: "instellingen", label: "Sales Instellingen", href: "/admin/globals/sales-instellingen", icon: Settings, color: "slate", description: "Standaard follow-up-termijn en voorkeurskanaal.", permission: { type: "global", slug: "sales-instellingen" } },
+      // IDs van de bestaande routes blijven bewust stabiel: sales.overzicht en
+      // sales.scholen blijven werken voor al bestaande restricted accounts.
+      { id: "overzicht", label: "Dashboard", href: "/admin/sales", icon: LayoutGrid, color: "blue", description: "Commercieel dashboard met groei, funnel, licenties, doelen en upsell." },
+      { id: "scholen", label: "Pipeline", href: "/admin/sales/scholen", icon: School, color: "teal", description: "Salespipeline en scholen uit Monday." },
+      { id: "doelstellingen", label: "Doelstellingen", href: "/admin/collections/sales-goals", icon: TrendingUp, color: "purple", description: "Beheer commerciële doelen op nieuwe licenties.", permission: { type: "collection", slug: "sales-goals" } },
+      { id: "partners", label: "Partners", href: "/admin/collections/sales-partners", icon: UsersRound, color: "orange", description: "Partnerdossiers, afspraken, acties en mijlpalen.", permission: { type: "collection", slug: "sales-partners" } },
     ],
   },
   {
-    // Traineromgeving V2, Fase 4 (2026-08-24) — Admin Trainerdashboard (spec
-    // §1/§17): "Nieuw admin-hoofdonderdeel 'Trainers'... bestaande
-    // onderdelen (Trainer Accounts, Telefonie, Trainer bestanden, Trainer
-    // deelgroepen) mogen technisch blijven bestaan maar moeten logisch
-    // georganiseerd worden zodat trainerbeheer als één samenhangend domein
-    // voelt." De vier hieronder verplaatste items waren voorheen in
-    // "algemeen" ondergebracht (zie git-historie) — geen enkele
-    // collectie-config/route is gewijzigd, uitsluitend deze presentatielaag
-    // (zelfde uitgangspunt als de rest van dit bestand, zie de toelichting
-    // bovenaan). Zelfde vijf-nieuwe-paden-onder-één-prefix-opzet als "Sales"
-    // hierboven (zie payload.config.ts se /trainers/*-registraties,
-    // stuk-voor-stuk met exact: true om dezelfde prefix-matchreden).
     id: "trainers",
     label: "Trainers",
     icon: GraduationCap,
     items: [
-      // Admin gebruikersbeheer (2026-08-25) — deze 6 item-id's zijn LETTERLIJK
-      // overgenomen uit het opdrachtvoorbeeld ("trainers.dashboard",
-      // "trainers.trainingen", "trainers.todo", "trainers.activiteit",
-      // "trainers.accounts", "trainers.telefonie") — niet zelf verzonnen.
       { id: "dashboard", label: "Dashboard", href: "/admin/trainers", icon: LayoutGrid, color: "teal", description: "Centraal overzicht van alle trainers en hun werk." },
       { id: "trainingen", label: "Alle trainingen", href: "/admin/trainers/trainingen", icon: CirclePlay, color: "blue", description: "Alle trainingen van alle trainers — filters op trainer, school, status, periode, verslagstatus." },
-      {
-        id: "upsell",
-        label: "Trainingen & upsell",
-        href: "/admin/trainers/upsell",
-        icon: TrendingUp,
-        color: "purple",
-        description: "MijnLeerlijn vs. aanvullende trainingen — totalen, verdeling per trainer/school, trainer-multiselect.",
-      },
+      { id: "upsell", label: "Trainingen & upsell", href: "/admin/trainers/upsell", icon: TrendingUp, color: "purple", description: "MijnLeerlijn vs. aanvullende trainingen — totalen, verdeling per trainer/school, trainer-multiselect." },
       { id: "todo", label: "To do", href: "/admin/trainers/todo", icon: ListTodo, color: "orange", description: "Openstaande acties over alle trainers, dezelfde logica als het trainerdashboard." },
-      {
-        id: "startbegeleiding",
-        label: "Startbegeleiding",
-        href: "/admin/trainers/startbegeleiding",
-        icon: Rocket,
-        color: "purple",
-        description: "Nieuwe scholen uit Monday — AI-samenvatting, trainer koppelen, lichte opstarttaak.",
-      },
+      { id: "startbegeleiding", label: "Startbegeleiding", href: "/admin/trainers/startbegeleiding", icon: Rocket, color: "purple", description: "Nieuwe scholen uit Monday — AI-samenvatting, trainer koppelen, lichte opstarttaak." },
       { id: "activiteit", label: "Activiteit", href: "/admin/trainers/activiteit", icon: MessageSquare, color: "purple", description: "Chronologische activiteit — verslagen en logboekitems van alle trainers." },
       { id: "accounts", label: "Trainer Accounts", href: "/admin/collections/trainer-accounts", icon: GraduationCap, color: "teal", description: "Accounts voor trainers.mijnleerlijn.chat.", permission: { type: "collection", slug: "trainer-accounts" } },
       { id: "telefonie", label: "Telefonie", href: "/admin/collections/trainer-telefonie-oproepen", icon: Phone, color: "teal", description: "Telefonisch ingesproken trainingsverslagen — status, foutdiagnose, transcriptiepogingen.", permission: { type: "collection", slug: "trainer-telefonie-oproepen" } },
@@ -242,35 +148,14 @@ export const NAV_GROUPS: NavGroupDef[] = [
   },
 ];
 
-/**
- * Volledige, stabiele permissie-ID van een menu-item — `${groupId}.${item.id}`
- * (bv. "trainers.telefonie"). De ENIGE plek waar deze twee velden worden
- * samengevoegd — zowel de navigatiefilters hieronder als de gebruikersbeheer-
- * UI (ToegangMenuField) als elke server-side enforcement-plek gebruiken
- * uitsluitend deze functie, nooit een losstaande letterlijke string, zodat
- * een toekomstige groeps- of item-id-wijziging hier maar op één plek hoeft.
- */
 export function navItemPermissionId(groupId: NavGroupDef["id"], item: NavItem): string {
   return `${groupId}.${item.id}`;
 }
 
-/** Alle geldige menu-permissie-ID's, in NAV_GROUPS-volgorde — bron van waarheid voor de gebruikersbeheer-UI en voor validatie van opgeslagen permissies. */
 export function alleMenuPermissieIds(): string[] {
   return NAV_GROUPS.flatMap((group) => [...group.items, ...(group.mutedItems ?? [])].map((item) => navItemPermissionId(group.id, item)));
 }
 
-/**
- * Zichtbaarheid van één item: vereist zowel (a) Payload's eigen rolgebaseerde
- * access.read — ONGEWIJZIGD, dekt de bestaande 24 adminOnly/anyEditor-
- * collecties/globals — als (b), nieuw, de per-gebruiker menupermissie uit
- * gebruikersbeheer. Een custom view (geen `permission`-veld) had voorheen
- * altijd (a) === true; nu geldt voor haar uitsluitend nog (b). Bij
- * `permissionMode !== "restricted"` (de standaardwaarde, ook voor elk
- * bestaand account na migratie) is (b) altijd waar — zie
- * `heeftAdminPermissie` in payload/access/menu-permissions.ts — dus dit
- * verandert niets aan het huidige gedrag totdat gebruikersbeheer een account
- * expliciet op "beperkt" zet.
- */
 export function isNavItemVisible(
   groupId: NavGroupDef["id"],
   item: NavItem,
@@ -291,15 +176,6 @@ export interface VisibleNavGroup extends Omit<NavGroupDef, "items" | "mutedItems
   mutedItems: NavItem[];
 }
 
-/**
- * Permissiebewuste versie van NAV_GROUPS — filtert items waar de ingelogde
- * gebruiker geen leestoegang toe heeft (rol EN individuele menupermissie) en
- * laat een groep zonder enig zichtbaar item helemaal weg (opdrachtseis §3:
- * "Als binnen een hoofdmenu geen enkel submenu toegankelijk is: hoofdmenu
- * niet tonen" — er bestaat bewust geen apart opgeslagen "hoofdmenu aan/uit"-
- * veld, dat zou een tweede, mogelijk-inconsistente waarheid zijn; zichtbaar
- * hoofdmenu = afgeleid van "heeft minstens één zichtbaar item").
- */
 export function getVisibleNavGroups(permissions: SanitizedPermissions | null | undefined, user: AuthUserMetPermissies | null | undefined): VisibleNavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
@@ -315,14 +191,6 @@ export interface DashboardCardGroup {
   items: NavItem[];
 }
 
-/**
- * Fase 1B: het dashboard toont uitsluitend wat de beheerder zelf gekozen
- * heeft (selectedHrefs, uit de preference — zie dashboard-preferences.ts),
- * niet meer automatisch alle collecties. Permissiefilter blijft gelden (een
- * eerder gekozen item dat een redacteur niet meer mag lezen, verschijnt niet
- * alsnog). Groepen zonder gekozen items vallen weg — de lege-staat wordt
- * door BeheerDashboard.tsx zelf getoond wanneer het totaal leeg is.
- */
 export function getSelectedDashboardCards(
   permissions: SanitizedPermissions | null | undefined,
   user: AuthUserMetPermissies | null | undefined,
@@ -344,7 +212,6 @@ export interface SelectableNavItem extends NavItem {
   groupLabel: string;
 }
 
-/** Alle items die een beheerder aan het dashboard kan toevoegen (permissiebewust, geen placeholder-groepen). */
 export function getSelectableNavItems(permissions: SanitizedPermissions | null | undefined, user: AuthUserMetPermissies | null | undefined): SelectableNavItem[] {
   return getVisibleNavGroups(permissions, user).flatMap((group) =>
     [...group.items, ...group.mutedItems].map((item) => ({ ...item, groupId: group.id, groupLabel: group.label }))
@@ -354,27 +221,9 @@ export function getSelectableNavItems(permissions: SanitizedPermissions | null |
 export interface NavPathMatch {
   group: NavGroupDef;
   item: NavItem;
-  /** true = dit IS de menupagina zelf (bv. de artikelenlijst); false = een subpad ervan (bv. één artikel bewerken). */
   exact: boolean;
 }
 
-/**
- * Zoekt bij een pathname het bijbehorende nav-item + groep op — gedeeld door
- * BeheerTopBar.tsx voor zowel de breadcrumb-labels als het "toevoegen/
- * verwijderen van dashboard"-schakelaar (alleen bij exact === true, zie de
- * opdracht: het gaat om het menu-item zelf, niet een los record erbinnen).
- * Draait op de volledige NAV_GROUPS (niet permissiebewust): wie de pagina al
- * ziet, heeft er per definitie toegang toe (die toegang wordt nu server-side
- * afgedwongen door AdminViewShell.tsx/collectie-access, dus deze aanname
- * blijft geldig — zie payload/access/menu-permissions.ts).
- *
- * Kiest bij meerdere subpad-matches (bv. "/admin/sales" én "/admin/sales/
- * scholen" matchen allebei "/admin/sales/scholen" als subpad) altijd de
- * LANGSTE/meest specifieke href, en geeft een exacte match altijd voorrang —
- * zonder dat zou elke Sales-subpagina onterecht als "Vandaag" (het kortste,
- * eerst-geregistreerde item) herkend worden. Ontdekt tijdens
- * browserverificatie van de Sales-assistent-nav.
- */
 export function findNavItemByPath(pathname: string): NavPathMatch | null {
   let beste: NavPathMatch | null = null;
   for (const group of NAV_GROUPS) {
