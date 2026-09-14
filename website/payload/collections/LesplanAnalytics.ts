@@ -14,7 +14,6 @@ export const LesplanAnalytics: CollectionConfig = {
     useAsTitle: "normalizedGoal",
     defaultColumns: ["requestedAt", "subject", "normalizedGoal", "ageGroup", "planTitle"],
     group: "Beheer — systeem",
-    hidden: true,
     description: "Geanonimiseerde trends uit de Lesplan Generator. Alleen server-side gevuld.",
   },
   access: {
