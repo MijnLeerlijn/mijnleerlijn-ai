@@ -1,0 +1,11 @@
+/*
+ * Payload rendert collecties naast onze eigen taakgerichte navigatie ook nog
+ * automatisch op basis van admin.group. Deze twee groepen zijn technische
+ * opslaggroepen: hun bruikbare functies staan al in de MijnLeerlijn-nav of
+ * worden vanuit Mijn Dag beheerd. Laat ze daarom niet als tweede, losse
+ * navigatie boven het merkmenu verschijnen.
+ */
+[id="nav-group-Trainers — systeem"],
+[id="nav-group-Mijn Werk — systeem"] {
+  display: none;
+}

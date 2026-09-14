@@ -10,6 +10,9 @@ import "@payloadcms/next/css";
 // niet-gelaagde import automatisch, ongeacht ladingsvolgorde/specificiteit
 // — zie de toelichting bovenin dat bestand.
 import "@/payload/components/admin-shell.css";
+// Technische Payload-groepen die niet naast de taakgerichte MijnLeerlijn-nav
+// horen te verschijnen (Trainer- en Mijn Werk-opslagcollecties).
+import "@/payload/components/admin-system-nav.css";
 
 type Args = { children: React.ReactNode };
 
