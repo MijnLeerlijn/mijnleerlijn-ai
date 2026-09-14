@@ -65,6 +65,7 @@ import * as migration_20260901_150000_trainer_logboek_items_monday_writeback fro
 import * as migration_20260902_100000_start_acties_v1 from './20260902_100000_start_acties_v1';
 import * as migration_20260902_110000_training_verslagen_startactie_bron from './20260902_110000_training_verslagen_startactie_bron';
 import * as migration_20260913_160000_sales_dashboard_goals_partners from './20260913_160000_sales_dashboard_goals_partners';
+import * as migration_20260914_071500_sales_partners_dossier from './20260914_071500_sales_partners_dossier';
 
 export const migrations = [
   { up: migration_20260721_135820_initial.up, down: migration_20260721_135820_initial.down, name: '20260721_135820_initial' },
@@ -134,4 +135,5 @@ export const migrations = [
   { up: migration_20260902_100000_start_acties_v1.up, down: migration_20260902_100000_start_acties_v1.down, name: '20260902_100000_start_acties_v1' },
   { up: migration_20260902_110000_training_verslagen_startactie_bron.up, down: migration_20260902_110000_training_verslagen_startactie_bron.down, name: '20260902_110000_training_verslagen_startactie_bron' },
   { up: migration_20260913_160000_sales_dashboard_goals_partners.up, down: migration_20260913_160000_sales_dashboard_goals_partners.down, name: '20260913_160000_sales_dashboard_goals_partners' },
+  { up: migration_20260914_071500_sales_partners_dossier.up, down: migration_20260914_071500_sales_partners_dossier.down, name: '20260914_071500_sales_partners_dossier' },
 ];
