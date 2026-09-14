@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useAuth } from "@payloadcms/ui";
 import type { SalesDashboardData } from "@/lib/sales/dashboard-data";
 import type { SalesGoalProgress } from "@/lib/sales/goal-progress";
+import type { SalesPartnerSummary } from "@/lib/sales/partner-summary";
 import s from "./SalesAnalyticsDashboardView.module.css";
 const getal = new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 0 });
 const decimaal = new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 1 });
@@ -30,6 +31,19 @@ function Doelkaart({ doel }: { doel: SalesGoalProgress }) {
     {doel.forecastLicenties !== null && <p className={s.muted}>Prognose einddatum bij huidig tempo: {getal.format(doel.forecastLicenties)} licenties.</p>}
   </section>;
 }
+function Partnerkaart({ partner }: { partner: SalesPartnerSummary }) {
+  const doelVoortgang = partner.doelPercentage === null ? null : Math.max(0, Math.min(100, partner.doelPercentage));
+  return <section className={s.panel}>
+    <h2>{partner.naam}</h2>
+    <p><strong>{getal.format(partner.klanten)}</strong> klanten · <strong>{getal.format(partner.licenties)}</strong> licenties</p>
+    <p>{getal.format(partner.leads)} leads · {getal.format(partner.prospects)} prospects · {getal.format(partner.wachtOpHandtekening)} wacht op handtekening</p>
+    <p>Conversie naar klant: <strong>{partner.conversieNaarKlant === null ? "—" : `${decimaal.format(partner.conversieNaarKlant)}%`}</strong></p>
+    {partner.doelLicenties !== null && partner.doelPercentage !== null && <>
+      <div className={s.barHead}><span>{getal.format(partner.licenties)} / {getal.format(partner.doelLicenties)} licenties</span><strong>{decimaal.format(partner.doelPercentage)}%</strong></div>
+      <div className={s.track}><span style={{ width: `${Math.max(2, doelVoortgang ?? 0)}%` }} /></div>
+    </>}
+  </section>;
+}
 export function SalesAnalyticsDashboardView() {
   const { user } = useAuth();
   const account = user as unknown as { role?: string; permissionMode?: string; permissions?: unknown } | null;
@@ -54,6 +68,7 @@ export function SalesAnalyticsDashboardView() {
       <Kpi label="Pipeline school-equivalent" waarde={decimaal.format(data.kpis.pipelineSchoolEquivalenten)} toelichting="Potentiële licenties" />
     </div>
     {data.doelstellingen.length > 0 && <><h2>Doelstellingen</h2><div className={s.grid}>{data.doelstellingen.map((doel) => <Doelkaart key={doel.id} doel={doel} />)}</div></>}
+    {data.partners.length > 0 && <><h2>Partners</h2><div className={s.grid}>{data.partners.map((partner) => <Partnerkaart key={partner.id} partner={partner} />)}</div></>}
     {data.trainingen && <>
       <h2>Trainingen & upsell</h2>
       <div className={s.kpis}>
