@@ -1,4 +1,4 @@
-export type SorteerKolom = "schoolName" | "relatiestatus" | "salesfase" | "onderwijstype" | "binnengekomenVia" | "plaats" | "laatsteContact" | "volgendeActie";
+export type SorteerKolom = "schoolName" | "relatiestatus" | "salesfase" | "onderwijstype" | "binnengekomenVia" | "plaats" | "laatsteContact" | "volgendeActie" | "planningStatus";
 export type SorteerRichting = "oplopend" | "aflopend";
 
 export interface SorteerbareSchool {
@@ -6,13 +6,15 @@ export interface SorteerbareSchool {
   relatiestatus: string | null;
   salesfase: string | null;
   onderwijstypeNaam: string | null;
-  binnengekomenVia: string | null;
+  binnengekomenVia?: string | null;
   plaats: string | null;
   lastMondayActivityAt: string | null;
   volgendeActieDatum: string | null;
+  // Planning blijft intern beschikbaar voor bestaande logica/tests, maar is niet meer zichtbaar als Pipeline-kolom.
+  planningStatusRang: number;
 }
 
-function vergelijkTekst(a: string | null, b: string | null): number {
+function vergelijkTekst(a: string | null | undefined, b: string | null | undefined): number {
   return (a ?? "").localeCompare(b ?? "", "nl");
 }
 
@@ -31,6 +33,7 @@ export function vergelijkScholen(a: SorteerbareSchool, b: SorteerbareSchool, kol
     case "plaats": resultaat = vergelijkTekst(a.plaats, b.plaats); break;
     case "laatsteContact": resultaat = vergelijkDatum(a.lastMondayActivityAt, b.lastMondayActivityAt); break;
     case "volgendeActie": resultaat = vergelijkDatum(a.volgendeActieDatum, b.volgendeActieDatum); break;
+    case "planningStatus": resultaat = a.planningStatusRang - b.planningStatusRang; break;
   }
   return richting === "oplopend" ? resultaat : -resultaat;
 }
