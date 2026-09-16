@@ -1,10 +1,12 @@
 import type { CSSProperties } from "react";
 import type { Payload, SanitizedPermissions } from "payload";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Link } from "@payloadcms/ui";
 import { getSelectedDashboardCards, getVisibleNavGroups } from "@/lib/admin-nav/nav-groups";
 import { getDashboardSelection } from "@/lib/admin-nav/dashboard-preferences";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
+import { PAYLOAD_SESSION_COOKIE_NAME, verifyAdminSessionCookie } from "@/lib/auth/verify-session";
 import { SalesDashboardPaneel } from "./SalesDashboardPaneel";
 
 interface BeheerDashboardUser {
@@ -22,21 +24,25 @@ interface BeheerDashboardProps {
 }
 
 export async function BeheerDashboard({ permissions, user, payload }: BeheerDashboardProps) {
-  // Beperkte accounts krijgen geen algemeen beheer-dashboard / Mijn Dag.
-  // Zij landen direct op de eerste pagina die hun beheerder heeft toegestaan.
-  // Voor het externe Sales-profiel is dat Sales -> Dashboard; Pipeline blijft
-  // vervolgens de enige andere zichtbare keuze in de navigatie.
-  if (user?.permissionMode === "restricted") {
-    const eersteToegestanePagina = getVisibleNavGroups(permissions, user)
+  // Payload geeft aan deze custom dashboard-view niet altijd de volledige
+  // custom uservelden door. Gebruik daarom dezelfde geverifieerde
+  // sessiegebruiker als onze server-side routebeveiliging.
+  const cookieStore = await cookies();
+  const sessie = await verifyAdminSessionCookie(payload, cookieStore.get(PAYLOAD_SESSION_COOKIE_NAME)?.value);
+  const sessieUser = sessie.user as (BeheerDashboardUser & { permissionMode?: "full" | "restricted" | null }) | null;
+
+  if (sessieUser?.permissionMode === "restricted") {
+    const eersteToegestanePagina = getVisibleNavGroups(undefined, sessieUser)
       .flatMap((groep) => [...groep.items, ...groep.mutedItems])
       .at(0)?.href;
 
     if (eersteToegestanePagina) redirect(eersteToegestanePagina);
   }
 
-  const naam = user?.name?.trim();
-  const geselecteerdeHrefs = await getDashboardSelection(payload, user ?? null);
-  const groepen = getSelectedDashboardCards(permissions, user ?? null, geselecteerdeHrefs);
+  const effectieveUser = sessieUser ?? user;
+  const naam = effectieveUser?.name?.trim();
+  const geselecteerdeHrefs = await getDashboardSelection(payload, effectieveUser ?? null);
+  const groepen = getSelectedDashboardCards(permissions, effectieveUser ?? null, geselecteerdeHrefs);
   const heeftKeuze = groepen.length > 0;
 
   return (
