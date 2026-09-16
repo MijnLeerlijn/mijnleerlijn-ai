@@ -1,0 +1,7 @@
+/* Restricted accounts moeten uitsluitend de custom MijnLeerlijn-navigatie zien.
+ * Payload rendert zijn native groepen vóór onze ml-nav-brand; de custom groepen
+ * staan erna. Daardoor kunnen we de native groepen veilig selecteren zonder de
+ * toegestane Sales-groep (Dashboard/Pipeline) te raken. */
+.ml-admin-restricted .nav-group:has(~ .ml-nav-brand) {
+  display: none !important;
+}
