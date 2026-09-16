@@ -147,6 +147,7 @@ export function SalesScholenView() {
     plaats: s.plaats ?? null,
     lastMondayActivityAt: s.lastMondayActivityAt ?? null,
     volgendeActieDatum: volgendeActiePerSchool.get(s.id) ?? null,
+    planningStatusRang: 0,
   })), sorteerKolom, sorteerRichting).map((r) => r.school), [zichtbaar, viaPerMondayItem, volgendeActiePerSchool, sorteerKolom, sorteerRichting]);
 
   function kiesSortering(kolom: SorteerKolom) {
