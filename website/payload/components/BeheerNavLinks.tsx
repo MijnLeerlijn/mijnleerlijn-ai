@@ -41,6 +41,11 @@ export function BeheerNavLinks() {
   const restricted = profiel?.restricted === true;
 
   useEffect(() => {
+    document.documentElement.classList.toggle("ml-admin-restricted", restricted);
+    return () => document.documentElement.classList.remove("ml-admin-restricted");
+  }, [restricted]);
+
+  useEffect(() => {
     if (restricted) return;
     let actief = true;
     void fetch("/api/access", { credentials: "same-origin", cache: "no-store" })
