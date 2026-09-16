@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { BarChart3, Users } from "lucide-react";
 import { Link, NavGroup, useAuth } from "@payloadcms/ui";
@@ -49,17 +49,45 @@ const GEBRUIKERS_ITEM: NavItem = {
   permission: { type: "collection", slug: "users" },
 };
 
+type PayloadAccessResponse = {
+  collections?: {
+    users?: {
+      create?: { permission?: boolean };
+    };
+  };
+};
+
 export function BeheerNavLinks() {
   const pathname = usePathname();
   const { permissions, user } = useAuth();
   const groups = getVisibleNavGroups(permissions, user);
   const beheerZichtbaar = groups.some((group) => group.id === "beheer");
+  const [magGebruikersAanmaken, setMagGebruikersAanmaken] = useState(false);
 
-  // Betrouwbare admin-indicator vanuit Payload zelf: alleen beheerders mogen
-  // users aanmaken (Users.access.create = adminOnly). Dit komt uit de
-  // gesanitized permissions die Payload voor de huidige sessie al berekent en
-  // is dus robuuster dan een custom `role`-veld uit useAuth() of een extra API.
-  const magGebruikersAanmaken = Boolean(permissions?.collections?.users?.create);
+  useEffect(() => {
+    let actief = true;
+
+    // Payload documenteert /api/access als de autoritatieve bron voor wat de
+    // huidige gebruiker in de Admin UI mag doen. Users.access.create is
+    // adminOnly, dus `collections.users.create.permission === true` betekent
+    // hier exact: dit is een beheerder die gebruikers mag beheren.
+    void fetch("/api/access", { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return false;
+        const data = (await response.json()) as PayloadAccessResponse;
+        return data.collections?.users?.create?.permission === true;
+      })
+      .then((toegestaan) => {
+        if (actief) setMagGebruikersAanmaken(toegestaan);
+      })
+      .catch(() => {
+        if (actief) setMagGebruikersAanmaken(false);
+      });
+
+    return () => {
+      actief = false;
+    };
+  }, []);
 
   return (
     <>
