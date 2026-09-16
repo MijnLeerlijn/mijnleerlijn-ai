@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
 import { getPayload } from "payload";
-import config from "@payload-config";
+import config from "@/payload.config";
 import { NextResponse } from "next/server";
 import { PAYLOAD_SESSION_COOKIE_NAME, verifyAdminSessionCookie } from "@/lib/auth/verify-session";
-import { getVisibleNavGroups } from "@/lib/admin-nav/nav-groups";
+import { NAV_GROUPS, navItemPermissionId } from "@/lib/admin-nav/nav-groups";
+import { heeftAdminPermissie } from "@/payload/access/menu-permissions";
 
 export async function GET() {
   const payload = await getPayload({ config });
@@ -16,10 +17,10 @@ export async function GET() {
 
   const user = sessie.user as typeof sessie.user & { permissionMode?: "full" | "restricted" | null };
   const restricted = user.permissionMode === "restricted";
+
   const firstHref = restricted
-    ? getVisibleNavGroups(undefined, user)
-        .flatMap((groep) => [...groep.items, ...groep.mutedItems])
-        .at(0)?.href ?? null
+    ? NAV_GROUPS.flatMap((groep) => [...groep.items, ...(groep.mutedItems ?? [])].map((item) => ({ groep, item })))
+        .find(({ groep, item }) => heeftAdminPermissie(user, navItemPermissionId(groep.id, item)))?.item.href ?? null
     : null;
 
   return NextResponse.json({ authenticated: true, restricted, firstHref });
