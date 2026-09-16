@@ -3,26 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { RelatiestatusBadge } from "./RelatiestatusBadge";
-import { PlanningStatusBadge } from "./PlanningStatusBadge";
 import { SalesOnderwijstypeInstellen } from "./SalesOnderwijstypeInstellen";
 import { RELATIESTATUS_BADGE } from "@/lib/sales/relatiestatus-badge";
 import { formatKorteDatum } from "@/lib/sales/format-datum";
 import { PENDING_VOORSTEL_TYPES_VOOR_AANDACHT } from "@/lib/sales/aandacht-nodig";
 import { sorteerScholen, type SorteerKolom, type SorteerRichting } from "@/lib/sales/scholen-sortering";
-import { bepaalPlanningStatus, planningStatusSorteerRang } from "@/lib/sales/planning-status";
+import { bepaalPlanningStatus } from "@/lib/sales/planning-status";
 
-// Sales UX V2 (2026-08-14) — echte CRM-werklijst: combineerbare filters
-// i.p.v. de vorige single-select ("actie_nodig"/"ai_voorstel" vielen daar
-// terug op alleen "actief" — zie de sessiegeschiedenis). Elke filterregel
-// hieronder werkt onafhankelijk en met EN gecombineerd, zodat bv. "Prospect
-// + geen volgende actie" mogelijk is.
-interface VariantRef {
-  id: number;
-  name: string;
-}
-
+interface VariantRef { id: number; name: string }
 interface SalesSchoolDoc {
   id: number;
+  mondayItemId: string;
   schoolName: string;
   plaats?: string | null;
   relatiestatus?: string | null;
@@ -32,20 +23,8 @@ interface SalesSchoolDoc {
   mondayVolgendeActieDatum?: string | null;
   actief: boolean;
 }
-
-interface SalesActionDoc {
-  id: number;
-  status: string;
-  dueDate: string;
-  school: number | { id: number };
-}
-
-interface SalesProposalDoc {
-  id: number;
-  status: string;
-  proposalType: string;
-  school: number | { id: number };
-}
+interface SalesActionDoc { id: number; status: string; dueDate: string; school: number | { id: number } }
+interface SalesProposalDoc { id: number; status: string; proposalType: string; school: number | { id: number } }
 
 async function apiGet<T>(url: string): Promise<T[]> {
   const res = await fetch(url, { credentials: "include" });
@@ -54,15 +33,11 @@ async function apiGet<T>(url: string): Promise<T[]> {
   return data.docs ?? [];
 }
 
-function idVan(waarde: number | { id: number }): number {
-  return typeof waarde === "number" ? waarde : waarde.id;
-}
-
+function idVan(waarde: number | { id: number }): number { return typeof waarde === "number" ? waarde : waarde.id }
 function onderwijstypeLabel(waarde: SalesSchoolDoc["onderwijstype"]): string {
   if (!waarde) return "—";
   return typeof waarde === "number" ? `#${waarde}` : waarde.name;
 }
-
 function onderwijstypeId(waarde: SalesSchoolDoc["onderwijstype"]): string | null {
   if (!waarde) return null;
   return String(typeof waarde === "number" ? waarde : waarde.id);
@@ -72,30 +47,22 @@ interface FilterState {
   zoekterm: string;
   relatiestatussen: string[];
   onderwijstypeId: string;
+  binnengekomenVia: string;
   volgendeActie: "alle" | "wel" | "geen";
   laatsteContact: "alle" | "30" | "90" | "nooit";
   alleenAandachtNodig: boolean;
 }
-
 const LEGE_FILTERS: FilterState = {
-  zoekterm: "",
-  relatiestatussen: [],
-  onderwijstypeId: "",
-  volgendeActie: "alle",
-  laatsteContact: "alle",
-  alleenAandachtNodig: false,
+  zoekterm: "", relatiestatussen: [], onderwijstypeId: "", binnengekomenVia: "",
+  volgendeActie: "alle", laatsteContact: "alle", alleenAandachtNodig: false,
 };
 
 export function SalesScholenView() {
   const [scholen, setScholen] = useState<SalesSchoolDoc[]>([]);
   const [varianten, setVarianten] = useState<VariantRef[]>([]);
+  const [viaPerMondayItem, setViaPerMondayItem] = useState<Record<string, string | null>>({});
   const [volgendeActiePerSchool, setVolgendeActiePerSchool] = useState<Map<number, string>>(new Map());
   const [aandachtNodigIds, setAandachtNodigIds] = useState<Set<number>>(new Set());
-  // Productiecorrectie 2026-08-16 (punt 7) — apart van volgendeActiePerSchool
-  // (die Monday-/lokale datum al samenvoegt): bepaalPlanningStatus() heeft
-  // de OPEN lokale actie-datum en een pending-voorstel-signaal apart nodig.
-  const [openActieDatumPerSchool, setOpenActieDatumPerSchool] = useState<Map<number, string>>(new Map());
-  const [pendingVoorstelIds, setPendingVoorstelIds] = useState<Set<number>>(new Set());
   const [filters, setFilters] = useState<FilterState>(LEGE_FILTERS);
   const [laden, setLaden] = useState(true);
   const [sorteerKolom, setSorteerKolom] = useState<SorteerKolom | null>(null);
@@ -103,281 +70,123 @@ export function SalesScholenView() {
 
   const laad = useCallback(async () => {
     setLaden(true);
-    const [docs, variantDocs, openActies, pendingVoorstellen] = await Promise.all([
+    const [docs, variantDocs, openActies, pendingVoorstellen, viaResponse] = await Promise.all([
       apiGet<SalesSchoolDoc>(`/api/sales-schools?depth=1&sort=schoolName&limit=1000`),
       apiGet<VariantRef>(`/api/variants?limit=100&sort=name&depth=0`),
       apiGet<SalesActionDoc>(`/api/sales-actions?where[status][equals]=open&depth=0&limit=2000`),
       apiGet<SalesProposalDoc>(`/api/sales-proposals?where[status][equals]=pending&depth=0&limit=2000`),
+      fetch("/api/sales/binnengekomen-via", { credentials: "include" }).then(async (r) => r.ok ? (await r.json()) as { waarden?: Record<string, string | null> } : {}),
     ]);
     setScholen(docs);
     setVarianten(variantDocs);
+    setViaPerMondayItem(viaResponse.waarden ?? {});
 
-    // Eén "volgende actie"-datum per school: de open Sales-actie (meest
-    // concreet/actueel) heeft voorrang boven de Monday-gecachte datum.
     const volgendeActie = new Map<number, string>();
-    for (const doc of docs) {
-      if (doc.mondayVolgendeActieDatum) volgendeActie.set(doc.id, doc.mondayVolgendeActieDatum);
-    }
+    const openActieDatum = new Map<number, string>();
+    for (const doc of docs) if (doc.mondayVolgendeActieDatum) volgendeActie.set(doc.id, doc.mondayVolgendeActieDatum);
     for (const actie of openActies) {
       const id = idVan(actie.school);
       const huidig = volgendeActie.get(id);
       if (!huidig || actie.dueDate < huidig) volgendeActie.set(id, actie.dueDate);
+      const openHuidig = openActieDatum.get(id);
+      if (!openHuidig || actie.dueDate < openHuidig) openActieDatum.set(id, actie.dueDate);
     }
     setVolgendeActiePerSchool(volgendeActie);
 
-    // Productiecorrectie 2026-08-16 (punt 7) — de open lokale actie se EIGEN
-    // datum, apart van de samengevoegde volgendeActie hierboven: nodig als
-    // afzonderlijke input voor bepaalPlanningStatus (lib/sales/planning-status.ts).
-    const openActieDatum = new Map<number, string>();
-    for (const actie of openActies) {
-      const id = idVan(actie.school);
-      const huidig = openActieDatum.get(id);
-      if (!huidig || actie.dueDate < huidig) openActieDatum.set(id, actie.dueDate);
-    }
-    setOpenActieDatumPerSchool(openActieDatum);
-
-    const schoolIdsMetVoorstel = new Set(
-      pendingVoorstellen.filter((p) => (PENDING_VOORSTEL_TYPES_VOOR_AANDACHT as readonly string[]).includes(p.proposalType)).map((p) => idVan(p.school))
-    );
-    setPendingVoorstelIds(schoolIdsMetVoorstel);
-
-    // Productiecorrectie 2026-08-16 (punt 7, root-cause-fix) — "Aandacht
-    // nodig" hergebruikt nu bepaalPlanningStatus (status === "actie_nodig")
-    // i.p.v. een eigen, kortere berekening die géén rekening hield met een
-    // geldige, niet-verlopen Monday-vervolgdatum zonder lokaal record — exact
-    // hetzelfde bugpatroon als de rest van deze productiecorrectie-ronde.
-    setAandachtNodigIds(
-      new Set(
-        docs
-          .filter(
-            (s) =>
-              bepaalPlanningStatus({
-                actief: s.actief,
-                openActieDatum: openActieDatum.get(s.id) ?? null,
-                mondayVolgendeActieDatum: s.mondayVolgendeActieDatum ?? null,
-                heeftPendingVoorstel: schoolIdsMetVoorstel.has(s.id),
-              }).status === "actie_nodig"
-          )
-          .map((s) => s.id)
-      )
-    );
-
+    const metVoorstel = new Set(pendingVoorstellen
+      .filter((p) => (PENDING_VOORSTEL_TYPES_VOOR_AANDACHT as readonly string[]).includes(p.proposalType))
+      .map((p) => idVan(p.school)));
+    setAandachtNodigIds(new Set(docs.filter((s) => bepaalPlanningStatus({
+      actief: s.actief,
+      openActieDatum: openActieDatum.get(s.id) ?? null,
+      mondayVolgendeActieDatum: s.mondayVolgendeActieDatum ?? null,
+      heeftPendingVoorstel: metVoorstel.has(s.id),
+    }).status === "actie_nodig").map((s) => s.id)));
     setLaden(false);
   }, []);
 
-  useEffect(() => {
-    laad();
-  }, [laad]);
+  useEffect(() => { laad(); }, [laad]);
+
+  const viaOpties = useMemo(() => Array.from(new Set(Object.values(viaPerMondayItem).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b, "nl")), [viaPerMondayItem]);
 
   function toggleRelatiestatus(waarde: string) {
-    setFilters((f) => ({
-      ...f,
-      relatiestatussen: f.relatiestatussen.includes(waarde) ? f.relatiestatussen.filter((r) => r !== waarde) : [...f.relatiestatussen, waarde],
-    }));
+    setFilters((f) => ({ ...f, relatiestatussen: f.relatiestatussen.includes(waarde) ? f.relatiestatussen.filter((r) => r !== waarde) : [...f.relatiestatussen, waarde] }));
   }
 
   const zichtbaar = useMemo(() => {
     const vandaag = new Date();
     return scholen.filter((s) => {
-      if (filters.zoekterm && !s.schoolName.toLowerCase().includes(filters.zoekterm.toLowerCase()) && !(s.plaats ?? "").toLowerCase().includes(filters.zoekterm.toLowerCase())) {
-        return false;
-      }
-      if (filters.relatiestatussen.length > 0 && !filters.relatiestatussen.includes(s.relatiestatus ?? "")) return false;
+      const via = viaPerMondayItem[s.mondayItemId] ?? null;
+      if (filters.zoekterm && !s.schoolName.toLowerCase().includes(filters.zoekterm.toLowerCase()) && !(s.plaats ?? "").toLowerCase().includes(filters.zoekterm.toLowerCase())) return false;
+      if (filters.relatiestatussen.length && !filters.relatiestatussen.includes(s.relatiestatus ?? "")) return false;
       if (filters.onderwijstypeId && onderwijstypeId(s.onderwijstype) !== filters.onderwijstypeId) return false;
-
+      if (filters.binnengekomenVia && via !== filters.binnengekomenVia) return false;
       const volgendeActieDatum = volgendeActiePerSchool.get(s.id) ?? null;
       if (filters.volgendeActie === "wel" && !volgendeActieDatum) return false;
       if (filters.volgendeActie === "geen" && volgendeActieDatum) return false;
-
       if (filters.laatsteContact !== "alle") {
-        if (filters.laatsteContact === "nooit") {
-          if (s.lastMondayActivityAt) return false;
-        } else {
+        if (filters.laatsteContact === "nooit") { if (s.lastMondayActivityAt) return false; }
+        else {
           if (!s.lastMondayActivityAt) return false;
-          const dagenGeleden = (vandaag.getTime() - new Date(s.lastMondayActivityAt).getTime()) / (1000 * 60 * 60 * 24);
-          const drempel = filters.laatsteContact === "30" ? 30 : 90;
-          if (dagenGeleden < drempel) return false;
+          const dagen = (vandaag.getTime() - new Date(s.lastMondayActivityAt).getTime()) / 86400000;
+          if (dagen < (filters.laatsteContact === "30" ? 30 : 90)) return false;
         }
       }
-
       if (filters.alleenAandachtNodig && !aandachtNodigIds.has(s.id)) return false;
-
       return true;
     });
-  }, [scholen, filters, volgendeActiePerSchool, aandachtNodigIds]);
+  }, [scholen, filters, viaPerMondayItem, volgendeActiePerSchool, aandachtNodigIds]);
 
-  // Sales UX-ronde 3 — sortering werkt op de AL gefilterde lijst hierboven,
-  // dus filters + sortering combineren vanzelf (bv. "Prospect + geen
-  // volgende actie" + "laatste contact oudste eerst").
-  const gesorteerd = useMemo(() => {
-    const metSorteervelden = zichtbaar.map((s) => ({
-      school: s,
-      schoolName: s.schoolName,
-      relatiestatus: s.relatiestatus ?? null,
-      salesfase: s.salesfase ?? null,
-      onderwijstypeNaam: s.onderwijstype && typeof s.onderwijstype !== "number" ? s.onderwijstype.name : null,
-      plaats: s.plaats ?? null,
-      lastMondayActivityAt: s.lastMondayActivityAt ?? null,
-      volgendeActieDatum: volgendeActiePerSchool.get(s.id) ?? null,
-      planningStatusRang: planningStatusSorteerRang(
-        bepaalPlanningStatus({
-          actief: s.actief,
-          openActieDatum: openActieDatumPerSchool.get(s.id) ?? null,
-          mondayVolgendeActieDatum: s.mondayVolgendeActieDatum ?? null,
-          heeftPendingVoorstel: pendingVoorstelIds.has(s.id),
-        }).status
-      ),
-    }));
-    return sorteerScholen(metSorteervelden, sorteerKolom, sorteerRichting).map((r) => r.school);
-  }, [zichtbaar, volgendeActiePerSchool, openActieDatumPerSchool, pendingVoorstelIds, sorteerKolom, sorteerRichting]);
+  const gesorteerd = useMemo(() => sorteerScholen(zichtbaar.map((s) => ({
+    school: s,
+    schoolName: s.schoolName,
+    relatiestatus: s.relatiestatus ?? null,
+    salesfase: s.salesfase ?? null,
+    onderwijstypeNaam: s.onderwijstype && typeof s.onderwijstype !== "number" ? s.onderwijstype.name : null,
+    binnengekomenVia: viaPerMondayItem[s.mondayItemId] ?? null,
+    plaats: s.plaats ?? null,
+    lastMondayActivityAt: s.lastMondayActivityAt ?? null,
+    volgendeActieDatum: volgendeActiePerSchool.get(s.id) ?? null,
+    planningStatusRang: 0,
+  })), sorteerKolom, sorteerRichting).map((r) => r.school), [zichtbaar, viaPerMondayItem, volgendeActiePerSchool, sorteerKolom, sorteerRichting]);
 
   function kiesSortering(kolom: SorteerKolom) {
-    if (sorteerKolom === kolom) {
-      setSorteerRichting((r) => (r === "oplopend" ? "aflopend" : "oplopend"));
-    } else {
-      setSorteerKolom(kolom);
-      setSorteerRichting("oplopend");
-    }
+    if (sorteerKolom === kolom) setSorteerRichting((r) => r === "oplopend" ? "aflopend" : "oplopend");
+    else { setSorteerKolom(kolom); setSorteerRichting("oplopend"); }
   }
+  function indicator(kolom: SorteerKolom) { return sorteerKolom === kolom ? <span className="ml-sales__sorteer-pijl">{sorteerRichting === "oplopend" ? "↑" : "↓"}</span> : null; }
+  const filtersActief = filters.zoekterm || filters.relatiestatussen.length || filters.onderwijstypeId || filters.binnengekomenVia || filters.volgendeActie !== "alle" || filters.laatsteContact !== "alle" || filters.alleenAandachtNodig;
 
-  function sorteerIndicator(kolom: SorteerKolom) {
-    if (sorteerKolom !== kolom) return null;
-    return <span className="ml-sales__sorteer-pijl">{sorteerRichting === "oplopend" ? "↑" : "↓"}</span>;
-  }
-
-  return (
-    <div className="ml-sales">
-      <div className="ml-sales__header">
-        <h1>Scholen</h1>
-        <p>
-          {zichtbaar.length} van {scholen.length} scholen.
-        </p>
-      </div>
-
-      <div className="ml-sales__filter-balk">
-        <input
-          type="text"
-          placeholder="Zoek op schoolnaam of plaats…"
-          value={filters.zoekterm}
-          onChange={(e) => setFilters((f) => ({ ...f, zoekterm: e.target.value }))}
-          className="ml-sales__zoekveld"
-        />
-        {Object.keys(RELATIESTATUS_BADGE).map((waarde) => (
-          <button
-            key={waarde}
-            type="button"
-            className="ml-sales__knop"
-            style={filters.relatiestatussen.includes(waarde) ? { borderColor: "var(--ml-admin-accent)", color: "var(--ml-admin-accent)", fontWeight: 700 } : undefined}
-            onClick={() => toggleRelatiestatus(waarde)}
-          >
-            {waarde}
-          </button>
-        ))}
-        <select value={filters.onderwijstypeId} onChange={(e) => setFilters((f) => ({ ...f, onderwijstypeId: e.target.value }))} style={{ padding: "6px 10px" }}>
-          <option value="">Alle onderwijstypen</option>
-          {varianten.map((v) => (
-            <option key={v.id} value={String(v.id)}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-        <select value={filters.volgendeActie} onChange={(e) => setFilters((f) => ({ ...f, volgendeActie: e.target.value as FilterState["volgendeActie"] }))} style={{ padding: "6px 10px" }}>
-          <option value="alle">Volgende actie: alle</option>
-          <option value="wel">Heeft volgende actie</option>
-          <option value="geen">Geen volgende actie</option>
-        </select>
-        <select value={filters.laatsteContact} onChange={(e) => setFilters((f) => ({ ...f, laatsteContact: e.target.value as FilterState["laatsteContact"] }))} style={{ padding: "6px 10px" }}>
-          <option value="alle">Laatste contact: alle</option>
-          <option value="30">Langer dan 30 dagen geleden</option>
-          <option value="90">Langer dan 90 dagen geleden</option>
-          <option value="nooit">Nog nooit</option>
-        </select>
-        <button
-          type="button"
-          className="ml-sales__knop"
-          style={filters.alleenAandachtNodig ? { borderColor: "var(--ml-admin-accent)", color: "var(--ml-admin-accent)", fontWeight: 700 } : undefined}
-          onClick={() => setFilters((f) => ({ ...f, alleenAandachtNodig: !f.alleenAandachtNodig }))}
-        >
-          Aandacht nodig
-        </button>
-        {(filters.zoekterm || filters.relatiestatussen.length > 0 || filters.onderwijstypeId || filters.volgendeActie !== "alle" || filters.laatsteContact !== "alle" || filters.alleenAandachtNodig) && (
-          <button type="button" className="ml-sales__knop" onClick={() => setFilters(LEGE_FILTERS)}>
-            Wis filters
-          </button>
-        )}
-      </div>
-
-      {laden ? (
-        <div className="ml-sales__leeg">Laden…</div>
-      ) : zichtbaar.length === 0 ? (
-        <div className="ml-sales__leeg">Geen scholen gevonden.</div>
-      ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table className="ml-sales__tabel">
-            <thead>
-              <tr>
-                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("schoolName")}>
-                  School{sorteerIndicator("schoolName")}
-                </th>
-                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("planningStatus")}>
-                  Planning{sorteerIndicator("planningStatus")}
-                </th>
-                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("relatiestatus")}>
-                  Relatiestatus{sorteerIndicator("relatiestatus")}
-                </th>
-                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("salesfase")}>
-                  Salesfase{sorteerIndicator("salesfase")}
-                </th>
-                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("onderwijstype")}>
-                  Onderwijstype{sorteerIndicator("onderwijstype")}
-                </th>
-                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("plaats")}>
-                  Plaats{sorteerIndicator("plaats")}
-                </th>
-                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("laatsteContact")}>
-                  Laatste contact{sorteerIndicator("laatsteContact")}
-                </th>
-                <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("volgendeActie")}>
-                  Volgende actie{sorteerIndicator("volgendeActie")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {gesorteerd.map((school) => {
-                const planningStatus = bepaalPlanningStatus({
-                  actief: school.actief,
-                  openActieDatum: openActieDatumPerSchool.get(school.id) ?? null,
-                  mondayVolgendeActieDatum: school.mondayVolgendeActieDatum ?? null,
-                  heeftPendingVoorstel: pendingVoorstelIds.has(school.id),
-                });
-                return (
-                <tr key={school.id}>
-                  <td>
-                    <Link href={`/admin/sales/school?id=${school.id}`}>{school.schoolName}</Link>
-                  </td>
-                  <td>
-                    <PlanningStatusBadge status={planningStatus.status} datum={planningStatus.datum} />
-                  </td>
-                  <td>
-                    <RelatiestatusBadge relatiestatus={school.relatiestatus} />
-                  </td>
-                  <td className={school.salesfase ? undefined : "ml-sales__ontbrekend"}>{school.salesfase || "—"}</td>
-                  <td>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      {onderwijstypeLabel(school.onderwijstype)}
-                      {!school.onderwijstype && <SalesOnderwijstypeInstellen schoolId={school.id} label="Instellen" compact onGewijzigd={laad} />}
-                    </span>
-                  </td>
-                  <td>{school.plaats || "—"}</td>
-                  <td className={school.lastMondayActivityAt ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(school.lastMondayActivityAt)}</td>
-                  <td className={volgendeActiePerSchool.has(school.id) ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(volgendeActiePerSchool.get(school.id))}</td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+  return <div className="ml-sales">
+    <div className="ml-sales__header"><h1>Scholen</h1><p>{zichtbaar.length} van {scholen.length} scholen.</p></div>
+    <div className="ml-sales__filter-balk">
+      <input type="text" placeholder="Zoek op schoolnaam of plaats…" value={filters.zoekterm} onChange={(e) => setFilters((f) => ({ ...f, zoekterm: e.target.value }))} className="ml-sales__zoekveld" />
+      {Object.keys(RELATIESTATUS_BADGE).map((waarde) => <button key={waarde} type="button" className="ml-sales__knop" style={filters.relatiestatussen.includes(waarde) ? { borderColor: "var(--ml-admin-accent)", color: "var(--ml-admin-accent)", fontWeight: 700 } : undefined} onClick={() => toggleRelatiestatus(waarde)}>{waarde}</button>)}
+      <select value={filters.onderwijstypeId} onChange={(e) => setFilters((f) => ({ ...f, onderwijstypeId: e.target.value }))} style={{ padding: "6px 10px" }}><option value="">Alle onderwijstypen</option>{varianten.map((v) => <option key={v.id} value={String(v.id)}>{v.name}</option>)}</select>
+      <select value={filters.binnengekomenVia} onChange={(e) => setFilters((f) => ({ ...f, binnengekomenVia: e.target.value }))} style={{ padding: "6px 10px" }}><option value="">Via wie binnen: alle</option>{viaOpties.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+      <select value={filters.volgendeActie} onChange={(e) => setFilters((f) => ({ ...f, volgendeActie: e.target.value as FilterState["volgendeActie"] }))} style={{ padding: "6px 10px" }}><option value="alle">Volgende actie: alle</option><option value="wel">Heeft volgende actie</option><option value="geen">Geen volgende actie</option></select>
+      <select value={filters.laatsteContact} onChange={(e) => setFilters((f) => ({ ...f, laatsteContact: e.target.value as FilterState["laatsteContact"] }))} style={{ padding: "6px 10px" }}><option value="alle">Laatste contact: alle</option><option value="30">Langer dan 30 dagen geleden</option><option value="90">Langer dan 90 dagen geleden</option><option value="nooit">Nog nooit</option></select>
+      <button type="button" className="ml-sales__knop" style={filters.alleenAandachtNodig ? { borderColor: "var(--ml-admin-accent)", color: "var(--ml-admin-accent)", fontWeight: 700 } : undefined} onClick={() => setFilters((f) => ({ ...f, alleenAandachtNodig: !f.alleenAandachtNodig }))}>Aandacht nodig</button>
+      {filtersActief ? <button type="button" className="ml-sales__knop" onClick={() => setFilters(LEGE_FILTERS)}>Wis filters</button> : null}
     </div>
-  );
+    {laden ? <div className="ml-sales__leeg">Laden…</div> : zichtbaar.length === 0 ? <div className="ml-sales__leeg">Geen scholen gevonden.</div> : <div style={{ overflowX: "auto" }}><table className="ml-sales__tabel"><thead><tr>
+      <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("schoolName")}>School{indicator("schoolName")}</th>
+      <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("binnengekomenVia")}>Via wie binnen{indicator("binnengekomenVia")}</th>
+      <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("relatiestatus")}>Relatiestatus{indicator("relatiestatus")}</th>
+      <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("salesfase")}>Salesfase{indicator("salesfase")}</th>
+      <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("onderwijstype")}>Onderwijstype{indicator("onderwijstype")}</th>
+      <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("plaats")}>Plaats{indicator("plaats")}</th>
+      <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("laatsteContact")}>Laatste contact{indicator("laatsteContact")}</th>
+      <th className="ml-sales__tabel-th--sorteerbaar" onClick={() => kiesSortering("volgendeActie")}>Volgende actie{indicator("volgendeActie")}</th>
+    </tr></thead><tbody>{gesorteerd.map((school) => <tr key={school.id}>
+      <td><Link href={`/admin/sales/school?id=${school.id}`}>{school.schoolName}</Link></td>
+      <td className={viaPerMondayItem[school.mondayItemId] ? undefined : "ml-sales__ontbrekend"}>{viaPerMondayItem[school.mondayItemId] || "—"}</td>
+      <td><RelatiestatusBadge relatiestatus={school.relatiestatus} /></td>
+      <td className={school.salesfase ? undefined : "ml-sales__ontbrekend"}>{school.salesfase || "—"}</td>
+      <td><span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{onderwijstypeLabel(school.onderwijstype)}{!school.onderwijstype && <SalesOnderwijstypeInstellen schoolId={school.id} label="Instellen" compact onGewijzigd={laad} />}</span></td>
+      <td>{school.plaats || "—"}</td>
+      <td className={school.lastMondayActivityAt ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(school.lastMondayActivityAt)}</td>
+      <td className={volgendeActiePerSchool.has(school.id) ? undefined : "ml-sales__ontbrekend"}>{formatKorteDatum(volgendeActiePerSchool.get(school.id))}</td>
+    </tr>)}</tbody></table></div>}
+  </div>;
 }

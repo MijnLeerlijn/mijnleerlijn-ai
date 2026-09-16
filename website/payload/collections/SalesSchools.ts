@@ -33,7 +33,7 @@ export const SalesSchools: CollectionConfig = {
   labels: { singular: "Sales-school", plural: "Sales-scholen" },
   admin: {
     useAsTitle: "schoolName",
-    defaultColumns: ["schoolName", "relatiestatus", "salesfase", "onderwijstype", "lastMondayActivityAt"],
+    defaultColumns: ["schoolName", "relatiestatus", "salesfase", "onderwijstype", "binnengekomenVia", "lastMondayActivityAt"],
     group: "Sales — systeem",
     description: "Referentielaag naar Monday board '1: Scholen (Master Data)'. Monday blijft bron van waarheid.",
   },
@@ -53,6 +53,12 @@ export const SalesSchools: CollectionConfig = {
       type: "text",
       label: "Hoofdcontactpersoon (naam)",
       admin: { description: "Alleen de naam uit Monday's board_relation-koppeling naar 8: Contactpersonen — geen e-mail/telefoon (board 8 nog niet onderzocht)." },
+    },
+    {
+      name: "binnengekomenVia",
+      type: "text",
+      label: "Via wie binnen",
+      admin: { readOnly: true, description: "Waarde uit Monday-kolom 'Binnengekomen via' (dropdown_mm5qpp3q). Monday blijft bron van waarheid." },
     },
     {
       name: "onderwijstype",
