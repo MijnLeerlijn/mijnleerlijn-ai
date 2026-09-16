@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { BarChart3, Users } from "lucide-react";
 import { Link, NavGroup, useAuth } from "@payloadcms/ui";
@@ -54,26 +54,12 @@ export function BeheerNavLinks() {
   const { permissions, user } = useAuth();
   const groups = getVisibleNavGroups(permissions, user);
   const beheerZichtbaar = groups.some((group) => group.id === "beheer");
-  const [serverIsBeheerder, setServerIsBeheerder] = useState(false);
 
-  useEffect(() => {
-    let actief = true;
-    void fetch("/api/admin/session-role", { credentials: "same-origin", cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return false;
-        const data = (await response.json()) as { isAdmin?: boolean };
-        return data.isAdmin === true;
-      })
-      .then((isBeheerder) => {
-        if (actief) setServerIsBeheerder(isBeheerder);
-      })
-      .catch(() => {
-        if (actief) setServerIsBeheerder(false);
-      });
-    return () => {
-      actief = false;
-    };
-  }, []);
+  // Betrouwbare admin-indicator vanuit Payload zelf: alleen beheerders mogen
+  // users aanmaken (Users.access.create = adminOnly). Dit komt uit de
+  // gesanitized permissions die Payload voor de huidige sessie al berekent en
+  // is dus robuuster dan een custom `role`-veld uit useAuth() of een extra API.
+  const magGebruikersAanmaken = Boolean(permissions?.collections?.users?.create);
 
   return (
     <>
@@ -102,10 +88,7 @@ export function BeheerNavLinks() {
         </NavGroup>
       ))}
 
-      {/* Lock-out bescherming. De adminrol wordt bewust server-side uit de
-          geverifieerde Payload-sessie bepaald; useAuth() bevat custom velden
-          zoals role niet betrouwbaar in elke admin-render. */}
-      {serverIsBeheerder && !beheerZichtbaar && (
+      {magGebruikersAanmaken && !beheerZichtbaar && (
         <NavGroup label="Beheer">
           <NavLink item={GEBRUIKERS_ITEM} pathname={pathname} />
         </NavGroup>
