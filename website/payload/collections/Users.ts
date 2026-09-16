@@ -1,46 +1,19 @@
 import type { CollectionConfig, FieldAccess } from "payload";
 import { adminFieldOnly, adminOnly, isAdmin, type AuthUser } from "../access/roles";
-import { heeftAdminPermissie, type AuthUserMetPermissies } from "../access/menu-permissions";
 import { alleMenuPermissieIds } from "@/lib/admin-nav/nav-groups";
 
-// Letterlijke permissie-ID van het "Gebruikers"-menu-item (algemeen-groep,
-// item-id "gebruikers" — zie lib/admin-nav/nav-groups.ts). Bewust een
-// letterlijke string i.p.v. een aanroep van navItemPermissionId(): die
-// verwacht een volledig NavItem-object puur om er groupId+id uit te lezen,
-// wat hier een onnodige/geforceerde partial-object-cast zou vergen voor twee
-// vaste woorden die net zo min veranderen als de collectie-slug "users"
-// zelf.
-const GEBRUIKERS_PERMISSIE_ID = "algemeen.gebruikers";
-
-// Beheeromgeving-gebruikers (redacteuren/beheerders) — zie
-// docs/CMS-AND-EDITORIAL-WORKFLOW.md §Rollen & rechten. Payload's ingebouwde
-// authenticatie (auth: true) is de authenticatieoplossing voor de
-// beheeromgeving — zie docs/TODO.md beslissing 3 (Auth.js vs. Clerk): met
-// Payload als CMS is een losse auth-provider overbodige complexiteit (twee
-// gebruikers-/sessiesystemen naast elkaar) zonder functionele meerwaarde,
-// terwijl Payload's rolgebonden access-control hier al op leunt. Zie het
-// opleveringsrapport voor de volledige motivatie.
-//
-// Admin gebruikersbeheer — rechten per hoofdmenu en submenu (2026-08-25):
-// twee nieuwe velden (permissionMode/permissions, tab "Toegang & menu") —
-// zie payload/access/menu-permissions.ts voor de centrale permissiecheck en
-// lib/admin-nav/nav-groups.ts voor de permissie-ID's/UI-bron. `role` en
-// `variantScope` blijven ONGEWIJZIGD de grove poort (welke resources iemand
-// ooit kan bereiken); de twee nieuwe velden versmallen daarbinnen per
-// gebruiker WELKE van die resources deze specifieke persoon mag gebruiken.
+// Beheeromgeving-gebruikers (redacteuren/beheerders). Payload's ingebouwde
+// authenticatie is de bron voor beheeraccounts. Per-gebruiker permissies
+// versmallen de toegang van redacteuren, maar een beheerder moet altijd bij
+// het gebruikersbeheer kunnen komen. Anders kan een eerder opgeslagen
+// restricted-profiel een beheerder volledig uit "Gebruikers & rechten"
+// sluiten, waardoor niemand die instelling nog kan herstellen.
 
 /**
- * Zelfbeveiliging tegen twee dingen tegelijk (opdrachtseis §5 + §9):
- * (a) "gebruiker kan eigen permissions niet verhogen" — een gebruiker (ook
- *     een beheerder) mag NOOIT zijn/haar EIGEN permissionMode/permissions
- *     schrijven, via geen enkel pad (UI of rechtstreekse API-aanroep);
- * (b) "ik wil voorkomen dat ik mezelf per ongeluk buitensluit" — omdat (a)
- *     ook geldt voor het VERSCHERPEN van het eigen account, kan een
- *     beheerder zichzelf per constructie nooit per ongeluk (of expres)
- *     buitensluiten. Alleen een ANDER admin-account kan iemands
- *     toegangsmodus/permissies wijzigen. `id` ontbreekt bij create (een
- *     nieuw account is per definitie nooit "jezelf") — daar geldt alleen de
- *     gewone adminFieldOnly-rolcheck.
+ * Een beheerder mag permissies van ANDERE accounts aanpassen, nooit die van
+ * zichzelf. Zo kan niemand via het eigen profiel rechten verhogen of zichzelf
+ * per ongeluk verder beperken. Een nieuw account heeft nog geen id en mag dus
+ * door een beheerder met de gewenste rechten worden aangemaakt.
  */
 const permissieVeldAccess: FieldAccess = ({ req, id }) => {
   const user = req.user as AuthUser | null;
@@ -60,21 +33,20 @@ export const Users: CollectionConfig = {
   },
   access: {
     create: adminOnly,
-    // "Lees mijn eigen account" blijft ONVOORWAARDELIJK (basale
-    // sessie-identiteit, bv. useAuth()/"wie ben ik"-weergave elders) — alleen
-    // de "zie ALLE gebruikers"-tak (voor admins) is nu ook aan de
-    // "Gebruikers"-menupermissie gekoppeld. Zie payload/access/
-    // menu-permissions.ts se toelichting over waarom dit NIET via de
-    // generieke permissieOnly()-wrapper loopt.
+    // Beheerders moeten altijd alle accounts kunnen zien en beheren. Dit is
+    // bewust NIET afhankelijk van permissionMode/permissions: juist dit scherm
+    // is nodig om een foutief restricted-profiel te kunnen herstellen.
+    // Niet-beheerders houden alleen toegang tot hun eigen account voor de
+    // basale sessie-identiteit.
     read: ({ req }) => {
-      const user = req.user as (AuthUser & AuthUserMetPermissies) | null;
-      if (isAdmin(user) && heeftAdminPermissie(user, GEBRUIKERS_PERMISSIE_ID)) return true;
+      const user = req.user as AuthUser | null;
+      if (isAdmin(user)) return true;
       if (!user) return false;
       return { id: { equals: user.id } };
     },
     update: ({ req }) => {
-      const user = req.user as (AuthUser & AuthUserMetPermissies) | null;
-      if (isAdmin(user) && heeftAdminPermissie(user, GEBRUIKERS_PERMISSIE_ID)) return true;
+      const user = req.user as AuthUser | null;
+      if (isAdmin(user)) return true;
       if (!user) return false;
       return { id: { equals: user.id } };
     },
@@ -128,13 +100,6 @@ export const Users: CollectionConfig = {
           label: "Toegang & menu",
           fields: [
             {
-              // Bewust GEEN required:true — anders vereist Payload's
-              // gegenereerde Create-type dit veld expliciet bij elke
-              // payload.create({collection: "users", ...})-aanroep in de
-              // rest van de codebase (seed-scripts, testfixtures), ook al
-              // vult defaultValue hieronder 'm sowieso in zodra het
-              // ontbreekt. Runtime-gedrag is identiek; dit voorkomt puur
-              // onnodige typefouten op bestaande, ongerelateerde aanroepen.
               name: "permissionMode",
               type: "select",
               defaultValue: "full",
@@ -146,7 +111,7 @@ export const Users: CollectionConfig = {
               access: { update: permissieVeldAccess },
               admin: {
                 description:
-                  "Volledige toegang = ziet alles waar de rol (hiernaast) al recht op geeft — de standaard voor elk account. Beperkt via permissies = uitsluitend de hieronder aangevinkte hoofdmenu's/submenu's, ook al zou de rol méér toestaan. Dit veld van het EIGEN account is nooit wijzigbaar (ook niet door een beheerder) — zo kan niemand zichzelf per ongeluk buitensluiten of de eigen rechten verhogen; alleen een ánder beheerdersaccount kan dit hier aanpassen.",
+                  "Volledige toegang = ziet alles waar de rol recht op geeft. Beperkt via permissies = uitsluitend de hieronder aangevinkte onderdelen. Je kunt de toegang van je eigen account niet wijzigen; alleen een andere beheerder kan dat.",
               },
             },
             {

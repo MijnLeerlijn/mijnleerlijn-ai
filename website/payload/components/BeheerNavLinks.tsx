@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Users } from "lucide-react";
 import { Link, NavGroup, useAuth } from "@payloadcms/ui";
 import { getVisibleNavGroups, type NavItem } from "@/lib/admin-nav/nav-groups";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
@@ -38,10 +38,23 @@ const LESPLAN_ANALYTICS_ITEM: NavItem = {
   permission: { type: "collection", slug: "lesplan-analytics" },
 };
 
+const GEBRUIKERS_ITEM: NavItem = {
+  id: "gebruikers",
+  permissionId: "algemeen.gebruikers",
+  label: "Gebruikers & rechten",
+  href: "/admin/collections/users",
+  icon: Users,
+  color: "green",
+  description: "Beheer accounts en bepaal welke onderdelen iemand mag zien.",
+  permission: { type: "collection", slug: "users" },
+};
+
 export function BeheerNavLinks() {
   const pathname = usePathname();
   const { permissions, user } = useAuth();
   const groups = getVisibleNavGroups(permissions, user);
+  const beheerZichtbaar = groups.some((group) => group.id === "beheer");
+  const isBeheerder = user?.role === "admin";
 
   return (
     <>
@@ -69,6 +82,16 @@ export function BeheerNavLinks() {
           )}
         </NavGroup>
       ))}
+
+      {/* Lock-out bescherming: een beheerder moet altijd terug kunnen naar
+          gebruikersbeheer, ook wanneer zijn/haar opgeslagen menu-permissies
+          per ongeluk restricted zijn geraakt. Externe editors krijgen deze
+          fallback nooit te zien. */}
+      {isBeheerder && !beheerZichtbaar && (
+        <NavGroup label="Beheer">
+          <NavLink item={GEBRUIKERS_ITEM} pathname={pathname} />
+        </NavGroup>
+      )}
     </>
   );
 }
