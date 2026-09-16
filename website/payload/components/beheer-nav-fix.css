@@ -1,0 +1,12 @@
+/*
+ * De generieke native-nav hide rule in admin-shell.css bevat historisch
+ * [id="nav-group-Beheer"]. Payload gebruikt exact dezelfde id voor onze
+ * custom <NavGroup label="Beheer">, waardoor ook de bedoelde custom groep
+ * onzichtbaar werd. Dit bestand wordt NA admin-shell.css geladen en herstelt
+ * uitsluitend die custom label-id. Er bestaat geen native admin.group
+ * "Beheer" in de huidige config; native technische groepen hebben eigen
+ * namen zoals "Basis — Technisch beheer".
+ */
+[id="nav-group-Beheer"] {
+  display: block;
+}

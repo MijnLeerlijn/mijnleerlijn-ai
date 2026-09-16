@@ -10,6 +10,9 @@ import "@payloadcms/next/css";
 // niet-gelaagde import automatisch, ongeacht ladingsvolgorde/specificiteit
 // — zie de toelichting bovenin dat bestand.
 import "@/payload/components/admin-shell.css";
+// Herstel de custom Beheer-groep die door een historische native-nav
+// hide-selector in admin-shell.css onbedoeld wordt verborgen.
+import "@/payload/components/beheer-nav-fix.css";
 // Technische Payload-groepen die niet naast de taakgerichte MijnLeerlijn-nav
 // horen te verschijnen (Trainer- en Mijn Werk-opslagcollecties).
 import "@/payload/components/admin-system-nav.css";
