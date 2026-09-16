@@ -1,7 +1,8 @@
 import type { CSSProperties } from "react";
 import type { Payload, SanitizedPermissions } from "payload";
+import { redirect } from "next/navigation";
 import { Link } from "@payloadcms/ui";
-import { getSelectedDashboardCards } from "@/lib/admin-nav/nav-groups";
+import { getSelectedDashboardCards, getVisibleNavGroups } from "@/lib/admin-nav/nav-groups";
 import { getDashboardSelection } from "@/lib/admin-nav/dashboard-preferences";
 import { NAV_COLOR_STYLES } from "@/lib/admin-nav/nav-colors";
 import { SalesDashboardPaneel } from "./SalesDashboardPaneel";
@@ -21,6 +22,18 @@ interface BeheerDashboardProps {
 }
 
 export async function BeheerDashboard({ permissions, user, payload }: BeheerDashboardProps) {
+  // Beperkte accounts krijgen geen algemeen beheer-dashboard / Mijn Dag.
+  // Zij landen direct op de eerste pagina die hun beheerder heeft toegestaan.
+  // Voor het externe Sales-profiel is dat Sales -> Dashboard; Pipeline blijft
+  // vervolgens de enige andere zichtbare keuze in de navigatie.
+  if (user?.permissionMode === "restricted") {
+    const eersteToegestanePagina = getVisibleNavGroups(permissions, user)
+      .flatMap((groep) => [...groep.items, ...groep.mutedItems])
+      .at(0)?.href;
+
+    if (eersteToegestanePagina) redirect(eersteToegestanePagina);
+  }
+
   const naam = user?.name?.trim();
   const geselecteerdeHrefs = await getDashboardSelection(payload, user ?? null);
   const groepen = getSelectedDashboardCards(permissions, user ?? null, geselecteerdeHrefs);
