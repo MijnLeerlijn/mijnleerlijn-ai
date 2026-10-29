@@ -111,8 +111,8 @@ export function SalesNieuwDashboardView({ schakelaar }: { schakelaar: ReactNode 
     void laad();
   }, [laad]);
 
-  if (laden) return <Gutter className={s.root}>{schakelaar}<p>Laden…</p></Gutter>;
-  if (!data) return <Gutter className={s.root}>{schakelaar}<h1>Sales Dashboard</h1><p className={s.fout}>{fout ?? "Geen data beschikbaar."}</p></Gutter>;
+  if (laden) return <DashboardKader>{schakelaar}<p>Laden…</p></DashboardKader>;
+  if (!data) return <DashboardKader>{schakelaar}<h1>Sales Dashboard</h1><p className={s.fout}>{fout ?? "Geen data beschikbaar."}</p></DashboardKader>;
 
   return (
     <SalesNieuwDashboardInhoud
@@ -164,7 +164,7 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
   const [openPipeline, setOpenPipeline] = useState<string | null>(null);
 
   return (
-    <Gutter className={s.root}>
+    <DashboardKader>
       {schakelaar}
       <header className={s.header}>
         <div>
@@ -317,8 +317,12 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
           <BronDeel titel="Klanten" rijen={bronnen} eenheid={eenheid} veld="klanten" />
         </div>
       </section>
-    </Gutter>
+    </DashboardKader>
   );
+}
+
+function DashboardKader({ children }: { children: ReactNode }) {
+  return <Gutter><div className={s.root}>{children}</div></Gutter>;
 }
 
 function DoelBlok({ kaart, titel, eenheid, geselecteerd, leeg }: { kaart: DoelKaart | null; titel: string; eenheid: DashboardEenheid; geselecteerd: boolean; leeg: string }) {

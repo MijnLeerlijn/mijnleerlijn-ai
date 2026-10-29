@@ -1,5 +1,5 @@
-/* Volledige kolom naast het menu, zoals andere Payload-pagina's. De inset komt van gutter--left/right (--gutter-h); onderaan --spacing-view-bottom. */
-.root { width: 100%; max-width: 100%; margin-inline: auto; padding-top: 4px; padding-bottom: var(--spacing-view-bottom); box-sizing: border-box; }
+/* Payload heeft geen content-max-width, alleen breakpoints. 1360px ligt tussen 1280 en 1440. De padding eromheen blijft de Payload-gutter (--gutter-h). */
+.root { width: 100%; max-width: 1360px; margin-inline: auto; padding-top: 4px; padding-bottom: var(--spacing-view-bottom); box-sizing: border-box; }
 .bijgewerktRij { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .sync { border: 0; border-radius: 10px; padding: 11px 16px; background: var(--ml-admin-accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .sync:disabled { opacity: .55; cursor: default; }
