@@ -1,0 +1,106 @@
+.root { padding: 4px 0 48px; max-width: 1120px; }
+.header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 18px; }
+.header h1 { margin: 0 0 6px; font-size: 32px; color: var(--ml-admin-brand-donkerblauw, #002641); letter-spacing: -0.02em; }
+.sub, .toelichting, .uitleg { margin: 0; color: var(--theme-elevation-600, #475569); }
+.toelichting { margin-bottom: 14px; font-size: 14px; line-height: 1.45; }
+.controls { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.seg { display: inline-flex; background: #e8eef3; border-radius: 999px; padding: 4px; gap: 4px; }
+.prominent { background: var(--ml-admin-accent-soft, #e6f2fa); padding: 5px; }
+.seg button { border: 0; background: transparent; border-radius: 999px; padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; color: var(--ml-admin-brand-donkerblauw, #002641); cursor: pointer; }
+.prominent button { padding: 10px 22px; font-size: 16px; }
+.seg button.aan { background: var(--ml-admin-accent, #1588c9); color: #fff; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
+.card { background: var(--theme-elevation-0, #fff); border: 1px solid var(--theme-elevation-150, #e2e8f0); border-radius: var(--ml-admin-radius, 16px); box-shadow: var(--ml-admin-shadow, 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.06)); padding: 20px 22px; margin-bottom: 22px; }
+.kpi { margin: 0; min-height: 148px; display: flex; flex-direction: column; gap: 4px; padding: 18px 16px; }
+.kpi span { font-size: 13px; color: var(--theme-elevation-600, #475569); line-height: 1.35; }
+.kpi strong, .getal { font-size: 30px; line-height: 1.15; color: var(--ml-admin-brand-donkerblauw, #002641); letter-spacing: -0.02em; }
+.kpi small { color: var(--theme-elevation-600, #475569); font-size: 12.5px; line-height: 1.4; }
+.plus { color: #15803d; font-weight: 700; font-size: 13px; }
+.card h2 { margin: 0 0 4px; font-size: 18px; color: var(--ml-admin-brand-donkerblauw, #002641); }
+.uitleg { margin: 0 0 16px; font-size: 13.5px; line-height: 1.45; }
+.doelen { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.doel.aan { outline: 2px solid var(--ml-admin-accent, #1588c9); outline-offset: 8px; border-radius: 12px; }
+.doel h3 { margin: 0 0 2px; font-size: 16px; }
+.wanneer { margin: 0 0 12px; color: var(--theme-elevation-600, #475569); font-size: 13px; }
+.kop { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; margin-bottom: 8px; }
+.track { position: relative; height: 12px; background: #f1f5f9; border-radius: 99px; }
+.fill { display: block; height: 100%; border-radius: 99px; background: #22c55e; }
+.tempo { position: absolute; top: -5px; width: 2px; height: 22px; background: var(--ml-admin-brand-donkerblauw, #002641); border-radius: 2px; }
+.tempoLabel { margin: 10px 0 0; font-size: 13px; }
+.achter { color: #b42318; font-weight: 700; }
+.voor { color: #15803d; font-weight: 700; }
+.subkop { margin: 22px 0 8px; font-size: 16px; color: var(--ml-admin-brand-donkerblauw, #002641); }
+.maandKnop { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 700; color: inherit; cursor: pointer; text-align: left; }
+.detail td { background: #f8fafc; padding-top: 4px; padding-bottom: 12px; }
+.groep { margin: 8px 0 12px; }
+.groep h4 { margin: 0 0 4px; font-size: 13px; color: var(--theme-elevation-600, #475569); }
+.groep ul { list-style: none; margin: 0; padding: 0; }
+.groep li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--theme-elevation-150, #e2e8f0); font-size: 14px; }
+.bronnen { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.netto { position: relative; height: 160px; display: flex; align-items: stretch; gap: 8px; }
+.nul { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed #94a3b8; }
+.nettoOmhoog, .nettoOmlaag { position: absolute; left: 50%; width: 100%; max-width: 28px; transform: translateX(-50%); }
+.nettoOmhoog { bottom: 50%; background: var(--ml-admin-accent, #1588c9); border-radius: 4px 4px 0 0; }
+.nettoOmlaag { top: 50%; background: #b42318; border-radius: 0 0 4px 4px; }
+.grafiek { position: relative; height: 180px; display: flex; align-items: flex-end; gap: 8px; border-bottom: 1px solid var(--theme-elevation-150, #e2e8f0); margin-top: 8px; }
+.doellijn { position: absolute; left: 0; right: 0; border-top: 2px dashed #94a3b8; z-index: 1; }
+.doellijn span { position: absolute; right: 0; top: -18px; font-size: 12px; color: var(--theme-elevation-600, #475569); background: #fff; padding-left: 6px; }
+.kolom { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; z-index: 2; min-width: 0; }
+.kolom b { font-size: 11px; margin-bottom: 4px; color: var(--ml-admin-brand-donkerblauw, #002641); }
+.staaf { width: 100%; max-width: 42px; background: var(--ml-admin-accent, #1588c9); border-radius: 7px 7px 0 0; min-height: 2px; }
+.buiten .staaf { background: #9ecae6; }
+.nu .staaf { background: var(--ml-admin-accent-hover, #0f6b9e); }
+.labels { display: flex; gap: 8px; margin: 6px 0 16px; }
+.labels span { flex: 1; text-align: center; font-size: 11px; color: var(--theme-elevation-600, #475569); line-height: 1.25; }
+.scroll { overflow-x: auto; }
+.tabel { width: 100%; border-collapse: collapse; }
+.tabel th, .tabel td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--theme-elevation-150, #e2e8f0); font-size: 14px; }
+.tabel th { font-size: 12px; color: var(--theme-elevation-600, #475569); font-weight: 600; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.nu { background: var(--ml-admin-accent-soft, #e6f2fa); }
+.omhoog { color: #15803d; font-weight: 700; }
+.omlaag { color: #b42318; font-weight: 700; }
+.vlak { color: var(--theme-elevation-600, #475569); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.chips button { border: 1px solid #cbd5e1; background: #fff; color: var(--ml-admin-brand-donkerblauw, #002641); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.chips button.aan { background: var(--ml-admin-accent, #1588c9); border-color: var(--ml-admin-accent, #1588c9); color: #fff; font-weight: 700; }
+.stap { margin-bottom: 4px; }
+.stapKop { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; margin-bottom: 5px; }
+.punt { width: 9px; height: 9px; border-radius: 99px; display: inline-block; margin-right: 8px; }
+.lead { background: #3b82f6; }
+.prospect { background: #8b5cf6; }
+.wacht { background: #f59e0b; }
+.klant { background: #22c55e; }
+.balk { display: block; height: 10px; border-radius: 99px; }
+.door { margin: 2px 0 10px 18px; font-size: 12.5px; color: var(--theme-elevation-600, #475569); }
+.grijs { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--theme-elevation-150, #e2e8f0); display: flex; gap: 28px; flex-wrap: wrap; color: #64748b; font-size: 14px; }
+.half { display: flex; flex-direction: column; gap: 14px; }
+.halfRij { display: grid; grid-template-columns: 148px 1fr auto; gap: 12px; align-items: center; font-size: 14px; }
+.halfBalk { height: 12px; background: #f1f5f9; border-radius: 99px; overflow: hidden; }
+.halfBalk span { display: block; height: 100%; background: var(--ml-admin-accent, #1588c9); border-radius: 99px; }
+.lopend .halfBalk span { background: repeating-linear-gradient(90deg, var(--ml-admin-accent, #1588c9) 0 8px, #0f6b9e 8px 10px); }
+.badge { display: inline-block; margin-left: 6px; background: var(--ml-admin-accent-soft, #e6f2fa); color: var(--ml-admin-accent-hover, #0f6b9e); font-size: 11px; font-weight: 700; border-radius: 99px; padding: 2px 7px; }
+.fout { padding: 12px 14px; border-radius: 10px; background: #fff1f2; color: #9f1239; }
+.noot { margin: 8px 0 0; font-size: 12.5px; color: var(--theme-elevation-600, #475569); }
+@media (max-width: 900px) {
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .doelen { grid-template-columns: 1fr; gap: 22px; }
+  .bronnen { grid-template-columns: 1fr; }
+  .doel.aan { outline-offset: 4px; }
+}
+@media (max-width: 640px) {
+  .header { flex-direction: column; align-items: stretch; }
+  .controls { align-items: stretch; }
+  .seg, .prominent { display: flex; }
+  .seg button, .prominent button { flex: 1; padding: 10px 8px; font-size: 14px; }
+  .kpis { grid-template-columns: 1fr; }
+  .kpi { min-height: 0; }
+  .header h1 { font-size: 28px; }
+  .grafiek, .labels { gap: 3px; }
+  .labels span { font-size: 9px; }
+  .kolom b { display: none; }
+  .halfRij { grid-template-columns: 1fr auto; grid-template-areas: "lab val" "bar bar"; }
+  .halfRij > .maandKnop { grid-area: lab; }
+  .halfRij strong { grid-area: val; }
+  .halfBalk { grid-area: bar; }
+}

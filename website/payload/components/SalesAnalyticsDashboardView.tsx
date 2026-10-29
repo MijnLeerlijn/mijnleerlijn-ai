@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@payloadcms/ui";
@@ -7,7 +7,20 @@ import type { SalesDashboardData } from "@/lib/sales/dashboard-data";
 import type { SalesGoalProgress } from "@/lib/sales/goal-progress";
 import type { SalesPartnerSummary } from "@/lib/sales/partner-summary";
 import type { SalesCycleTimeSummary } from "@/lib/sales/cycle-time";
+import { SalesDashboardKeuze, type DashboardVariant } from "./SalesDashboardKeuze";
+import { SalesNieuwDashboardView } from "./SalesNieuwDashboardView";
+import { useQueryKeuze } from "./useQueryKeuze";
 import s from "./SalesAnalyticsDashboardView.module.css";
+
+const DASHBOARD_VARIANTEN = ["huidig", "nieuw"] as const;
+
+export function SalesAnalyticsDashboardView() {
+  const dashboard = useQueryKeuze<DashboardVariant>({ param: "dashboard", opslagSleutel: "ml-sales-dashboard-keuze", toegestaan: DASHBOARD_VARIANTEN, standaard: "huidig", schrijfUrlBijHerstel: true });
+  if (!dashboard.bekend) return <div className={s.root}><p>Laden…</p></div>;
+  const schakelaar = <SalesDashboardKeuze waarde={dashboard.waarde} onKies={dashboard.kies} />;
+  if (dashboard.waarde === "nieuw") return <SalesNieuwDashboardView schakelaar={schakelaar} />;
+  return <HuidigSalesDashboard schakelaar={schakelaar} />;
+}
 
 const getal = new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 0 });
 const decimaal = new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 1 });
@@ -55,7 +68,7 @@ function Partnerkaart({ partner }: { partner: SalesPartnerSummary }) {
   return <section className={s.panel}><h2>{partner.naam}</h2><p><strong>{getal.format(partner.klanten)}</strong> klanten · <strong>{getal.format(partner.licenties)}</strong> licenties</p><p>{getal.format(partner.leads)} leads · {getal.format(partner.prospects)} prospects · {getal.format(partner.wachtOpHandtekening)} wacht op handtekening</p><p>Conversie naar klant: <strong>{partner.conversieNaarKlant === null ? "—" : `${decimaal.format(partner.conversieNaarKlant)}%`}</strong></p>{partner.doelLicenties !== null && partner.doelPercentage !== null && <><div className={s.barHead}><span>{getal.format(partner.licenties)} / {getal.format(partner.doelLicenties)} licenties</span><strong>{decimaal.format(partner.doelPercentage)}%</strong></div><div className={s.track}><span className={s.bar_purple} style={{ width: `${Math.max(2, doelVoortgang ?? 0)}%` }} /></div></>}</section>;
 }
 
-export function SalesAnalyticsDashboardView() {
+function HuidigSalesDashboard({ schakelaar }: { schakelaar: ReactNode }) {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const trainingView = searchParams.get("view") === "trainingen";
@@ -94,11 +107,12 @@ export function SalesAnalyticsDashboardView() {
     finally { setSyncBezig(false); }
   }
 
-  if (laden) return <div className={s.root}><p>Laden…</p></div>;
-  if (!data) return <div className={s.root}><h1>Sales Dashboard</h1><p>{fout ?? "Geen data beschikbaar."}</p></div>;
+  if (laden) return <div className={s.root}>{schakelaar}<p>Laden…</p></div>;
+  if (!data) return <div className={s.root}>{schakelaar}<h1>Sales Dashboard</h1><p>{fout ?? "Geen data beschikbaar."}</p></div>;
   const upsellPercentage = data.trainingen && data.kpis.klanten > 0 ? (data.trainingen.scholenMetUpsell / data.kpis.klanten) * 100 : 0;
 
   return <div className={s.root}>
+    {schakelaar}
     <header className={s.header}><div><h1>{trainingView ? "Trainingen & upsell" : "Sales Dashboard"}</h1><p>{trainingView ? "Trainingen, planning en aanvullende verkoop bij bestaande klanten." : "Scholen, licenties, groei, pipeline en commerciële doelstellingen."}</p></div>{magBeheren && <button className={s.button} type="button" onClick={sync} disabled={syncBezig}>{syncBezig ? "Synchroniseren…" : "Sync met Monday"}</button>}</header>
     <nav className={s.footer} style={{ marginTop: 0, marginBottom: 22 }}><Link href="/admin/sales">Scholen & licenties</Link><Link href="/admin/sales?view=trainingen">Trainingen & upsell</Link></nav>
     {fout && <p className={s.error}>{fout}</p>}
