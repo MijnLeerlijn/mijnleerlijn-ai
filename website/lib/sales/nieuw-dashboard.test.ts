@@ -207,23 +207,89 @@ describe("nieuw dashboard — maandverschil en halfjaar", () => {
     expect(model.kwaliteitTekst).not.toContain("zonder maand");
   });
 
-  it("telt klant-geworden halfjaren alleen uit de Monday-kolom", () => {
+  it("telt de live Monday-labels 1e helft 2026 en 2e helft 2026", () => {
+    const h1 = [
+      ["Agora Kindcentrum JIJ", 60],
+      ["Dordtse Vrijeschool", 273],
+      ["De Lotus", 37],
+      ["Alphense Montessorischool", 217],
+      ["OBS de Gouwe", 26],
+      ["CBS Willem Alexander", 170],
+      ["De Regenboog Meidoornlaan (2)", 300],
+      ["Basisschool Sterrenpad 't Ven", 178],
+      ["Montessorischool de Basis", 150],
+      ["Montessorischool de Kraal", 75],
+    ] as const;
+    const h2 = [
+      ["Vrije School Schagen", 60],
+      ["De Abeel", 305],
+      ["Montessorikindcentrum Aan de Oosterplas", 374],
+      ["Montessorischool Beverwijk", 317],
+      ["Terrawijs", 40],
+    ] as const;
     const scholen = [
-      ...Array.from({ length: 10 }, (_, index) => school({ id: `h1-${index}`, naam: `H1 school ${index}`, licenties: 10 + index, klantGeworden: "H1 2026" })),
-      ...Array.from({ length: 5 }, (_, index) => school({ id: `h2-${index}`, naam: `H2 school ${index}`, licenties: 20, klantGeworden: "H2 2026" })),
-      school({ id: "leeg", naam: "Zonder datum", licenties: 999, klantGeworden: null }),
-      school({ id: "jaar", naam: "Alleen jaar", licenties: 50, klantGeworden: "2026" }),
-      school({ id: "oud", naam: "Vorig jaar", licenties: 40, klantGeworden: "H2 2025" }),
+      ...h1.map(([naam, licenties], index) => school({ id: `h1-${index}`, naam, licenties, relatiestatus: "Klant", klantGeworden: "1e helft 2026" })),
+      ...h2.map(([naam, licenties], index) => school({ id: `h2-${index}`, naam, licenties, relatiestatus: "Klant", klantGeworden: "2e helft 2026" })),
+      school({ id: "zeggelt", naam: "OMBS Het Zeggelt", licenties: 999, relatiestatus: "Wacht op handtekening", klantGeworden: "" }),
+      school({ id: "prospect", naam: "Prospect met label", licenties: 500, relatiestatus: "Prospect", klantGeworden: "1e helft 2026" }),
     ];
-    const historie = [overgang("leeg", "2026-02-01T12:00:00.000Z", "Lead", "Klant")];
-    const uitkomst = bouwNieuwDashboard({ scholen, historie, doelen: [], nu: NU, factor: 200 });
-    const h1 = uitkomst.halfjaren.find((half) => half.label === "H1 2026");
-    const h2 = uitkomst.halfjaren.find((half) => half.label === "H2 2026");
-    expect(h1?.nieuw.scholen).toBe(10);
-    expect(h2?.nieuw.scholen).toBe(5);
-    expect(h1?.nieuw.licenties).toBe(10 * 10 + (0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9));
-    expect(h2?.nieuw.licenties).toBe(100);
-    expect(uitkomst.halfjaren.some((half) => half.label === "H2 2025")).toBe(false);
+    const uitkomst = bouwNieuwDashboard({ scholen, historie: [], doelen: [], nu: NU, factor: 200 });
+    const eerste = uitkomst.halfjaren.find((half) => half.label === "H1 2026");
+    const tweede = uitkomst.halfjaren.find((half) => half.label === "H2 2026");
+    expect(eerste?.nieuw).toEqual({ scholen: 10, licenties: 1486 });
+    expect(tweede?.nieuw).toEqual({ scholen: 5, licenties: 1096 });
+    expect(eerste?.scholen).toHaveLength(10);
+    expect(eerste?.scholen.map((item) => item.naam)).toEqual([...h1.map(([naam]) => naam)].sort((a, b) => a.localeCompare(b, "nl")));
+    expect(eerste?.scholen.reduce((som, item) => som + item.licenties, 0)).toBe(1486);
+    expect(eerste?.scholen.find((item) => item.naam === "OBS de Gouwe")?.licenties).toBe(26);
+    expect(eerste?.scholen.some((item) => item.naam === "OMBS Het Zeggelt" || item.naam === "Prospect met label")).toBe(false);
+    expect(tweede?.scholen.map((item) => [item.naam, item.licenties])).toEqual([
+      ["De Abeel", 305],
+      ["Montessorikindcentrum Aan de Oosterplas", 374],
+      ["Montessorischool Beverwijk", 317],
+      ["Terrawijs", 40],
+      ["Vrije School Schagen", 60],
+    ]);
+  });
+
+  it("telt OMBS Het Zeggelt niet: statusindex zonder labeltekst en Wacht op handtekening", () => {
+    const uitkomst = bouwNieuwDashboard({
+      scholen: [
+        school({ id: "zeggelt", naam: "OMBS Het Zeggelt", licenties: 120, relatiestatus: "Wacht op handtekening", klantGeworden: "" }),
+        school({ id: "index", naam: "Index zonder tekst", licenties: 80, relatiestatus: "Wacht op handtekening", klantGeworden: null }),
+        school({ id: "wit", naam: "Alleen witruimte", licenties: 15, relatiestatus: "Klant", klantGeworden: "   " }),
+        school({ id: "klant", naam: "Wel een klant", licenties: 40, relatiestatus: "Klant", klantGeworden: "1e helft 2026" }),
+      ],
+      historie: [],
+      doelen: [],
+      nu: NU,
+      factor: 200,
+    });
+    const eerste = uitkomst.halfjaren.find((half) => half.label === "H1 2026");
+    expect(eerste?.nieuw).toEqual({ scholen: 1, licenties: 40 });
+    expect(eerste?.scholen.map((item) => item.naam)).toEqual(["Wel een klant"]);
+  });
+
+  it("telt een geldig label bij een prospect niet, en een gestopte klant wel", () => {
+    const uitkomst = bouwNieuwDashboard({
+      scholen: [
+        school({ id: "prospect", naam: "Prospect met label", licenties: 500, relatiestatus: "Prospect", klantGeworden: "1e helft 2026" }),
+        school({ id: "lead", naam: "Lead met alias", licenties: 40, relatiestatus: "Lead", klantGeworden: "H1 2026" }),
+        school({ id: "wacht", naam: "Wacht met label", licenties: 70, relatiestatus: "Wacht op handtekening", klantGeworden: "2e helft 2026" }),
+        school({ id: "gestopt", naam: "Gestopt met alias", licenties: 12, relatiestatus: "Gestopt", klantGeworden: "H1 2026" }),
+        school({ id: "inactief", naam: "Inactief met label", licenties: 8, relatiestatus: "Inactief", klantGeworden: "2e helft 2026" }),
+      ],
+      historie: [],
+      doelen: [],
+      nu: NU,
+      factor: 200,
+    });
+    const eerste = uitkomst.halfjaren.find((half) => half.label === "H1 2026");
+    const tweede = uitkomst.halfjaren.find((half) => half.label === "H2 2026");
+    expect(eerste?.nieuw).toEqual({ scholen: 1, licenties: 12 });
+    expect(eerste?.scholen.map((item) => item.naam)).toEqual(["Gestopt met alias"]);
+    expect(tweede?.nieuw).toEqual({ scholen: 1, licenties: 8 });
+    expect(tweede?.scholen.map((item) => item.naam)).toEqual(["Inactief met label"]);
   });
 
   it("kiest het halfjaar- en het jaardoel op de lengte van de periode", () => {
@@ -240,7 +306,11 @@ describe("labels, doorstroom en de dashboardkeuze", () => {
   it("herkent een halfjaarlabel en laat een los jaartal met rust", () => {
     expect(parseHalfjaarLabel("H2 2026")).toEqual({ half: 2, jaar: 2026 });
     expect(parseHalfjaarLabel("2025 H1")).toEqual({ half: 1, jaar: 2025 });
+    expect(parseHalfjaarLabel("1e helft 2026")).toEqual({ half: 1, jaar: 2026 });
+    expect(parseHalfjaarLabel("2e helft 2026")).toEqual({ half: 2, jaar: 2026 });
     expect(parseHalfjaarLabel("1e helft 2024")).toEqual({ half: 1, jaar: 2024 });
+    expect(parseHalfjaarLabel("   ")).toBeNull();
+    expect(parseHalfjaarLabel("")).toBeNull();
     expect(parseHalfjaarLabel("tweede halfjaar 2023")).toEqual({ half: 2, jaar: 2023 });
     expect(parseHalfjaarLabel("2024")).toEqual({ jaar: 2024, half: null });
     expect(parseHalfjaarLabel("Ja")).toBeNull();

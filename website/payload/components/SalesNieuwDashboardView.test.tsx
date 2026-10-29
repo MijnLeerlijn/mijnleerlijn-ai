@@ -47,6 +47,43 @@ describe("nieuw dashboard — weergave", () => {
     expect(screen.getByText("De Voorbeeldschool")).toBeInTheDocument();
   });
 
+  it("klapt een halfjaar open en toont de school met licenties", () => {
+    const data = bouwNieuwDashboard({
+      scholen: [
+        { id: "gouwe", relatiestatus: "Klant", licenties: 26, onderwijstypen: [], bronnen: [], klantGeworden: "1e helft 2026", naam: "OBS de Gouwe" },
+        { id: "abeel", relatiestatus: "Klant", licenties: 305, onderwijstypen: [], bronnen: [], klantGeworden: "2e helft 2026", naam: "De Abeel" },
+        { id: "zeggelt", relatiestatus: "Wacht op handtekening", licenties: 80, onderwijstypen: [], bronnen: [], klantGeworden: "", naam: "OMBS Het Zeggelt" },
+      ],
+      historie: [],
+      doelen: [],
+      nu: Date.parse("2026-10-29T12:00:00.000Z"),
+      factor: 200,
+      bijgewerktOp: "2026-10-29T08:00:00.000Z",
+    });
+    render(
+      <SalesNieuwDashboardInhoud
+        data={data}
+        schakelaar={<div>Huidig dashboard</div>}
+        eenheid="scholen"
+        periode="half"
+        onEenheid={vi.fn()}
+        onPeriode={vi.fn()}
+        typeFilter="Alle"
+        onType={vi.fn()}
+        fout={null}
+        openHalfjaar="H1 2026"
+      />,
+    );
+    expect(screen.getByRole("button", { name: "H1 2026" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("OBS de Gouwe")).toBeInTheDocument();
+    expect(screen.getByText("26 licenties")).toBeInTheDocument();
+    expect(screen.queryByText("OMBS Het Zeggelt")).not.toBeInTheDocument();
+    expect(screen.queryByText("De Abeel")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "H2 2026lopend" }));
+    expect(screen.getByText("De Abeel")).toBeInTheDocument();
+    expect(screen.getByText("305 licenties")).toBeInTheDocument();
+  });
+
   it("toont in de scholenstand het aantal scholen in plaats van de licenties", () => {
     toon("scholen");
     expect(screen.getByText("Scholen die klant zijn")).toBeInTheDocument();

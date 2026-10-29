@@ -105,7 +105,7 @@ export function SalesNieuwDashboardView({ schakelaar }: { schakelaar: ReactNode 
   );
 }
 
-export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, onEenheid, onPeriode, typeFilter, onType, fout, openKlantMaand = null }: {
+export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, onEenheid, onPeriode, typeFilter, onType, fout, openKlantMaand = null, openHalfjaar = null }: {
   data: NieuwDashboardModel;
   schakelaar: ReactNode;
   eenheid: DashboardEenheid;
@@ -116,6 +116,7 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
   onType: (naam: string) => void;
   fout: string | null;
   openKlantMaand?: string | null;
+  openHalfjaar?: string | null;
 }) {
   const licenties = eenheid === "licenties";
   const eenheidWoord = licenties ? "licenties" : "scholen";
@@ -266,8 +267,8 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
 
       <section className={s.card}>
         <h2>Klant geworden per halfjaar</h2>
-        <p className={s.uitleg}>Sinds 2026; scholen zonder bekende datum tellen niet mee.</p>
-        <Halfjaren rijen={data.halfjaren} eenheid={eenheid} />
+        <p className={s.uitleg}>Sinds 2026. Alleen een ingevuld halfjaarlabel telt, en alleen als de school geen lead, prospect of wacht op handtekening is. Een leeg label telt niet mee.</p>
+        <Halfjaren rijen={data.halfjaren} eenheid={eenheid} openLabel={openHalfjaar} />
       </section>
 
       <section className={s.card}>
@@ -456,17 +457,34 @@ function Matrix({ typen, eenheid, totaal, potentie }: { typen: TypeRij[]; eenhei
   );
 }
 
-function Halfjaren({ rijen, eenheid }: { rijen: NieuwDashboardModel["halfjaren"]; eenheid: DashboardEenheid }) {
+function Halfjaren({ rijen, eenheid, openLabel }: { rijen: NieuwDashboardModel["halfjaren"]; eenheid: DashboardEenheid; openLabel?: string | null }) {
+  const [open, setOpen] = useState<string | null>(openLabel ?? null);
   const max = Math.max(1, ...rijen.map((rij) => waarde(rij.nieuw, eenheid)));
   return (
     <div className={s.half}>
-      {rijen.map((rij) => (
-        <div key={rij.label} className={`${s.halfRij} ${rij.lopend ? s.lopend : ""}`}>
-          <span>{rij.label}{rij.lopend ? <span className={s.badge}>lopend</span> : null}</span>
-          <div className={s.halfBalk}><span style={{ width: `${Math.max(rij.nieuw.scholen + rij.nieuw.licenties === 0 ? 0 : 2, (waarde(rij.nieuw, eenheid) / max) * 100)}%` }} /></div>
-          <strong>{toon(rij.nieuw, eenheid)}</strong>
-        </div>
-      ))}
+      {rijen.map((rij) => {
+        const isOpen = open === rij.label;
+        return (
+          <div key={rij.label}>
+            <div className={`${s.halfRij} ${rij.lopend ? s.lopend : ""}`}>
+              <button type="button" className={s.maandKnop} aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : rij.label)}>
+                {rij.label}{rij.lopend ? <span className={s.badge}>lopend</span> : null}
+              </button>
+              <div className={s.halfBalk}><span style={{ width: `${Math.max(rij.nieuw.scholen + rij.nieuw.licenties === 0 ? 0 : 2, (waarde(rij.nieuw, eenheid) / max) * 100)}%` }} /></div>
+              <strong>{toon(rij.nieuw, eenheid)}</strong>
+            </div>
+            {isOpen ? (
+              <div className={s.groep}>
+                <ul>
+                  {rij.scholen.length === 0 ? <li>Geen scholen met een ingevuld halfjaar.</li> : rij.scholen.map((school) => (
+                    <li key={school.naam}><span>{school.naam}</span><strong>{n(school.licenties)} licenties</strong></li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

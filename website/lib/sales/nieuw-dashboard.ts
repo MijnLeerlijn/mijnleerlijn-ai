@@ -8,9 +8,11 @@ import { calculateSalesGoalProgress, type SalesGoalInput, type SalesGoalProgress
  * relatiestatus = funnel. Een cel met meerdere onderwijstypen of bronnen telt
  * één keer, onder "Meerdere", zodat totalen kloppen.
  *
- * Wanneer een school klant werd komt uit de statushistorie (eerste overgang
- * naar Klant). Zonder dat tijdstip telt de school niet mee in maanden of
- * halfjaren. Halfjaren lopen vanaf H1 2026. Het verschil met de live
+ * De maandstanden komen uit de statushistorie (eerste overgang naar Klant).
+ * Zonder dat tijdstip telt de school niet mee in de maanden. Het halfjaar
+ * komt alleen uit de Monday-kolom Klant geworden: een label als
+ * "1e helft 2026" of "H1 2026", vanaf 2026, en alleen als de school geen
+ * lead, prospect of wacht op handtekening is. Het verschil met de live
  * Monday-stand staat op een aparte correctieregel.
  */
 
@@ -100,12 +102,18 @@ export interface PipelineMaandRij {
   correctie: boolean;
 }
 
+export interface HalfjaarSchool {
+  naam: string;
+  licenties: number;
+}
+
 export interface HalfjaarRij {
   label: string;
   jaar: number;
   half: 1 | 2;
   nieuw: Maat;
   lopend: boolean;
+  scholen: HalfjaarSchool[];
 }
 
 export interface BronRij {
@@ -497,8 +505,8 @@ function tel(rij: Maat, licenties: number) {
 function kwaliteitTekst(zonderDatum: number, compleet: boolean): string {
   const delen: string[] = [];
   if (!compleet) delen.push("De statushistorie is zo lang dat niet alles is ingelezen.");
-  if (zonderDatum === 1) delen.push("1 huidige klant heeft geen klant-datum en telt niet mee in de maanden of halfjaren.");
-  else if (zonderDatum > 1) delen.push(`${zonderDatum} huidige klanten hebben geen klant-datum en tellen niet mee in de maanden of halfjaren.`);
+  if (zonderDatum === 1) delen.push("1 huidige klant heeft geen klant-datum in de historie en telt daardoor niet mee in de maanden.");
+  else if (zonderDatum > 1) delen.push(`${zonderDatum} huidige klanten hebben geen klant-datum in de historie en tellen daardoor niet mee in de maanden.`);
   if (zonderDatum > 0) delen.push("Het verschil met de Monday-stand staat op de regel Correctie / onbekend.");
   return delen.join(" ");
 }
@@ -834,12 +842,17 @@ export function bouwNieuwDashboard(input: {
 
   const halfjaren: HalfjaarRij[] = halvesSinds2026(input.nu).map((half) => {
     const nieuw = maat();
+    const scholen: HalfjaarSchool[] = [];
     for (const school of input.scholen) {
+      if (isPipelineStatus(canonStatus(school.relatiestatus))) continue;
       const kolom = parseHalfjaarLabel(school.klantGeworden);
       if (!kolom || kolom.half == null || kolom.jaar !== half.jaar || kolom.half !== half.half || kolom.jaar < 2026) continue;
-      tel(nieuw, Number.isFinite(school.licenties) ? school.licenties : 0);
+      const licenties = Number.isFinite(school.licenties) ? school.licenties : 0;
+      tel(nieuw, licenties);
+      scholen.push({ naam: school.naam?.trim() || school.id, licenties });
     }
-    return { ...half, nieuw };
+    scholen.sort((a, b) => a.naam.localeCompare(b.naam, "nl"));
+    return { ...half, nieuw, scholen };
   });
 
   const wins = [...tijden.entries()]
