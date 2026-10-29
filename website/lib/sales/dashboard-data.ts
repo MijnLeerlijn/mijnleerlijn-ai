@@ -86,7 +86,7 @@ function maandReeks(map: Map<string, number>): DashboardReeksPunt[] {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([sleutel, waarde]) => ({ label: maandLabelVanSleutel(sleutel), waarde }));
 }
-async function haalScholen(): Promise<MondaySchoolItem[]> {
+export async function haalScholenVoorDashboard(): Promise<MondaySchoolItem[]> {
   const alle: MondaySchoolItem[] = []; let cursor: string | null = null;
   do {
     const page = await haalScholenPagina({ boardId: SCHOLEN_BOARD_ID, columnIds: [SCHOLEN_KOLOM.relatiestatus, SCHOLEN_KOLOM.salesfase, SCHOLEN_KOLOM.aantalLeerlingen, SCHOLEN_KOLOM.typeSchool, SCHOLEN_KOLOM.klantGeworden, SCHOLEN_KOLOM.binnengekomenVia, SCHOLEN_KOLOM.whitelabel], limit: 100, cursor });
@@ -175,7 +175,7 @@ async function haalPartnerSamenvattingen(payload: Payload, scholen: SalesPartner
 }
 
 export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDashboardData> {
-  const scholen = await haalScholen();
+  const scholen = await haalScholenVoorDashboard();
   const funnel = new Map<string, number>(); const pipelineLicentiesPerFase = new Map<string, number>();
   const klantenGeworden = new Map<string, number>(); const klantenPerOnderwijstype = new Map<string, number>(); const licentiesPerOnderwijstype = new Map<string, number>();
   const klantenPerBron = new Map<string, number>(); const licentiesPerBron = new Map<string, number>();

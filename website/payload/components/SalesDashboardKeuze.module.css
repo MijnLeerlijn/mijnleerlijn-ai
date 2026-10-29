@@ -1,0 +1,27 @@
+.keuze {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 18px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #e8eef3;
+}
+.keuze button {
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ml-admin-brand-donkerblauw, #002641);
+  cursor: pointer;
+}
+.keuze button.aan {
+  background: var(--ml-admin-accent, #1588c9);
+  color: #fff;
+}
+@media (max-width: 640px) {
+  .keuze { display: flex; }
+  .keuze button { flex: 1; padding: 10px 8px; }
+}
