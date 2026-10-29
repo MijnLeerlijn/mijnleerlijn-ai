@@ -1,4 +1,10 @@
-.root { padding: 4px 0 48px; max-width: 1120px; }
+/* Payload heeft geen content-max-width, alleen breakpoints. 1360px ligt tussen 1280 en 1440. De padding eromheen blijft de Payload-gutter (--gutter-h). */
+.root { width: 100%; max-width: 1360px; margin-inline: auto; padding-top: 4px; padding-bottom: var(--spacing-view-bottom); box-sizing: border-box; }
+.bijgewerktRij { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.sync { border: 0; border-radius: 10px; padding: 11px 16px; background: var(--ml-admin-accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.sync:disabled { opacity: .55; cursor: default; }
+.spinner { display: inline-block; width: .85em; height: .85em; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -0.1em; animation: syncDraai .7s linear infinite; }
+@keyframes syncDraai { to { transform: rotate(360deg); } }
 .header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 18px; }
 .header h1 { margin: 0 0 6px; font-size: 32px; color: var(--ml-admin-brand-donkerblauw, #002641); letter-spacing: -0.02em; }
 .sub, .toelichting, .uitleg { margin: 0; color: var(--theme-elevation-600, #475569); }
