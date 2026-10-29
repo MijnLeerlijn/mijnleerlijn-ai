@@ -403,6 +403,25 @@ describe("structureerVerslag", () => {
     expect(verslag?.definitieveTekst ?? null).toBeNull();
   });
 
+  it("structureert vóór de eerste autosave: maakt één concept, bewaart de aantekeningen ook als de AI mislukt, en maakt bij een tweede poging geen tweede rij", async () => {
+    const { payload } = maakFakePayload({});
+    mockGenerateStructuredOutput.mockRejectedValue(new Error("You exceeded your current quota"));
+
+    const eerste = await structureerVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, "Notities die nog nergens stonden");
+
+    expect(eerste.soort).toBe("mislukt");
+    const verslag = await haalVerslagVoorTraining(payload, TRAINER, CENTRALE_TRAINING_ID);
+    expect(verslag?.status).toBe("concept");
+    expect(verslag?.trainerInvoer).toBe("Notities die nog nergens stonden");
+    expect(verslag?.definitieveTekst ?? null).toBeNull();
+
+    const tweede = await structureerVerslag(payload, TRAINER, CENTRALE_TRAINING_ID, "Notities die nog nergens stonden, aangevuld");
+    expect(tweede.soort).toBe("mislukt");
+    const alle = await haalVerslagenPerTraining(payload, TRAINER, [CENTRALE_TRAINING_ID]);
+    expect(alle.size).toBe(1);
+    expect(alle.get(CENTRALE_TRAINING_ID)?.trainerInvoer).toBe("Notities die nog nergens stonden, aangevuld");
+  });
+
   it("na bevestiging is opnieuw structureren niet meer mogelijk, geen AI-aanroep", async () => {
     const { payload } = maakFakePayload({
       "training-verslagen": [

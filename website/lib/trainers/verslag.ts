@@ -243,8 +243,14 @@ export async function structureerVerslag(
   trainerInvoer: string
 ): Promise<VerslagStructureerUitkomst> {
   trainingId = genormaliseerTrainingId(trainingId);
-  const rij = await haalVerslagVoorTraining(payload, trainer, trainingId);
-  if (!rij) return { soort: "niet_gevonden" };
+  // Bewaar de aantekeningen vóór de AI-aanroep. Zonder bestaande conceptrij
+  // (de autosave wacht 1,2s) maakte structureren voorheen niets aan en
+  // antwoordde "niet gevonden". upsertConcept vindt-of-maakt precies één rij
+  // per trainer+training en overschrijft een al bevestigd verslag niet.
+  const bewaard = await upsertConcept(payload, trainer, trainingId, { trainerInvoer });
+  if (bewaard.soort === "niet_gevonden") return { soort: "niet_gevonden" };
+  if (bewaard.soort === "niet_bewerkbaar") return { soort: "niet_bewerkbaar", boodschap: bewaard.boodschap };
+  const rij = bewaard.verslag;
   if (rij.status !== "concept") {
     return { soort: "niet_bewerkbaar", boodschap: "Dit verslag is al bevestigd — AI-structurering is alleen mogelijk vóór definitief opslaan." };
   }
