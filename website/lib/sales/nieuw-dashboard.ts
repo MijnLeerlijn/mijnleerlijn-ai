@@ -31,6 +31,7 @@ export interface NieuwDashboardSchool {
   klantGeworden: string | null;
   /** Monday item created_at. Alleen gebruikt als er geen statushistorie is. */
   aangemaaktOp?: string | null;
+  naam?: string | null;
 }
 
 export interface NieuwDashboardHistorie {
@@ -63,6 +64,12 @@ export interface TypeRij {
   potentie: Maat;
 }
 
+export interface SchoolRegel {
+  naam: string;
+  scholen: number;
+  licenties: number;
+}
+
 export interface MaandRij {
   sleutel: string;
   label: string;
@@ -72,6 +79,8 @@ export interface MaandRij {
   eraf: Maat;
   netto: Maat;
   eindstand: Maat;
+  erbijScholen: SchoolRegel[];
+  erafScholen: SchoolRegel[];
   isNu: boolean;
   correctie: boolean;
 }
@@ -84,6 +93,9 @@ export interface PipelineMaandRij {
   afgevallen: Maat;
   netto: Maat;
   eindstand: Maat;
+  nieuwScholen: SchoolRegel[];
+  klantGewordenScholen: SchoolRegel[];
+  afgevallenScholen: SchoolRegel[];
   isNu: boolean;
   correctie: boolean;
 }
@@ -503,15 +515,17 @@ interface Stam {
   niveau: number | null;
 }
 
-interface KlantStroom { erbij: Maat; eraf: Maat }
-interface PipelineStroom { nieuw: Maat; klantGeworden: Maat; afgevallen: Maat }
+interface KlantStroom { erbij: Maat; eraf: Maat; erbijScholen: SchoolRegel[]; erafScholen: SchoolRegel[] }
+interface PipelineStroom { nieuw: Maat; klantGeworden: Maat; afgevallen: Maat; nieuwScholen: SchoolRegel[]; klantGewordenScholen: SchoolRegel[]; afgevallenScholen: SchoolRegel[] }
 
-function legeKlantStroom(): KlantStroom { return { erbij: maat(), eraf: maat() }; }
-function legePipelineStroom(): PipelineStroom { return { nieuw: maat(), klantGeworden: maat(), afgevallen: maat() }; }
+function legeKlantStroom(): KlantStroom { return { erbij: maat(), eraf: maat(), erbijScholen: [], erafScholen: [] }; }
+function legePipelineStroom(): PipelineStroom { return { nieuw: maat(), klantGeworden: maat(), afgevallen: maat(), nieuwScholen: [], klantGewordenScholen: [], afgevallenScholen: [] }; }
 
-function telOp(doel: Maat, scholen: number, licenties: number) {
+function telOp(doel: Maat, scholen: number, licenties: number, lijst?: SchoolRegel[], naam?: string) {
+  if (scholen === 0 && licenties === 0) return;
   doel.scholen += scholen;
   doel.licenties += licenties;
+  if (lijst && naam) lijst.push({ naam, scholen, licenties });
 }
 
 interface Gebeurtenis {
@@ -557,19 +571,19 @@ function niveauVoor(events: Gebeurtenis[], op: number, fallback: number): number
   return fallback;
 }
 
-function pasLicentieToe(staat: Stam, van: number | null, naar: number | null, klant: KlantStroom, pipeline: PipelineStroom) {
+function pasLicentieToe(staat: Stam, van: number | null, naar: number | null, klant: KlantStroom, pipeline: PipelineStroom, naam: string) {
   const basis = van ?? staat.niveau;
   if (naar != null && basis != null) {
     const delta = naar - basis;
-    if (staat.klant && delta > 0) telOp(klant.erbij, 0, delta);
-    if (staat.klant && delta < 0) telOp(klant.eraf, 0, -delta);
-    if (staat.pipeline && delta > 0) telOp(pipeline.nieuw, 0, delta);
-    if (staat.pipeline && delta < 0) telOp(pipeline.afgevallen, 0, -delta);
+    if (staat.klant && delta > 0) telOp(klant.erbij, 0, delta, klant.erbijScholen, naam);
+    if (staat.klant && delta < 0) telOp(klant.eraf, 0, -delta, klant.erafScholen, naam);
+    if (staat.pipeline && delta > 0) telOp(pipeline.nieuw, 0, delta, pipeline.nieuwScholen, naam);
+    if (staat.pipeline && delta < 0) telOp(pipeline.afgevallen, 0, -delta, pipeline.afgevallenScholen, naam);
   }
   if (naar != null) staat.niveau = naar;
 }
 
-function pasStatusToe(staat: Stam, van: Canon | null, naar: Canon, niveau: number, klant: KlantStroom, pipeline: PipelineStroom, dun: { waarde: boolean }) {
+function pasStatusToe(staat: Stam, van: Canon | null, naar: Canon, niveau: number, klant: KlantStroom, pipeline: PipelineStroom, dun: { waarde: boolean }, naam: string) {
   if (staat.niveau == null) staat.niveau = niveau;
   const niveauNu = staat.niveau ?? niveau;
   const vanPipeline = staat.pipeline;
@@ -577,26 +591,26 @@ function pasStatusToe(staat: Stam, van: Canon | null, naar: Canon, niveau: numbe
   if (!vanPipeline && van && isPipelineStatus(van)) dun.waarde = true;
 
   if (isPipelineStatus(naar)) {
-    if (!vanPipeline) telOp(pipeline.nieuw, 1, niveauNu);
+    if (!vanPipeline) telOp(pipeline.nieuw, 1, niveauNu, pipeline.nieuwScholen, naam);
     staat.pipeline = true;
     if (vanKlant) {
-      telOp(klant.eraf, 1, niveauNu);
+      telOp(klant.eraf, 1, niveauNu, klant.erafScholen, naam);
       staat.klant = false;
     }
     return;
   }
   if (naar === "Klant") {
-    if (!vanKlant) telOp(klant.erbij, 1, niveauNu);
+    if (!vanKlant) telOp(klant.erbij, 1, niveauNu, klant.erbijScholen, naam);
     staat.klant = true;
     if (vanPipeline) {
-      telOp(pipeline.klantGeworden, 1, niveauNu);
+      telOp(pipeline.klantGeworden, 1, niveauNu, pipeline.klantGewordenScholen, naam);
       staat.pipeline = false;
     }
     return;
   }
-  if (vanPipeline) telOp(pipeline.afgevallen, 1, niveauNu);
+  if (vanPipeline) telOp(pipeline.afgevallen, 1, niveauNu, pipeline.afgevallenScholen, naam);
   staat.pipeline = false;
-  if (vanKlant) telOp(klant.eraf, 1, niveauNu);
+  if (vanKlant) telOp(klant.eraf, 1, niveauNu, klant.erafScholen, naam);
   staat.klant = false;
 }
 
@@ -661,6 +675,7 @@ export function bouwNieuwDashboard(input: {
   let klantBegin = maat();
   let pipelineBegin = maat();
   let pipelineHistorieDun = false;
+  const eindToestand = new Map<string, Stam>();
 
   for (const school of input.scholen) {
     const events = gebeurtenissenVan(school, input.historie).filter((event) => event.op <= input.nu);
@@ -668,11 +683,11 @@ export function bouwNieuwDashboard(input: {
     const dun = { waarde: false };
     const pasToe = (staat: Stam, event: Gebeurtenis, klantStroom: KlantStroom, pipelineStroom: PipelineStroom) => {
       if (event.soort === "licentie") {
-        pasLicentieToe(staat, event.vanLicentie, event.naarLicentie, klantStroom, pipelineStroom);
+        pasLicentieToe(staat, event.vanLicentie, event.naarLicentie, klantStroom, pipelineStroom, school.naam?.trim() || school.id);
         return;
       }
       if (!event.naarStatus) return;
-      pasStatusToe(staat, event.vanStatus, event.naarStatus, niveauVoor(events, event.op, school.licenties), klantStroom, pipelineStroom, dun);
+      pasStatusToe(staat, event.vanStatus, event.naarStatus, niveauVoor(events, event.op, school.licenties), klantStroom, pipelineStroom, dun, school.naam?.trim() || school.id);
     };
     for (const event of events) {
       if (event.op >= vensterStart) break;
@@ -694,6 +709,7 @@ export function bouwNieuwDashboard(input: {
       pasToe(staat, event, klantStroom, pipelineStroom);
     }
     if (dun.waarde) pipelineHistorieDun = true;
+    eindToestand.set(school.id, staat);
   }
 
   const huidigeSleutel = maandSleutel(input.nu);
@@ -713,11 +729,41 @@ export function bouwNieuwDashboard(input: {
       eraf: stroom.eraf,
       netto,
       eindstand: { ...klantStand },
+      erbijScholen: stroom.erbijScholen,
+      erafScholen: stroom.erafScholen,
       isNu: sleutel === huidigeSleutel,
       correctie: false,
     };
   });
   const klantGap = minMaat(klanten, klantStand);
+  const correctieErbij: SchoolRegel[] = [];
+  const correctieEraf: SchoolRegel[] = [];
+  const correctieNieuw: SchoolRegel[] = [];
+  const correctieKlant: SchoolRegel[] = [];
+  const correctieAfgevallen: SchoolRegel[] = [];
+  for (const school of input.scholen) {
+    const staat = eindToestand.get(school.id) ?? { klant: false, pipeline: false, niveau: null };
+    const naam = school.naam?.trim() || school.id;
+    const status = canonStatus(school.relatiestatus);
+    const liveKlant = status === "Klant";
+    const livePipeline = isPipelineStatus(status);
+    const historisch = staat.niveau ?? 0;
+    if (liveKlant && !staat.klant) telOp(maat(), 1, school.licenties, correctieErbij, naam);
+    else if (!liveKlant && staat.klant) telOp(maat(), 1, historisch, correctieEraf, naam);
+    else if (liveKlant && staat.klant && school.licenties !== historisch) {
+      const delta = school.licenties - historisch;
+      if (delta > 0) telOp(maat(), 0, delta, correctieErbij, naam);
+      else telOp(maat(), 0, -delta, correctieEraf, naam);
+    }
+    if (livePipeline && !staat.pipeline) telOp(maat(), 1, school.licenties, correctieNieuw, naam);
+    else if (!livePipeline && staat.pipeline && liveKlant) telOp(maat(), 1, historisch, correctieKlant, naam);
+    else if (!livePipeline && staat.pipeline) telOp(maat(), 1, historisch, correctieAfgevallen, naam);
+    else if (livePipeline && staat.pipeline && school.licenties !== historisch) {
+      const delta = school.licenties - historisch;
+      if (delta > 0) telOp(maat(), 0, delta, correctieNieuw, naam);
+      else telOp(maat(), 0, -delta, correctieAfgevallen, naam);
+    }
+  }
   if (klantGap.scholen !== 0 || klantGap.licenties !== 0) {
     maanden.push({
       sleutel: "correctie",
@@ -728,6 +774,8 @@ export function bouwNieuwDashboard(input: {
       eraf: maat(Math.max(0, -klantGap.scholen), Math.max(0, -klantGap.licenties)),
       netto: klantGap,
       eindstand: { ...klanten },
+      erbijScholen: correctieErbij,
+      erafScholen: correctieEraf,
       isNu: false,
       correctie: true,
     });
@@ -745,6 +793,9 @@ export function bouwNieuwDashboard(input: {
       afgevallen: stroom.afgevallen,
       netto,
       eindstand: { ...pipelineStand },
+      nieuwScholen: stroom.nieuwScholen,
+      klantGewordenScholen: stroom.klantGewordenScholen,
+      afgevallenScholen: stroom.afgevallenScholen,
       isNu: sleutel === huidigeSleutel,
       correctie: false,
     };
@@ -759,6 +810,9 @@ export function bouwNieuwDashboard(input: {
       afgevallen: maat(Math.max(0, -pipelineGap.scholen), Math.max(0, -pipelineGap.licenties)),
       netto: pipelineGap,
       eindstand: { ...pipeline },
+      nieuwScholen: correctieNieuw,
+      klantGewordenScholen: correctieKlant,
+      afgevallenScholen: correctieAfgevallen,
       isNu: false,
       correctie: true,
     });
@@ -779,9 +833,13 @@ export function bouwNieuwDashboard(input: {
   };
 
   const halfjaren: HalfjaarRij[] = halvesSinds2026(input.nu).map((half) => {
-    const start = half.half === 1 ? middernachtAmsterdam(half.jaar, 1, 1) : middernachtAmsterdam(half.jaar, 7, 1);
-    const eind = half.half === 1 ? middernachtAmsterdam(half.jaar, 7, 1) - 1 : middernachtAmsterdam(half.jaar + 1, 1, 1) - 1;
-    return { ...half, nieuw: nieuwIn(start, eind) };
+    const nieuw = maat();
+    for (const school of input.scholen) {
+      const kolom = parseHalfjaarLabel(school.klantGeworden);
+      if (!kolom || kolom.half == null || kolom.jaar !== half.jaar || kolom.half !== half.half || kolom.jaar < 2026) continue;
+      tel(nieuw, Number.isFinite(school.licenties) ? school.licenties : 0);
+    }
+    return { ...half, nieuw };
   });
 
   const wins = [...tijden.entries()]

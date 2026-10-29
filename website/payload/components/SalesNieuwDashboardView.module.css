@@ -30,7 +30,12 @@
 .achter { color: #b42318; font-weight: 700; }
 .voor { color: #15803d; font-weight: 700; }
 .subkop { margin: 22px 0 8px; font-size: 16px; color: var(--ml-admin-brand-donkerblauw, #002641); }
-.correctie { background: #fff7ed; }
+.maandKnop { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 700; color: inherit; cursor: pointer; text-align: left; }
+.detail td { background: #f8fafc; padding-top: 4px; padding-bottom: 12px; }
+.groep { margin: 8px 0 12px; }
+.groep h4 { margin: 0 0 4px; font-size: 13px; color: var(--theme-elevation-600, #475569); }
+.groep ul { list-style: none; margin: 0; padding: 0; }
+.groep li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--theme-elevation-150, #e2e8f0); font-size: 14px; }
 .bronnen { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 .netto { position: relative; height: 160px; display: flex; align-items: stretch; gap: 8px; }
 .nul { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed #94a3b8; }

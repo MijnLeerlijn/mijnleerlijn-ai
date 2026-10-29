@@ -1,11 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { bouwNieuwDashboard, type NieuwDashboardSchool } from "@/lib/sales/nieuw-dashboard";
 import { SCHOLEN_KOLOM } from "@/lib/sales/monday-columns";
 import { SalesNieuwDashboardInhoud } from "./SalesNieuwDashboardView";
 
 const scholen: NieuwDashboardSchool[] = [
-  { id: "a", relatiestatus: "Klant", licenties: 100, onderwijstypen: ["Montessori"], bronnen: ["Direct"], klantGeworden: null },
+  { id: "a", relatiestatus: "Klant", licenties: 100, onderwijstypen: ["Montessori"], bronnen: ["Direct"], klantGeworden: null, naam: "De Voorbeeldschool" },
   { id: "b", relatiestatus: "Lead", licenties: 40, onderwijstypen: ["Dalton"], bronnen: ["Website"], klantGeworden: null },
 ];
 
@@ -43,6 +43,8 @@ describe("nieuw dashboard — weergave", () => {
     expect(screen.getByText("+100 deze maand")).toBeInTheDocument();
     expect(screen.getByText("Erbij")).toBeInTheDocument();
     expect(screen.getByText("Pipeline per maand")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /okt.? 2026/i })[0]!);
+    expect(screen.getByText("De Voorbeeldschool")).toBeInTheDocument();
   });
 
   it("toont in de scholenstand het aantal scholen in plaats van de licenties", () => {

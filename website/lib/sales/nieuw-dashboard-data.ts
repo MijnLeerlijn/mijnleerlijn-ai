@@ -42,6 +42,7 @@ function naarSchool(item: MondaySchoolItem): NieuwDashboardSchool {
     bronnen: splitsLabels(tekst(item, SCHOLEN_KOLOM.binnengekomenVia)),
     klantGeworden: tekst(item, SCHOLEN_KOLOM.klantGeworden),
     aangemaaktOp: item.created_at ?? null,
+    naam: item.name,
   };
 }
 

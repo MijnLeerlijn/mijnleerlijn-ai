@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode, Fragment } from "react";
 import {
   aandelen,
   doorstroom,
@@ -105,7 +105,7 @@ export function SalesNieuwDashboardView({ schakelaar }: { schakelaar: ReactNode 
   );
 }
 
-export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, onEenheid, onPeriode, typeFilter, onType, fout }: {
+export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, onEenheid, onPeriode, typeFilter, onType, fout, openKlantMaand = null }: {
   data: NieuwDashboardModel;
   schakelaar: ReactNode;
   eenheid: DashboardEenheid;
@@ -115,6 +115,7 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
   typeFilter: string;
   onType: (naam: string) => void;
   fout: string | null;
+  openKlantMaand?: string | null;
 }) {
   const licenties = eenheid === "licenties";
   const eenheidWoord = licenties ? "licenties" : "scholen";
@@ -128,6 +129,8 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
   const typen = [...data.typen].sort((a, b) => rang(a.naam) - rang(b.naam) || waarde(b.klant, eenheid) - waarde(a.klant, eenheid) || a.naam.localeCompare(b.naam, "nl"));
   const bronnen = [...data.bronnen].sort((a, b) => rang(a.naam) - rang(b.naam) || waarde(b.klanten, eenheid) - waarde(a.klanten, eenheid) || a.naam.localeCompare(b.naam, "nl"));
   const gemNieuw = nieuw.scholen > 0 ? Math.round(nieuw.licenties / nieuw.scholen) : null;
+  const [openKlant, setOpenKlant] = useState<string | null>(openKlantMaand);
+  const [openPipeline, setOpenPipeline] = useState<string | null>(null);
 
   return (
     <div className={s.root}>
@@ -198,15 +201,21 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
           <table className={s.tabel}>
             <thead><tr><th>Maand</th><th className={s.num}>Erbij</th><th className={s.num}>Eraf</th><th className={s.num}>Netto</th><th className={s.num}>Totaal eind van de maand</th></tr></thead>
             <tbody>
-              {data.maanden.map((maand) => (
-                <tr key={maand.sleutel} className={maand.correctie ? s.correctie : maand.isNu ? s.nu : undefined}>
-                  <td>{maand.label}{maand.isNu ? <span className={s.badge}>nu</span> : null}</td>
-                  <td className={s.num}>{toon(maand.erbij, eenheid)}</td>
-                  <td className={s.num}>{toon(maand.eraf, eenheid)}</td>
-                  <td className={s.num}><Verschil van={waarde(maand.netto, eenheid)} /></td>
-                  <td className={s.num}>{toon(maand.eindstand, eenheid)}</td>
-                </tr>
-              ))}
+              {data.maanden.map((maand) => {
+                const open = openKlant === maand.sleutel;
+                return (
+                  <Fragment key={maand.sleutel}>
+                    <tr className={maand.correctie ? s.correctie : maand.isNu ? s.nu : undefined}>
+                      <td><button type="button" className={s.maandKnop} aria-expanded={open} onClick={() => setOpenKlant(open ? null : maand.sleutel)}>{maand.label}{maand.isNu ? <span className={s.badge}>nu</span> : null}</button></td>
+                      <td className={s.num}>{toon(maand.erbij, eenheid)}</td>
+                      <td className={s.num}>{toon(maand.eraf, eenheid)}</td>
+                      <td className={s.num}><Verschil van={waarde(maand.netto, eenheid)} /></td>
+                      <td className={s.num}>{toon(maand.eindstand, eenheid)}</td>
+                    </tr>
+                    {open ? <tr className={s.detail}><td colSpan={5}><SchoolGroep titel="Erbij" regels={maand.erbijScholen} eenheid={eenheid} /><SchoolGroep titel="Eraf" regels={maand.erafScholen} eenheid={eenheid} />{maand.erbijScholen.length + maand.erafScholen.length === 0 ? <p className={s.uitleg}>Geen scholen in deze maand.</p> : null}</td></tr> : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -218,16 +227,22 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
           <table className={s.tabel}>
             <thead><tr><th>Maand</th><th className={s.num}>Nieuw in pipeline</th><th className={s.num}>Klant geworden</th><th className={s.num}>Afgevallen</th><th className={s.num}>Netto</th><th className={s.num}>In pipeline eind van de maand</th></tr></thead>
             <tbody>
-              {data.pipelineMaanden.map((maand) => (
-                <tr key={maand.sleutel} className={maand.correctie ? s.correctie : maand.isNu ? s.nu : undefined}>
-                  <td>{maand.label}{maand.isNu ? <span className={s.badge}>nu</span> : null}</td>
-                  <td className={s.num}>{toon(maand.nieuw, eenheid)}</td>
-                  <td className={s.num}>{toon(maand.klantGeworden, eenheid)}</td>
-                  <td className={s.num}>{toon(maand.afgevallen, eenheid)}</td>
-                  <td className={s.num}><Verschil van={waarde(maand.netto, eenheid)} /></td>
-                  <td className={s.num}>{toon(maand.eindstand, eenheid)}</td>
-                </tr>
-              ))}
+              {data.pipelineMaanden.map((maand) => {
+                const open = openPipeline === maand.sleutel;
+                return (
+                  <Fragment key={maand.sleutel}>
+                    <tr className={maand.correctie ? s.correctie : maand.isNu ? s.nu : undefined}>
+                      <td><button type="button" className={s.maandKnop} aria-expanded={open} onClick={() => setOpenPipeline(open ? null : maand.sleutel)}>{maand.label}{maand.isNu ? <span className={s.badge}>nu</span> : null}</button></td>
+                      <td className={s.num}>{toon(maand.nieuw, eenheid)}</td>
+                      <td className={s.num}>{toon(maand.klantGeworden, eenheid)}</td>
+                      <td className={s.num}>{toon(maand.afgevallen, eenheid)}</td>
+                      <td className={s.num}><Verschil van={waarde(maand.netto, eenheid)} /></td>
+                      <td className={s.num}>{toon(maand.eindstand, eenheid)}</td>
+                    </tr>
+                    {open ? <tr className={s.detail}><td colSpan={6}><SchoolGroep titel="Nieuw in pipeline" regels={maand.nieuwScholen} eenheid={eenheid} /><SchoolGroep titel="Klant geworden" regels={maand.klantGewordenScholen} eenheid={eenheid} /><SchoolGroep titel="Afgevallen" regels={maand.afgevallenScholen} eenheid={eenheid} />{maand.nieuwScholen.length + maand.klantGewordenScholen.length + maand.afgevallenScholen.length === 0 ? <p className={s.uitleg}>Geen scholen in deze maand.</p> : null}</td></tr> : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -290,6 +305,23 @@ function DoelBlok({ kaart, titel, eenheid, geselecteerd, leeg }: { kaart: DoelKa
       <p className={tempoKlasse(verschil)}>{tempoTekst(verschil, woord)}</p>
       <p className={s.uitleg}>{precies.format(kaart.periodeVerstrekenPercentage)}% van de periode voorbij{prognose === null ? "" : ` · prognose aan het eind: ${nFlex(prognose)} ${woord}`}</p>
       {licenties ? null : <p className={s.uitleg}>Officieel doel: {n(kaart.doelLicenties)} licenties · indicatie {nFlex(kaart.doelScholenIndicatie)} scholen.</p>}
+    </div>
+  );
+}
+
+function SchoolGroep({ titel, regels, eenheid }: { titel: string; regels: { naam: string; scholen: number; licenties: number }[]; eenheid: DashboardEenheid }) {
+  if (regels.length === 0) return null;
+  return (
+    <div className={s.groep}>
+      <h4>{titel}</h4>
+      <ul>
+        {regels.map((regel, index) => (
+          <li key={`${regel.naam}-${index}`}>
+            <span>{regel.naam}</span>
+            <strong>{eenheid === "licenties" ? n(regel.licenties) : n(regel.scholen)}</strong>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

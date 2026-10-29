@@ -163,7 +163,8 @@ describe("nieuw dashboard — maandverschil en halfjaar", () => {
     const jan = model.maanden.find((maand) => maand.sleutel === "2026-01");
     const feb = model.maanden.find((maand) => maand.sleutel === "2026-02");
     const mrt = model.maanden.find((maand) => maand.sleutel === "2026-03");
-    expect(jan?.erbij).toEqual({ scholen: 1, licenties: 100 });
+    expect(jan?.erbijScholen.map((regel) => regel.naam)).toContain("a");
+    expect(jan?.erbijScholen.reduce((som, regel) => som + regel.licenties, 0)).toBe(jan?.erbij.licenties);
     expect(jan?.eraf).toEqual({ scholen: 0, licenties: 0 });
     expect(jan?.netto).toEqual({ scholen: 1, licenties: 100 });
     expect(feb?.erbij).toEqual({ scholen: 1, licenties: 40 });
@@ -201,14 +202,28 @@ describe("nieuw dashboard — maandverschil en halfjaar", () => {
     expect(kalenderPeriode(Date.parse("2026-06-30T21:59:59.000Z"), "half").label).toBe("H1 2026");
     expect(kalenderPeriode(Date.parse("2026-06-30T22:00:00.000Z"), "half").label).toBe("H2 2026");
     expect(model.halfjaren.map((half) => half.label)).toEqual(["H1 2026", "H2 2026"]);
-    const h1 = model.halfjaren.find((half) => half.label === "H1 2026");
-    const h2 = model.halfjaren.find((half) => half.label === "H2 2026");
-    expect(h1?.nieuw).toEqual({ scholen: 3, licenties: 340 });
-    expect(h1?.lopend).toBe(false);
-    expect(h2?.lopend).toBe(true);
-    expect(h2?.nieuw.scholen).toBe(0);
+    expect(model.halfjaren.every((half) => half.nieuw.scholen === 0)).toBe(true);
     expect(model.kwaliteitTekst).toContain("geen klant-datum");
     expect(model.kwaliteitTekst).not.toContain("zonder maand");
+  });
+
+  it("telt klant-geworden halfjaren alleen uit de Monday-kolom", () => {
+    const scholen = [
+      ...Array.from({ length: 10 }, (_, index) => school({ id: `h1-${index}`, naam: `H1 school ${index}`, licenties: 10 + index, klantGeworden: "H1 2026" })),
+      ...Array.from({ length: 5 }, (_, index) => school({ id: `h2-${index}`, naam: `H2 school ${index}`, licenties: 20, klantGeworden: "H2 2026" })),
+      school({ id: "leeg", naam: "Zonder datum", licenties: 999, klantGeworden: null }),
+      school({ id: "jaar", naam: "Alleen jaar", licenties: 50, klantGeworden: "2026" }),
+      school({ id: "oud", naam: "Vorig jaar", licenties: 40, klantGeworden: "H2 2025" }),
+    ];
+    const historie = [overgang("leeg", "2026-02-01T12:00:00.000Z", "Lead", "Klant")];
+    const uitkomst = bouwNieuwDashboard({ scholen, historie, doelen: [], nu: NU, factor: 200 });
+    const h1 = uitkomst.halfjaren.find((half) => half.label === "H1 2026");
+    const h2 = uitkomst.halfjaren.find((half) => half.label === "H2 2026");
+    expect(h1?.nieuw.scholen).toBe(10);
+    expect(h2?.nieuw.scholen).toBe(5);
+    expect(h1?.nieuw.licenties).toBe(10 * 10 + (0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9));
+    expect(h2?.nieuw.licenties).toBe(100);
+    expect(uitkomst.halfjaren.some((half) => half.label === "H2 2025")).toBe(false);
   });
 
   it("kiest het halfjaar- en het jaardoel op de lengte van de periode", () => {
