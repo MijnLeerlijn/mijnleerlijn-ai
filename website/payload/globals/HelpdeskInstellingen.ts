@@ -32,7 +32,7 @@ const anyEditorMetDiagnose: Access = (args) => {
 export const HelpdeskInstellingen: GlobalConfig = {
   slug: "helpdesk-instellingen",
   admin: {
-    group: "Beheer",
+    group: "Beheer — systeem",
     description: "Algemene instellingen voor de hele Helpdesk, ongeacht welke variant actief is.",
   },
   access: {

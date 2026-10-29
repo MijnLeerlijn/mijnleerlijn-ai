@@ -3,53 +3,51 @@ import { alleItemIds, berekenGroepTelling, toggleGroepInSelectie, toggleItemInSe
 import { NAV_GROUPS } from "@/lib/admin-nav/nav-groups";
 
 // Admin gebruikersbeheer — rechten per hoofdmenu en submenu (2026-08-25).
-const trainers = NAV_GROUPS.find((g) => g.id === "trainers")!;
-const helpdeskAi = NAV_GROUPS.find((g) => g.id === "helpdesk-ai")!; // heeft mutedItems
+const training = NAV_GROUPS.find((g) => g.id === "training-begeleiding")!;
+const beheer = NAV_GROUPS.find((g) => g.id === "beheer")!;
 
 describe("alleItemIds", () => {
-  it("bevat exact de 10 Trainers-permissie-ID's (8 uit de opdracht + trainers.upsell (Upsell-ronde) + trainers.startbegeleiding (Startbegeleiding-ronde), beide 2026-09-02)", () => {
-    expect(alleItemIds(trainers)).toEqual([
+  it("bevat de permissie-ID's van Training & begeleiding, inclusief upsell en startbegeleiding", () => {
+    expect(alleItemIds(training)).toEqual([
       "trainers.dashboard",
       "trainers.trainingen",
       "trainers.upsell",
-      "trainers.todo",
       "trainers.startbegeleiding",
+      "trainers.todo",
       "trainers.activiteit",
-      "trainers.accounts",
-      "trainers.telefonie",
-      "trainers.bestanden",
-      "trainers.deelgroepen",
     ]);
   });
 
-  it("telt ook gemute 'Technisch'-items mee (Helpdesk AI)", () => {
-    const ids = alleItemIds(helpdeskAi);
-    expect(ids).toContain("helpdesk-ai.gmail"); // muted item
-    expect(ids.length).toBe(helpdeskAi.items.length + (helpdeskAi.mutedItems?.length ?? 0));
+  it("Beheer bevat de verhuisde trainer-ID's én de gemute technische items", () => {
+    const ids = alleItemIds(beheer);
+    for (const id of ["trainers.accounts", "trainers.telefonie", "trainers.bestanden", "trainers.deelgroepen", "helpdesk-ai.gmail"]) {
+      expect(ids).toContain(id);
+    }
+    expect(ids.length).toBe(beheer.items.length + (beheer.mutedItems?.length ?? 0));
   });
 });
 
 describe("berekenGroepTelling", () => {
   it("'alles' is waar wanneer elk item van de groep geselecteerd is", () => {
-    const telling = berekenGroepTelling(trainers, new Set(alleItemIds(trainers)));
-    expect(telling).toEqual({ aantalGeselecteerd: 10, totaal: 10, alles: true, niets: false });
+    const telling = berekenGroepTelling(training, new Set(alleItemIds(training)));
+    expect(telling).toEqual({ aantalGeselecteerd: 6, totaal: 6, alles: true, niets: false });
   });
 
   it("'niets' is waar bij een lege selectie", () => {
-    const telling = berekenGroepTelling(trainers, new Set());
-    expect(telling).toEqual({ aantalGeselecteerd: 0, totaal: 10, alles: false, niets: true });
+    const telling = berekenGroepTelling(training, new Set());
+    expect(telling).toEqual({ aantalGeselecteerd: 0, totaal: 6, alles: false, niets: true });
   });
 
   it("noch 'alles' noch 'niets' is waar bij een gedeeltelijke selectie (indeterminate)", () => {
-    const telling = berekenGroepTelling(trainers, new Set(["trainers.dashboard", "trainers.trainingen"]));
+    const telling = berekenGroepTelling(training, new Set(["trainers.dashboard", "trainers.trainingen"]));
     expect(telling.alles).toBe(false);
     expect(telling.niets).toBe(false);
     expect(telling.aantalGeselecteerd).toBe(2);
   });
 
   it("selecties uit EEN ANDERE groep tellen niet mee", () => {
-    const telling = berekenGroepTelling(trainers, new Set(["sales.overzicht", "creator.creator"]));
-    expect(telling).toEqual({ aantalGeselecteerd: 0, totaal: 10, alles: false, niets: true });
+    const telling = berekenGroepTelling(training, new Set(["sales.overzicht", "creator.creator"]));
+    expect(telling).toEqual({ aantalGeselecteerd: 0, totaal: 6, alles: false, niets: true });
   });
 });
 
@@ -73,25 +71,25 @@ describe("toggleItemInSelectie", () => {
 
 describe("toggleGroepInSelectie — opdrachtseis §7 'alles selecteren'/'alles uitzetten'", () => {
   it("selecteert alle items van de groep wanneer nog niet alles geselecteerd is (leeg -> alles)", () => {
-    const resultaat = toggleGroepInSelectie(new Set(), trainers);
-    expect(resultaat).toEqual(new Set(alleItemIds(trainers)));
+    const resultaat = toggleGroepInSelectie(new Set(), training);
+    expect(resultaat).toEqual(new Set(alleItemIds(training)));
   });
 
   it("selecteert alle items van de groep wanneer de selectie gedeeltelijk was (deels -> alles)", () => {
-    const resultaat = toggleGroepInSelectie(new Set(["trainers.dashboard"]), trainers);
-    expect(resultaat).toEqual(new Set(alleItemIds(trainers)));
+    const resultaat = toggleGroepInSelectie(new Set(["trainers.dashboard"]), training);
+    expect(resultaat).toEqual(new Set(alleItemIds(training)));
   });
 
   it("zet alle items van de groep uit wanneer al volledig geselecteerd (alles -> niets)", () => {
-    const resultaat = toggleGroepInSelectie(new Set(alleItemIds(trainers)), trainers);
+    const resultaat = toggleGroepInSelectie(new Set(alleItemIds(training)), training);
     expect(resultaat.size).toBe(0);
   });
 
   it("laat selecties van EEN ANDERE groep volledig ongemoeid", () => {
     const start = new Set(["sales.overzicht", "trainers.dashboard"]);
-    const naAlles = toggleGroepInSelectie(start, trainers);
+    const naAlles = toggleGroepInSelectie(start, training);
     expect(naAlles.has("sales.overzicht")).toBe(true);
-    const naNiets = toggleGroepInSelectie(naAlles, trainers);
+    const naNiets = toggleGroepInSelectie(naAlles, training);
     expect(naNiets).toEqual(new Set(["sales.overzicht"]));
   });
 });

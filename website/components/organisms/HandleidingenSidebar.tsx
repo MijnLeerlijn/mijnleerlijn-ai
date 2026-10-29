@@ -61,7 +61,7 @@ export default function HandleidingenSidebar() {
   const [status, setStatus] = useState<Status>("laden");
   const [categorieen, setCategorieen] = useState<PublicCategory[]>([]);
   const [zoekterm, setZoekterm] = useState("");
-  const [open, setOpen] = useState<Set<number>>(new Set());
+  const [handmatigOpen, setHandmatigOpen] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     let actief = true;
@@ -94,13 +94,19 @@ export default function HandleidingenSidebar() {
       .filter((categorie) => categorie.manuals.length > 0);
   }, [categorieen, zoekterm]);
 
-  useEffect(() => {
-    if (!zoekterm.trim()) return;
-    setOpen(new Set(gefilterd.map((c) => c.id)));
-  }, [zoekterm, gefilterd]);
+  const zoekActief = zoekterm.trim().length > 0;
+  const open = zoekActief ? new Set(gefilterd.map((categorie) => categorie.id)) : handmatigOpen;
+
+  function wijzigZoekterm(waarde: string) {
+    if (zoekActief && waarde.trim().length === 0) {
+      setHandmatigOpen(new Set(gefilterd.map((categorie) => categorie.id)));
+    }
+    setZoekterm(waarde);
+  }
 
   function toggle(id: number) {
-    setOpen((huidig) => {
+    if (zoekActief) return;
+    setHandmatigOpen((huidig) => {
       const nieuw = new Set(huidig);
       if (nieuw.has(id)) nieuw.delete(id);
       else nieuw.add(id);
@@ -119,7 +125,7 @@ export default function HandleidingenSidebar() {
           placeholder="Zoek een handleiding..."
           aria-label="Zoek een handleiding"
           value={zoekterm}
-          onChange={(e) => setZoekterm(e.target.value)}
+          onChange={(e) => wijzigZoekterm(e.target.value)}
           className="pl-10"
         />
       </div>

@@ -75,7 +75,7 @@ function maakEditorPermissions(): SanitizedPermissions {
 
 describe("nav-groups", () => {
   it("bevat alle 6 verwachte hoofdgroepen, in vaste volgorde", () => {
-    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["algemeen", "helpdesk-ai", "creator", "curriculum-werkplaats", "sales", "trainers"]);
+    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["content", "helpdesk-ai", "curriculum", "sales", "training-begeleiding", "beheer"]);
   });
 
   it("elk item heeft een kleur, omschrijving én uniek, stabiel item-id binnen de groep", () => {
@@ -109,9 +109,9 @@ describe("nav-groups", () => {
 
   it("isNavItemVisible: een item zonder permission-veld (custom view) is zichtbaar zolang de gebruiker onbeperkt is", () => {
     const item = { id: "varianten", label: "Varianten", href: "/admin/varianten", icon: NAV_GROUPS[0]!.icon, color: "blue" as const, description: "" };
-    expect(isNavItemVisible("algemeen", item, null, VOLLEDIGE_TOEGANG_USER)).toBe(true);
-    expect(isNavItemVisible("algemeen", item, undefined, VOLLEDIGE_TOEGANG_USER)).toBe(true);
-    expect(isNavItemVisible("algemeen", item, ADMIN_PERMISSIONS, VOLLEDIGE_TOEGANG_USER)).toBe(true);
+    expect(isNavItemVisible("content", item, null, VOLLEDIGE_TOEGANG_USER)).toBe(true);
+    expect(isNavItemVisible("content", item, undefined, VOLLEDIGE_TOEGANG_USER)).toBe(true);
+    expect(isNavItemVisible("content", item, ADMIN_PERMISSIONS, VOLLEDIGE_TOEGANG_USER)).toBe(true);
   });
 
   it("isNavItemVisible: een collectie-item zonder leestoegang in permissions is onzichtbaar", () => {
@@ -137,8 +137,8 @@ describe("nav-groups", () => {
 
   it("isNavItemVisible: geen toegang zonder ingelogde gebruiker, ook al staat de Payload-rolcheck op groen", () => {
     const item = { id: "varianten", label: "Varianten", href: "/admin/varianten", icon: NAV_GROUPS[0]!.icon, color: "blue" as const, description: "" };
-    expect(isNavItemVisible("algemeen", item, ADMIN_PERMISSIONS, null)).toBe(false);
-    expect(isNavItemVisible("algemeen", item, ADMIN_PERMISSIONS, undefined)).toBe(false);
+    expect(isNavItemVisible("content", item, ADMIN_PERMISSIONS, null)).toBe(false);
+    expect(isNavItemVisible("content", item, ADMIN_PERMISSIONS, undefined)).toBe(false);
   });
 
   it("getVisibleNavGroups: admin (alle collecties/globals leesbaar, onbeperkte gebruiker) ziet ieder item", () => {
@@ -153,35 +153,32 @@ describe("nav-groups", () => {
     const alleZichtbareLabels = zichtbaar.flatMap((g) => [...g.items, ...g.mutedItems]).map((i) => i.label);
 
     expect(alleZichtbareLabels).not.toContain("Kennisbronnen");
-    expect(alleZichtbareLabels).not.toContain("Knowledge Drafts");
-    expect(alleZichtbareLabels).not.toContain("Support Threads");
-    expect(alleZichtbareLabels).not.toContain("AI Evaluation Questions");
-    expect(alleZichtbareLabels).not.toContain("AI Evaluation Runs");
+    expect(alleZichtbareLabels).not.toContain("AI-conceptartikelen");
+    expect(alleZichtbareLabels).not.toContain("Geïmporteerde supportmails");
+    expect(alleZichtbareLabels).not.toContain("AI-testvragen");
+    expect(alleZichtbareLabels).not.toContain("AI-testresultaten");
     expect(alleZichtbareLabels).not.toContain("Gmail-koppeling");
-    expect(alleZichtbareLabels).not.toContain("Knowledge Search");
-    expect(alleZichtbareLabels).not.toContain("AI-evaluatie");
+    expect(alleZichtbareLabels).not.toContain("AI-zoektest");
+    expect(alleZichtbareLabels).not.toContain("AI-testinstellingen");
     // Telefoniebeheer (2026-08-25): read: adminOnly op de onderliggende
     // collectie (TrainerTelefonieOproepen.ts) — een redacteur mag dit item
     // dus niet zien, exact zoals de opdracht vereist ("moet niet ineens voor
     // onbevoegde gebruikers zichtbaar worden").
-    expect(alleZichtbareLabels).not.toContain("Telefonie");
+    expect(alleZichtbareLabels).not.toContain("Ingesproken verslagen");
 
     // Custom views (geen permission-veld) blijven altijd zichtbaar.
-    expect(alleZichtbareLabels).toContain("Varianten");
-    expect(alleZichtbareLabels).toContain("AI Verbetercentrum");
+    expect(alleZichtbareLabels).toContain("Varianten / whitelabel");
+    expect(alleZichtbareLabels).toContain("Verbetercentrum");
     expect(alleZichtbareLabels).toContain("Curriculum Werkplaats");
     // Gewone, niet-adminOnly collecties blijven ook zichtbaar.
     expect(alleZichtbareLabels).toContain("Artikelen");
-    expect(alleZichtbareLabels).toContain("AI-gesprekken");
+    expect(alleZichtbareLabels).toContain("Gesprekken");
   });
 
-  it("getVisibleNavGroups: een admin ziet het Telefonie-item, in de 'trainers'-groep, met een geldige permission-koppeling naar de bestaande collectie", () => {
-    // Traineromgeving V2, Fase 4 (2026-08-24) — verplaatst van "algemeen" naar
-    // de nieuwe "trainers"-hoofdgroep (spec §1: bestaand trainerbeheer logisch
-    // samenvoegen), zelfde item/href/permission, alleen de groep wijzigde.
+  it("getVisibleNavGroups: een admin ziet het telefonie-item, in Beheer, met een geldige permission-koppeling naar de bestaande collectie", () => {
     const zichtbaar = getVisibleNavGroups(maakVolledigeToegang(), VOLLEDIGE_TOEGANG_USER);
-    const trainers = zichtbaar.find((g) => g.id === "trainers");
-    const telefonie = trainers?.items.find((i) => i.label === "Telefonie");
+    const beheer = zichtbaar.find((g) => g.id === "beheer");
+    const telefonie = beheer?.items.find((i) => i.label === "Ingesproken verslagen");
     expect(telefonie).toBeDefined();
     expect(telefonie?.href).toBe("/admin/collections/trainer-telefonie-oproepen");
     expect(telefonie?.permission).toEqual({ type: "collection", slug: "trainer-telefonie-oproepen" });
@@ -189,11 +186,11 @@ describe("nav-groups", () => {
 
   it("findNavItemByPath: het Telefonie-item matcht zowel de lijst zelf als een individueel oproep-detailscherm", () => {
     const lijst = findNavItemByPath("/admin/collections/trainer-telefonie-oproepen");
-    expect(lijst?.item.label).toBe("Telefonie");
+    expect(lijst?.item.label).toBe("Ingesproken verslagen");
     expect(lijst?.exact).toBe(true);
 
     const detail = findNavItemByPath("/admin/collections/trainer-telefonie-oproepen/6");
-    expect(detail?.item.label).toBe("Telefonie");
+    expect(detail?.item.label).toBe("Ingesproken verslagen");
     expect(detail?.exact).toBe(false);
   });
 
@@ -201,16 +198,17 @@ describe("nav-groups", () => {
     const geenToegang = { canAccessAdmin: true, collections: {}, globals: {} } as unknown as SanitizedPermissions;
     const zichtbaar = getVisibleNavGroups(geenToegang, VOLLEDIGE_TOEGANG_USER);
 
-    // Curriculum Werkplaats en Creator hebben allebei precies 1 item, zonder
-    // permission-veld (custom view) — blijven dus altijd staan, ook zonder
-    // enige toegang.
-    expect(zichtbaar.some((g) => g.id === "curriculum-werkplaats")).toBe(true);
-    expect(zichtbaar.some((g) => g.id === "creator")).toBe(true);
+    // Curriculum heeft precies 1 item, zonder Payload-permission-veld (custom
+    // view) — blijft dus altijd staan, ook zonder enige collectietoegang.
+    // Creator zit in Content en heeft evenmin een permission-veld, dus die
+    // groep blijft ook zichtbaar.
+    expect(zichtbaar.some((g) => g.id === "curriculum")).toBe(true);
+    expect(zichtbaar.some((g) => g.items.some((item) => item.label === "Creator"))).toBe(true);
   });
 
   it("getSelectableNavItems: bevat ieder zichtbaar item, plat, met groepsinfo", () => {
     const selecteerbaar = getSelectableNavItems(maakVolledigeToegang(), VOLLEDIGE_TOEGANG_USER);
-    expect(selecteerbaar.some((i) => i.label === "Artikelen" && i.groupId === "algemeen")).toBe(true);
+    expect(selecteerbaar.some((i) => i.label === "Artikelen" && i.groupId === "content")).toBe(true);
     expect(selecteerbaar.some((i) => i.label === "Kennisbronnen" && i.groupId === "helpdesk-ai")).toBe(true);
     // Ook gemute "Technisch"-items zijn kiesbaar — de demping is alleen visueel in de nav.
     expect(selecteerbaar.some((i) => i.label === "Gmail-koppeling")).toBe(true);
@@ -220,14 +218,14 @@ describe("nav-groups", () => {
     const gekozen = ["/admin/collections/articles", "/admin/kennisbasis", "/admin/collections/handleidingen"];
     const kaarten = getSelectedDashboardCards(maakVolledigeToegang(), VOLLEDIGE_TOEGANG_USER, gekozen);
 
-    const algemeen = kaarten.find((g) => g.id === "algemeen");
-    expect(algemeen?.items.map((i) => i.label).sort()).toEqual(["Artikelen", "Handleidingen"]);
+    const content = kaarten.find((g) => g.id === "content");
+    expect(content?.items.map((i) => i.label).sort()).toEqual(["Artikelen", "Handleidingen"]);
 
     const helpdeskAi = kaarten.find((g) => g.id === "helpdesk-ai");
     expect(helpdeskAi?.items.map((i) => i.label)).toEqual(["Kennisbasis"]);
 
     // Niet-gekozen items verschijnen niet, ook al zijn ze zichtbaar/toegestaan.
-    expect(kaarten.flatMap((g) => g.items.map((i) => i.label))).not.toContain("Categorieën");
+    expect(kaarten.flatMap((g) => g.items.map((i) => i.label))).not.toContain("Contentcategorieën");
   });
 
   it("getSelectedDashboardCards: geen selectie geeft een lege lijst (geen automatische kaarten)", () => {
@@ -239,13 +237,13 @@ describe("nav-groups", () => {
     const kaarten = getSelectedDashboardCards(maakEditorPermissions(), VOLLEDIGE_TOEGANG_USER, gekozen);
     const alleLabels = kaarten.flatMap((g) => g.items.map((i) => i.label));
     expect(alleLabels).toContain("Artikelen");
-    expect(alleLabels).not.toContain("AI-evaluatie");
+    expect(alleLabels).not.toContain("AI-testinstellingen");
   });
 
   it("findNavItemByPath: exacte match op een menupagina", () => {
     const match = findNavItemByPath("/admin/collections/articles");
     expect(match?.item.label).toBe("Artikelen");
-    expect(match?.group.id).toBe("algemeen");
+    expect(match?.group.id).toBe("content");
     expect(match?.exact).toBe(true);
   });
 
@@ -307,23 +305,19 @@ describe("nav-groups", () => {
   // als het kortste item. Ontdekt tijdens browserverificatie.
   it("findNavItemByPath: een langer, exact matchend sub-item wint van een korter item waarvan het pad een prefix is", () => {
     const matchScholen = findNavItemByPath("/admin/sales/scholen");
-    expect(matchScholen?.item.label).toBe("Scholen");
+    expect(matchScholen?.item.label).toBe("Pipeline");
     expect(matchScholen?.exact).toBe(true);
 
-    const matchActies = findNavItemByPath("/admin/sales/acties");
-    expect(matchActies?.item.label).toBe("Acties");
-    expect(matchActies?.exact).toBe(true);
-
     const matchOverzicht = findNavItemByPath("/admin/sales");
-    expect(matchOverzicht?.item.label).toBe("Overzicht");
+    expect(matchOverzicht?.item.label).toBe("Dashboard");
     expect(matchOverzicht?.exact).toBe(true);
   });
 
   it("findNavItemByPath: kiest bij meerdere subpad-matches (geen exacte match) de langste/meest specifieke", () => {
-    // "/admin/sales/scholen/iets-onbekends" matcht als subpad zowel Overzicht
-    // ("/admin/sales") als Scholen ("/admin/sales/scholen") — Scholen moet winnen.
+    // "/admin/sales/scholen/iets-onbekends" matcht als subpad zowel Dashboard
+    // ("/admin/sales") als Pipeline ("/admin/sales/scholen") — Pipeline moet winnen.
     const match = findNavItemByPath("/admin/sales/scholen/iets-onbekends");
-    expect(match?.item.label).toBe("Scholen");
+    expect(match?.item.label).toBe("Pipeline");
     expect(match?.exact).toBe(false);
   });
 });
@@ -344,56 +338,59 @@ describe("nav-groups — per-gebruiker menupermissies (restricted)", () => {
       permissions: ["trainers.dashboard", "trainers.trainingen", "trainers.bestanden"],
     };
     const zichtbaar = getVisibleNavGroups(maakVolledigeToegang(), user);
-    const trainers = zichtbaar.find((g) => g.id === "trainers");
-    const labels = trainers?.items.map((i) => i.label) ?? [];
+    const training = zichtbaar.find((g) => g.id === "training-begeleiding");
+    const trainingLabels = training?.items.map((i) => i.label) ?? [];
+    const beheer = zichtbaar.find((g) => g.id === "beheer");
+    const beheerLabels = beheer?.items.map((i) => i.label) ?? [];
 
-    expect(labels).toContain("Dashboard");
-    expect(labels).toContain("Alle trainingen");
-    expect(labels).toContain("Trainer bestanden");
-    expect(labels).not.toContain("To do");
-    expect(labels).not.toContain("Activiteit");
-    expect(labels).not.toContain("Trainer Accounts");
-    expect(labels).not.toContain("Telefonie");
-    expect(labels).not.toContain("Trainer deelgroepen");
+    expect(trainingLabels).toContain("Dashboard");
+    expect(trainingLabels).toContain("Trainingen");
+    expect(beheerLabels).toContain("Trainerbestanden");
+    expect(trainingLabels).not.toContain("Taken");
+    expect(trainingLabels).not.toContain("Verslagen & activiteit");
+    expect(beheerLabels).not.toContain("Traineraccounts");
+    expect(beheerLabels).not.toContain("Ingesproken verslagen");
+    expect(beheerLabels).not.toContain("Deelgroepen trainers");
 
     // Precies het voorbeeld uit de opdracht (§2): andere hoofdmenu's blijven
     // volledig weg zodra er geen enkele toegekende permissie in zit.
     expect(zichtbaar.some((g) => g.id === "sales")).toBe(false);
-    expect(zichtbaar.some((g) => g.id === "creator")).toBe(false);
+    expect(zichtbaar.some((g) => g.id === "content")).toBe(false);
   });
 
   it("hoofdmenu verdwijnt volledig zodra geen enkel submenu-item ervan is toegekend, óók al bestaat de groep", () => {
     const user: AuthUserMetPermissies = { permissionMode: "restricted", permissions: ["sales.overzicht"] };
     const zichtbaar = getVisibleNavGroups(maakVolledigeToegang(), user);
-    expect(zichtbaar.some((g) => g.id === "trainers")).toBe(false);
-    expect(zichtbaar.some((g) => g.id === "algemeen")).toBe(false);
+    expect(zichtbaar.some((g) => g.id === "training-begeleiding")).toBe(false);
+    expect(zichtbaar.some((g) => g.id === "content")).toBe(false);
     expect(zichtbaar.some((g) => g.id === "sales")).toBe(true);
   });
 
   it("een 'restricted'-gebruiker heeft nooit MEER dan de rol al toestaat — een adminOnly-collectie blijft verborgen voor een redacteur, ook met de permissie expliciet toegekend", () => {
     const editorMetVolleigePermissie: AuthUserMetPermissies = {
       permissionMode: "restricted",
-      // Ook "trainers.dashboard" toegekend, zodat de hele "trainers"-groep
-      // sowieso zichtbaar blijft — dit isoleert de assertie hieronder tot
-      // specifiek Telefonie (i.p.v. "de hele groep verdwijnt", al gedekt
-      // door een andere test hierboven).
+      // Ook "trainers.dashboard" toegekend, zodat Training & begeleiding
+      // zichtbaar blijft. Telefonie zit in Beheer; de menu-permissie mag de
+      // adminOnly-collectie niet alsnog tonen.
       permissions: ["trainers.dashboard", "trainers.telefonie"],
     };
     // maakEditorPermissions() simuleert een redacteur — trainer-telefonie-oproepen
     // heeft GEEN leestoegang (adminOnly op collectieniveau, zie roles.ts).
     const zichtbaar = getVisibleNavGroups(maakEditorPermissions(), editorMetVolleigePermissie);
-    const trainers = zichtbaar.find((g) => g.id === "trainers");
-    expect(trainers).toBeDefined();
-    expect(trainers?.items.some((i) => i.label === "Telefonie")).toBe(false);
+    const training = zichtbaar.find((g) => g.id === "training-begeleiding");
+    expect(training).toBeDefined();
+    const labels = zichtbaar.flatMap((g) => [...g.items, ...g.mutedItems]).map((i) => i.label);
+    expect(labels).not.toContain("Ingesproken verslagen");
   });
 
   it("een custom view (geen permission-veld) is voor een restricted-gebruiker ook gewoon uit te zetten", () => {
     const user: AuthUserMetPermissies = { permissionMode: "restricted", permissions: ["trainers.dashboard"] };
     const zichtbaar = getVisibleNavGroups(maakVolledigeToegang(), user);
-    // "Varianten" (algemeen.varianten) is een custom view zonder permission-veld
-    // — vóór deze feature altijd zichtbaar; nu terecht verborgen zonder
-    // expliciete toekenning.
-    expect(zichtbaar.some((g) => g.id === "algemeen")).toBe(false);
+    // "Varianten / whitelabel" (algemeen.varianten) is een custom view zonder
+    // Payload-permission-veld — zonder expliciete toekenning blijft Beheer
+    // (en Content) verborgen.
+    expect(zichtbaar.some((g) => g.id === "content")).toBe(false);
+    expect(zichtbaar.some((g) => g.id === "beheer")).toBe(false);
   });
 
   it("permissionMode ontbrekend of 'full' gedraagt zich identiek aan vóór deze feature (backwards compatible default)", () => {

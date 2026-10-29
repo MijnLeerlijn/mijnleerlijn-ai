@@ -50,11 +50,21 @@ export function KennisbasisView() {
   const [geselecteerd, setGeselecteerd] = useState<number | null>(null);
   const [data, setData] = useState<AchtergrondData | null>(null);
   const [tekst, setTekst] = useState("");
-  const [status, setStatus] = useState<"laden" | "klaar" | "fout">("laden");
+  const [geladenVoor, setGeladenVoor] = useState<number | "leeg" | null>(null);
+  const [foutVoor, setFoutVoor] = useState<number | "leeg" | null>(null);
   const [opslaan, setOpslaan] = useState(false);
   const [trainerversieStatus, setTrainerversieStatus] = useState<TrainerversieStatus>("stil");
   const [trainerversieBoodschap, setTrainerversieBoodschap] = useState("");
   const [trainerversieId, setTrainerversieId] = useState<number | null>(null);
+  const [trainerversieVoor, setTrainerversieVoor] = useState<number | null>(null);
+
+  const selectieSleutel = geselecteerd ?? "leeg";
+  const status: "laden" | "klaar" | "fout" =
+    foutVoor === selectieSleutel ? "fout" : geladenVoor === selectieSleutel ? "klaar" : "laden";
+  const trainerversieZichtbaar = trainerversieVoor === geselecteerd;
+  const zichtbareTrainerStatus = trainerversieZichtbaar ? trainerversieStatus : "stil";
+  const zichtbareTrainerBoodschap = trainerversieZichtbaar ? trainerversieBoodschap : "";
+  const zichtbareTrainerId = trainerversieZichtbaar ? trainerversieId : null;
 
   useEffect(() => {
     fetch("/api/variants?limit=100&sort=name&depth=0", { credentials: "include" })
@@ -62,32 +72,37 @@ export function KennisbasisView() {
       .then((res: { docs: VariantOptie[] }) => {
         setVarianten(res.docs);
         if (res.docs[0]) setGeselecteerd(res.docs[0].id);
-        else setStatus("klaar");
+        else setGeladenVoor("leeg");
       })
-      .catch(() => setStatus("fout"));
+      .catch(() => setFoutVoor("leeg"));
   }, []);
 
   useEffect(() => {
     if (geselecteerd === null) return;
-    setStatus("laden");
-    setTrainerversieStatus("stil");
-    setTrainerversieBoodschap("");
-    setTrainerversieId(null);
-    fetch(`/api/knowledge-sources/achtergrond/${geselecteerd}`, { credentials: "include" })
+    const id = geselecteerd;
+    let actief = true;
+    fetch(`/api/knowledge-sources/achtergrond/${id}`, { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error();
         return res.json();
       })
       .then((res: AchtergrondData) => {
+        if (!actief) return;
         setData(res);
         setTekst(res.document?.content ?? "");
-        setStatus("klaar");
+        setGeladenVoor(id);
       })
-      .catch(() => setStatus("fout"));
+      .catch(() => {
+        if (actief) setFoutVoor(id);
+      });
+    return () => {
+      actief = false;
+    };
   }, [geselecteerd]);
 
   async function maakTrainerversie() {
-    if (!data?.document) return;
+    if (!data?.document || geselecteerd === null) return;
+    setTrainerversieVoor(geselecteerd);
     setTrainerversieStatus("bezig");
     setTrainerversieBoodschap("");
     setTrainerversieId(null);
@@ -199,7 +214,7 @@ export function KennisbasisView() {
               }}
             >
               Deze variant is momenteel {data.variant.status === "gearchiveerd" ? "gearchiveerd" : "niet actief"} —
-              bezoekers kunnen 'm nu niet bereiken.
+              bezoekers kunnen deze variant nu niet bereiken.
             </div>
           )}
 
@@ -254,17 +269,17 @@ export function KennisbasisView() {
               <em>Trainer-kennisversies</em>. Publiceren voor trainers gebeurt daarna apart, via de status van die
               conceptversie.
             </p>
-            <Button buttonStyle="secondary" disabled={!heeftBruikbareKennis || !data.document || trainerversieStatus === "bezig"} onClick={maakTrainerversie}>
-              {trainerversieStatus === "bezig" ? "Bezig met genereren…" : "Maak trainerversie"}
+            <Button buttonStyle="secondary" disabled={!heeftBruikbareKennis || !data.document || zichtbareTrainerStatus === "bezig"} onClick={maakTrainerversie}>
+              {zichtbareTrainerStatus === "bezig" ? "Bezig met genereren…" : "Maak trainerversie"}
             </Button>
-            {trainerversieStatus === "gelukt" && (
+            {zichtbareTrainerStatus === "gelukt" && (
               <p style={{ marginTop: "0.5rem", color: "var(--theme-success-500)" }}>
-                {trainerversieBoodschap}{" "}
-                {trainerversieId && <a href={`/admin/collections/trainer-kennisversies/${trainerversieId}`}>Open conceptversie →</a>}
+                {zichtbareTrainerBoodschap}{" "}
+                {zichtbareTrainerId && <a href={`/admin/collections/trainer-kennisversies/${zichtbareTrainerId}`}>Open conceptversie →</a>}
               </p>
             )}
-            {trainerversieStatus === "fout" && trainerversieBoodschap && (
-              <p style={{ marginTop: "0.5rem", color: "var(--theme-error-500)" }}>{trainerversieBoodschap}</p>
+            {zichtbareTrainerStatus === "fout" && zichtbareTrainerBoodschap && (
+              <p style={{ marginTop: "0.5rem", color: "var(--theme-error-500)" }}>{zichtbareTrainerBoodschap}</p>
             )}
           </div>
         </>

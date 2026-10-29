@@ -3,6 +3,7 @@ name: Sales dashboard CI
 on:
   push:
     branches:
+      - main
       - feature/sales-dashboard
   pull_request:
     branches:
@@ -27,5 +28,7 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      - name: Lint
+        run: npm run lint
       - name: Tests
         run: npm test
