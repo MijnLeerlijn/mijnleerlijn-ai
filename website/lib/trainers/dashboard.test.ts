@@ -12,6 +12,7 @@ import {
 } from "./verslag";
 import { haalActiviteitVoorTrainer } from "./activiteit";
 import { haalAanvullendeTrainingenAlsSamenvattingen } from "./aanvullende-trainingen";
+import { haalOpenStartactiesVoorTrainer } from "./startbegeleiding";
 import type { Payload } from "payload";
 import type { AuthTrainer } from "./auth";
 
@@ -45,6 +46,10 @@ vi.mock("./aanvullende-trainingen", async (importOriginal) => {
   const echt = await importOriginal<typeof import("./aanvullende-trainingen")>();
   return { ...echt, haalAanvullendeTrainingenAlsSamenvattingen: vi.fn() };
 });
+vi.mock("./startbegeleiding", async (importOriginal) => {
+  const echt = await importOriginal<typeof import("./startbegeleiding")>();
+  return { ...echt, haalOpenStartactiesVoorTrainer: vi.fn() };
+});
 
 const mockHaalDashboardData = vi.mocked(haalDashboardData);
 const mockHaalTelefonischeConcepten = vi.mocked(haalTelefonischeConceptenVoorTrainer);
@@ -53,6 +58,7 @@ const mockHaalGestarteConcepten = vi.mocked(haalGestarteConceptenVoorTrainer);
 const mockTelVoltooideVerslagen = vi.mocked(telVoltooideVerslagen);
 const mockHaalActiviteitVoorTrainer = vi.mocked(haalActiviteitVoorTrainer);
 const mockHaalAanvullendeTrainingen = vi.mocked(haalAanvullendeTrainingenAlsSamenvattingen);
+const mockHaalOpenStartacties = vi.mocked(haalOpenStartactiesVoorTrainer);
 
 const TRAINER: AuthTrainer = { id: 1, name: "Wessel Kok", email: "wessel@mijnleerlijn.nl", mondayTrainerboardId: "18424768045", mondayUitvoerderItemId: "12419116827", actief: true };
 const FAKE_PAYLOAD = {} as Payload;
@@ -114,6 +120,7 @@ beforeEach(() => {
   mockTelVoltooideVerslagen.mockResolvedValue(0);
   mockHaalActiviteitVoorTrainer.mockResolvedValue([]);
   mockHaalAanvullendeTrainingen.mockResolvedValue([]);
+  mockHaalOpenStartacties.mockResolvedValue([]);
 });
 
 describe("haalDashboardV2Data", () => {
@@ -127,6 +134,7 @@ describe("haalDashboardV2Data", () => {
     expect(mockTelVoltooideVerslagen).toHaveBeenCalledWith(FAKE_PAYLOAD, TRAINER);
     expect(mockHaalActiviteitVoorTrainer).toHaveBeenCalledWith(FAKE_PAYLOAD, TRAINER, 5);
     expect(mockHaalAanvullendeTrainingen).toHaveBeenCalledWith(FAKE_PAYLOAD, TRAINER);
+    expect(mockHaalOpenStartacties).toHaveBeenCalledWith(FAKE_PAYLOAD, TRAINER);
   });
 
   it("To do is zichtbaar (niet-leeg) zodra minstens één categorie iets oplevert", async () => {

@@ -33,8 +33,8 @@ describe("Users.access.read", () => {
     expect(Users.access!.read!({ req: { user: beperkteAdminMetGebruikersToegang } } as never)).toBe(true);
   });
 
-  it("een beperkte admin ZONDER 'algemeen.gebruikers' ziet uitsluitend het eigen account, niet 'geen toegang'", () => {
-    expect(Users.access!.read!({ req: { user: beperkteAdminZonderGebruikersToegang } } as never)).toEqual({ id: { equals: 3 } });
+  it("een beperkte admin ziet alle accounts, ook zonder menu-permissie algemeen.gebruikers — anders is een fout restricted-profiel niet te herstellen", () => {
+    expect(Users.access!.read!({ req: { user: beperkteAdminZonderGebruikersToegang } } as never)).toBe(true);
   });
 
   it("een redacteur ziet uitsluitend het eigen account (rol-gedrag ongewijzigd)", () => {
@@ -47,8 +47,8 @@ describe("Users.access.read", () => {
 });
 
 describe("Users.access.update", () => {
-  it("een beperkte admin ZONDER 'algemeen.gebruikers' kan nog altijd het eigen account bijwerken (basale sessie-identiteit blijft werken)", () => {
-    expect(Users.access!.update!({ req: { user: beperkteAdminZonderGebruikersToegang } } as never)).toEqual({ id: { equals: 3 } });
+  it("een beperkte admin kan alle accounts bijwerken, ook zonder menu-permissie algemeen.gebruikers", () => {
+    expect(Users.access!.update!({ req: { user: beperkteAdminZonderGebruikersToegang } } as never)).toBe(true);
   });
 
   it("een beperkte admin MET 'algemeen.gebruikers' kan alle accounts bijwerken", () => {

@@ -82,7 +82,10 @@ export function SalesAnalyticsDashboardView() {
     finally { setLaden(false); }
   }, []);
 
-  useEffect(() => { void laad(); }, [laad]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void laad();
+  }, [laad]);
 
   async function sync() {
     setSyncBezig(true); setFout(null);

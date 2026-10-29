@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 // Sales-assistent V1 (2026-08-14) — overzicht/agenda van Sales-acties. Geen
@@ -40,19 +40,22 @@ type StatusFilter = "open" | "afgerond" | "vervallen" | "alle";
 export function SalesActiesView() {
   const [acties, setActies] = useState<SalesActionDoc[]>([]);
   const [filter, setFilter] = useState<StatusFilter>("open");
-  const [laden, setLaden] = useState(true);
-
-  const laad = useCallback(async () => {
-    setLaden(true);
-    const where = filter === "alle" ? "" : `where[status][equals]=${filter}&`;
-    const docs = await apiGet<SalesActionDoc>(`/api/sales-actions?${where}depth=1&sort=dueDate&limit=500`);
-    setActies(docs);
-    setLaden(false);
-  }, [filter]);
+  const [geladenFilter, setGeladenFilter] = useState<StatusFilter | null>(null);
 
   useEffect(() => {
-    laad();
-  }, [laad]);
+    let actief = true;
+    const where = filter === "alle" ? "" : `where[status][equals]=${filter}&`;
+    void apiGet<SalesActionDoc>(`/api/sales-actions?${where}depth=1&sort=dueDate&limit=500`).then((docs) => {
+      if (!actief) return;
+      setActies(docs);
+      setGeladenFilter(filter);
+    });
+    return () => {
+      actief = false;
+    };
+  }, [filter]);
+
+  const laden = geladenFilter !== filter;
 
   return (
     <div className="ml-sales">

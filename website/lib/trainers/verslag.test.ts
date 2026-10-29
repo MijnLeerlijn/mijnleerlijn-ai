@@ -968,6 +968,7 @@ describe("bevestigVerslag", () => {
           schoolNaam: "Montessori Gorinchem",
           trainingNaam: "Training",
           definitieveTekst: "Wat is behandeld:\nRekenen (live-verslag van vóór 61ffb42)",
+          trainingBron: "mijnleerlijn",
           status: "bevestigd", // beide Updates al klaar, afronding destijds niet volledig gelukt
           trainingUpdateStatus: "geschreven",
           trainingUpdateMondayId: "update-training-legacy-1",

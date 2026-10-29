@@ -7,6 +7,13 @@ interface Row {
   ageGroup?: string | null;
 }
 
+const DERTIG_DAGEN_MS = 30 * 24 * 60 * 60 * 1000;
+
+function rijenLaatsteDertigDagen(rows: Row[]): Row[] {
+  const sinceMs = Date.now() - DERTIG_DAGEN_MS;
+  return rows.filter((row) => row.requestedAt && new Date(row.requestedAt).getTime() >= sinceMs);
+}
+
 function countBy(rows: Row[], key: keyof Row) {
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -25,8 +32,7 @@ export async function LesplanAnalyticsDashboard({ payload }: { payload: Payload 
     overrideAccess: true,
   });
   const rows = result.docs as Row[];
-  const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const last30 = rows.filter((row) => row.requestedAt && new Date(row.requestedAt).getTime() >= since);
+  const last30 = rijenLaatsteDertigDagen(rows);
   const goals = countBy(last30, "normalizedGoal").slice(0, 7);
   const subjects = countBy(last30, "subject").slice(0, 5);
   const groups = countBy(last30, "ageGroup").slice(0, 5);

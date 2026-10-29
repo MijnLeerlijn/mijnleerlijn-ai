@@ -76,6 +76,7 @@ export function VariantenView() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     laadAlles();
   }, []);
 
@@ -177,7 +178,7 @@ export function VariantenView() {
       <h1 style={{ marginBottom: "0.25rem" }}>Varianten</h1>
       <p style={{ color: "var(--theme-elevation-500)", marginTop: 0 }}>
         Multi-brand: elke variant is een complete Helpdesk-omgeving (branding, kennisbasis, terminologie,
-        hostname). "Actief" bepaalt of bezoekers de variant kunnen bereiken.
+        hostname). Actief bepaalt of bezoekers de variant kunnen bereiken.
       </p>
 
       <div
