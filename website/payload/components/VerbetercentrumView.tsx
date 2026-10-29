@@ -618,11 +618,13 @@ export function VerbetercentrumView() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     laadConversaties();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, pagina]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     laadStats();
     laadOnderwerpenEnHandleidingen();
   }, []);

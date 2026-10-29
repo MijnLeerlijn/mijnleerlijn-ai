@@ -107,6 +107,9 @@ export interface Config {
     'sales-log-events': SalesLogEvent;
     'sales-actions': SalesAction;
     'sales-proposals': SalesProposal;
+    'sales-goals': SalesGoal;
+    'sales-partners': SalesPartner;
+    'lesplan-analytics': LesplanAnalytic;
     'personal-tasks': PersonalTask;
     'google-connections': GoogleConnection;
     'voorbereiding-signalen': VoorbereidingSignalen;
@@ -158,6 +161,9 @@ export interface Config {
     'sales-log-events': SalesLogEventsSelect<false> | SalesLogEventsSelect<true>;
     'sales-actions': SalesActionsSelect<false> | SalesActionsSelect<true>;
     'sales-proposals': SalesProposalsSelect<false> | SalesProposalsSelect<true>;
+    'sales-goals': SalesGoalsSelect<false> | SalesGoalsSelect<true>;
+    'sales-partners': SalesPartnersSelect<false> | SalesPartnersSelect<true>;
+    'lesplan-analytics': LesplanAnalyticsSelect<false> | LesplanAnalyticsSelect<true>;
     'personal-tasks': PersonalTasksSelect<false> | PersonalTasksSelect<true>;
     'google-connections': GoogleConnectionsSelect<false> | GoogleConnectionsSelect<true>;
     'voorbereiding-signalen': VoorbereidingSignalenSelect<false> | VoorbereidingSignalenSelect<true>;
@@ -258,7 +264,7 @@ export interface User {
    */
   variantScope?: (number | null) | Variant;
   /**
-   * Volledige toegang = ziet alles waar de rol (hiernaast) al recht op geeft — de standaard voor elk account. Beperkt via permissies = uitsluitend de hieronder aangevinkte hoofdmenu's/submenu's, ook al zou de rol méér toestaan. Dit veld van het EIGEN account is nooit wijzigbaar (ook niet door een beheerder) — zo kan niemand zichzelf per ongeluk buitensluiten of de eigen rechten verhogen; alleen een ánder beheerdersaccount kan dit hier aanpassen.
+   * Volledige toegang = ziet alles waar de rol recht op geeft. Beperkt via permissies = uitsluitend de hieronder aangevinkte onderdelen. Je kunt de toegang van je eigen account niet wijzigen; alleen een andere beheerder kan dat.
    */
   permissionMode?: ('full' | 'restricted') | null;
   /**
@@ -2334,6 +2340,98 @@ export interface SalesProposal {
   createdAt: string;
 }
 /**
+ * Commerciële doelperioden. Primair gestuurd op nieuwe licenties.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-goals".
+ */
+export interface SalesGoal {
+  id: number;
+  naam: string;
+  startDatum: string;
+  eindDatum: string;
+  doelLicenties: number;
+  actief?: boolean | null;
+  notitie?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Partnerdossier voor commerciële afspraken, doelen, contactmomenten, acties en mijlpalen. Resultaten worden automatisch uit Monday berekend.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-partners".
+ */
+export interface SalesPartner {
+  id: number;
+  /**
+   * Gebruik exact dezelfde naam als in Monday bij 'Binnengekomen via'.
+   */
+  naam: string;
+  startDatum?: string | null;
+  status?: ('verkenning' | 'actief' | 'on_hold' | 'gestopt') | null;
+  verantwoordelijke?: (number | null) | User;
+  verwachting?: string | null;
+  doelLicenties?: number | null;
+  doelStartDatum?: string | null;
+  doelEindDatum?: string | null;
+  /**
+   * Gesprekken, meetings, mails en andere relevante contactmomenten met deze partner.
+   */
+  contactmomenten?:
+    | {
+        datum: string;
+        type: 'gesprek' | 'meeting' | 'email' | 'actie_event' | 'evaluatie' | 'overig';
+        samenvatting: string;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * Historie van concrete acties binnen de samenwerking. De eerstvolgende actie kan daarnaast bovenaan apart worden bijgehouden.
+   */
+  acties?:
+    | {
+        actie: string;
+        deadline?: string | null;
+        afgerond?: boolean | null;
+        afgerondOp?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  volgendeActie?: string | null;
+  volgendeActieDeadline?: string | null;
+  mijlpalen?:
+    | {
+        type: 'overeenkomst' | 'eerste_actie' | 'eerste_lead' | 'eerste_klant' | 'evaluatie' | 'anders';
+        datum: string;
+        toelichting?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  notities?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Geanonimiseerde trends uit de Lesplan Generator. Alleen server-side gevuld.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "lesplan-analytics".
+ */
+export interface LesplanAnalytic {
+  id: number;
+  requestedAt: string;
+  subject: string;
+  rawGoal: string;
+  normalizedGoal: string;
+  topic?: string | null;
+  ageGroup?: string | null;
+  planTitle?: string | null;
+  source?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * Persoonlijke taken — uitsluitend zichtbaar voor de eigenaar. Beheer via het Mijn Werk-dashboard (Mijn dag), niet deze lijst.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -2737,6 +2835,18 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'sales-proposals';
         value: number | SalesProposal;
+      } | null)
+    | ({
+        relationTo: 'sales-goals';
+        value: number | SalesGoal;
+      } | null)
+    | ({
+        relationTo: 'sales-partners';
+        value: number | SalesPartner;
+      } | null)
+    | ({
+        relationTo: 'lesplan-analytics';
+        value: number | LesplanAnalytic;
       } | null)
     | ({
         relationTo: 'personal-tasks';
@@ -3884,6 +3994,80 @@ export interface SalesProposalsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-goals_select".
+ */
+export interface SalesGoalsSelect<T extends boolean = true> {
+  naam?: T;
+  startDatum?: T;
+  eindDatum?: T;
+  doelLicenties?: T;
+  actief?: T;
+  notitie?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sales-partners_select".
+ */
+export interface SalesPartnersSelect<T extends boolean = true> {
+  naam?: T;
+  startDatum?: T;
+  status?: T;
+  verantwoordelijke?: T;
+  verwachting?: T;
+  doelLicenties?: T;
+  doelStartDatum?: T;
+  doelEindDatum?: T;
+  contactmomenten?:
+    | T
+    | {
+        datum?: T;
+        type?: T;
+        samenvatting?: T;
+        id?: T;
+      };
+  acties?:
+    | T
+    | {
+        actie?: T;
+        deadline?: T;
+        afgerond?: T;
+        afgerondOp?: T;
+        id?: T;
+      };
+  volgendeActie?: T;
+  volgendeActieDeadline?: T;
+  mijlpalen?:
+    | T
+    | {
+        type?: T;
+        datum?: T;
+        toelichting?: T;
+        id?: T;
+      };
+  notities?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "lesplan-analytics_select".
+ */
+export interface LesplanAnalyticsSelect<T extends boolean = true> {
+  requestedAt?: T;
+  subject?: T;
+  rawGoal?: T;
+  normalizedGoal?: T;
+  topic?: T;
+  ageGroup?: T;
+  planTitle?: T;
+  source?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "personal-tasks_select".
  */
 export interface PersonalTasksSelect<T extends boolean = true> {
@@ -4116,7 +4300,7 @@ export interface HelpdeskInstellingen {
   createdAt?: string | null;
 }
 /**
- * Accountbrede instellingen voor de Sales-assistent.
+ * Accountbrede instellingen voor de Sales-assistent en het commerciële dashboard.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "sales-instellingen".
@@ -4129,26 +4313,18 @@ export interface SalesInstellingen {
   standaardFollowUpTermijnDagen?: number | null;
   voorkeurskanaal?: ('mail' | 'telefoon' | 'in_persoon' | 'anders') | null;
   /**
-   * Automatisch bijgewerkt na elke sync-run — niet handmatig aanpassen.
+   * Centrale rekenfactor voor commerciële doelen. Standaard: 200 licenties = 1 gemiddelde school.
+   */
+  licentiesPerSchoolEquivalent?: number | null;
+  /**
+   * Automatisch bijgewerkt na elke sync-run.
    */
   laatsteSyncOp?: string | null;
   laatsteSyncScholenVerwerkt?: number | null;
-  /**
-   * Relatiestatus, Salesfase, Type school of Datum volgende actie afweek van de al lokaal bekende waarde.
-   */
   laatsteSyncWijzigingen?: number | null;
   laatsteSyncFouten?: number | null;
-  /**
-   * Scholen met een geldige (niet-verlopen) Monday-vervolgdatum die deze sync-run als 'al gepland' zijn herkend.
-   */
   laatsteSyncBestaandePlanningenHerkend?: number | null;
-  /**
-   * Lokale scholen die deze sync-run niet meer voorkwamen op '1: Scholen (Master Data)' en daarom gedeactiveerd zijn.
-   */
   laatsteSyncScholenVanBoardGehaald?: number | null;
-  /**
-   * Pending 'volgende actie'-voorstellen die deze sync-run superseded zijn omdat Monday inmiddels al een geldige vervolgdatum had.
-   */
   laatsteSyncVerouderdeVoorstellenGesloten?: number | null;
   updatedAt?: string | null;
   createdAt?: string | null;
@@ -4216,6 +4392,7 @@ export interface HelpdeskInstellingenSelect<T extends boolean = true> {
 export interface SalesInstellingenSelect<T extends boolean = true> {
   standaardFollowUpTermijnDagen?: T;
   voorkeurskanaal?: T;
+  licentiesPerSchoolEquivalent?: T;
   laatsteSyncOp?: T;
   laatsteSyncScholenVerwerkt?: T;
   laatsteSyncWijzigingen?: T;

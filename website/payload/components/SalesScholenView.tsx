@@ -105,7 +105,10 @@ export function SalesScholenView() {
     setLaden(false);
   }, []);
 
-  useEffect(() => { laad(); }, [laad]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    laad();
+  }, [laad]);
 
   const viaOpties = useMemo(() => Array.from(new Set(Object.values(viaPerMondayItem).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b, "nl")), [viaPerMondayItem]);
 

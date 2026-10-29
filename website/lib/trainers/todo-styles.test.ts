@@ -19,13 +19,15 @@ describe("TODO_CTA_LABEL", () => {
     expect(TODO_CTA_LABEL.verslag_vastgelopen).toBe("Verslag afronden");
     expect(TODO_CTA_LABEL.concept_gestart).toBe("Verslag afmaken");
     expect(TODO_CTA_LABEL.verslag_ontbreekt).toBe("Verslag maken");
+    expect(TODO_CTA_LABEL.startactie).toBe("Bekijken");
   });
 });
 
 describe("TODO_ICOON", () => {
-  it("elke soort heeft een eigen icoon (visueel onderscheid tussen de vier categorieën)", () => {
+  it("elke soort heeft een eigen icoon, inclusief startactie", () => {
     const iconen = new Set(Object.values(TODO_ICOON));
-    expect(iconen.size).toBe(4);
+    expect(iconen.size).toBe(Object.keys(TODO_CTA_LABEL).length);
+    expect(iconen.size).toBe(5);
   });
 });
 

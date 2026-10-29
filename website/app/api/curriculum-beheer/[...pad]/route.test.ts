@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 // Route-test voor de proxy naar Curriculum Werkplaats (Helpdesk-
 // beheerkoppeling-uitbreiding 2026, punt 1/7): dekt specifiek de twee
@@ -33,8 +33,8 @@ vi.mock("@/lib/curriculum-beheer/client", () => ({
 
 const ADMIN_USER = { id: 1, role: "admin", name: "Beheerder Test", email: "beheerder@voorbeeld.nl" };
 
-function maakRequest(url: string, init?: RequestInit): NextRequest {
-  return new Request(url, init) as unknown as NextRequest;
+function maakRequest(url: string, init?: { method?: string; headers?: HeadersInit; body?: string }): NextRequest {
+  return new NextRequest(url, init);
 }
 
 describe("GET/POST/DELETE /api/curriculum-beheer/[...pad] — proxy naar Curriculum Werkplaats", () => {

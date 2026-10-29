@@ -908,7 +908,8 @@ describe("verwerkSchoolItem — geldige Monday-planning: supersede + actie-extra
     expect(resultaat.verouderdeVoorstellenGesloten).toBe(0);
   });
 
-  it("ververst de gecachte actie-extractie voor een NIEUWE/gewijzigde Monday-datum — 'Mail sturen voor afspraak' gecached op 2026-08-24", async () => {
+  it("ververst de gecachte actie-extractie voor een NIEUWE/gewijzigde Monday-datum — 'Mail sturen voor afspraak'", async () => {
+    const datum = toekomstigeDatum(10);
     mockFind.mockImplementation(({ collection }: { collection: string }) => {
       if (collection === "sales-schools")
         return Promise.resolve({ docs: [{ id: 7, relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: null, onderwijstype: null, cachedGeplandeActieDatum: null }] });
@@ -916,10 +917,10 @@ describe("verwerkSchoolItem — geldige Monday-planning: supersede + actie-extra
     });
     const resultaat = leegResultaat();
 
-    await verwerkSchoolItem(maakPayload(), maakSpringplankItem("2026-08-24"), resultaat, []);
+    await verwerkSchoolItem(maakPayload(), maakSpringplankItem(datum), resultaat, []);
 
     expect(mockBepaalGeplandeActie).toHaveBeenCalledWith(
-      expect.objectContaining({ schoolName: "Springplank", mondayItemId: "12752900010", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: "2026-08-24" })
+      expect.objectContaining({ schoolName: "Springplank", mondayItemId: "12752900010", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: datum })
     );
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -937,16 +938,17 @@ describe("verwerkSchoolItem — geldige Monday-planning: supersede + actie-extra
   });
 
   it("doet GEEN nieuwe AI-call wanneer de cache al bestaat voor exact dezelfde datum — kostenbewust (punt 4)", async () => {
+    const datum = toekomstigeDatum(10);
     mockFind.mockImplementation(({ collection }: { collection: string }) => {
       if (collection === "sales-schools")
         return Promise.resolve({
-          docs: [{ id: 7, relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: "2026-08-24", onderwijstype: null, cachedGeplandeActieDatum: "2026-08-24" }],
+          docs: [{ id: 7, relatiestatus: "Lead", salesfase: "Afspraak plannen", mondayVolgendeActieDatum: datum, onderwijstype: null, cachedGeplandeActieDatum: datum }],
         });
       return Promise.resolve({ docs: [] });
     });
     const resultaat = leegResultaat();
 
-    await verwerkSchoolItem(maakPayload(), maakSpringplankItem("2026-08-24"), resultaat, []);
+    await verwerkSchoolItem(maakPayload(), maakSpringplankItem(datum), resultaat, []);
 
     expect(mockBepaalGeplandeActie).not.toHaveBeenCalled();
   });

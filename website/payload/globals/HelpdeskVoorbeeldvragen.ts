@@ -8,7 +8,7 @@ import { anyEditor } from "../access/roles";
 export const HelpdeskVoorbeeldvragen: GlobalConfig = {
   slug: "helpdesk-voorbeeldvragen",
   admin: {
-    group: "Beheer",
+    group: "Beheer — systeem",
     description: "De klikbare voorbeeldvragen onder het invoerveld op de helpdesk-homepage.",
   },
   access: {
