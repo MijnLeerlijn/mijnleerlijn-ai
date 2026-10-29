@@ -1,3 +1,6 @@
+// @vitest-environment node
+// Node 24 + jsdom: request.formData() weigert een jsdom-File (webidl.is.File).
+// Deze routetest heeft geen DOM nodig.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "./route";
