@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { SCHOLEN_KOLOM } from "./monday-columns";
 import {
+  aandelen,
   bouwNieuwDashboard,
   bepaalDashboardKeuze,
-  conversie,
   doorstroom,
   kalenderPeriode,
   parseHalfjaarLabel,
@@ -23,6 +23,7 @@ function school(gedeelte: Partial<NieuwDashboardSchool> & Pick<NieuwDashboardSch
     onderwijstypen: [],
     bronnen: [],
     klantGeworden: null,
+    aangemaaktOp: null,
     ...gedeelte,
   };
 }
@@ -61,6 +62,12 @@ describe("nieuw dashboard — totalen, eenheid en meerdere waarden", () => {
     expect(model.bronnen.reduce((som, rij) => som + rij.klanten.licenties, 0)).toBe(model.klanten.licenties);
     expect(model.bronnen.reduce((som, rij) => som + rij.pipeline.scholen, 0)).toBe(model.pipeline.scholen);
     expect(model.bronnen.at(-1)?.naam).toBe("Onbekend");
+    const pipelineRijen = model.bronnen.filter((rij) => rij.pipeline.licenties > 0);
+    const klantRijen = model.bronnen.filter((rij) => rij.klanten.licenties > 0);
+    expect(aandelen(pipelineRijen.map((rij) => rij.pipeline.licenties)).reduce((som, deel) => som + deel, 0)).toBe(100);
+    expect(aandelen(klantRijen.map((rij) => rij.klanten.scholen)).reduce((som, deel) => som + deel, 0)).toBe(100);
+    const correctie = model.pipelineMaanden.find((maand) => maand.correctie);
+    expect(correctie?.eindstand).toEqual(model.pipeline);
   });
 
   it("wisselt de eenheid zonder de totalen uit elkaar te trekken", () => {
@@ -73,7 +80,54 @@ describe("nieuw dashboard — totalen, eenheid en meerdere waarden", () => {
   it("houdt gestopt en een onbekende status buiten de pipeline", () => {
     expect(model.funnel.gestopt.licenties).toBe(80);
     expect(model.funnel.overig.licenties).toBe(10);
-    expect(conversie(model.klanten.licenties, model.pipeline.licenties)).toBeCloseTo((100 / 350) * 100);
+    expect(model.pipeline.licenties).toBe(250);
+  });
+});
+
+describe("pipeline per maand", () => {
+  const scholen = [
+    school({ id: "lead", relatiestatus: "Lead", licenties: 50, aangemaaktOp: "2026-03-04T10:00:00.000Z" }),
+    school({ id: "door", relatiestatus: "Klant", licenties: 80 }),
+    school({ id: "stop", relatiestatus: "Gestopt", licenties: 30 }),
+    school({ id: "gat", relatiestatus: "Prospect", licenties: 20 }),
+  ];
+  const historie = [
+    overgang("door", "2026-05-02T10:00:00.000Z", "", "Lead"),
+    licenties("door", "2026-05-02T10:00:00.000Z", null, 80),
+    overgang("door", "2026-06-15T10:00:00.000Z", "Lead", "Klant"),
+    overgang("stop", "2026-07-01T10:00:00.000Z", "", "Prospect"),
+    licenties("stop", "2026-07-01T10:00:00.000Z", null, 30),
+    overgang("stop", "2026-08-01T10:00:00.000Z", "Prospect", "Gestopt"),
+  ];
+  const model = bouwNieuwDashboard({ scholen, historie, doelen: [], nu: NU, factor: 200 });
+
+  it("laat de pipeline aansluiten en de huidige maand na correctie op Monday uitkomen", () => {
+    const maart = model.pipelineMaanden.find((maand) => maand.sleutel === "2026-03");
+    const mei = model.pipelineMaanden.find((maand) => maand.sleutel === "2026-05");
+    const juni = model.pipelineMaanden.find((maand) => maand.sleutel === "2026-06");
+    const augustus = model.pipelineMaanden.find((maand) => maand.sleutel === "2026-08");
+    expect(maart?.nieuw.scholen).toBe(1);
+    expect(mei?.nieuw).toEqual({ scholen: 1, licenties: 80 });
+    expect(juni?.klantGeworden).toEqual({ scholen: 1, licenties: 80 });
+    expect(augustus?.afgevallen).toEqual({ scholen: 1, licenties: 30 });
+    const echte = model.pipelineMaanden.filter((maand) => !maand.correctie);
+    for (let index = 1; index < echte.length; index++) {
+      const vorige = echte[index - 1];
+      const huidige = echte[index];
+      if (!vorige || !huidige) continue;
+      expect(huidige.eindstand.scholen).toBe(vorige.eindstand.scholen + huidige.netto.scholen);
+      expect(huidige.eindstand.licenties).toBe(vorige.eindstand.licenties + huidige.netto.licenties);
+    }
+    const correctie = model.pipelineMaanden.find((maand) => maand.correctie);
+    expect(correctie?.eindstand).toEqual(model.pipeline);
+    expect(model.pipeline).toEqual({ scholen: 2, licenties: 70 });
+  });
+});
+describe("aandelen", () => {
+  it("laat de getoonde percentages samen op 100 uitkomen", () => {
+    const delen = aandelen([1, 1, 1]);
+    expect(delen.reduce((som, deel) => som + deel, 0)).toBeCloseTo(100);
+    expect(aandelen([0, 0])).toEqual([0, 0]);
   });
 });
 
@@ -105,46 +159,56 @@ describe("nieuw dashboard — maandverschil en halfjaar", () => {
     factor: 200,
   });
 
-  it("zet het verschil gelijk aan nieuw min de vorige maand", () => {
+  it("rekent erbij, eraf en netto zo dat de stand aansluit, met een zichtbare correctie naar Monday", () => {
     const jan = model.maanden.find((maand) => maand.sleutel === "2026-01");
     const feb = model.maanden.find((maand) => maand.sleutel === "2026-02");
     const mrt = model.maanden.find((maand) => maand.sleutel === "2026-03");
-    expect(jan?.nieuw.licenties).toBe(100);
-    expect(feb?.nieuw).toEqual({ scholen: 1, licenties: 40 });
-    expect(mrt?.nieuw.licenties).toBe(200);
-    expect(feb?.verschil.licenties).toBe(40 - 100);
-    expect(mrt?.verschil.licenties).toBe(200 - 40);
-    expect(mrt?.verschil.scholen).toBe(0);
+    expect(jan?.erbij).toEqual({ scholen: 1, licenties: 100 });
+    expect(jan?.eraf).toEqual({ scholen: 0, licenties: 0 });
+    expect(jan?.netto).toEqual({ scholen: 1, licenties: 100 });
+    expect(feb?.erbij).toEqual({ scholen: 1, licenties: 40 });
+    expect(feb?.eraf).toEqual({ scholen: 1, licenties: 40 });
+    expect(feb?.netto).toEqual({ scholen: 0, licenties: 0 });
+    expect(mrt?.erbij.licenties).toBe(200);
+    const echte = model.maanden.filter((maand) => !maand.correctie);
+    for (let index = 1; index < echte.length; index++) {
+      const vorige = echte[index - 1];
+      const huidige = echte[index];
+      if (!vorige || !huidige) continue;
+      expect(huidige.eindstand.licenties).toBe(vorige.eindstand.licenties + huidige.netto.licenties);
+      expect(huidige.eindstand.scholen).toBe(vorige.eindstand.scholen + huidige.netto.scholen);
+    }
+    const correctie = model.maanden.find((maand) => maand.correctie);
+    const laatste = echte[echte.length - 1];
+    expect(correctie?.label).toBe("Correctie / onbekend");
+    expect(laatste && correctie ? laatste.eindstand.licenties + correctie.netto.licenties : 0).toBe(model.klanten.licenties);
+    expect(correctie?.eindstand).toEqual(model.klanten);
   });
 
-  it("laat de stand van deze maand gelijk zijn aan de huidige klanten", () => {
-    const nu = model.maanden.find((maand) => maand.isNu);
-    expect(nu?.eindstand).toEqual(model.klanten);
+  it("laat de stand van deze maand, na correctie, gelijk zijn aan de huidige klanten", () => {
     expect(model.klanten).toEqual({ scholen: 4, licenties: 400 });
+    expect(model.maanden.find((maand) => maand.correctie)?.eindstand).toEqual(model.klanten);
   });
 
   it("bouwt eerdere maanden op uit bekende overgangen, inclusief wie daarna stopte", () => {
     const jan = model.maanden.find((maand) => maand.sleutel === "2026-01");
     const feb = model.maanden.find((maand) => maand.sleutel === "2026-02");
-    expect(jan?.eindstand.licenties).toBe(100);
-    expect(feb?.eindstand.licenties).toBe(100);
+    expect(jan?.eindstand).toEqual({ scholen: 1, licenties: 100 });
+    expect(feb?.eindstand).toEqual({ scholen: 1, licenties: 100 });
   });
 
-  it("bucket een halfjaar op de Amsterdamse kalender en gebruikt historie vóór het label", () => {
+  it("toont alleen halfjaren vanaf 2026 en slaat scholen zonder datum over", () => {
     expect(kalenderPeriode(Date.parse("2026-06-30T21:59:59.000Z"), "half").label).toBe("H1 2026");
     expect(kalenderPeriode(Date.parse("2026-06-30T22:00:00.000Z"), "half").label).toBe("H2 2026");
+    expect(model.halfjaren.map((half) => half.label)).toEqual(["H1 2026", "H2 2026"]);
     const h1 = model.halfjaren.find((half) => half.label === "H1 2026");
     const h2 = model.halfjaren.find((half) => half.label === "H2 2026");
     expect(h1?.nieuw).toEqual({ scholen: 3, licenties: 340 });
     expect(h1?.lopend).toBe(false);
     expect(h2?.lopend).toBe(true);
     expect(h2?.nieuw.scholen).toBe(0);
-    const h1_2025 = model.halfjaren.find((half) => half.label === "H1 2025");
-    expect(h1_2025?.zonderMaand).toEqual({ scholen: 1, licenties: 50 });
-    expect(h1_2025?.nieuw.scholen).toBe(0);
-    expect(model.kwaliteitTekst).toContain("2 huidige klanten");
-    expect(model.kwaliteitTekst).toContain("1 daarvan");
-    expect(model.kwaliteitTekst).toContain("1 Monday-label is geen halfjaar");
+    expect(model.kwaliteitTekst).toContain("geen klant-datum");
+    expect(model.kwaliteitTekst).not.toContain("zonder maand");
   });
 
   it("kiest het halfjaar- en het jaardoel op de lengte van de periode", () => {

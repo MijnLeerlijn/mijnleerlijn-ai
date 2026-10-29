@@ -29,10 +29,18 @@
 .tempoLabel { margin: 10px 0 0; font-size: 13px; }
 .achter { color: #b42318; font-weight: 700; }
 .voor { color: #15803d; font-weight: 700; }
-.grafiek { position: relative; height: 240px; display: flex; align-items: flex-end; gap: 8px; border-bottom: 1px solid var(--theme-elevation-150, #e2e8f0); margin-top: 8px; }
+.subkop { margin: 22px 0 8px; font-size: 16px; color: var(--ml-admin-brand-donkerblauw, #002641); }
+.correctie { background: #fff7ed; }
+.bronnen { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.netto { position: relative; height: 160px; display: flex; align-items: stretch; gap: 8px; }
+.nul { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed #94a3b8; }
+.nettoOmhoog, .nettoOmlaag { position: absolute; left: 50%; width: 100%; max-width: 28px; transform: translateX(-50%); }
+.nettoOmhoog { bottom: 50%; background: var(--ml-admin-accent, #1588c9); border-radius: 4px 4px 0 0; }
+.nettoOmlaag { top: 50%; background: #b42318; border-radius: 0 0 4px 4px; }
+.grafiek { position: relative; height: 180px; display: flex; align-items: flex-end; gap: 8px; border-bottom: 1px solid var(--theme-elevation-150, #e2e8f0); margin-top: 8px; }
 .doellijn { position: absolute; left: 0; right: 0; border-top: 2px dashed #94a3b8; z-index: 1; }
 .doellijn span { position: absolute; right: 0; top: -18px; font-size: 12px; color: var(--theme-elevation-600, #475569); background: #fff; padding-left: 6px; }
-.kolom { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; z-index: 2; min-width: 0; }
+.kolom { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; z-index: 2; min-width: 0; }
 .kolom b { font-size: 11px; margin-bottom: 4px; color: var(--ml-admin-brand-donkerblauw, #002641); }
 .staaf { width: 100%; max-width: 42px; background: var(--ml-admin-accent, #1588c9); border-radius: 7px 7px 0 0; min-height: 2px; }
 .buiten .staaf { background: #9ecae6; }
@@ -72,6 +80,7 @@ tr.nu { background: var(--ml-admin-accent-soft, #e6f2fa); }
 @media (max-width: 900px) {
   .kpis { grid-template-columns: 1fr 1fr; }
   .doelen { grid-template-columns: 1fr; gap: 22px; }
+  .bronnen { grid-template-columns: 1fr; }
   .doel.aan { outline-offset: 4px; }
 }
 @media (max-width: 640px) {

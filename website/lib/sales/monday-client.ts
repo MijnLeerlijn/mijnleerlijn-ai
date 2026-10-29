@@ -122,6 +122,7 @@ export interface MondaySchoolItem {
   id: string;
   name: string;
   updated_at: string;
+  created_at?: string;
   column_values: MondayColumnValue[];
 }
 
@@ -145,6 +146,7 @@ export async function haalScholenPagina(opties: {
           items {
             id
             name
+            created_at
             updated_at
             column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } }
           }

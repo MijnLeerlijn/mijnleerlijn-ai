@@ -9,10 +9,9 @@ import { calculateSalesGoalProgress, type SalesGoalInput, type SalesGoalProgress
  * één keer, onder "Meerdere", zodat totalen kloppen.
  *
  * Wanneer een school klant werd komt uit de statushistorie (eerste overgang
- * naar Klant): die heeft een tijdstip. De Monday-kolom "Klant geworden" is een
- * label, geen datum. Alleen als de historie geen tijdstip heeft én het label
- * een halfjaar is, tonen we die school apart als "zonder maand". Een jaartal
- * of een onbekend label wordt niet in een halfjaar gegokt.
+ * naar Klant). Zonder dat tijdstip telt de school niet mee in maanden of
+ * halfjaren. Halfjaren lopen vanaf H1 2026. Het verschil met de live
+ * Monday-stand staat op een aparte correctieregel.
  */
 
 export type DashboardEenheid = "licenties" | "scholen";
@@ -30,6 +29,8 @@ export interface NieuwDashboardSchool {
   onderwijstypen: string[];
   bronnen: string[];
   klantGeworden: string | null;
+  /** Monday item created_at. Alleen gebruikt als er geen statushistorie is. */
+  aangemaaktOp?: string | null;
 }
 
 export interface NieuwDashboardHistorie {
@@ -67,10 +68,24 @@ export interface MaandRij {
   label: string;
   jaar: number;
   half: 1 | 2;
-  nieuw: Maat;
-  verschil: Maat;
+  erbij: Maat;
+  eraf: Maat;
+  netto: Maat;
   eindstand: Maat;
   isNu: boolean;
+  correctie: boolean;
+}
+
+export interface PipelineMaandRij {
+  sleutel: string;
+  label: string;
+  nieuw: Maat;
+  klantGeworden: Maat;
+  afgevallen: Maat;
+  netto: Maat;
+  eindstand: Maat;
+  isNu: boolean;
+  correctie: boolean;
 }
 
 export interface HalfjaarRij {
@@ -78,7 +93,6 @@ export interface HalfjaarRij {
   jaar: number;
   half: 1 | 2;
   nieuw: Maat;
-  zonderMaand: Maat;
   lopend: boolean;
 }
 
@@ -127,10 +141,12 @@ export interface NieuwDashboardModel {
   periodeLabels: { half: string; jaar: string };
   klanten: Maat;
   pipeline: Maat;
-  dezeMaandNieuw: Maat;
+  dezeMaandNetto: Maat;
   nieuwInPeriode: { half: Maat; jaar: Maat };
   doelen: { half: DoelKaart | null; jaar: DoelKaart | null };
   maanden: MaandRij[];
+  pipelineMaanden: PipelineMaandRij[];
+  pipelineHistorieDun: boolean;
   funnel: FunnelStand;
   typen: TypeRij[];
   halfjaren: HalfjaarRij[];
@@ -152,6 +168,28 @@ export function splitsLabels(raw: string | null | undefined): string[] {
 
 export function plus(a: Maat, b: Maat): Maat {
   return { scholen: a.scholen + b.scholen, licenties: a.licenties + b.licenties };
+}
+
+export function minMaat(a: Maat, b: Maat): Maat {
+  return { scholen: a.scholen - b.scholen, licenties: a.licenties - b.licenties };
+}
+
+/** Percentages op 1 decimaal die samen exact 100 zijn. Bij een lege som allemaal 0. */
+export function aandelen(waarden: number[]): number[] {
+  const totaal = waarden.reduce((som, waarde) => som + waarde, 0);
+  if (totaal <= 0) return waarden.map(() => 0);
+  const exact = waarden.map((waarde) => (waarde / totaal) * 1000);
+  const basis = exact.map((waarde) => Math.floor(waarde + 1e-9));
+  let rest = 1000 - basis.reduce((som, waarde) => som + waarde, 0);
+  const volgorde = exact
+    .map((waarde, index) => ({ index, restant: waarde - Math.floor(waarde + 1e-9) }))
+    .sort((a, b) => b.restant - a.restant || a.index - b.index);
+  for (const item of volgorde) {
+    if (rest <= 0) break;
+    basis[item.index] = (basis[item.index] ?? 0) + 1;
+    rest -= 1;
+  }
+  return basis.map((waarde) => waarde / 10);
 }
 
 export function waarde(van: Maat, eenheid: DashboardEenheid): number {
@@ -262,15 +300,17 @@ export function kalenderPeriode(nu: number, soort: DashboardPeriode): { start: n
   return { start: middernachtAmsterdam(jaar, 7, 1), eind: middernachtAmsterdam(jaar + 1, 1, 1) - 1, label: `H2 ${jaar}` };
 }
 
-function laatsteHalves(nu: number): { jaar: number; half: 1 | 2; label: string; lopend: boolean }[] {
+function halvesSinds2026(nu: number): { jaar: number; half: 1 | 2; label: string; lopend: boolean }[] {
   const huidig = kalenderVan(nu);
+  if (huidig.jaar < 2026) return [];
   const uit: { jaar: number; half: 1 | 2; label: string; lopend: boolean }[] = [];
-  let jaar = huidig.jaar;
-  let half = huidig.half;
-  for (let i = 0; i < 4; i++) {
-    uit.unshift({ jaar, half, label: `H${half} ${jaar}`, lopend: i === 0 });
-    if (half === 1) { half = 2; jaar -= 1; }
-    else half = 1;
+  let jaar = 2026;
+  let half: 1 | 2 = 1;
+  while (jaar < huidig.jaar || (jaar === huidig.jaar && half <= huidig.half)) {
+    uit.push({ jaar, half, label: `H${half} ${jaar}`, lopend: jaar === huidig.jaar && half === huidig.half });
+    if (half === 1) half = 2;
+    else { half = 1; jaar += 1; }
+    if (uit.length > 24) break;
   }
   return uit;
 }
@@ -310,10 +350,6 @@ function historischNummer(raw: string | number | null | undefined): number | nul
   if (typeof raw !== "string" || !raw.trim()) return null;
   const n = Number(raw.replace(/\s/g, "").replace(",", "."));
   return Number.isFinite(n) ? n : null;
-}
-
-function isKlantTekst(raw: string | number | null | undefined): boolean {
-  return String(raw ?? "").trim().toLowerCase() === "klant";
 }
 
 interface SchoolTijd {
@@ -446,21 +482,130 @@ function tel(rij: Maat, licenties: number) {
   rij.licenties += licenties;
 }
 
-function inVoorraad(einde: number, nuKlant: boolean, tijd: SchoolTijd | undefined): boolean {
-  if (!tijd?.eersteKlantOp || tijd.eersteKlantOp > einde) return false;
-  if (nuKlant) return true;
-  return tijd.vertrekOp !== null && tijd.vertrekOp > einde;
-}
-
-function kwaliteitTekst(zonderDatum: number, viaLabel: number, labelNietHerkend: number, compleet: boolean): string {
+function kwaliteitTekst(zonderDatum: number, compleet: boolean): string {
   const delen: string[] = [];
   if (!compleet) delen.push("De statushistorie is zo lang dat niet alles is ingelezen.");
-  if (zonderDatum > 0) delen.push(`${zonderDatum} huidige klanten hebben geen klant-datum in de historie en zitten alleen in de stand van nu.`);
-  if (viaLabel === 1) delen.push("1 daarvan staat bij een halfjaar via het Monday-label, zonder maand.");
-  else if (viaLabel > 1) delen.push(`${viaLabel} daarvan staan bij een halfjaar via het Monday-label, zonder maand.`);
-  if (labelNietHerkend === 1) delen.push("1 Monday-label is geen halfjaar en is niet in een halfjaar gezet.");
-  else if (labelNietHerkend > 1) delen.push(`${labelNietHerkend} Monday-labels zijn geen halfjaar en zijn niet in een halfjaar gezet.`);
+  if (zonderDatum === 1) delen.push("1 huidige klant heeft geen klant-datum en telt niet mee in de maanden of halfjaren.");
+  else if (zonderDatum > 1) delen.push(`${zonderDatum} huidige klanten hebben geen klant-datum en tellen niet mee in de maanden of halfjaren.`);
+  if (zonderDatum > 0) delen.push("Het verschil met de Monday-stand staat op de regel Correctie / onbekend.");
   return delen.join(" ");
+}
+
+type Canon = ReturnType<typeof canonStatus>;
+
+function isPipelineStatus(status: Canon): boolean {
+  return status === "Lead" || status === "Prospect" || status === "Wacht op handtekening";
+}
+
+interface Stam {
+  klant: boolean;
+  pipeline: boolean;
+  niveau: number | null;
+}
+
+interface KlantStroom { erbij: Maat; eraf: Maat }
+interface PipelineStroom { nieuw: Maat; klantGeworden: Maat; afgevallen: Maat }
+
+function legeKlantStroom(): KlantStroom { return { erbij: maat(), eraf: maat() }; }
+function legePipelineStroom(): PipelineStroom { return { nieuw: maat(), klantGeworden: maat(), afgevallen: maat() }; }
+
+function telOp(doel: Maat, scholen: number, licenties: number) {
+  doel.scholen += scholen;
+  doel.licenties += licenties;
+}
+
+interface Gebeurtenis {
+  op: number;
+  soort: "status" | "licentie";
+  vanStatus: Canon | null;
+  naarStatus: Canon | null;
+  vanLicentie: number | null;
+  naarLicentie: number | null;
+}
+
+function gebeurtenissenVan(school: NieuwDashboardSchool, historie: NieuwDashboardHistorie[]): Gebeurtenis[] {
+  const lijst: Gebeurtenis[] = [];
+  let heeftStatus = false;
+  for (const event of historie) {
+    if (event.mondayItemId !== school.id) continue;
+    const op = Date.parse(event.occurredAt);
+    if (!Number.isFinite(op)) continue;
+    if (event.columnId === SCHOLEN_KOLOM.relatiestatus) {
+      heeftStatus = true;
+      const vorige = event.previousValue == null || String(event.previousValue).trim() === "" ? null : canonStatus(String(event.previousValue));
+      lijst.push({ op, soort: "status", vanStatus: vorige, naarStatus: canonStatus(String(event.value ?? "")), vanLicentie: null, naarLicentie: null });
+    } else if (event.columnId === SCHOLEN_KOLOM.aantalLeerlingen || event.soort === "licenties") {
+      lijst.push({ op, soort: "licentie", vanStatus: null, naarStatus: null, vanLicentie: historischNummer(event.previousValue), naarLicentie: historischNummer(event.value) });
+    }
+  }
+  lijst.sort((a, b) => a.op - b.op || (a.soort === "licentie" ? -1 : 1));
+  if (!heeftStatus && school.aangemaaktOp && isPipelineStatus(canonStatus(school.relatiestatus))) {
+    const op = Date.parse(school.aangemaaktOp);
+    if (Number.isFinite(op)) {
+      lijst.unshift({ op, soort: "status", vanStatus: null, naarStatus: canonStatus(school.relatiestatus), vanLicentie: null, naarLicentie: null });
+    }
+  }
+  return lijst;
+}
+
+function niveauVoor(events: Gebeurtenis[], op: number, fallback: number): number {
+  const voor = events.filter((event) => event.soort === "licentie" && event.op <= op && event.naarLicentie != null);
+  const laatste = voor[voor.length - 1];
+  if (laatste?.naarLicentie != null) return laatste.naarLicentie;
+  const na = events.find((event) => event.soort === "licentie" && event.op > op && event.vanLicentie != null);
+  if (na?.vanLicentie != null) return na.vanLicentie;
+  return fallback;
+}
+
+function pasLicentieToe(staat: Stam, van: number | null, naar: number | null, klant: KlantStroom, pipeline: PipelineStroom) {
+  const basis = van ?? staat.niveau;
+  if (naar != null && basis != null) {
+    const delta = naar - basis;
+    if (staat.klant && delta > 0) telOp(klant.erbij, 0, delta);
+    if (staat.klant && delta < 0) telOp(klant.eraf, 0, -delta);
+    if (staat.pipeline && delta > 0) telOp(pipeline.nieuw, 0, delta);
+    if (staat.pipeline && delta < 0) telOp(pipeline.afgevallen, 0, -delta);
+  }
+  if (naar != null) staat.niveau = naar;
+}
+
+function pasStatusToe(staat: Stam, van: Canon | null, naar: Canon, niveau: number, klant: KlantStroom, pipeline: PipelineStroom, dun: { waarde: boolean }) {
+  if (staat.niveau == null) staat.niveau = niveau;
+  const niveauNu = staat.niveau ?? niveau;
+  const vanPipeline = staat.pipeline;
+  const vanKlant = staat.klant;
+  if (!vanPipeline && van && isPipelineStatus(van)) dun.waarde = true;
+
+  if (isPipelineStatus(naar)) {
+    if (!vanPipeline) telOp(pipeline.nieuw, 1, niveauNu);
+    staat.pipeline = true;
+    if (vanKlant) {
+      telOp(klant.eraf, 1, niveauNu);
+      staat.klant = false;
+    }
+    return;
+  }
+  if (naar === "Klant") {
+    if (!vanKlant) telOp(klant.erbij, 1, niveauNu);
+    staat.klant = true;
+    if (vanPipeline) {
+      telOp(pipeline.klantGeworden, 1, niveauNu);
+      staat.pipeline = false;
+    }
+    return;
+  }
+  if (vanPipeline) telOp(pipeline.afgevallen, 1, niveauNu);
+  staat.pipeline = false;
+  if (vanKlant) telOp(klant.eraf, 1, niveauNu);
+  staat.klant = false;
+}
+
+function voorraad(staat: Stam): { klant: Maat; pipeline: Maat } {
+  const niveau = staat.niveau ?? 0;
+  return {
+    klant: staat.klant ? maat(1, niveau) : maat(),
+    pipeline: staat.pipeline ? maat(1, niveau) : maat(),
+  };
 }
 
 export function bouwNieuwDashboard(input: {
@@ -480,16 +625,13 @@ export function bouwNieuwDashboard(input: {
   const klanten = maat();
   const pipeline = maat();
   let zonderDatum = 0;
-  let viaLabel = 0;
-  let labelNietHerkend = 0;
-  const labelPerSchool = new Map<string, { jaar: number; half: 1 | 2 }>();
 
   for (const school of input.scholen) {
     const status = canonStatus(school.relatiestatus);
     const licenties = Number.isFinite(school.licenties) ? school.licenties : 0;
     const veld = statusVeld(status);
     tel(funnel[veld], licenties);
-    const open = status === "Lead" || status === "Prospect" || status === "Wacht op handtekening";
+    const open = isPipelineStatus(status);
     if (status === "Klant") tel(klanten, licenties);
     if (open) tel(pipeline, licenties);
 
@@ -505,60 +647,126 @@ export function bouwNieuwDashboard(input: {
     if (open) tel(bronRij.pipeline, licenties);
     bronnen.set(bronNaam, bronRij);
 
-    if (status === "Klant" && !tijden.get(school.id)?.eersteKlantOp) {
-      zonderDatum += 1;
-      const label = parseHalfjaarLabel(school.klantGeworden);
-      if (label && label.half) {
-        viaLabel += 1;
-        labelPerSchool.set(school.id, { jaar: label.jaar, half: label.half });
-      } else if (school.klantGeworden?.trim()) {
-        labelNietHerkend += 1;
-      }
-    }
-  }
-
-  const nieuwPerMaand = new Map<string, Maat>();
-  for (const tijd of tijden.values()) {
-    if (tijd.eersteKlantOp === null) continue;
-    const sleutel = maandSleutel(tijd.eersteKlantOp);
-    const bestaand = nieuwPerMaand.get(sleutel) ?? maat();
-    tel(bestaand, tijd.licentiesBijKlant);
-    nieuwPerMaand.set(sleutel, bestaand);
+    if (status === "Klant" && !tijden.get(school.id)?.eersteKlantOp) zonderDatum += 1;
   }
 
   const maandSleutels = laatsteMaanden(input.nu);
-  const maandVoorVenster = (() => {
-    const eerste = maandSleutels[0] ?? maandSleutel(input.nu);
-    const match = /^(\d{4})-(\d{2})$/.exec(eerste);
-    if (!match) return "";
-    const totaal = Number(match[1]) * 12 + (Number(match[2]) - 1) - 1;
-    return `${Math.floor(totaal / 12)}-${String((totaal % 12) + 1).padStart(2, "0")}`;
+  const vensterStart = (() => {
+    const eerste = maandSleutels[0];
+    const match = eerste ? /^(\d{4})-(\d{2})$/.exec(eerste) : null;
+    return match ? middernachtAmsterdam(Number(match[1]), Number(match[2]), 1) : input.nu;
   })();
-  let vorigeNieuw = nieuwPerMaand.get(maandVoorVenster) ?? maat();
-  const huidigeSleutel = maandSleutel(input.nu);
-  const maanden: MaandRij[] = maandSleutels.map((sleutel) => {
-    const nieuw = nieuwPerMaand.get(sleutel) ?? maat();
-    const verschil = maat(nieuw.scholen - vorigeNieuw.scholen, nieuw.licenties - vorigeNieuw.licenties);
-    vorigeNieuw = nieuw;
-    const isNu = sleutel === huidigeSleutel;
-    const { jaar, half } = kalenderVan(eindeVanMaand(sleutel));
-    const einde = eindeVanMaand(sleutel);
-    const eindstand = maat();
-    if (isNu) {
-      eindstand.scholen = klanten.scholen;
-      eindstand.licenties = klanten.licenties;
-    } else {
-      for (const school of input.scholen) {
-        const nuKlant = canonStatus(school.relatiestatus) === "Klant";
-        const tijd = tijden.get(school.id);
-        if (!inVoorraad(einde, nuKlant, tijd)) continue;
-        tel(eindstand, tijd?.licentiesBijKlant ?? school.licenties);
-      }
-    }
-    return { sleutel, label: maandLabel(sleutel), jaar, half, nieuw, verschil, eindstand, isNu };
-  });
+  const klantStromen = new Map<string, KlantStroom>();
+  const pipelineStromen = new Map<string, PipelineStroom>();
+  let klantBegin = maat();
+  let pipelineBegin = maat();
+  let pipelineHistorieDun = false;
 
-  const dezeMaandNieuw = maanden.find((maand) => maand.isNu)?.nieuw ?? maat();
+  for (const school of input.scholen) {
+    const events = gebeurtenissenVan(school, input.historie).filter((event) => event.op <= input.nu);
+    const voorVenster: Stam = { klant: false, pipeline: false, niveau: null };
+    const dun = { waarde: false };
+    const pasToe = (staat: Stam, event: Gebeurtenis, klantStroom: KlantStroom, pipelineStroom: PipelineStroom) => {
+      if (event.soort === "licentie") {
+        pasLicentieToe(staat, event.vanLicentie, event.naarLicentie, klantStroom, pipelineStroom);
+        return;
+      }
+      if (!event.naarStatus) return;
+      pasStatusToe(staat, event.vanStatus, event.naarStatus, niveauVoor(events, event.op, school.licenties), klantStroom, pipelineStroom, dun);
+    };
+    for (const event of events) {
+      if (event.op >= vensterStart) break;
+      pasToe(voorVenster, event, legeKlantStroom(), legePipelineStroom());
+    }
+    const begin = voorraad(voorVenster);
+    klantBegin = plus(klantBegin, begin.klant);
+    pipelineBegin = plus(pipelineBegin, begin.pipeline);
+
+    const staat: Stam = { klant: voorVenster.klant, pipeline: voorVenster.pipeline, niveau: voorVenster.niveau };
+    for (const event of events) {
+      if (event.op < vensterStart) continue;
+      const sleutel = maandSleutel(event.op);
+      if (!maandSleutels.includes(sleutel)) continue;
+      const klantStroom = klantStromen.get(sleutel) ?? legeKlantStroom();
+      const pipelineStroom = pipelineStromen.get(sleutel) ?? legePipelineStroom();
+      klantStromen.set(sleutel, klantStroom);
+      pipelineStromen.set(sleutel, pipelineStroom);
+      pasToe(staat, event, klantStroom, pipelineStroom);
+    }
+    if (dun.waarde) pipelineHistorieDun = true;
+  }
+
+  const huidigeSleutel = maandSleutel(input.nu);
+  let klantStand = klantBegin;
+  let pipelineStand = pipelineBegin;
+  const maanden: MaandRij[] = maandSleutels.map((sleutel) => {
+    const stroom = klantStromen.get(sleutel) ?? legeKlantStroom();
+    const netto = minMaat(stroom.erbij, stroom.eraf);
+    klantStand = plus(klantStand, netto);
+    const { jaar, half } = kalenderVan(eindeVanMaand(sleutel));
+    return {
+      sleutel,
+      label: maandLabel(sleutel),
+      jaar,
+      half,
+      erbij: stroom.erbij,
+      eraf: stroom.eraf,
+      netto,
+      eindstand: { ...klantStand },
+      isNu: sleutel === huidigeSleutel,
+      correctie: false,
+    };
+  });
+  const klantGap = minMaat(klanten, klantStand);
+  if (klantGap.scholen !== 0 || klantGap.licenties !== 0) {
+    maanden.push({
+      sleutel: "correctie",
+      label: "Correctie / onbekend",
+      jaar: kalenderVan(input.nu).jaar,
+      half: kalenderVan(input.nu).half,
+      erbij: maat(Math.max(0, klantGap.scholen), Math.max(0, klantGap.licenties)),
+      eraf: maat(Math.max(0, -klantGap.scholen), Math.max(0, -klantGap.licenties)),
+      netto: klantGap,
+      eindstand: { ...klanten },
+      isNu: false,
+      correctie: true,
+    });
+  }
+
+  const pipelineMaanden: PipelineMaandRij[] = maandSleutels.map((sleutel) => {
+    const stroom = pipelineStromen.get(sleutel) ?? legePipelineStroom();
+    const netto = minMaat(stroom.nieuw, plus(stroom.klantGeworden, stroom.afgevallen));
+    pipelineStand = plus(pipelineStand, netto);
+    return {
+      sleutel,
+      label: maandLabel(sleutel),
+      nieuw: stroom.nieuw,
+      klantGeworden: stroom.klantGeworden,
+      afgevallen: stroom.afgevallen,
+      netto,
+      eindstand: { ...pipelineStand },
+      isNu: sleutel === huidigeSleutel,
+      correctie: false,
+    };
+  });
+  const pipelineGap = minMaat(pipeline, pipelineStand);
+  if (pipelineGap.scholen !== 0 || pipelineGap.licenties !== 0) {
+    pipelineMaanden.push({
+      sleutel: "correctie",
+      label: "Correctie / onbekend",
+      nieuw: maat(Math.max(0, pipelineGap.scholen), Math.max(0, pipelineGap.licenties)),
+      klantGeworden: maat(),
+      afgevallen: maat(Math.max(0, -pipelineGap.scholen), Math.max(0, -pipelineGap.licenties)),
+      netto: pipelineGap,
+      eindstand: { ...pipeline },
+      isNu: false,
+      correctie: true,
+    });
+  }
+
+  const dezeMaand = maanden.find((maand) => maand.isNu);
+  const klantCorrectie = maanden.find((maand) => maand.correctie);
+  const dezeMaandNetto = plus(dezeMaand?.netto ?? maat(), klantCorrectie?.netto ?? maat());
   const halfPeriode = kalenderPeriode(input.nu, "half");
   const jaarPeriode = kalenderPeriode(input.nu, "jaar");
   const nieuwIn = (start: number, eind: number) => {
@@ -570,16 +778,10 @@ export function bouwNieuwDashboard(input: {
     return som;
   };
 
-  const halfjaren: HalfjaarRij[] = laatsteHalves(input.nu).map((half) => {
+  const halfjaren: HalfjaarRij[] = halvesSinds2026(input.nu).map((half) => {
     const start = half.half === 1 ? middernachtAmsterdam(half.jaar, 1, 1) : middernachtAmsterdam(half.jaar, 7, 1);
     const eind = half.half === 1 ? middernachtAmsterdam(half.jaar, 7, 1) - 1 : middernachtAmsterdam(half.jaar + 1, 1, 1) - 1;
-    const zonderMaand = maat();
-    for (const school of input.scholen) {
-      const label = labelPerSchool.get(school.id);
-      if (!label || label.jaar !== half.jaar || label.half !== half.half) continue;
-      tel(zonderMaand, school.licenties);
-    }
-    return { ...half, nieuw: nieuwIn(start, eind), zonderMaand };
+    return { ...half, nieuw: nieuwIn(start, eind) };
   });
 
   const wins = [...tijden.entries()]
@@ -604,14 +806,16 @@ export function bouwNieuwDashboard(input: {
     periodeLabels: { half: halfPeriode.label, jaar: jaarPeriode.label },
     klanten,
     pipeline,
-    dezeMaandNieuw,
+    dezeMaandNetto,
     nieuwInPeriode: { half: nieuwIn(halfPeriode.start, halfPeriode.eind), jaar: nieuwIn(jaarPeriode.start, jaarPeriode.eind) },
     doelen: { half: doelKaart("half"), jaar: doelKaart("jaar") },
     maanden,
+    pipelineMaanden,
+    pipelineHistorieDun,
     funnel,
     typen: typenLijst,
     halfjaren,
     bronnen: bronnenLijst,
-    kwaliteitTekst: kwaliteitTekst(zonderDatum, viaLabel, labelNietHerkend, input.historieCompleet !== false),
+    kwaliteitTekst: kwaliteitTekst(zonderDatum, input.historieCompleet !== false),
   };
 }

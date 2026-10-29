@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
-  conversie,
+  aandelen,
   doorstroom,
   waarde,
   type DashboardEenheid,
@@ -12,6 +12,7 @@ import {
   type MaandRij,
   type Maat,
   type NieuwDashboardModel,
+  type PipelineMaandRij,
   type TypeRij,
 } from "@/lib/sales/nieuw-dashboard";
 import { useQueryKeuze } from "./useQueryKeuze";
@@ -126,7 +127,6 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
     : data.funnel;
   const typen = [...data.typen].sort((a, b) => rang(a.naam) - rang(b.naam) || waarde(b.klant, eenheid) - waarde(a.klant, eenheid) || a.naam.localeCompare(b.naam, "nl"));
   const bronnen = [...data.bronnen].sort((a, b) => rang(a.naam) - rang(b.naam) || waarde(b.klanten, eenheid) - waarde(a.klanten, eenheid) || a.naam.localeCompare(b.naam, "nl"));
-  const maandDoel = doel ? (licenties ? doel.maandDoelLicenties : doel.maandDoelScholen) : null;
   const gemNieuw = nieuw.scholen > 0 ? Math.round(nieuw.licenties / nieuw.scholen) : null;
 
   return (
@@ -158,7 +158,7 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
         <article className={`${s.card} ${s.kpi}`}>
           <span>{licenties ? "Licenties bij klanten" : "Scholen die klant zijn"}</span>
           <strong>{toon(data.klanten, eenheid)}</strong>
-          <span className={s.plus}>+{toon(data.dezeMaandNieuw, eenheid)} deze maand</span>
+          <span className={waarde(data.dezeMaandNetto, eenheid) < 0 ? s.achter : s.plus}>{nettoLabel(waarde(data.dezeMaandNetto, eenheid))} deze maand</span>
           <small>{licenties ? scholenTekst(data.klanten.scholen) : `${n(data.klanten.licenties)} licenties`}{data.gemLicentiesPerKlant ? ` · gem. ${n(data.gemLicentiesPerKlant)} per school` : ""}</small>
         </article>
         <article className={`${s.card} ${s.kpi}`}>
@@ -192,17 +192,39 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
 
       <section className={s.card}>
         <h2>Per maand</h2>
-        <p className={s.uitleg}>Nieuwe {eenheidWoord} per maand, laatste 12 maanden, uit de eerste overgang naar Klant. {maandDoel === null ? "Er is geen doel, dus geen stippellijn." : `De stippellijn is het maanddeel van het doel (${nFlex(maandDoel)} ${eenheidWoord}).`} De stand van deze maand is de Monday-voorraad van nu. Eerdere maanden tellen alleen scholen met een bekende klant-datum.</p>
-        <MaandGrafiek maanden={data.maanden} eenheid={eenheid} doel={maandDoel} periode={periode} periodeLabel={label} />
+        <p className={s.uitleg}>Verandering van het klantentotaal, laatste 12 maanden. Erbij is nieuwe klanten plus licenties die bij bestaande klanten stijgen. Eraf is klanten die weggaan plus licenties die dalen. Netto is erbij min eraf. Elke maand eindigt op de vorige stand plus netto. De laatste echte maand plus de regel Correctie / onbekend komt uit op de Monday-stand van nu.</p>
+        <NettoGrafiek maanden={data.maanden} eenheid={eenheid} />
         <div className={s.scroll}>
           <table className={s.tabel}>
-            <thead><tr><th>Maand</th><th className={s.num}>Nieuw</th><th className={s.num}>Verschil t.o.v. vorige maand</th><th className={s.num}>Totaal bij klanten eind van de maand</th></tr></thead>
+            <thead><tr><th>Maand</th><th className={s.num}>Erbij</th><th className={s.num}>Eraf</th><th className={s.num}>Netto</th><th className={s.num}>Totaal eind van de maand</th></tr></thead>
             <tbody>
               {data.maanden.map((maand) => (
-                <tr key={maand.sleutel} className={maand.isNu ? s.nu : undefined}>
+                <tr key={maand.sleutel} className={maand.correctie ? s.correctie : maand.isNu ? s.nu : undefined}>
+                  <td>{maand.label}{maand.isNu ? <span className={s.badge}>nu</span> : null}</td>
+                  <td className={s.num}>{toon(maand.erbij, eenheid)}</td>
+                  <td className={s.num}>{toon(maand.eraf, eenheid)}</td>
+                  <td className={s.num}><Verschil van={waarde(maand.netto, eenheid)} /></td>
+                  <td className={s.num}>{toon(maand.eindstand, eenheid)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <h3 className={s.subkop}>Pipeline per maand</h3>
+        <p className={s.uitleg}>Zelfde pipeline als de funnel: Lead, Prospect en Wacht op handtekening. Nieuw is een school die de pipeline in komt. Zonder statushistorie gebruiken we de aanmaakdatum in Monday, als die er is. Klant geworden en afgevallen zijn wie de pipeline verlaat.</p>
+        {data.pipelineHistorieDun ? <p className={s.uitleg}>Bij een deel van de scholen zien we een pipeline-status pas als ze klant worden of afvallen. Wanneer ze de pipeline in kwamen is niet bekend; dat moment is niet ingevuld.</p> : null}
+        <OmvangGrafiek maanden={data.pipelineMaanden} eenheid={eenheid} />
+        <div className={s.scroll}>
+          <table className={s.tabel}>
+            <thead><tr><th>Maand</th><th className={s.num}>Nieuw in pipeline</th><th className={s.num}>Klant geworden</th><th className={s.num}>Afgevallen</th><th className={s.num}>Netto</th><th className={s.num}>In pipeline eind van de maand</th></tr></thead>
+            <tbody>
+              {data.pipelineMaanden.map((maand) => (
+                <tr key={maand.sleutel} className={maand.correctie ? s.correctie : maand.isNu ? s.nu : undefined}>
                   <td>{maand.label}{maand.isNu ? <span className={s.badge}>nu</span> : null}</td>
                   <td className={s.num}>{toon(maand.nieuw, eenheid)}</td>
-                  <td className={s.num}><Verschil van={waarde(maand.verschil, eenheid)} /></td>
+                  <td className={s.num}>{toon(maand.klantGeworden, eenheid)}</td>
+                  <td className={s.num}>{toon(maand.afgevallen, eenheid)}</td>
+                  <td className={s.num}><Verschil van={waarde(maand.netto, eenheid)} /></td>
                   <td className={s.num}>{toon(maand.eindstand, eenheid)}</td>
                 </tr>
               ))}
@@ -229,23 +251,16 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
 
       <section className={s.card}>
         <h2>Klant geworden per halfjaar</h2>
-        <p className={s.uitleg}>Nieuwe {eenheidWoord} van scholen die in dat halfjaar klant werden, op de eerste statusovergang. Een Monday-label zonder datum staat er los bij en telt niet in de balk.</p>
+        <p className={s.uitleg}>Sinds 2026; scholen zonder bekende datum tellen niet mee.</p>
         <Halfjaren rijen={data.halfjaren} eenheid={eenheid} />
       </section>
 
       <section className={s.card}>
         <h2>Per bron / partner</h2>
-        <p className={s.uitleg}>Huidige klanten en open pipeline per bron. Meerdere bronnen in één Monday-cel tellen één keer, bij Meerdere. Conversie is klanten gedeeld door klanten plus pipeline. Onbekend staat onderaan.</p>
-        <div className={s.scroll}>
-          <table className={s.tabel}>
-            <thead><tr><th>Bron</th><th className={s.num}>Klanten</th><th className={s.num}>Pipeline</th><th className={s.num}>Conversie</th></tr></thead>
-            <tbody>
-              {bronnen.map((rij) => {
-                const percentage = conversie(waarde(rij.klanten, eenheid), waarde(rij.pipeline, eenheid));
-                return <tr key={rij.naam}><td>{rij.naam}</td><td className={s.num}>{toon(rij.klanten, eenheid)}</td><td className={s.num}>{toon(rij.pipeline, eenheid)}</td><td className={s.num}>{percentage === null ? "—" : `${precies.format(percentage)}%`}</td></tr>;
-              })}
-            </tbody>
-          </table>
+        <p className={s.uitleg}>Zelfde eenheid als de schakelaar bovenaan. Elke rij is een deel van het totaal van die groep. Meerdere en Onbekend zitten erbij, zodat de percentages samen 100% zijn.</p>
+        <div className={s.bronnen}>
+          <BronDeel titel="Pipeline" rijen={bronnen} eenheid={eenheid} veld="pipeline" />
+          <BronDeel titel="Klanten" rijen={bronnen} eenheid={eenheid} veld="klanten" />
         </div>
       </section>
     </div>
@@ -279,25 +294,73 @@ function DoelBlok({ kaart, titel, eenheid, geselecteerd, leeg }: { kaart: DoelKa
   );
 }
 
-function MaandGrafiek({ maanden, eenheid, doel, periode, periodeLabel }: { maanden: MaandRij[]; eenheid: DashboardEenheid; doel: number | null; periode: DashboardPeriode; periodeLabel: string }) {
-  const waarden = maanden.map((maand) => waarde(maand.nieuw, eenheid));
-  const schaal = Math.max(1, ...waarden, doel ?? 0) * 1.12;
+function nettoLabel(van: number) {
+  if (van > 0) return `+${n(van)}`;
+  if (van < 0) return `−${n(Math.abs(van))}`;
+  return "0";
+}
+
+function NettoGrafiek({ maanden, eenheid }: { maanden: MaandRij[]; eenheid: DashboardEenheid }) {
+  const zichtbaar = maanden.filter((maand) => !maand.correctie);
+  const waarden = zichtbaar.map((maand) => waarde(maand.netto, eenheid));
+  const schaal = Math.max(1, ...waarden.map((waardeGetal) => Math.abs(waardeGetal)));
   return (
     <>
-      <div className={s.grafiek} aria-hidden="true">
-        {doel === null ? null : <div className={s.doellijn} style={{ bottom: `${(doel / schaal) * 100}%` }}><span>doel {nFlex(doel)} / maand</span></div>}
-        {maanden.map((maand, index) => {
-          const inPeriode = periode === "jaar" ? String(maand.jaar) === periodeLabel : `H${maand.half} ${maand.jaar}` === periodeLabel;
+      <div className={s.netto} aria-hidden="true">
+        <div className={s.nul} />
+        {zichtbaar.map((maand, index) => {
+          const waardeGetal = waarden[index] ?? 0;
+          const hoogte = `${Math.max(waardeGetal === 0 ? 0 : 2, (Math.abs(waardeGetal) / schaal) * 46)}%`;
           return (
-            <div key={maand.sleutel} className={`${s.kolom} ${inPeriode ? "" : s.buiten} ${maand.isNu ? s.nu : ""}`}>
-              <b>{eenheid === "licenties" ? n(waarden[index] ?? 0) : nFlex(waarden[index] ?? 0)}</b>
-              <div className={s.staaf} style={{ height: `${Math.max(2, ((waarden[index] ?? 0) / schaal) * 100)}%` }} />
+            <div key={maand.sleutel} className={s.kolom}>
+              <div className={waardeGetal >= 0 ? s.nettoOmhoog : s.nettoOmlaag} style={{ height: hoogte }} />
             </div>
           );
         })}
       </div>
-      <div className={s.labels} aria-hidden="true">{maanden.map((maand) => <span key={maand.sleutel}>{maand.label.split(" ").map((deel) => <span key={deel} style={{ display: "block" }}>{deel}</span>)}</span>)}</div>
+      <div className={s.labels} aria-hidden="true">{zichtbaar.map((maand) => <span key={maand.sleutel}>{maand.label.split(" ").map((deel) => <span key={deel} style={{ display: "block" }}>{deel}</span>)}</span>)}</div>
     </>
+  );
+}
+
+function OmvangGrafiek({ maanden, eenheid }: { maanden: PipelineMaandRij[]; eenheid: DashboardEenheid }) {
+  const zichtbaar = maanden.filter((maand) => !maand.correctie);
+  const waarden = zichtbaar.map((maand) => waarde(maand.eindstand, eenheid));
+  const schaal = Math.max(1, ...waarden);
+  return (
+    <>
+      <div className={s.grafiek} aria-hidden="true">
+        {zichtbaar.map((maand, index) => (
+          <div key={maand.sleutel} className={`${s.kolom} ${maand.isNu ? s.nu : ""}`}>
+            <b>{n(waarden[index] ?? 0)}</b>
+            <div className={s.staaf} style={{ height: `${Math.max(2, ((waarden[index] ?? 0) / schaal) * 100)}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className={s.labels} aria-hidden="true">{zichtbaar.map((maand) => <span key={maand.sleutel}>{maand.label.split(" ").map((deel) => <span key={deel} style={{ display: "block" }}>{deel}</span>)}</span>)}</div>
+    </>
+  );
+}
+
+function BronDeel({ titel, rijen, eenheid, veld }: { titel: string; rijen: NieuwDashboardModel["bronnen"]; eenheid: DashboardEenheid; veld: "klanten" | "pipeline" }) {
+  const gevuld = rijen.filter((rij) => waarde(rij[veld], eenheid) > 0);
+  const percentages = aandelen(gevuld.map((rij) => waarde(rij[veld], eenheid)));
+  const totaal = gevuld.reduce((som, rij) => som + waarde(rij[veld], eenheid), 0);
+  return (
+    <div>
+      <h3 className={s.subkop}>{titel}</h3>
+      {gevuld.length === 0 ? <p className={s.uitleg}>Geen {titel === "Pipeline" ? "pipeline" : "klanten"}.</p> : (
+        <div className={s.scroll}>
+          <table className={s.tabel}>
+            <thead><tr><th>Bron</th><th className={s.num}>{eenheid === "licenties" ? "Licenties" : "Scholen"}</th><th className={s.num}>Aandeel</th></tr></thead>
+            <tbody>
+              {gevuld.map((rij, index) => <tr key={rij.naam}><td>{rij.naam}</td><td className={s.num}>{toon(rij[veld], eenheid)}</td><td className={s.num}>{precies.format(percentages[index] ?? 0)}%</td></tr>)}
+              <tr><td><strong>Totaal</strong></td><td className={s.num}><strong>{n(totaal)}</strong></td><td className={s.num}><strong>100%</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -369,7 +432,7 @@ function Halfjaren({ rijen, eenheid }: { rijen: NieuwDashboardModel["halfjaren"]
         <div key={rij.label} className={`${s.halfRij} ${rij.lopend ? s.lopend : ""}`}>
           <span>{rij.label}{rij.lopend ? <span className={s.badge}>lopend</span> : null}</span>
           <div className={s.halfBalk}><span style={{ width: `${Math.max(rij.nieuw.scholen + rij.nieuw.licenties === 0 ? 0 : 2, (waarde(rij.nieuw, eenheid) / max) * 100)}%` }} /></div>
-          <strong>{toon(rij.nieuw, eenheid)}{rij.zonderMaand.scholen > 0 ? <span className={s.noot}> + {toon(rij.zonderMaand, eenheid)} zonder maand</span> : null}</strong>
+          <strong>{toon(rij.nieuw, eenheid)}</strong>
         </div>
       ))}
     </div>

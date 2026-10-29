@@ -40,7 +40,9 @@ describe("nieuw dashboard — weergave", () => {
     expect(screen.getByText("Licenties bij klanten")).toBeInTheDocument();
     expect(screen.getAllByText("100").length).toBeGreaterThan(0);
     expect(screen.getByText("Bijgewerkt uit Monday: 29 oktober 2026 om 09:00")).toBeInTheDocument();
-    expect(screen.getByText("▲ 100")).toBeInTheDocument();
+    expect(screen.getByText("+100 deze maand")).toBeInTheDocument();
+    expect(screen.getByText("Erbij")).toBeInTheDocument();
+    expect(screen.getByText("Pipeline per maand")).toBeInTheDocument();
   });
 
   it("toont in de scholenstand het aantal scholen in plaats van de licenties", () => {
