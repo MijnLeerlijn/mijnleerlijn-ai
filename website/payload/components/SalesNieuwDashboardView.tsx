@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode, Fragment } from "react";
+import { Gutter, useAuth } from "@payloadcms/ui";
 import {
   aandelen,
   doorstroom,
@@ -61,34 +62,57 @@ function rang(naam: string) {
 }
 
 export function SalesNieuwDashboardView({ schakelaar }: { schakelaar: ReactNode }) {
+  const { user } = useAuth();
+  const account = user as { role?: string; permissionMode?: string } | null;
+  const magSyncen = account?.role === "admin" && account.permissionMode !== "restricted";
   const eenheidKeuze = useQueryKeuze({ param: "eenheid", opslagSleutel: "ml-sales-dashboard-eenheid", toegestaan: EENHEDEN, standaard: "licenties" });
   const periodeKeuze = useQueryKeuze({ param: "periode", opslagSleutel: "ml-sales-dashboard-periode", toegestaan: PERIODES, standaard: "half" });
   const [data, setData] = useState<NieuwDashboardModel | null>(null);
   const [laden, setLaden] = useState(true);
   const [fout, setFout] = useState<string | null>(null);
+  const [syncBezig, setSyncBezig] = useState(false);
   const [typeFilter, setTypeFilter] = useState("Alle");
+
+  const ververs = useCallback(async () => {
+    const res = await fetch("/api/sales/dashboard-nieuw", { credentials: "include" });
+    if (!res.ok) throw new Error(res.status === 403 ? "Je hebt geen toegang tot dit dashboard." : "Dashboarddata kon niet worden geladen.");
+    setData(await res.json() as NieuwDashboardModel);
+  }, []);
 
   const laad = useCallback(async () => {
     setLaden(true);
     setFout(null);
     try {
-      const res = await fetch("/api/sales/dashboard-nieuw", { credentials: "include" });
-      if (!res.ok) throw new Error(res.status === 403 ? "Je hebt geen toegang tot dit dashboard." : "Dashboarddata kon niet worden geladen.");
-      setData(await res.json() as NieuwDashboardModel);
+      await ververs();
     } catch (error) {
       setFout(error instanceof Error ? error.message : String(error));
     } finally {
       setLaden(false);
     }
-  }, []);
+  }, [ververs]);
+
+  async function sync() {
+    setSyncBezig(true);
+    setFout(null);
+    try {
+      const res = await fetch("/api/sales/sync", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error("Synchroniseren is mislukt of niet toegestaan voor dit account.");
+      await ververs();
+    } catch (error) {
+      const bericht = error instanceof Error ? error.message : "";
+      setFout(bericht.startsWith("Je hebt geen toegang") || bericht.startsWith("Dashboarddata") ? bericht : "Synchroniseren is mislukt of niet toegestaan voor dit account.");
+    } finally {
+      setSyncBezig(false);
+    }
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void laad();
   }, [laad]);
 
-  if (laden) return <div className={s.root}>{schakelaar}<p>Laden…</p></div>;
-  if (!data) return <div className={s.root}>{schakelaar}<h1>Sales Dashboard</h1><p className={s.fout}>{fout ?? "Geen data beschikbaar."}</p></div>;
+  if (laden) return <Gutter className={s.root}>{schakelaar}<p>Laden…</p></Gutter>;
+  if (!data) return <Gutter className={s.root}>{schakelaar}<h1>Sales Dashboard</h1><p className={s.fout}>{fout ?? "Geen data beschikbaar."}</p></Gutter>;
 
   return (
     <SalesNieuwDashboardInhoud
@@ -101,11 +125,14 @@ export function SalesNieuwDashboardView({ schakelaar }: { schakelaar: ReactNode 
       typeFilter={data.typen.some((rij) => rij.naam === typeFilter) ? typeFilter : "Alle"}
       onType={setTypeFilter}
       fout={fout}
+      magSyncen={magSyncen}
+      syncBezig={syncBezig}
+      onSync={() => { void sync(); }}
     />
   );
 }
 
-export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, onEenheid, onPeriode, typeFilter, onType, fout, openKlantMaand = null, openHalfjaar = null }: {
+export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, onEenheid, onPeriode, typeFilter, onType, fout, openKlantMaand = null, openHalfjaar = null, magSyncen = false, syncBezig = false, onSync }: {
   data: NieuwDashboardModel;
   schakelaar: ReactNode;
   eenheid: DashboardEenheid;
@@ -117,6 +144,9 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
   fout: string | null;
   openKlantMaand?: string | null;
   openHalfjaar?: string | null;
+  magSyncen?: boolean;
+  syncBezig?: boolean;
+  onSync?: () => void;
 }) {
   const licenties = eenheid === "licenties";
   const eenheidWoord = licenties ? "licenties" : "scholen";
@@ -134,12 +164,20 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
   const [openPipeline, setOpenPipeline] = useState<string | null>(null);
 
   return (
-    <div className={s.root}>
+    <Gutter className={s.root}>
       {schakelaar}
       <header className={s.header}>
         <div>
           <h1>Sales Dashboard</h1>
-          <p className={s.sub}>Bijgewerkt uit Monday: {tijdstip.format(new Date(data.bijgewerktOp))}</p>
+          <div className={s.bijgewerktRij}>
+            <p className={s.sub}>Bijgewerkt uit Monday: {tijdstip.format(new Date(data.bijgewerktOp))}</p>
+            {magSyncen ? (
+              <button type="button" className={s.sync} onClick={onSync} disabled={syncBezig} aria-busy={syncBezig}>
+                {syncBezig ? <span className={s.spinner} aria-hidden="true" /> : null}
+                {syncBezig ? "Synchroniseren…" : "Sync met Monday"}
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className={s.controls}>
           <div className={`${s.seg} ${s.prominent}`} role="group" aria-label="Eenheid">
@@ -279,7 +317,7 @@ export function SalesNieuwDashboardInhoud({ data, schakelaar, eenheid, periode, 
           <BronDeel titel="Klanten" rijen={bronnen} eenheid={eenheid} veld="klanten" />
         </div>
       </section>
-    </div>
+    </Gutter>
   );
 }
 
