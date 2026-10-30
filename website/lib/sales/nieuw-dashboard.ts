@@ -1,5 +1,6 @@
 import { SCHOLEN_KOLOM } from "./monday-columns";
 import { calculateSalesGoalProgress, type SalesGoalInput, type SalesGoalProgress } from "./goal-progress";
+import { teltMeeInDashboard } from "./uitgesloten-dashboard-items";
 
 /**
  * Nieuw salesdashboard (beta).
@@ -640,7 +641,9 @@ export function bouwNieuwDashboard(input: {
   bijgewerktOp?: string;
 }): NieuwDashboardModel {
   const factor = input.factor > 0 ? input.factor : 200;
-  const tijden = bepaalTijden(input.scholen, input.historie);
+  const meetellend = input.scholen.filter((school) => teltMeeInDashboard(school.id));
+  const historie = input.historie.filter((event) => teltMeeInDashboard(event.mondayItemId));
+  const tijden = bepaalTijden(meetellend, historie);
   const funnel = legeFunnel();
   const typen = new Map<string, TypeRij>();
   const bronnen = new Map<string, BronRij>();
@@ -648,7 +651,7 @@ export function bouwNieuwDashboard(input: {
   const pipeline = maat();
   let zonderDatum = 0;
 
-  for (const school of input.scholen) {
+  for (const school of meetellend) {
     const status = canonStatus(school.relatiestatus);
     const licenties = Number.isFinite(school.licenties) ? school.licenties : 0;
     const veld = statusVeld(status);
@@ -685,8 +688,8 @@ export function bouwNieuwDashboard(input: {
   let pipelineHistorieDun = false;
   const eindToestand = new Map<string, Stam>();
 
-  for (const school of input.scholen) {
-    const events = gebeurtenissenVan(school, input.historie).filter((event) => event.op <= input.nu);
+  for (const school of meetellend) {
+    const events = gebeurtenissenVan(school, historie).filter((event) => event.op <= input.nu);
     const voorVenster: Stam = { klant: false, pipeline: false, niveau: null };
     const dun = { waarde: false };
     const pasToe = (staat: Stam, event: Gebeurtenis, klantStroom: KlantStroom, pipelineStroom: PipelineStroom) => {
@@ -749,7 +752,7 @@ export function bouwNieuwDashboard(input: {
   const correctieNieuw: SchoolRegel[] = [];
   const correctieKlant: SchoolRegel[] = [];
   const correctieAfgevallen: SchoolRegel[] = [];
-  for (const school of input.scholen) {
+  for (const school of meetellend) {
     const staat = eindToestand.get(school.id) ?? { klant: false, pipeline: false, niveau: null };
     const naam = school.naam?.trim() || school.id;
     const status = canonStatus(school.relatiestatus);
@@ -843,7 +846,7 @@ export function bouwNieuwDashboard(input: {
   const halfjaren: HalfjaarRij[] = halvesSinds2026(input.nu).map((half) => {
     const nieuw = maat();
     const scholen: HalfjaarSchool[] = [];
-    for (const school of input.scholen) {
+    for (const school of meetellend) {
       if (isPipelineStatus(canonStatus(school.relatiestatus))) continue;
       const kolom = parseHalfjaarLabel(school.klantGeworden);
       if (!kolom || kolom.half == null || kolom.jaar !== half.jaar || kolom.half !== half.half || kolom.jaar < 2026) continue;
