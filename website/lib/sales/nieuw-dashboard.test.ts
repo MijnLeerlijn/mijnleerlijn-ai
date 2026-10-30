@@ -292,6 +292,33 @@ describe("nieuw dashboard — maandverschil en halfjaar", () => {
     expect(tweede?.scholen.map((item) => item.naam)).toEqual(["Inactief met label"]);
   });
 
+  it("slaat het trainingsitem de Basis en de Kraal over, en telt de losse scholen wel", () => {
+    const uitkomst = bouwNieuwDashboard({
+      scholen: [
+        school({ id: "basis", naam: "Montessorischool de Basis", licenties: 150, relatiestatus: "Klant", klantGeworden: "1e helft 2026" }),
+        school({ id: "kraal", naam: "Montessorischool de Kraal", licenties: 75, relatiestatus: "Klant", klantGeworden: "1e helft 2026" }),
+        school({ id: "12993435378", naam: "Montessorischool de Basis en de Kraal", licenties: 0, relatiestatus: "Klant", klantGeworden: "2e helft 2026" }),
+        school({ id: "terrawijs", naam: "Terrawijs", licenties: 40, relatiestatus: "Klant", klantGeworden: "2e helft 2026" }),
+      ],
+      historie: [
+        overgang("12993435378", "2026-08-15T10:00:00.000Z", "Lead", "Klant"),
+        overgang("terrawijs", "2026-08-15T10:00:00.000Z", "Lead", "Klant"),
+      ],
+      doelen: [{ id: 1, naam: "H2 2026", startDatum: "2026-08-01", eindDatum: "2026-12-31", doelLicenties: 8000, actief: true }],
+      nu: NU,
+      factor: 200,
+    });
+    const eerste = uitkomst.halfjaren.find((half) => half.label === "H1 2026");
+    const tweede = uitkomst.halfjaren.find((half) => half.label === "H2 2026");
+    expect(eerste?.nieuw).toEqual({ scholen: 2, licenties: 225 });
+    expect(eerste?.scholen.map((item) => item.naam)).toEqual(["Montessorischool de Basis", "Montessorischool de Kraal"]);
+    expect(tweede?.nieuw).toEqual({ scholen: 1, licenties: 40 });
+    expect(tweede?.scholen.map((item) => item.naam)).toEqual(["Terrawijs"]);
+    expect(uitkomst.klanten).toEqual({ scholen: 3, licenties: 265 });
+    expect(uitkomst.doelen.half?.gerealiseerd).toEqual({ scholen: 1, licenties: 40 });
+    expect(uitkomst.pipeline.scholen).toBe(0);
+  });
+
   it("kiest het halfjaar- en het jaardoel op de lengte van de periode", () => {
     expect(model.doelen.half?.naam).toBe("H2 2026");
     expect(model.doelen.jaar?.naam).toBe("2026");

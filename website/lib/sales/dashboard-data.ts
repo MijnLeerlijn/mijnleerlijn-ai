@@ -3,6 +3,7 @@ import { haalScholenPagina, type MondaySchoolItem } from "./monday-client";
 import { SCHOLEN_BOARD_ID, SCHOLEN_KOLOM } from "./monday-columns";
 import { calculateSalesGoalProgress, type SalesGoalInput, type SalesGoalProgress } from "./goal-progress";
 import { bouwSalesTrainingSamenvatting, type SalesTrainingSamenvatting } from "./training-summary";
+import { teltMeeInDashboard } from "./uitgesloten-dashboard-items";
 import { calculateSalesPartnerSummary, type SalesPartnerInput, type SalesPartnerSchoolInput, type SalesPartnerSummary } from "./partner-summary";
 
 const OPEN_RELATIESTATUSSEN = new Set(["Lead", "Prospect", "Wacht op handtekening"]);
@@ -175,7 +176,7 @@ async function haalPartnerSamenvattingen(payload: Payload, scholen: SalesPartner
 }
 
 export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDashboardData> {
-  const scholen = await haalScholenVoorDashboard();
+  const scholen = (await haalScholenVoorDashboard()).filter((school) => teltMeeInDashboard(school.id));
   const funnel = new Map<string, number>(); const pipelineLicentiesPerFase = new Map<string, number>();
   const klantenGeworden = new Map<string, number>(); const klantenPerOnderwijstype = new Map<string, number>(); const licentiesPerOnderwijstype = new Map<string, number>();
   const klantenPerBron = new Map<string, number>(); const licentiesPerBron = new Map<string, number>();
@@ -200,7 +201,7 @@ export async function bouwSalesDashboardData(payload: Payload): Promise<SalesDas
   }
 
   const historieResult = await payload.find({ collection: "sales-log-events", where: { type: { equals: "monday_status" } }, limit: 5000, depth: 0, overrideAccess: true });
-  const historieDocs = historieResult.docs as unknown as HistorieDoc[];
+  const historieDocs = (historieResult.docs as unknown as HistorieDoc[]).filter((doc) => teltMeeInDashboard(doc.payload?.mondayItemId));
   let statusMutaties = 0, licentieMutaties = 0, volledigeStatusMutaties = 0, statusMutatiesZonderVorigeWaarde = 0;
   for (const doc of historieDocs) {
     const p = doc.payload;

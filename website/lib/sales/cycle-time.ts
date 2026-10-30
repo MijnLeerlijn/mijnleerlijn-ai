@@ -1,5 +1,6 @@
 import type { Payload } from "payload";
 import { SCHOLEN_KOLOM } from "./monday-columns";
+import { teltMeeInDashboard } from "./uitgesloten-dashboard-items";
 
 export interface SalesCycleTimeSummary {
   averageDays: number | null;
@@ -37,6 +38,7 @@ export async function buildSalesCycleTimeSummary(payload: Payload): Promise<Sale
   for (const doc of result.docs as unknown as HistoryDoc[]) {
     const event = doc.payload;
     if (event?.columnId !== SCHOLEN_KOLOM.relatiestatus || !event.mondayItemId || !doc.occurredAt) continue;
+    if (!teltMeeInDashboard(event.mondayItemId)) continue;
 
     const timestamp = Date.parse(doc.occurredAt);
     if (!Number.isFinite(timestamp)) continue;
